@@ -1,18 +1,3 @@
-/**
- * ✅ 完全修正版：レッスン名を変更（レッスン順序シートのみ更新）
- * 
- * ★ 重要な修正 ★
- * - データシートのレッスン名は更新しない（saveLessonData で処理）
- * - レッスン順序シートのみを更新する
- * - これにより単語データの重複を完全に防ぐ
- * 
- * @param {string} year - 年度（例：「2024年度版」）
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年（またはシート名）
- * @param {string} oldLessonName - 元のレッスン名
- * @param {string} newLessonName - 新しいレッスン名
- * @returns {Object} { success: boolean, updatedCount: number, error?: string }
- */
 function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
   try {
     console.log('=== updateLessonName called ===');
@@ -34,7 +19,7 @@ function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
     while (files.hasNext()) {
       const file = files.next();
       allFiles.push(file);
-      
+
       if (file.getName() === textbook) {
         targetFile = file;
       }
@@ -47,15 +32,15 @@ function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
     console.log(`✅ 対象ファイル取得: ${targetFile.getName()}`);
 
     const ss = SpreadsheetApp.open(targetFile);
-    
+
     // ════════════════════════════════════════════════════════
     // ✅ 修正：データシートのレッスン名を更新
     // （単語データには触らずにレッスン名列のみを更新）
     // ════════════════════════════════════════════════════════
     let dataUpdateCount = 0;
-    
+
     let targetSheetName = grade;
-    
+
     // 入試対策編の場合、grade がシート名
     if (textbook === '入試対策編') {
       if (oldLessonName.startsWith('不規則動詞①')) {
@@ -81,7 +66,7 @@ function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
         // データシート内のレッスン名を更新（列6 = レッスン列）
         data.forEach((row, idx) => {
           const cellLesson = row[5] ? row[5].toString().trim() : '';
-          
+
           // 前方一致で判定
           const lessonBase = oldLessonName.split('(')[0].trim();
           const cellLessonBase = cellLesson.split('(')[0].trim();
@@ -215,7 +200,7 @@ function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
  * ✅ 新規関数：指定教科書・学年のレッスン一覧を取得
  * 通常教科書 + 入試対策編のレッスンを両方取得してマージ
  * 重複除外・ソート済み
- * 
+ *
  * @param {string} year - 年度（例：「2024年度版」）
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（またはシート名）
@@ -323,12 +308,12 @@ function getLessonList(year, textbook, grade) {
 
 /**
  * ✅ 新規関数：保存後処理専用のレッスン一覧取得
- * 
+ *
  * 処理：
  * 1. 指定教科書のレッスンのみを取得
  * 2. 入試対策編のレッスンは含めない（通常教科書の場合）
  * 3. 入試対策編の場合のみ、すべてのシートからレッスンを取得
- * 
+ *
  * @param {string} year - 年度（例：「2024年度版」）
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（またはシート名）
@@ -381,7 +366,7 @@ function getLessonListForSave(year, textbook, grade) {
 
         console.log(`  ✅ ${lessons.size}件のレッスンを取得`);
       });
-    } 
+    }
     // ========================================
     // 通常教科書の場合
     // ========================================
@@ -440,11 +425,11 @@ function getLessonListForSave(year, textbook, grade) {
 /**
  * ✅ 完全修正版：GAS側の saveFukisokuData()
  * フロント側から受け取ったデータから、正確に14列・18列のデータを構築
- * 
+ *
  * 不規則動詞①：14列
  * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, [5] lesson, [6] cell_id,
  * [7] past_word_id, [8] past_english, [9] past_pronunciation, [10] past_audio, [11] (空), [12] (空), [13] (空)
- * 
+ *
  * 不規則動詞②：18列
  * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, [5] lesson, [6] cell_id,
  * [7] past_word_id, [8] past_english, [9] past_pronunciation, [10] past_audio,
@@ -573,12 +558,12 @@ function saveFukisokuData(year, textbook, grade, lesson, fukisokuDataMap, allWor
     Logger.log(`✅ rowsToAdd の最初の行: ${JSON.stringify(rowsToAdd[0])}`);
 
     const lastRow = sheet.getLastRow();
-    
+
     // ✅ 既存レッスンデータを削除
     if (lastRow > 1) {
       const allData = sheet.getRange(2, 1, lastRow - 1, maxCols).getValues();
       const lessonRowIndices = [];
-      
+
       allData.forEach((row, idx) => {
         const cellLesson = row[5] ? row[5].toString().trim() : '';
         if (cellLesson === lesson) {
@@ -592,7 +577,7 @@ function saveFukisokuData(year, textbook, grade, lesson, fukisokuDataMap, allWor
       for (let i = lessonRowIndices.length - 1; i >= 0; i--) {
         const deleteIdx = lessonRowIndices[i];
         const deleteRow = deleteIdx + 2;
-        
+
         if (deleteRow > 1) {
           Logger.log(`削除: 行${deleteRow}`);
           sheet.deleteRow(deleteRow);
@@ -623,7 +608,7 @@ function saveFukisokuData(year, textbook, grade, lesson, fukisokuDataMap, allWor
     sheet.getRange(insertRow, 1, rowsToAdd.length, maxCols).setValues(rowsToAdd);
 
     Logger.log(`✅ ${rowsToAdd.length}件のデータを行${insertRow}に保存しました`);
-    
+
     // ✅ 保存内容をログに出力（デバッグ用）
     Logger.log('保存データ例（最初の1行）:');
     if (rowsToAdd.length > 0) {
@@ -642,20 +627,20 @@ function saveFukisokuData(year, textbook, grade, lesson, fukisokuDataMap, allWor
 /**
  * ✅ 完全修正版：不規則動詞①②のデータを復元
  * ワードIDからマスターデータを参照して、常に最新データを使用
- * 
+ *
  * ✅ 修正：rowCount ではなく rowIdx を使用
  * スプレッドシートの行番号と fukisokuDataMap のキーを対応させる
- * 
+ *
  * 不規則動詞①：14列を想定
  * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, [5] lesson, [6] cell_id,
  * [7] past_word_id, [8] past_english, [9] past_pronunciation, [10] past_audio, [11-13] (空)
- * 
+ *
  * 不規則動詞②：18列を想定
  * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, [5] lesson, [6] cell_id,
  * [7] past_word_id, [8] past_english, [9] past_pronunciation, [10] past_audio,
  * [11] past_participle_word_id, [12] past_participle_english, [13] past_participle_pronunciation, [14] past_participle_audio,
  * [15-17] (空)
- * 
+ *
  * @param {string} year - 年度
  * @param {string} textbook - 教科書名
  * @param {string} grade - シート名
@@ -789,7 +774,7 @@ function loadFukisokuData(year, textbook, grade, lesson, allWords) {
     Logger.log(`✅ 不規則動詞データを読み込みました: ${targetSheetName} > ${lesson} (${rowCount}件)`);
     Logger.log('✅ ワードIDからマスターデータを参照して最新データを取得しました');
     Logger.log('✅ fukisokuDataMap:', fukisokuDataMap);
-    
+
     return { fukisokuDataMap, success: true };
 
   } catch (e) {
@@ -801,7 +786,7 @@ function loadFukisokuData(year, textbook, grade, lesson, allWords) {
 
 /**
  * ✅ 新規関数：不規則動詞用 - マスターデータ修正時に tableData と fukisokuDataMap を更新
- * 
+ *
  * @param {number} masterId - 修正されたマスターワードID
  * @param {string} newEnglish - 新しい英語
  * @param {string} newPronunciation - 新しい発音

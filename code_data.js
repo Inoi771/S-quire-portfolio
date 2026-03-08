@@ -2,7 +2,7 @@
 /**
  * ============================================================
  * ✅ 完全修正版：PDF生成用レッスンデータ取得
- * 
+ *
  * 処理フロー：
  * 1. 「レッスン順序」シートから選択学年のレッスン順を取得
  * 2. 各レッスンについて：
@@ -78,15 +78,15 @@ function getAllLessonsDataForExamPrep(year, textbook, grade) {
     console.log(`取得レッスン数: ${allLessonsData.length}`);
     console.log('レッスン一覧:', allLessonsData.map(l => l.lesson));
 
-    return { 
-      lessons: allLessonsData, 
-      allWords: allWords 
+    return {
+      lessons: allLessonsData,
+      allWords: allWords
     };
 
   } catch (e) {
     Logger.log('❌ Error getAllLessonsDataForExamPrep: ' + e);
     Logger.log(e.stack);
-    return { 
+    return {
       lessons: [],
       allWords: []
     };
@@ -374,7 +374,7 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const wordSheet = ss.getSheetByName("英単語");
-    
+
     if (!wordSheet) {
       throw new Error('「英単語」シートが見つかりません');
     }
@@ -398,7 +398,7 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
         wordSheet.getRange(actualRow, 3).setValue(newPronunciation);
         wordSheet.getRange(actualRow, 4).setValue(newJapanese);
         // ✅ 修正：audio列（5列目）はそのまま（更新しない）
-        
+
         updateLog = { actualRow: actualRow, wordId: wordId };
         found = true;
         break;
@@ -425,7 +425,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const sentenceSheet = ss.getSheetByName("英文");
-    
+
     if (!sentenceSheet) {
       throw new Error('「英文」シートが見つかりません');
     }
@@ -444,19 +444,19 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
       const currentId = data[i][0] ? parseInt(data[i][0]) : null;
       if (currentId === sentenceId) {
         const actualRow = i + 2; // データ範囲の開始は2行目
-        
+
         // 列1：ID（そのまま）
         sentenceSheet.getRange(actualRow, 1).setValue(sentenceId);
-        
+
         // 列2：文テキスト（更新）
         sentenceSheet.getRange(actualRow, 2).setValue(newText);
-        
+
         // 列3：発音記号（更新）
         sentenceSheet.getRange(actualRow, 3).setValue(newPronunciation);
-        
+
         // ✅ 修正：列4：日本語（新規追加対応）
         sentenceSheet.getRange(actualRow, 4).setValue(newJapanese);
-        
+
         updateLog = { actualRow: actualRow, sentenceId: sentenceId };
         found = true;
         break;
@@ -471,7 +471,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
     Logger.log(`   テキスト: ${newText}`);
     Logger.log(`   発音: ${newPronunciation || '（なし）'}`);
     Logger.log(`   日本語: ${newJapanese || '（なし）'}`);
-    
+
     return { success: true };
   } catch (e) {
     Logger.log('Error updateMasterSentence: ' + e);
@@ -551,10 +551,10 @@ function updateLessonSentence(year, textbook, grade, lesson, masterSentenceId, n
 
               if (cellMasterId === masterSentenceId && cellLesson === lesson) {
                 const actualRow = i + 2;
-                
+
                 // 列2：テキスト（文の場合）を更新
                 sheet.getRange(actualRow, 2).setValue(newText);
-                
+
                 // ✅ 列3：発音を更新
                 sheet.getRange(actualRow, 3).setValue(newPronunciation);
               }
@@ -581,7 +581,7 @@ function addMasterWord(english, pronunciation, japanese) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const wordSheet = ss.getSheetByName("英単語");
-    
+
     if (!wordSheet) {
       throw new Error('「英単語」シートが見つかりません');
     }
@@ -629,7 +629,7 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const sentenceSheet = ss.getSheetByName("英文");
-    
+
     if (!sentenceSheet) {
       throw new Error('「英文」シートが見つかりません');
     }
@@ -752,23 +752,23 @@ function initializeLessonOrderSheet(year, textbook) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
-        
+
         // 「レッスン順序」シートが存在するか確認
         let orderSheet = ss.getSheetByName('レッスン順序');
-        
+
         if (!orderSheet) {
           // シート作成
           orderSheet = ss.insertSheet('レッスン順序');
-          
+
           // ヘッダー行を作成（学年）
           const grades = ['中学1年', '中学2年', '中学3年'];
           orderSheet.getRange(1, 1, 1, 3).setValues([grades]);
-          
+
           // 見出しをボールドに
           const headerRange = orderSheet.getRange(1, 1, 1, 3);
           headerRange.setFontWeight('bold');
           headerRange.setBackground('#e8e8e8');
-          
+
           Logger.log(`✅ 「レッスン順序」シートを作成しました: ${textbook}`);
         }
 
@@ -941,16 +941,16 @@ function getAvailableLessons(year, textbook, grade) {
     const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    
+
     let allLessons = new Set();
-    
+
     // 指定教科書のレッスンを取得
     while (files.hasNext()) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
         const sheet = ss.getSheetByName(grade);
-        
+
         if (sheet) {
           const lastRow = sheet.getLastRow();
           if (lastRow > 1) {
@@ -965,11 +965,11 @@ function getAvailableLessons(year, textbook, grade) {
         break;
       }
     }
-    
+
     // 入試対策編も追加
     const examPrepResult = getExamPrepLessons(year);
     examPrepResult.lessons.forEach(lesson => allLessons.add(lesson));
-    
+
     const sortedLessons = Array.from(allLessons).sort();
     return { lessons: sortedLessons };
   } catch (e) {
