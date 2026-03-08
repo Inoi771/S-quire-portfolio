@@ -6,6 +6,8 @@
  */
 function doGet(e) {
   const page = e && e.parameter && e.parameter.page;
+  const key  = e && e.parameter && e.parameter.key;
+
   if (page === 'student') {
     try {
       const template = HtmlService.createTemplateFromFile('index');
@@ -20,6 +22,14 @@ function doGet(e) {
       return HtmlService.createHtmlOutput('エラーが発生しました。管理者に連絡してください。');
     }
   }
+
+  // 教師用エディター：アクセスキー必須
+  if (key !== 'Tz8mX3kR7vQ2nP9w') {
+    return HtmlService.createHtmlOutput(
+      '<p style="font-family:sans-serif;margin:40px;color:#555;">このページにはアクセスできません。</p>'
+    ).setTitle('アクセス拒否');
+  }
+
   return HtmlService
     .createTemplateFromFile('editor')
     .evaluate()
