@@ -24,6 +24,7 @@
 englishtest/
 ├── code.js               # メインバックエンド（約4400行）教師向け API・データ管理
 ├── code_tts.js           # TTS音声生成・GitHubアップロード（Google Cloud TTS連携）
+├── code_init.js          # 初期セットアップ・年度リソース自動作成
 ├── subcode.js            # 生徒向けサブバックエンド（約485行）※ GAS 未デプロイ
 ├── editor.html           # 教師用エディタ UI（約8500行）
 ├── index.html            # 生徒用発音練習 UI（約976行）
@@ -405,6 +406,16 @@ fukisokuDataMap[meaningMasterId] = {
 
 ---
 
+### code_init.js（初期セットアップ）
+
+| 関数 | 役割 |
+|------|------|
+| `validateScriptProperties()` | 必須 Script Properties の存在確認・マスターシートアクセスチェック |
+| `initializeYearResources(year)` | 年度リソース（フォルダ・スプレッドシート・シート）の自動作成（べき等） |
+| `initializeAllResources(year)` | メインエントリポイント：検証 + リソース作成 |
+
+---
+
 ### subcode.js（生徒向け別 GAS プロジェクト用）
 
 > ⚠️ `.claspignore` で除外済み。変更した場合は別途手動で GAS に反映が必要。
@@ -585,6 +596,7 @@ code_data.js      — 入試対策データ + マスターCRUD + レッスン順
 code_pdf.js       — PDF生成全関数（generateAndSavePdf〜generatePdfPage）
 code_student.js   — 生徒向け全API（getStudentYears〜extractQuestionsFromSheet）
 code_tts.js       — Google Cloud TTS音声生成 + GitHubアップロード + 一括生成
+code_init.js      — 初期化・セットアップ（validateScriptProperties, initializeYearResources, initializeAllResources）
 ```
 
 ### 新しいコードを追加するとき
