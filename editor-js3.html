@@ -1,0 +1,1376 @@
+function renderTableSpecialLayout() {
+  const table = document.getElementById('wordTable');
+  table.innerHTML = '';
+
+  if (state.lesson === '曜日・月・季節・代名詞') {
+    renderSpecialLayout_DayMonthSeason();
+  } else if (state.lesson && state.lesson.includes('不規則動詞①')) {
+    renderSpecialLayout_Fukisoku1();
+  } else if (state.lesson && state.lesson.includes('不規則動詞②')) {
+    renderSpecialLayout_Fukisoku2();
+  } else {
+    renderTable();
+  }
+}
+
+/**
+ * 曜日・月・季節・代名詞 レイアウト
+ * 上段：3列のテーブル（10行）で単語・英文を配置可能
+ * 下段：代名詞テーブル（固定）
+ * ✅ 修正：tableパラメータを受け取る
+ */
+function renderSpecialLayout_DayMonthSeason(table) {
+
+  // tableData が未定義・非配列でも安全にする
+  const safeTableData = Array.isArray(tableData) ? tableData : [];
+  const upperTableData = safeTableData.slice(0, 10);
+
+  const upperTableDiv = document.createElement('div');
+  upperTableDiv.style.cssText = `
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  `;
+
+  const upperTitle = document.createElement('div');
+  upperTitle.style.cssText = `
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    color: #333;
+  `;
+  upperTitle.textContent = '曜日・月・季節';
+  upperTableDiv.appendChild(upperTitle);
+
+  const upperTable = document.createElement('table');
+  upperTable.style.cssText = `
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+  `;
+
+  for (let rowIdx = 0; rowIdx < 10; rowIdx++) {
+
+    // 行データがなくても必ず配列になる
+    const row = upperTableData[rowIdx] || [];
+    const tr = document.createElement('tr');
+    tr.style.height = '60px';
+
+    const sentenceCell = row.find(c => c && c.type === 'sentence');
+
+    if (sentenceCell) {
+
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.style.cssText = `
+        border: 1px solid #999;
+        padding: 8px;
+        vertical-align: top;
+        background-color: #fff9e6;
+        position: relative;
+        overflow: hidden;
+        min-width: 100px;
+      `;
+
+      if (
+        rowIdx === rightPanelFocusCell.rowIdx &&
+        rightPanelFocusCell.colIdx === 0
+      ) {
+        td.style.backgroundColor = '#ffeb3b';
+        td.style.borderColor = '#f57f17';
+      }
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'cell-content';
+      contentDiv.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        cursor: grab;
+        height: 100%;
+      `;
+      contentDiv.draggable = true;
+
+      const japaneseDiv = document.createElement('div');
+      japaneseDiv.className = 'cell-japanese';
+      japaneseDiv.textContent = sentenceCell.japanese || '';
+
+      const englishDiv = document.createElement('div');
+      englishDiv.className = 'cell-english';
+      englishDiv.textContent = sentenceCell.text || '';
+
+      const pronunciationDiv = document.createElement('div');
+      pronunciationDiv.className = 'cell-pronunciation';
+      pronunciationDiv.textContent = sentenceCell.pronunciation || '';
+
+      contentDiv.appendChild(japaneseDiv);
+      contentDiv.appendChild(englishDiv);
+      contentDiv.appendChild(pronunciationDiv);
+      td.appendChild(contentDiv);
+
+      td.addEventListener('click', () => {
+        rightPanelFocusCell = { rowIdx, colIdx: 0 };
+        renderTable();
+      });
+
+      setupSentenceCellDragDrop(td, contentDiv, sentenceCell, rowIdx);
+      tr.appendChild(td);
+
+    } else {
+
+      for (let colIdx = 0; colIdx < 3; colIdx++) {
+
+        const cell = row[colIdx];
+        const td = document.createElement('td');
+        td.style.cssText = `
+          border: 1px solid #999;
+          padding: 8px;
+          vertical-align: top;
+          background-color: #fff;
+          position: relative;
+          overflow: hidden;
+          min-width: 100px;
+          width: 33.333%;
+        `;
+
+        if (cell) {
+
+          td.style.backgroundColor = '#fffacd';
+
+          if (
+            rowIdx === rightPanelFocusCell.rowIdx &&
+            colIdx === rightPanelFocusCell.colIdx
+          ) {
+            td.style.backgroundColor = '#ffeb3b';
+            td.style.borderColor = '#f57f17';
+          }
+
+          const contentDiv = document.createElement('div');
+          contentDiv.className = 'cell-content';
+          contentDiv.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            cursor: grab;
+            height: 100%;
+          `;
+          contentDiv.draggable = true;
+
+          const japaneseDiv = document.createElement('div');
+          japaneseDiv.className = 'cell-japanese';
+          japaneseDiv.textContent = cell.japanese || '';
+
+          const englishDiv = document.createElement('div');
+          englishDiv.className = 'cell-english';
+          englishDiv.textContent = cell.english || '';
+
+          const pronunciationDiv = document.createElement('div');
+          pronunciationDiv.className = 'cell-pronunciation';
+          pronunciationDiv.textContent = cell.pronunciation || '';
+
+          contentDiv.appendChild(japaneseDiv);
+          contentDiv.appendChild(englishDiv);
+          contentDiv.appendChild(pronunciationDiv);
+          td.appendChild(contentDiv);
+
+          td.addEventListener('click', () => {
+            rightPanelFocusCell = { rowIdx, colIdx };
+            renderTable();
+          });
+
+          setupWordCellDragDrop(td, contentDiv, cell, rowIdx, colIdx);
+
+        } else {
+
+          if (
+            rowIdx === rightPanelFocusCell.rowIdx &&
+            colIdx === rightPanelFocusCell.colIdx
+          ) {
+            td.style.backgroundColor = '#ffeb3b';
+            td.style.borderColor = '#f57f17';
+          }
+
+          setupEmptyCellDragDrop(td, rowIdx, colIdx);
+
+          td.addEventListener('click', () => {
+            rightPanelFocusCell = { rowIdx, colIdx };
+            renderTable();
+          });
+        }
+
+        tr.appendChild(td);
+      }
+    }
+
+    upperTable.appendChild(tr);
+  }
+
+  upperTableDiv.appendChild(upperTable);
+  table.appendChild(upperTableDiv);
+
+  const lowerTableDiv = document.createElement('div');
+  lowerTableDiv.style.cssText = `
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  `;
+
+  const lowerTitle = document.createElement('div');
+  lowerTitle.style.cssText = `
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    color: #333;
+  `;
+  lowerTitle.textContent = '代名詞';
+  lowerTableDiv.appendChild(lowerTitle);
+
+  const pronounTableHtml = renderPronounTable();
+  lowerTableDiv.appendChild(pronounTableHtml);
+
+  table.appendChild(lowerTableDiv);
+
+  updateCounts();
+}
+
+/**
+ * ✅ 新規関数：特殊レイアウトのセルドラッグ&ドロップ処理
+ */
+
+function setupSpecialLayoutCellDragDrop(cellDiv, cell, colIdx, rowIdx) {
+  cellDiv.addEventListener('dragstart', (e) => {
+    draggedItem = null;
+    draggedFromTable = {
+      rowIdx: rowIdx,
+      colIdx: colIdx,
+      isFromTable: true,
+      isSpecialLayout: true,
+      cell: cell
+    };
+    cellDiv.style.opacity = '0.5';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  cellDiv.addEventListener('dragend', () => {
+    cellDiv.style.opacity = '1';
+  });
+}
+
+/**
+ * ✅ 修正版：特殊レイアウト用の空セルドラッグ&ドロップ処理
+ * 左パネルからのドラッグを受け取る
+ */
+function setupSpecialLayoutEmptyCellDragDrop(cellDiv, colIdx, rowIdx) {
+  cellDiv.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    cellDiv.classList.add('drag-over');
+    cellDiv.style.backgroundColor = '#ffeb3b';
+  });
+
+  cellDiv.addEventListener('dragleave', () => {
+    cellDiv.classList.remove('drag-over');
+    cellDiv.style.backgroundColor = '#fffacd';
+  });
+
+  cellDiv.addEventListener('drop', (e) => {
+    e.preventDefault();
+    cellDiv.classList.remove('drag-over');
+
+    if (!draggedItem) return;
+
+    // ✅ 左パネルからのドラッグを処理
+    if (draggedItem.type === 'word') {
+      const wordId = draggedItem.id || draggedItem.data.id;
+      
+      if (!wordId) {
+        console.error('⚠️ WARNING: Word ID が取得できません', draggedItem);
+        alert('⚠️ エラー：単語のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      // tableDataに追加（特殊レイアウト用に最初の行に追加）
+      const firstEmptyIdx = tableData.findIndex(row => row[0] === null);
+      if (firstEmptyIdx === -1) {
+        alert('❌ 配置可能なセルがありません');
+        return;
+      }
+
+      tableData[firstEmptyIdx][0] = {
+        type: 'word',
+        english: draggedItem.data.english,
+        japanese: draggedItem.data.japanese,
+        pronunciation: draggedItem.data.pronunciation || '',
+        masterWordId: wordId,
+        cellId: calculateCellId(firstEmptyIdx, 0)
+      };
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+
+    } else if (draggedItem.type === 'sentence') {
+      const sentenceId = draggedItem.id || draggedItem.data.id;
+      
+      if (!sentenceId) {
+        console.error('⚠️ WARNING: Sentence ID が取得できません', draggedItem);
+        alert('⚠️ エラー：英文のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      // tableDataに追加
+      const firstEmptyIdx = tableData.findIndex(row => row[0] === null);
+      if (firstEmptyIdx === -1) {
+        alert('❌ 配置可能な行がありません');
+        return;
+      }
+
+      tableData[firstEmptyIdx][0] = {
+        type: 'sentence',
+        text: draggedItem.data.text,
+        pronunciation: draggedItem.data.pronunciation || '',
+        japanese: draggedItem.data.japanese || '',
+        masterSentenceId: sentenceId,
+        cellId: calculateCellId(firstEmptyIdx, 0)
+      };
+      tableData[firstEmptyIdx][1] = null;
+      tableData[firstEmptyIdx][2] = null;
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+    }
+  });
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 不規則動詞の過去形・過去分詞形を自動取得して入力
+ * ════════════════════════════════════════════════════════
+ */
+/**
+ * ✅ 新規関数：単語から対応する過去形・過去分詞形を取得
+ * マスターデータの日本語部分を検索して、過去形・過去分詞形を探す
+ * 
+ * @param {Object} word - 現在形の単語オブジェクト
+ * @returns {Object} { past: {word}, pastParticiple: {word} } または { past: null, pastParticiple: null }
+ */
+function getIrregularVerbForms(word) {
+  const baseEnglish = word.english.trim().toLowerCase();
+
+  // ✅ 過去形と過去分詞が同じ場合（ドット・カンマ・スペース柔軟対応、プレフィックスオプション）
+  const combinedWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去形[・，、\\-\\s]*過去分詞形`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  if (combinedWord) {
+    return {
+      past: combinedWord,
+      pastParticiple: combinedWord
+    };
+  }
+
+  // ✅ 過去形を探す（プレフィックスオプション、終端柔軟対応）
+  const pastWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去形[・，、\\-\\s]*$`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  // ✅ 過去分詞形を探す（プレフィックスオプション、スペース柔軟対応）
+  const pastParticipleWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去分詞形`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  return {
+    past: pastWord || null,
+    pastParticiple: pastParticipleWord || null
+  };
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 【新規追加関数】Part 1
+ * 不規則動詞対応：データ変換関数
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * ✅ 新規関数：fukisokuDataMap を tableData に変換
+ * スプレッドシートから読み込んだデータを、画面描画用に変換
+ * 
+ * @param {Object} fukisokuDataMap - { 0: {...}, 1: {...}, ... }
+ * @param {boolean} isFukisoku1 - 不規則動詞①かどうか
+ * スプレッドシートから読み込んだ14列・18列のデータを tableData に変換
+ */
+function convertFukisokuMapToTableData(fukisokuDataMap, isFukisoku1) {
+  const maxRows = isFukisoku1 ? 22 : 25;
+  const tableData = Array(maxRows).fill(null).map(() => [null, null, null]);
+  
+  Object.entries(fukisokuDataMap).forEach(([rowIdx, data]) => {
+    const r = Number(rowIdx);
+    if (r < 0 || r >= maxRows) return;
+    
+    // ✅ GAS側から読み込んだワードID（[0]番目）を保持
+    tableData[r][0] = {
+      type: 'word',
+      english: data.present || '',
+      japanese: data.meaning || '',
+      pronunciation: data.presentPronunciation || '',
+      masterWordId: data.meaningMasterId,  // ✅ ワードID
+      cellId: data.cellId || calculateCellId(r, 0)
+    };
+    tableData[r][1] = null;
+    tableData[r][2] = null;
+  });
+  
+  console.log(`✅ convertFukisokuMapToTableData: ${maxRows}行に変換完了`);
+  return tableData;
+}
+
+/**
+ * ✅ 完全修正版：convertTableDataToFukisokuMap()
+ * 
+ * 不規則動詞①：14列
+ * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, 
+ * [5] lesson, [6] cell_id, [7] past_word_id, [8] past_english, 
+ * [9] past_pronunciation, [10] past_audio
+ * 
+ * 不規則動詞②：18列
+ * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio,
+ * [5] lesson, [6] cell_id, [7] past_word_id, [8] past_english,
+ * [9] past_pronunciation, [10] past_audio, [11] past_participle_word_id,
+ * [12] past_participle_english, [13] past_participle_pronunciation, [14] past_participle_audio
+ */
+function convertTableDataToFukisokuMap(tableData, isFukisoku1) {
+  const fukisokuDataMap = {};
+  
+  tableData.forEach((row, rowIdx) => {
+    const cell = row[0];
+    if (!cell || cell.type !== 'word') {
+      return;
+    }
+    
+    if (isFukisoku1) {
+      // 不規則動詞①：以下の11個のフィールドを全て指定（GAS側で [5] lesson と [4] audio を追加）
+      fukisokuDataMap[rowIdx] = {
+        // [0] word_id
+        meaningMasterId: cell.masterWordId || '',
+        // [1] english
+        present: cell.english || '',
+        // [2] pronunciation
+        presentPronunciation: cell.pronunciation || '',
+        // [3] japanese
+        meaning: cell.japanese || '',
+        // [4] audio - GAS側で取得するためここは空でOK
+        // [5] lesson - GAS側で追加
+        // [6] cell_id
+        cellId: cell.cellId || calculateCellId(rowIdx, 0),
+        // [7] past_word_id
+        pastMasterId: null,
+        // [8] past_english
+        past: '',
+        // [9] past_pronunciation
+        pastPronunciation: '',
+        // [10] past_audio - GAS側で取得するためここは空でOK
+      };
+    } else {
+      // 不規則動詞②：以下の15個のフィールドを全て指定
+      fukisokuDataMap[rowIdx] = {
+        // [0] word_id
+        meaningMasterId: cell.masterWordId || '',
+        // [1] english
+        present: cell.english || '',
+        // [2] pronunciation
+        presentPronunciation: cell.pronunciation || '',
+        // [3] japanese
+        meaning: cell.japanese || '',
+        // [4] audio - GAS側で取得するためここは空でOK
+        // [5] lesson - GAS側で追加
+        // [6] cell_id
+        cellId: cell.cellId || calculateCellId(rowIdx, 0),
+        // [7] past_word_id
+        pastMasterId: null,
+        // [8] past_english
+        past: '',
+        // [9] past_pronunciation
+        pastPronunciation: '',
+        // [10] past_audio - GAS側で取得するためここは空でOK
+        // [11] past_participle_word_id
+        pastPartMasterId: null,
+        // [12] past_participle_english
+        pastPart: '',
+        // [13] past_participle_pronunciation
+        pastPartPronunciation: '',
+        // [14] past_participle_audio - GAS側で取得するためここは空でOK
+      };
+    }
+  });
+  
+  console.log(`✅ convertTableDataToFukisokuMap: ${Object.keys(fukisokuDataMap).length}行を変換完了`);
+  console.log('fukisokuDataMap:', fukisokuDataMap);
+  return fukisokuDataMap;
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 【新規追加関数】Part 2
+ * 不規則動詞対応：テーブル描画関数
+ * ════════════════════════════════════════════════════════
+ */
+/**
+ * ✅ 修正版：不規則動詞テーブルを描画（ドラッグ&ドロップ + 過去形自動入力 完全対応）
+ * @param {HTMLElement} table - 描画対象のtable要素
+ * @param {Array} tableData - テーブルデータ（22行 or 25行 × 3列）
+ * @param {boolean} isFukisoku1 - 不規則動詞①かどうか
+ * @param {Object} fukisokuDataFromSheet - スプレッドシートから読み込んだ過去形・過去分詞データ
+ */
+function renderFukisokuTable(table, tableData, isFukisoku1, fukisokuDataFromSheet = {}) {
+  console.log('=== renderFukisokuTable START ===');
+  console.log('tableData length:', tableData.length);
+  console.log('isFukisoku1:', isFukisoku1);
+  
+  table.innerHTML = '';
+
+  table.style.cssText = `
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+  `;
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  headerRow.style.height = '40px';
+
+  const headers = isFukisoku1
+    ? ['番号', '意味', '現在形', '過去形']
+    : ['番号', '意味', '現在形', '過去形', '過去分詞'];
+
+  const numContentCols = isFukisoku1 ? 3 : 4;
+
+  headers.forEach((label, i) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    
+    let width;
+    if (i === 0) {
+      width = '40px';
+    } else if (i === 1) {
+      width = '25%';
+    } else {
+      width = `${75 / numContentCols}%`;
+    }
+
+    th.style.cssText = `
+      border: 1px solid #999;
+      padding: 10px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: bold;
+      background-color: #f0f0f0;
+      vertical-align: middle;
+      width: ${width};
+    `;
+    headerRow.appendChild(th);
+  });
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  tbody.id = 'fukisokuTableBody';
+
+  for (let rowIdx = 0; rowIdx < tableData.length; rowIdx++) {
+    const row = tableData[rowIdx];
+    const cell = row[0];
+
+    const tr = document.createElement('tr');
+    tr.dataset.rowIdx = rowIdx;
+    tr.style.height = '60px';
+
+    const tdNo = document.createElement('td');
+    tdNo.textContent = rowIdx + 1;
+    tdNo.style.cssText = `
+      border: 1px solid #999;
+      padding: 8px;
+      text-align: center;
+      font-size: 11px;
+      width: 40px;
+      vertical-align: top;
+      background-color: #f9f9f9;
+    `;
+    tr.appendChild(tdNo);
+
+    if (cell && cell.type === 'word') {
+      const tdMeaning = document.createElement('td');
+      tdMeaning.style.cssText = `
+        border: 1px solid #999;
+        padding: 8px;
+        font-size: 11px;
+        background-color: #fffacd;
+        vertical-align: top;
+        cursor: grab;
+        user-select: none;
+        position: relative;
+        overflow: hidden;
+        width: 25%;
+      `;
+
+      const meaningDiv = document.createElement('div');
+      meaningDiv.className = 'fukisoku-meaning';
+      meaningDiv.draggable = true;
+      meaningDiv.textContent = cell.japanese || '';
+      meaningDiv.dataset.rowIdx = rowIdx;
+      meaningDiv.style.cssText = `
+        cursor: grab;
+        user-select: none;
+        word-break: break-all;
+      `;
+
+      meaningDiv.addEventListener('dragstart', (e) => {
+        draggedFromTable = {
+          rowIdx: rowIdx,
+          isFromTable: true,
+          isFukisokuTable: true,
+          cellType: 'fukisokuMeaning',
+          isFukisoku1: isFukisoku1
+        };
+        meaningDiv.style.opacity = '0.6';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      meaningDiv.addEventListener('dragend', () => {
+        meaningDiv.style.opacity = '1';
+      });
+
+      tdMeaning.appendChild(meaningDiv);
+      tr.appendChild(tdMeaning);
+
+      const tdPresent = document.createElement('td');
+      tdPresent.style.cssText = `
+        border: 1px solid #999;
+        padding: 8px;
+        font-size: 11px;
+        vertical-align: top;
+        background-color: #fff;
+        width: ${75 / numContentCols}%;
+      `;
+      tdPresent.innerHTML = `
+        <div style="font-weight: bold; color: #1976D2; word-break: break-all;">
+          ${escapeHtml(cell.english || '')}
+        </div>
+        <div style="font-size: 9px; color: #666; margin-top: 2px;">
+          ${escapeHtml(cell.pronunciation || '')}
+        </div>
+      `;
+      tr.appendChild(tdPresent);
+
+      // 過去形（変更なし）
+      const tdPast = document.createElement('td');
+      tdPast.style.cssText = `
+        border: 1px solid #999;
+        padding: 8px;
+        font-size: 11px;
+        vertical-align: top;
+        background-color: #fff;
+        width: ${75 / numContentCols}%;
+      `;
+
+      const pastData = fukisokuDataFromSheet[rowIdx];
+      if (pastData && pastData.past) {
+        tdPast.innerHTML = `
+          <div style="font-weight: bold; color: #1976D2; word-break: break-all;">
+            ${escapeHtml(pastData.past)}
+          </div>
+          <div style="font-size: 9px; color: #666; margin-top: 2px;">
+            ${escapeHtml(pastData.pastPronunciation || '')}
+          </div>
+        `;
+      } else {
+        tdPast.innerHTML = '<div style="color: #999; font-size: 11px;">（記入欄）</div>';
+      }
+      tr.appendChild(tdPast);
+
+      // 過去分詞形（強化：初期データ優先 + メモリフォールバック）
+      if (!isFukisoku1) {
+        const tdParticiple = document.createElement('td');
+        tdParticiple.style.cssText = `
+          border: 1px solid #999;
+          padding: 8px;
+          font-size: 11px;
+          vertical-align: top;
+          background-color: #fff;
+          width: ${75 / numContentCols}%;
+        `;
+
+        // 初期ロードデータ（スプレッドシート由来）を優先
+        let pastPartData = fukisokuDataFromSheet[rowIdx];
+
+        // 初期データに過去分詞がなければメモリデータをフォールバック
+        if (!pastPartData || !pastPartData.pastPart) {
+          const memoryMap = window.fukisoku2DataMap || {};
+          pastPartData = memoryMap[rowIdx];
+        }
+
+        if (pastPartData && pastPartData.pastPart) {
+          tdParticiple.innerHTML = `
+            <div style="font-weight: bold; color: #1976D2; word-break: break-all;">
+              ${escapeHtml(pastPartData.pastPart)}
+            </div>
+            <div style="font-size: 9px; color: #666; margin-top: 2px;">
+              ${escapeHtml(pastPartData.pastPartPronunciation || '')}
+            </div>
+          `;
+        } else {
+          tdParticiple.innerHTML = '<div style="color: #999; font-size: 11px;">（記入欄）</div>';
+        }
+        tr.appendChild(tdParticiple);
+      }
+    } else {
+      const numCols = isFukisoku1 ? 4 : 5;
+      for (let i = 1; i < numCols; i++) {
+        const td = document.createElement('td');
+        let width;
+        if (i === 1) {
+          width = '25%';
+        } else {
+          width = `${75 / numContentCols}%`;
+        }
+        td.style.cssText = `
+          border: 1px solid #999;
+          padding: 8px;
+          font-size: 11px;
+          vertical-align: top;
+          background-color: #fff;
+          position: relative;
+          overflow: hidden;
+          width: ${width};
+        `;
+        tr.appendChild(td);
+      }
+    }
+
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+
+  // ════════════════════════════════════════
+  // ドラッグ&ドロップイベント
+  // ════════════════════════════════════════
+
+tbody.addEventListener('dragenter', (e) => {
+    console.log('🔥 dragenter');
+    e.preventDefault();
+  });
+
+  tbody.addEventListener('dragover', (e) => {
+    if (draggedItem || draggedFromTable) {
+      console.log('🔥 dragover - draggedItem:', draggedItem ? draggedItem.type : 'null', ', draggedFromTable:', draggedFromTable ? 'set' : 'null');
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  });
+
+  tbody.addEventListener('drop', (e) => {
+    console.log('🔥 drop detected');
+    e.preventDefault();
+    e.stopPropagation();
+
+    console.log('draggedItem:', draggedItem);
+    console.log('draggedFromTable:', draggedFromTable);
+
+    let targetRow = e.target.closest('tr[data-rowIdx]');
+    
+    console.log('targetRow from closest:', targetRow);
+
+    if (!targetRow) {
+      console.log('⚠️ targetRow not found by closest, searching all rows...');
+      
+      const allRows = Array.from(tbody.querySelectorAll('tr[data-rowIdx]'));
+      console.log('Found rows:', allRows.length);
+      
+      if (allRows.length === 0) {
+        const allTrs = Array.from(tbody.querySelectorAll('tr'));
+        console.log('Fallback: all tr elements:', allTrs.length);
+        
+        if (allTrs.length > 0) {
+          const dropY = e.clientY;
+          let closestRow = allTrs[0];
+          let minDistance = Infinity;
+          
+          allTrs.forEach((row, idx) => {
+            const rect = row.getBoundingClientRect();
+            const rowCenter = rect.top + rect.height / 2;
+            const distance = Math.abs(dropY - rowCenter);
+            
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestRow = row;
+            }
+          });
+          
+          if (closestRow) {
+            console.log('✅ Found closest row by Y position (fallback)');
+            targetRow = closestRow;
+          }
+        }
+      } else {
+        const dropY = e.clientY;
+        let closestRow = null;
+        let minDistance = Infinity;
+        
+        allRows.forEach(row => {
+          const rect = row.getBoundingClientRect();
+          const rowCenter = rect.top + rect.height / 2;
+          const distance = Math.abs(dropY - rowCenter);
+          
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestRow = row;
+          }
+        });
+        
+        if (closestRow) {
+          console.log('✅ Found closest row by Y position');
+          targetRow = closestRow;
+        }
+      }
+    }
+
+    if (!targetRow) {
+      console.log('❌ targetRow still not found - dropping to first row as fallback');
+      
+      const firstRow = tbody.querySelector('tr');
+      if (firstRow) {
+        targetRow = firstRow;
+        console.log('✅ Using first row as fallback');
+      } else {
+        console.log('❌ No rows found at all - aborting');
+        draggedItem = null;
+        draggedFromTable = null;
+        return;
+      }
+    }
+
+    let rowIdx = Number(targetRow.dataset.rowIdx);
+    
+    if (isNaN(rowIdx)) {
+      const allTrs = Array.from(tbody.querySelectorAll('tr'));
+      rowIdx = allTrs.indexOf(targetRow);
+      console.log('rowIdx from position:', rowIdx);
+      
+      if (rowIdx === -1) {
+        console.log('❌ Could not determine row index');
+        draggedItem = null;
+        draggedFromTable = null;
+        return;
+      }
+    }
+
+    console.log('rowIdx:', rowIdx);
+    
+    if (isNaN(rowIdx) || rowIdx < 0) {
+      console.log('❌ Invalid rowIdx');
+      draggedItem = null;
+      draggedFromTable = null;
+      return;
+    }
+
+    // ✅ ケース1: 左パネルからのドラッグ（draggedItem が設定されている）
+    if (draggedItem && draggedItem.type === 'word') {
+      console.log('✅ Left panel word drag detected');
+      const word = draggedItem.data;
+      const wordId = draggedItem.id || word.id;
+
+      if (!tableData[rowIdx]) {
+        tableData[rowIdx] = [null, null, null];
+      }
+
+      tableData[rowIdx][0] = {
+        type: 'word',
+        english: word.english,
+        japanese: word.japanese,
+        pronunciation: word.pronunciation || '',
+        masterWordId: wordId,
+        cellId: calculateCellId(rowIdx, 0)
+      };
+
+      tableData[rowIdx][1] = null;
+      tableData[rowIdx][2] = null;
+
+      hasChanges = true;
+      const saveBtn = document.getElementById('saveBtn');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+      }
+
+      console.log('✅ Word placed at row:', rowIdx);
+
+      // ✅ 過去形・過去分詞を自動検索して fukisokuDataMap に追加
+      const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
+      const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+
+      if (isFukisoku1Check || isFukisoku2Check) {
+        const fukisokuDataMap = isFukisoku1Check 
+          ? (window.fukisoku1DataMap || {}) 
+          : (window.fukisoku2DataMap || {});
+
+        console.log('📌 Searching for past forms of:', word.english);
+
+        // 過去形・過去分詞を自動検索
+        const { past, pastParticiple } = getIrregularVerbForms(word);
+
+        console.log('📌 Past forms found:');
+        console.log('  Past:', past ? past.english : 'not found');
+        console.log('  Past Participle:', pastParticiple ? pastParticiple.english : 'not found');
+
+        // fukisokuDataMap のこの行を更新
+        if (!fukisokuDataMap[rowIdx]) {
+          fukisokuDataMap[rowIdx] = {
+            meaningMasterId: wordId,
+            present: word.english,
+            presentPronunciation: word.pronunciation || '',
+            presentAudio: '',
+            presentMasterId: wordId,
+            meaning: word.japanese,
+            cellId: calculateCellId(rowIdx, 0),
+            past: past ? past.english : '',
+            pastPronunciation: past ? (past.pronunciation || '') : '',
+            pastAudio: '',
+            pastMasterId: past ? past.id : null
+          };
+
+          // 不規則動詞②の場合は過去分詞も追加
+          if (isFukisoku2Check) {
+            fukisokuDataMap[rowIdx].pastPart = pastParticiple ? pastParticiple.english : '';
+            fukisokuDataMap[rowIdx].pastPartPronunciation = pastParticiple ? (pastParticiple.pronunciation || '') : '';
+            fukisokuDataMap[rowIdx].pastPartAudio = '';
+            fukisokuDataMap[rowIdx].pastPartMasterId = pastParticiple ? pastParticiple.id : null;
+          }
+        } else {
+          // 既存のデータを更新（現在形と過去形のみ）
+          fukisokuDataMap[rowIdx].presentMasterId = wordId;
+          fukisokuDataMap[rowIdx].present = word.english;
+          fukisokuDataMap[rowIdx].presentPronunciation = word.pronunciation || '';
+          fukisokuDataMap[rowIdx].meaning = word.japanese;
+          fukisokuDataMap[rowIdx].meaningMasterId = wordId;
+          
+          // 過去形がまだ入力されていなければ自動入力
+          if (!fukisokuDataMap[rowIdx].past && past) {
+            fukisokuDataMap[rowIdx].past = past.english;
+            fukisokuDataMap[rowIdx].pastPronunciation = past.pronunciation || '';
+            fukisokuDataMap[rowIdx].pastMasterId = past.id;
+          }
+
+          // 過去分詞②の場合
+          if (isFukisoku2Check && !fukisokuDataMap[rowIdx].pastPart && pastParticiple) {
+            fukisokuDataMap[rowIdx].pastPart = pastParticiple.english;
+            fukisokuDataMap[rowIdx].pastPartPronunciation = pastParticiple.pronunciation || '';
+            fukisokuDataMap[rowIdx].pastPartMasterId = pastParticiple.id;
+          }
+        }
+
+        // メモリに保存
+        if (isFukisoku1Check) {
+          window.fukisoku1DataMap = fukisokuDataMap;
+        } else {
+          window.fukisoku2DataMap = fukisokuDataMap;
+        }
+
+        console.log('✅ fukisokuDataMap updated with past forms');
+      }
+
+      draggedItem = null;
+      draggedFromTable = null;
+      renderTable();
+      
+      // ✅ ここに追加：検索欄をクリア
+      clearSearchAfterDrop();
+      
+      return;
+    }
+
+    // ✅ ケース2: テーブル内のドラッグ（draggedFromTable が設定されている）
+    // ✅ 修正版：右パネル内での行入れ替え処理を追加
+    if (draggedFromTable && draggedFromTable.isFukisokuTable) {
+      console.log('✅ Fukisoku table row swap detected');
+    
+      const draggedRowIdx = draggedFromTable.rowIdx;
+    
+      // ✅ 修正：同じ行へのドロップは無視
+      if (draggedRowIdx === rowIdx) {
+        draggedFromTable = null;
+        return;
+      }
+
+      // ✅ 修正版：行を入れ替え（tableData と fukisokuDataMap の両方を同期）
+      if (draggedRowIdx < rowIdx) {
+        // ドラッグ元が上、ドロップ先が下の場合
+        for (let i = draggedRowIdx; i < rowIdx; i++) {
+          // tableData を入れ替え
+          const temp = tableData[i];
+          tableData[i] = tableData[i + 1];
+          tableData[i + 1] = temp;
+
+          // fukisokuDataMap も入れ替え
+          const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
+          const fukisokuDataMap = isFukisoku1Check 
+            ? (window.fukisoku1DataMap || {}) 
+            : (window.fukisoku2DataMap || {});
+
+          const tempData = fukisokuDataMap[i];
+          fukisokuDataMap[i] = fukisokuDataMap[i + 1];
+          fukisokuDataMap[i + 1] = tempData;
+
+          if (isFukisoku1Check) {
+            window.fukisoku1DataMap = fukisokuDataMap;
+          } else {
+            window.fukisoku2DataMap = fukisokuDataMap;
+          }
+        }
+      } else {
+        // ドラッグ元が下、ドロップ先が上の場合
+        for (let i = draggedRowIdx; i > rowIdx; i--) {
+          // tableData を入れ替え
+          const temp = tableData[i];
+          tableData[i] = tableData[i - 1];
+          tableData[i - 1] = temp;
+
+          // fukisokuDataMap も入れ替え
+          const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
+          const fukisokuDataMap = isFukisoku1Check 
+            ? (window.fukisoku1DataMap || {}) 
+            : (window.fukisoku2DataMap || {});
+
+          const tempData = fukisokuDataMap[i];
+          fukisokuDataMap[i] = fukisokuDataMap[i - 1];
+          fukisokuDataMap[i - 1] = tempData;
+
+          if (isFukisoku1Check) {
+            window.fukisoku1DataMap = fukisokuDataMap;
+          } else {
+            window.fukisoku2DataMap = fukisokuDataMap;
+          }
+        }
+      }
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+
+      console.log('✅ 行を入れ替えました（tableDataとfukisokuDataMapを同期）');
+      draggedItem = null;
+      draggedFromTable = null;
+      renderTable();
+      return;
+    }
+
+    console.log('❌ No valid drag source detected');
+    draggedItem = null;
+  });
+
+  console.log('=== renderFukisokuTable END ===');
+
+  // 左パネルへのドラッグ&ドロップで削除
+  setupLeftPanelDragDropForFukisokuDelete();
+  blockTableDropOnlyForLeftPanel();
+}
+
+/**
+ * ✅ 完全修正版：左パネルへのドラッグ&ドロップで削除（不規則動詞用）
+ * + テーブル内での行の入れ替えも可能
+ */
+function setupLeftPanelDragDropForFukisokuDelete() {
+  const leftPanel = document.getElementById('leftPanel');
+  if (!leftPanel) {
+    console.error('❌ leftPanel not found');
+    return;
+  }
+
+  // ✅ 既存のリスナーをクリーンアップ
+  if (leftPanel._fukisokuDeleteListeners) {
+    leftPanel._fukisokuDeleteListeners.forEach(({ event, listener, target }) => {
+      target.removeEventListener(event, listener);
+    });
+    leftPanel._fukisokuDeleteListeners = [];
+  }
+
+  const listeners = [];
+
+  // ✅ dragenter: ドラッグ中のデータを確認
+  const dragEnterListener = (e) => {
+    if (draggedFromTable && draggedFromTable.isFukisokuTable) {
+      console.log('✅ 🎯 dragenter on leftPanel - Drag from fukisoku table detected');
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  // ✅ dragover: 視覚的フィードバック＋伝播を止める
+  const dragOverListener = (e) => {
+    if (draggedFromTable && draggedFromTable.isFukisokuTable) {
+      console.log('✅ 🔄 dragover on leftPanel');
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      
+      leftPanel.style.backgroundColor = '#ffcccc';
+      leftPanel.style.borderColor = '#ff6b6b';
+      leftPanel.style.borderWidth = '2px';
+    }
+  };
+
+  // ✅ dragleave: 視覚的フィードバックをリセット
+  const dragLeaveListener = (e) => {
+    if (e.relatedTarget && leftPanel.contains(e.relatedTarget)) {
+      return;
+    }
+    
+    console.log('✅ 📍 dragleave from leftPanel');
+    leftPanel.style.backgroundColor = '';
+    leftPanel.style.borderColor = '';
+    leftPanel.style.borderWidth = '';
+  };
+
+  // ✅ drop: 削除処理（capture フェーズで先に処理するのが重要！）
+  const dropListener = (e) => {
+    console.log('✅ 💥 DROP on leftPanel!!!');
+    console.log('draggedFromTable:', draggedFromTable);
+    
+    // ✅ draggedFromTable が設定されていない場合はスキップ
+    if (!draggedFromTable || !draggedFromTable.isFukisokuTable) {
+      console.log('⚠️ Drop on leftPanel but draggedFromTable is not set - skipping');
+      return;
+    }
+
+    // ✅ 絶対に伝播を止める（キャプチャフェーズでも）
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    // ✅ 視覚的フィードバックをリセット
+    leftPanel.style.backgroundColor = '';
+    leftPanel.style.borderColor = '';
+    leftPanel.style.borderWidth = '';
+
+    // ✅ 削除対象の行インデックス
+    const rowIdx = draggedFromTable.rowIdx;
+    console.log('🗑️ Deleting row:', rowIdx);
+
+    // ✅ tableData から削除
+    if (tableData && tableData[rowIdx]) {
+      tableData[rowIdx] = [null, null, null];
+      console.log('✅ Cleared tableData[' + rowIdx + ']');
+    }
+
+    // ✅ fukisokuDataMap から削除
+    const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
+    const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+
+    if (isFukisoku1Check || isFukisoku2Check) {
+      const fukisokuDataMap = isFukisoku1Check 
+        ? (window.fukisoku1DataMap || {}) 
+        : (window.fukisoku2DataMap || {});
+
+      // ✅ その行のデータを削除
+      if (fukisokuDataMap[rowIdx]) {
+        delete fukisokuDataMap[rowIdx];
+        console.log('✅ Deleted fukisokuDataMap[' + rowIdx + ']');
+      }
+
+      // メモリに保存
+      if (isFukisoku1Check) {
+        window.fukisoku1DataMap = fukisokuDataMap;
+      } else {
+        window.fukisoku2DataMap = fukisokuDataMap;
+      }
+    }
+
+    // ✅ 変更フラグとボタン状態を更新
+    hasChanges = true;
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      console.log('✅ Save button enabled');
+    }
+
+    // ✅ グローバル変数をリセット
+    draggedFromTable = null;
+    draggedItem = null;
+
+    // ✅ テーブルを再描画
+    console.log('✅ Calling renderTable()');
+    renderTable();
+  };
+
+  // ✅ イベントリスナーを追加
+  // drop は capture: true で capture フェーズで処理（他のハンドラより優先される）
+  leftPanel.addEventListener('dragenter', dragEnterListener, false);
+  leftPanel.addEventListener('dragover', dragOverListener, false);
+  leftPanel.addEventListener('dragleave', dragLeaveListener, false);
+  leftPanel.addEventListener('drop', dropListener, true);  // ← true = capture フェーズで先に処理
+
+  listeners.push(
+    { event: 'dragenter', listener: dragEnterListener, target: leftPanel },
+    { event: 'dragover', listener: dragOverListener, target: leftPanel },
+    { event: 'dragleave', listener: dragLeaveListener, target: leftPanel },
+    { event: 'drop', listener: dropListener, target: leftPanel }
+  );
+
+  leftPanel._fukisokuDeleteListeners = listeners;
+
+  console.log('✅ setupLeftPanelDragDropForFukisokuDelete complete (capture phase enabled)');
+}
+
+/**
+ * ✅ 修正版：テーブルの drop イベントで左パネルへのドロップを検出
+ * 左パネルへのドロップの場合のみブロック、テーブル内の移動は許可
+ */
+function blockTableDropOnlyForLeftPanel() {
+  const tbody = document.getElementById('fukisokuTableBody');
+  if (!tbody) {
+    console.log('⚠️ fukisokuTableBody not found for drop barrier');
+    return;
+  }
+
+  // ✅ 既存の listeners をクリーンアップ
+  if (tbody._blockDropListener) {
+    tbody.removeEventListener('drop', tbody._blockDropListener, true);
+  }
+
+  // ✅ drop イベントで判定：左パネルへのドロップか、テーブル内の移動か
+  const blockDropListener = (e) => {
+    // ✅ ドラッグがテーブルから発生しており、かつドロップ位置がテーブルの外（左パネル）の場合
+    if (draggedFromTable && draggedFromTable.isFukisokuTable) {
+      // ドロップ位置を確認
+      const dropTarget = e.target;
+      const tbody = document.getElementById('fukisokuTableBody');
+      
+      // ✅ ドロップがテーブル内なら許可（行の入れ替え）
+      if (tbody && tbody.contains(dropTarget)) {
+        console.log('✅ Drop on table - allowing row swap');
+        return; // テーブル内の処理に任せる
+      }
+      
+      // ✅ ドロップがテーブル外なら完全にブロック（左パネルで処理）
+      console.log('⚠️ Drop outside table - blocking to allow leftPanel handling');
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return false;
+    }
+  };
+
+  tbody.addEventListener('drop', blockDropListener, true);  // ← capture フェーズで先に処理
+  tbody._blockDropListener = blockDropListener;
+  
+  console.log('✅ Table drop barrier enabled (only blocks leftPanel drops)');
+}
+
+/**
+ * ✅ デバッグ用：ドラッグ状態をコンソールに出力
+ */
+function debugDragState() {
+  console.log('=== DRAG STATE DEBUG ===');
+  console.log('draggedItem:', draggedItem);
+  console.log('draggedFromTable:', draggedFromTable);
+  console.log('tableData:', tableData);
+  console.log('window.fukisoku1DataMap:', window.fukisoku1DataMap);
+  console.log('window.fukisoku2DataMap:', window.fukisoku2DataMap);
+  console.log('=======================');
+}
+
+/**
+ * 左パネルの単語・文ドラッグ開始時の処理
+ */
+function setupLeftPanelWordDragStart(div, item, isWord) {
+  div.addEventListener('dragstart', (e) => {
+    if (div.classList.contains('editing')) {
+      e.preventDefault();
+      return;
+    }
+
+    console.log('dragstart event - type:', isWord ? 'word' : 'sentence');
+
+    draggedItem = {
+      type: isWord ? 'word' : 'sentence',
+      data: item,
+      id: item.id
+    };
+
+    draggedFromTable = null;
+
+    div.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.id);
+
+    console.log('draggedItem set:', draggedItem);
+  });
+
+  div.addEventListener('dragend', () => {
+    div.classList.remove('dragging');
+  });
+}
+
+/**
+ * 不規則動詞（意味セル）行ドラッグ開始
+ * ・テーブル由来ドラッグは draggedFromTable のみ使用
+ * ・rowIdx を唯一の識別子として統一
+ */
+function setupFukisokuMeaningDragDrop(meaningDiv, rowIdx, isFukisoku1) {
+  meaningDiv.draggable = true;
+  meaningDiv.style.cursor = 'grab';
+  meaningDiv.style.userSelect = 'none';
+
+  // 既存リスナー削除（多重登録防止）
+  if (meaningDiv._dragStartListener) {
+    meaningDiv.removeEventListener('dragstart', meaningDiv._dragStartListener);
+  }
+  if (meaningDiv._dragEndListener) {
+    meaningDiv.removeEventListener('dragend', meaningDiv._dragEndListener);
+  }
+
+  const dragStartListener = (e) => {
+    // ★ 修正点：
+    // draggedItem = null; は削除する
+    // （左パネル用の状態を壊さないため）
+
+    // テーブル由来ドラッグ情報を一元管理
+    draggedFromTable = {
+      rowIdx,                 // 行番号（唯一の識別子）
+      isFromTable: true,
+      isFukisokuTable: true,
+      cellType: 'fukisokuMeaning',
+      isFukisoku1              // ① / ② の判別用
+    };
+
+    meaningDiv.style.opacity = '0.6';
+
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.setData('text/plain', `fukisoku-row-${rowIdx}`);
+  };
+
+  const dragEndListener = () => {
+    meaningDiv.style.opacity = '1';
+    // dragend では状態を消さない（drop 側で処理する）
+  };
+
+  meaningDiv.addEventListener('dragstart', dragStartListener);
+  meaningDiv.addEventListener('dragend', dragEndListener);
+
+  meaningDiv._dragStartListener = dragStartListener;
+  meaningDiv._dragEndListener = dragEndListener;
+}
+
+/**
+ * ✅ 新規関数：代名詞テーブルをレンダリング
+ */
