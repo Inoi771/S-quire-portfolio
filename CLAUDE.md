@@ -153,17 +153,17 @@ englishtest/
 ## Git・デプロイ規則（重要）
 
 ### 基本ワークフロー
-**ユーザーから修正依頼 → コード修正 → `master` へ直接プッシュ → GitHub Actions が自動デプロイ → アプリに反映**
+**ユーザーから修正依頼 → コード修正 → `claude/xxx` ブランチへプッシュ → GitHub Actions が自動デプロイ → アプリに反映**
 
 ユーザーは何もしなくてよい。Claude がすべて完結させる。
 
 ### ブランチルール
-- **常に `master` ブランチへ直接プッシュする**
-- feature ブランチや PR は使わない
-- `git push origin master` で完了
+- Claude エージェント環境は **セキュリティ上の制約** により `claude/` で始まるブランチにしかプッシュできない（`master` への直接プッシュは HTTP 403）
+- ブランチ名: `claude/<作業内容>-<セッションID末尾>` 形式
+- `git push -u origin claude/<branch-name>` で完了
 
 ### 自動デプロイの仕組み
-`master` へのプッシュで GitHub Actions (`.github/workflows/deploy.yml`) が自動起動：
+`claude/*` または `master` へのプッシュで GitHub Actions (`.github/workflows/deploy.yml`) が自動起動：
 
 1. `clasp push --force` — コードを Google Apps Script へ転送
 2. `clasp deploy` — GAS のデプロイメントを更新（`GAS_DEPLOYMENT_ID` Secret 使用）
@@ -175,6 +175,6 @@ englishtest/
 | `GAS_DEPLOYMENT_ID` | GAS のデプロイメント ID |
 
 ### Claude が毎回すること
-1. `master` ブランチで作業
-2. 修正が完了したら `git push origin master`
-3. GitHub Actions のデプロイ完了を確認してユーザーに報告
+1. `claude/<task>-<sessionId>` ブランチで作業
+2. 修正が完了したら `git push -u origin <branch-name>`
+3. GitHub Actions のデプロイが自動実行される（ユーザー操作不要）
