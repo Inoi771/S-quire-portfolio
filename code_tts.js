@@ -81,6 +81,51 @@ function parseGithubRepoFromUrl(githubBaseUrl) {
 }
 
 // ────────────────────────────────────────────
+// 月間使用量の追跡・制限
+// ────────────────────────────────────────────
+
+/** 月間文字数の上限（Standard音声の無料枠400万文字に対し、安全マージン込み） */
+var TTS_MONTHLY_CHAR_LIMIT = 3500000;
+
+/**
+ * 月間使用文字数をチェックし、上限以内なら加算して true を返す
+ * @param {string} text - 今回生成するテキスト
+ * @returns {boolean} 生成可能なら true、上限超過なら false
+ */
+function checkAndUpdateCharUsage(text) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var now = new Date();
+    var currentMonth = Utilities.formatDate(now, 'Etc/GMT-9', 'yyyy-MM');
+
+    var savedMonth = props.getProperty('TTS_CHAR_MONTH') || '';
+    var charCount = parseInt(props.getProperty('TTS_CHAR_COUNT') || '0', 10);
+
+    // 月が変わっていたらカウントをリセット
+    if (savedMonth !== currentMonth) {
+      charCount = 0;
+      props.setProperty('TTS_CHAR_MONTH', currentMonth);
+    }
+
+    var textLength = text ? text.length : 0;
+
+    // 上限チェック
+    if (charCount + textLength > TTS_MONTHLY_CHAR_LIMIT) {
+      Logger.log('⚠️ TTS月間文字数上限に達しました: ' + charCount + '/' + TTS_MONTHLY_CHAR_LIMIT + ' (今回: ' + textLength + '文字)');
+      return false;
+    }
+
+    // カウントを加算して保存
+    props.setProperty('TTS_CHAR_COUNT', String(charCount + textLength));
+    return true;
+
+  } catch (e) {
+    Logger.log('⚠️ TTS使用量チェックでエラー（生成は続行）: ' + e);
+    return true; // エラー時は生成を許可（安全側に倒す）
+  }
+}
+
+// ────────────────────────────────────────────
 // Google Cloud TTS API 呼び出し
 // ────────────────────────────────────────────
 
@@ -91,6 +136,11 @@ function parseGithubRepoFromUrl(githubBaseUrl) {
  */
 function callGoogleCloudTts(text) {
   try {
+    // 月間使用量チェック
+    if (!checkAndUpdateCharUsage(text)) {
+      return null;
+    }
+
     var apiKey = getScriptProperty('GOOGLE_CLOUD_TTS_API_KEY');
     if (!apiKey) {
       Logger.log('⚠️ GOOGLE_CLOUD_TTS_API_KEY が未設定です');
@@ -119,6 +169,14 @@ function callGoogleCloudTts(text) {
 
     var response = UrlFetchApp.fetch(url, options);
     var responseCode = response.getResponseCode();
+
+    // レート制限（429）の場合、2秒待ってから1回リトライ
+    if (responseCode === 429) {
+      Logger.log('⚠️ TTS API レート制限 (429)。2秒後にリトライします...');
+      Utilities.sleep(2000);
+      response = UrlFetchApp.fetch(url, options);
+      responseCode = response.getResponseCode();
+    }
 
     if (responseCode !== 200) {
       Logger.log('❌ TTS API エラー (HTTP ' + responseCode + '): ' + response.getContentText());
@@ -374,6 +432,9 @@ function bulkGenerateAudio(type, batchSize) {
         } else {
           errors.push(sheetInfo.name + ' ID=' + id + ' (' + english + ')');
         }
+
+        // レート制限回避のためリクエスト間に0.5秒の間隔を入れる
+        Utilities.sleep(500);
       }
     }
 
