@@ -613,7 +613,19 @@ function addMasterWord(english, pronunciation, japanese) {
 
     Logger.log(`✅ マスター単語を追加しました: 行${insertRow} (ID: ${newWordId}, 英語: ${english})`);
 
-    return { success: true, wordId: newWordId };
+    // TTS音声を自動生成（失敗しても登録は成功扱い）
+    let audioFilename = '';
+    try {
+      audioFilename = generateAndUploadAudio(english, newWordId);
+      if (audioFilename) {
+        wordSheet.getRange(insertRow, 5).setValue(audioFilename);
+        Logger.log(`✅ TTS音声生成成功: ${audioFilename}`);
+      }
+    } catch (ttsError) {
+      Logger.log('⚠️ TTS生成失敗（単語登録は成功）: ' + ttsError);
+    }
+
+    return { success: true, wordId: newWordId, audio: audioFilename };
   } catch (e) {
     Logger.log('Error addMasterWord: ' + e);
     return { success: false, error: e.toString() };
@@ -664,7 +676,19 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
     Logger.log(`   発音: ${pronunciation || '（なし）'}`);
     Logger.log(`   日本語: ${japanese || '（なし）'}`);
 
-    return { success: true, sentenceId: newSentenceId };
+    // TTS音声を自動生成（失敗しても登録は成功扱い）
+    let audioFilename = '';
+    try {
+      audioFilename = generateAndUploadAudio(text, newSentenceId);
+      if (audioFilename) {
+        sentenceSheet.getRange(insertRow, 5).setValue(audioFilename);
+        Logger.log(`✅ TTS音声生成成功: ${audioFilename}`);
+      }
+    } catch (ttsError) {
+      Logger.log('⚠️ TTS生成失敗（英文登録は成功）: ' + ttsError);
+    }
+
+    return { success: true, sentenceId: newSentenceId, audio: audioFilename };
   } catch (e) {
     Logger.log('Error addMasterSentence: ' + e);
     return { success: false, error: e.toString() };

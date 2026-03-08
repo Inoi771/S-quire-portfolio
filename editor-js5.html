@@ -661,7 +661,7 @@ function performNewRegistrationWord(english, pronunciation, japanese, formContai
           english: english,
           pronunciation: pronunciation,
           japanese: japanese,
-          audio: ''
+          audio: result.audio || ''
         };
 
         allWords.push(newWord);
@@ -745,7 +745,7 @@ function performNewRegistrationSentence(japanese, text, pronunciation, formConta
           japanese: japanese,
           text: text,
           pronunciation: pronunciation,
-          audio: ''
+          audio: result.audio || ''
         };
 
         allSentences.push(newSentence);
@@ -1934,6 +1934,75 @@ function generatePdfSuffix(displayItems) {
     initTabSwitching();
     initPdfExport();
   }
+
+  // ────────────────────────────────────────────
+  // TTS音声一括生成
+  // ────────────────────────────────────────────
+
+  /**
+   * TTS音声一括生成を開始する
+   */
+  function startBulkAudioGeneration() {
+    if (!confirm('音声が未設定の単語・英文に対してTTS音声を一括生成します。\n処理には時間がかかる場合があります。\n\n続行しますか？')) {
+      return;
+    }
+
+    executeBulkAudioBatch('all');
+  }
+
+  /**
+   * 一括生成バッチを実行する
+   * @param {string} type - 'words' / 'sentences' / 'all'
+   */
+  function executeBulkAudioBatch(type) {
+    showLoadingIndicator('TTS音声を一括生成中...');
+
+    google.script.run
+      .withSuccessHandler((result) => {
+        hideLoadingIndicator();
+
+        if (!result.success) {
+          alert('❌ 一括生成でエラーが発生しました。\n' + (result.errors || []).join('\n'));
+          return;
+        }
+
+        let message = '✅ ' + result.processed + '件の音声を生成しました。';
+
+        if (result.errors && result.errors.length > 0) {
+          message += '\n⚠️ ' + result.errors.length + '件でエラーが発生しました。';
+        }
+
+        if (result.remaining > 0) {
+          message += '\n\n残り' + result.remaining + '件あります。続けますか？';
+          if (confirm(message)) {
+            executeBulkAudioBatch(type);
+          }
+        } else {
+          message += '\n\n全ての処理が完了しました。';
+          alert(message);
+
+          // マスターデータを再読み込み
+          google.script.run
+            .withSuccessHandler((data) => {
+              if (data) {
+                allWords = data.words || [];
+                allSentences = data.sentences || [];
+                renderWordList();
+              }
+            })
+            .withFailureHandler(() => {})
+            .getAllWordsAndSentences();
+        }
+      })
+      .withFailureHandler((err) => {
+        hideLoadingIndicator();
+        alert('❌ 一括生成に失敗しました。\n\nエラー: ' + err);
+      })
+      .bulkGenerateAudio(type, 50);
+  }
+
+  // startBulkAudioGeneration をグローバルに公開
+  window.startBulkAudioGeneration = startBulkAudioGeneration;
 
   // ページロード状態に応じて実行
   if (document.readyState === 'loading') {
