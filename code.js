@@ -2,6 +2,7 @@
  * GASアプリケーションのエントリーポイント
  * ?page=student → 生徒向け音声アプリ (index.html)
  * それ以外       → 教師向け編集アプリ (editor.html)
+ * Last updated: 2026-03-08
  */
 function doGet(e) {
   const page = e && e.parameter && e.parameter.page;
