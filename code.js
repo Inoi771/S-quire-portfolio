@@ -56,18 +56,18 @@ function getScriptProperty(key) {
  */
 function validateCellId(cellId) {
   const id = parseInt(cellId);
-  
+
   // NaNまたは整数でない場合
   if (isNaN(id)) {
     return null;
   }
-  
+
   // 範囲チェック（1～48）
   if (id < 1 || id > 48) {
     Logger.log(`警告: cellId ${id} は有効な範囲 (1-48) 外です`);
     return null;
   }
-  
+
   return id;
 }
 
@@ -81,14 +81,14 @@ function getEditorLogoUrl() {
     const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
     const folder = DriveApp.getFolderById(englishwordsFolderId);
     const files = folder.getFilesByName('logo.png');
-    
+
     if (files.hasNext()) {
       const file = files.next();
       // ファイルをBlob取得 → Base64に変換
       const blob = file.getBlob();
       const base64 = Utilities.base64Encode(blob.getBytes());
       const mimeType = blob.getContentType();
-      
+
       // Data URLフォーマットで返す
       return `data:${mimeType};base64,${base64}`;
     } else {
@@ -114,7 +114,7 @@ function getEditorYears() {
     const folder = DriveApp.getFolderById(englishwordsFolderId);
     const folders = folder.getFolders();
     const years = [];
-    
+
     while (folders.hasNext()) {
       const f = folders.next();
       const name = f.getName();
@@ -122,7 +122,7 @@ function getEditorYears() {
         years.push(name);
       }
     }
-    
+
     return { years: years.sort().reverse() };
   } catch (e) {
     Logger.log('Error getYears: ' + e);
@@ -142,12 +142,12 @@ function getEditorTextbooks(year) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const textbooks = [];
-    
+
     while (files.hasNext()) {
       const file = files.next();
       textbooks.push(file.getName());
     }
-    
+
     return { textbooks: textbooks.sort() };
   } catch (e) {
     Logger.log('Error getTextbooks: ' + e);
@@ -168,7 +168,7 @@ function getEditorGrades(year, textbook) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const gradesSet = new Set();
-    
+
     while (files.hasNext()) {
       const file = files.next();
       if (file.getName() === textbook) {
@@ -183,7 +183,7 @@ function getEditorGrades(year, textbook) {
         break;
       }
     }
-    
+
     const grades = Array.from(gradesSet);
     return { grades: grades };
   } catch (e) {
@@ -206,13 +206,13 @@ function getEditorLessons(year, textbook, grade) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     let lessons = [];
-    
+
     while (files.hasNext()) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
         const sheet = ss.getSheetByName(grade);
-        
+
         if (sheet) {
           const lastRow = sheet.getLastRow();
           if (lastRow > 1) {
@@ -224,7 +224,7 @@ function getEditorLessons(year, textbook, grade) {
         break;
       }
     }
-    
+
     return { lessons: lessons };
   } catch (e) {
     Logger.log('Error getLessons: ' + e);
@@ -246,7 +246,7 @@ function getAllWordsAndSentences() {
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     let words = [];
     let sentences = [];
-    
+
     const wordSheet = ss.getSheetByName("英単語");
     if (wordSheet) {
       const lastRow = wordSheet.getLastRow();
@@ -265,34 +265,34 @@ function getAllWordsAndSentences() {
               });
             }
           });
-          
+
           // ✅ デバッグログを追加
           Logger.log('✅ 英単語取得完了: ' + words.length + '件');
-          
+
           // 最初の5件をログ出力
           Logger.log('📌 最初の5件:');
           for (let i = 0; i < Math.min(5, words.length); i++) {
             Logger.log(`  [${i}] english="${words[i].english}", pronunciation="${words[i].pronunciation}"`);
           }
-          
+
           // 「I」が含まれているか確認
           const iWord = words.find(w => w.english === 'I');
           Logger.log('📌 「I」の検索結果: ' + (iWord ? `発音="${iWord.pronunciation}"` : '見つかりません'));
-          
+
           // 「my」が含まれているか確認
           const myWord = words.find(w => w.english === 'my');
           Logger.log('📌 「my」の検索結果: ' + (myWord ? `発音="${myWord.pronunciation}"` : '見つかりません'));
-          
+
           // 「me」が含まれているか確認
           const meWord = words.find(w => w.english === 'me');
           Logger.log('📌 「me」の検索結果: ' + (meWord ? `発音="${meWord.pronunciation}"` : '見つかりません'));
-          
+
         } catch (err) {
           Logger.log('英単語データ取得エラー: ' + err);
         }
       }
     }
-    
+
     const sentenceSheet = ss.getSheetByName("英文");
     if (sentenceSheet) {
       const lastRow = sentenceSheet.getLastRow();
@@ -308,7 +308,7 @@ function getAllWordsAndSentences() {
         })).filter(s => s.text && s.text !== '');
       }
     }
-    
+
     return { words, sentences };
   } catch (e) {
     Logger.log('Error getAllWordsAndSentences: ' + e);
@@ -321,17 +321,9 @@ function getAllWordsAndSentences() {
 // ════════════════════════════════════════════════════════
 
 /**
- * ✅ 修正版：入試対策編のすべてのレッスン一覧を取得（ソート済み）
- * 3つのシート（通常・不規則動詞①②）から全レッスンを取得
- * 
- * @param {string} year - 年度
- * @returns {Object} { lessons: [ソート済みレッスン名の配列] }
- */
-
-/**
  * ✅ 修正版：指定レッスンの既存データを取得
  * 入試対策編の3シート対応
- * 
+ *
  * @param {string} year - 年度
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（入試対策編の場合は「通常」「不規則動詞①」「不規則動詞②」）
@@ -350,7 +342,7 @@ function getExistingData(year, textbook, grade, lesson) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
-        
+
         // ✅ 修正：grade はシート名として使用
         // 通常教科書：学年名（「中学1年」など）
         // 入試対策編：「通常」「不規則動詞①」「不規則動詞②」
@@ -408,7 +400,7 @@ function getExistingData(year, textbook, grade, lesson) {
 /**
  * ✅ 新規関数：シートのカラム数を取得
  * 通常シート（7列）か拡張シート（10列または13列）かを判定
- * 
+ *
  * @param {string} textbook - 教科書名
  * @param {string} grade - シート名
  * @returns {number} カラム数
@@ -439,7 +431,7 @@ function saveWords(words) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const wordSheet = ss.getSheetByName("英単語");
-    
+
     if (!wordSheet) {
       throw new Error('「英単語」シートが見つかりません');
     }
@@ -478,7 +470,7 @@ function saveSentences(sentences) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const sentenceSheet = ss.getSheetByName("英文");
-    
+
     if (!sentenceSheet) {
       throw new Error('「英文」シートが見つかりません');
     }
@@ -522,37 +514,37 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
   try {
     const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
     const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    
+
     // 指定年度のフォルダを取得
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    
+
     let updatedCount = 0;
     const updateLog = []; // 更新ログ
-    
+
     // 年度内のすべての教科書を処理
     while (files.hasNext()) {
       const file = files.next();
       const ss = SpreadsheetApp.open(file);
       const sheets = ss.getSheets();
       const textbookName = file.getName();
-      
+
       // すべてのシート（学年）を処理
       sheets.forEach(sheet => {
         const lastRow = sheet.getLastRow();
-        
+
         if (lastRow > 1) {
           // 行データを取得：word_id(0), english(1), pronunciation(2), japanese(3), audio(4), lesson(5), cell_id(6)
           const data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-          
+
           // マスターIDが一致する行を検索
           data.forEach((row, idx) => {
             const cellMasterId = row[0] ? parseInt(row[0]) : null;
-            
+
             if (cellMasterId === masterId) {
               // シート上の実際の行番号を計算（データ範囲の開始は2行目）
               const actualRow = idx + 2;
-              
+
               // ログに記録（どの行を更新するかを明確にする）
               updateLog.push({
                 file: textbookName,
@@ -561,14 +553,14 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
                 masterId: masterId,
                 lesson: row[5] // lesson列の値
               });
-              
+
               // 対応する列を更新
               if (itemType === 'word') {
                 // 単語：列2（english）、列3（pronunciation）、列4（japanese）を更新
                 sheet.getRange(actualRow, 2).setValue(newField1);  // english
                 sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
                 sheet.getRange(actualRow, 4).setValue(newField3);  // japanese
-                
+
                 // ✅ 修正：マスターから音声ファイル名を取得して更新
                 const masterWord = allWords.find(w => w.id === masterId);
                 if (masterWord && masterWord.audio) {
@@ -579,21 +571,21 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
                 sheet.getRange(actualRow, 2).setValue(newField1);  // text（文）
                 sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
                 sheet.getRange(actualRow, 4).setValue(newField3);  // ✅ 修正：日本語も更新
-                
+
                 // ✅ 修正：マスターから音声ファイル名を取得して更新
                 const masterSentence = allSentences.find(s => s.id === masterId);
                 if (masterSentence && masterSentence.audio) {
                   sheet.getRange(actualRow, 5).setValue(masterSentence.audio);  // audio
                 }
               }
-              
+
               updatedCount++;
             }
           });
         }
       });
     }
-    
+
     // ログを出力（デバッグ用）
     if (updateLog.length > 0) {
       Logger.log('=== 更新ログ ===');
@@ -601,10 +593,10 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
         Logger.log(`✅ ${log.file} > ${log.sheet} > 行${log.actualRow} (レッスン: ${log.lesson}, ID: ${log.masterId})`);
       });
     }
-    
+
     Logger.log(`✅ 合計 ${updatedCount}件のレッスンデータを更新しました (ID: ${masterId})`);
     return { success: true, updatedCount: updatedCount };
-    
+
   } catch (e) {
     Logger.log('Error updateAllLessonDataInYear: ' + e);
     return { success: false, error: e.toString() };
@@ -615,9 +607,9 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
  * ✅ 完全修正版：レッスンデータ保存
  * 入試対策編の拡張カラムに対応
  * 既存レッスンデータの正確な削除と新規データの追加
- * 
+ *
  * ✅ 修正：現在のレッスン名で削除（既に updateLessonName() で名前が変更されている）
- * 
+ *
  * @param {string} year - 年度
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（またはシート名）
@@ -823,12 +815,12 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
       for (let i = 0; i < rowsToAdd.length; i++) {
         if (rowsToAdd[i].length !== maxCols) {
           Logger.log(`⚠️ 警告：行${i}のカラム数が不正: ${rowsToAdd[i].length}（期待値: ${maxCols}）`);
-          
+
           // 不足分を空文字で埋める
           while (rowsToAdd[i].length < maxCols) {
             rowsToAdd[i].push('');
           }
-          
+
           // 余分な列を削除
           rowsToAdd[i] = rowsToAdd[i].slice(0, maxCols);
         }
@@ -851,4 +843,3 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
     return { success: false, error: e.toString() };
   }
 }
-
