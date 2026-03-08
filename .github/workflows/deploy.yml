@@ -30,3 +30,13 @@ jobs:
 
       - name: Deploy
         run: clasp deploy --deploymentId ${{ secrets.GAS_DEPLOYMENT_ID }} -d "Auto deploy from GitHub Actions"
+
+      - name: Merge claude branch into master
+        if: startsWith(github.ref, 'refs/heads/claude/')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          git checkout master
+          git merge --ff-only ${{ github.sha }}
+          git push origin master
