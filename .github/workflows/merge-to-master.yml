@@ -1,0 +1,27 @@
+name: Merge claude branch into master
+
+on:
+  push:
+    branches:
+      - claude/*
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge into master
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          git checkout -B master origin/master
+          git merge -X theirs --no-ff --allow-unrelated-histories origin/${{ github.ref_name }} -m "自動マージ: ${{ github.ref_name }} → master"
+          git push --force-with-lease origin master

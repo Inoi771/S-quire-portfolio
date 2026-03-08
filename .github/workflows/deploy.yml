@@ -5,6 +5,11 @@ on:
     branches:
       - master
       - claude/*
+    paths:
+      - '*.js'
+      - '*.html'
+      - 'appsscript.json'
+      - '.github/workflows/*.yml'
   workflow_dispatch:
 
 permissions:
@@ -36,12 +41,3 @@ jobs:
       - name: Deploy
         run: clasp deploy --deploymentId ${{ secrets.GAS_DEPLOYMENT_ID }} -d "Auto deploy from GitHub Actions"
 
-      - name: Merge claude branch into master
-        if: startsWith(github.ref, 'refs/heads/claude/')
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin master
-          git checkout -B master origin/master
-          git merge -X theirs --no-ff --allow-unrelated-histories origin/${{ github.ref_name }} -m "自動マージ: ${{ github.ref_name }} → master"
-          git push --force-with-lease origin master
