@@ -497,8 +497,9 @@ years = JSON.parse(yearsJsonString);
 ## 作業時の注意事項
 
 1. **大きなファイルを Read する際はオフセットと行数を指定する**
-   - `editor.html` は8500行あるため、全読みは避ける
-   - `code.js` も4400行あるため、対象関数を Grep で探してから Read する
+   - `editor.html` はスケルトン化済み（~400行）。CSS は `editor-css.html`、JS は `editor-js1〜5.html` に分割済み
+   - `code.js` は ~700行に削減済み。残りは `code_lesson.js` / `code_data.js` / `code_pdf.js` / `code_student.js` に分割済み
+   - 各分割ファイルは ~1000〜1600行。対象関数を Grep で探してから Read する
 
 2. **GAS 固有の制限**
    - GAS の実行時間制限は6分（長い処理は分割が必要）
@@ -524,6 +525,68 @@ years = JSON.parse(yearsJsonString);
      return { success: false, error: e.toString() };
    }
    ```
+
+---
+
+## ファイル分割ポリシー
+
+コンテキスト制限（Claude 無料プラン）内で作業できるよう、ファイルサイズを管理する。
+
+### ファイルサイズ上限
+- **原則: 1ファイル 2000行以内**（GAS 実行時間制限と Claude コンテキスト制限の両方に対応）
+- 超過したら、論理的なグループ単位で新ファイルに切り出す
+
+### GAS バックエンド（.js ファイル）の分割方法
+- GAS では複数の `.js` ファイルがすべて **同一グローバルスコープ** で動作 → `import/export` 不要
+- 関数をそのまま新ファイルへ切り出すだけでよい（`doGet()` が必要なのは `code.js` のみ）
+- 新規ファイルはデフォルトで clasp によりデプロイされる（`.claspignore` 変更不要）
+- **命名規則:** `code_<グループ名>.js`（例: `code_lesson.js`, `code_pdf.js`）
+
+```
+// 分割の例
+// code.js から PDF 生成関数を code_pdf.js に移動するだけ
+// code.js 側: 関数定義を削除
+// code_pdf.js 側: 関数定義を貼り付け（インポート文なし）
+```
+
+### HTML ファイル（editor.html 等）の分割方法
+- `doGet()` で `HtmlService.createTemplateFromFile('editor').evaluate()` を使用（テンプレートモード必須）
+- `HtmlService.createHtmlOutputFromFile` では scriplet（`<?!= ?>`）が使えないので注意
+
+**インクルード構文（editor.html 内で使用）:**
+```html
+<?!= HtmlService.createHtmlOutputFromFile('editor-css').getContent() ?>
+```
+
+**分割パターン:**
+- CSS → `<ファイル名>-css.html`（`<style>` タグごと移動）
+- JS → `<ファイル名>-js1.html`, `<ファイル名>-js2.html` ...（`<script>` タグなし、純粋なJSのみ）
+- メインの HTML（editor.html）に IIFE の `(() => {` と `})();` を残し、JS ファイルをその中にインクルード
+
+**現在の分割済み構成（editor.html）:**
+```
+editor.html       — スケルトン（~400行）HTMLボディ + IIFE 枠組み
+editor-css.html   — CSS（<style>タグ込み）
+editor-js1.html   — グローバル変数・状態 + ダイアログ + 初期化 + データ階層 + カスタムレッスン
+editor-js2.html   — エディタ読込 + renderEditor + renderTabs + renderWordList + テーブル操作
+editor-js3.html   — renderTable + 特殊レイアウト + 代名詞テーブル + キーボード + セルID計算
+editor-js4.html   — 既存データ読込 + インライン編集 + D&D全関数
+editor-js5.html   — 保存処理 + 単語登録 + 英文登録 + 単語帳タブ
+```
+
+**現在の分割済み構成（code.js）:**
+```
+code.js           — doGet + 基本ユーティリティ + 階層取得 + マスターデータ + レッスン取得 + 保存処理（~700行）
+code_lesson.js    — レッスン名変更 + レッスン一覧 + 不規則動詞保存・読込
+code_data.js      — 入試対策データ + マスターCRUD + レッスン順序 + レイアウト変換
+code_pdf.js       — PDF生成全関数（generateAndSavePdf〜generatePdfPage）
+code_student.js   — 生徒向け全API（getStudentYears〜extractQuestionsFromSheet）
+```
+
+### 新しいコードを追加するとき
+1. 既存の分割ファイルのどのグループに属するか判断する
+2. そのファイルに追加後、2000行を超えるなら新ファイルに切り出す
+3. 切り出す場合は命名規則に従い、このセクションの構成表を更新する
 
 ---
 

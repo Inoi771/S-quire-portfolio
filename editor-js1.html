@@ -1,0 +1,1048 @@
+  // ════════════════════════════════════════
+  // 🎯 グローバル変数（エディター用）
+  // ════════════════════════════════════════
+  let allWords = [];
+  let allSentences = [];
+  let tableData = Array(16).fill(null).map(() => [null, null, null]);
+  let activeTab = 'A';
+  let draggedItem = null;
+  let draggedFromTable = null;
+  let hasChanges = false;
+  let editingInTable = null;
+  let existingLessons = [];
+  let isSaving = false;
+  let editingWordItem = null;
+  let searchQuery = '';      // 検索クエリを保持
+  let currentItemType = 'word';  // 'word' または 'sentence'
+  let leftPanelFocusIndex = 0;  // 左パネルの照準インデックス
+  let rightPanelFocusCell = { rowIdx: 0, colIdx: 0 };  // 右パネルの照準セル
+
+  const state = {
+    year: '',
+    textbook: '',
+    grade: '',
+    lesson: '',
+    isCustomLesson: false,
+    isEditorOpen: false
+  };
+
+  // ════════════════════════════════════════
+  // 🎯 グローバル変数（単語帳作成用）
+  // ════════════════════════════════════════
+  let currentYear = '';
+  let currentTextbook = '';
+  let currentGrade = '';
+  let availableLessons = [];
+  let selectedLessons = [];
+  let draggedLessonName = null;
+  let draggedLessonIdx = undefined;
+
+/**
+ * ✅ 新規関数：重複確認のカスタムダイアログを表示
+ */
+function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
+  // オーバーレイ
+  const overlay = document.createElement('div');
+  overlay.id = 'duplicateDialogOverlay_' + Date.now();  // ✅ ユニークなIDを付与
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  // ダイアログボックス
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    width: 90%;
+    padding: 24px;
+    font-family: 'Meiryo', Arial, sans-serif;
+  `;
+
+  // タイトル
+  const titleEl = document.createElement('h3');
+  titleEl.style.cssText = `
+    margin: 0 0 16px 0;
+    color: #d32f2f;
+    font-size: 16px;
+  `;
+  titleEl.textContent = title;
+
+  // メッセージ
+  const messageEl = document.createElement('div');
+  messageEl.style.cssText = `
+    margin-bottom: 24px;
+    color: #333;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    background-color: #f5f5f5;
+    padding: 12px;
+    border-radius: 4px;
+    border-left: 4px solid #2196F3;
+  `;
+  messageEl.textContent = message;
+
+  // ボタングループ
+  const buttonGroup = document.createElement('div');
+  buttonGroup.style.cssText = `
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  `;
+
+  // ✅ 修正：ダイアログを閉じる共通関数（必ず DOM から削除）
+  const closeDialog = () => {
+    const overlayEl = document.getElementById(overlay.id);
+    if (overlayEl && overlayEl.parentNode) {
+      overlayEl.parentNode.removeChild(overlayEl);
+      console.log('✅ ダイアログを削除しました');
+    }
+  };
+
+  // 「キャンセル」ボタン
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.style.cssText = `
+    padding: 10px 16px;
+    background-color: #757575;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+    font-family: 'Meiryo', Arial, sans-serif;
+    transition: background-color 0.3s;
+  `;
+  cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.backgroundColor = '#616161');
+  cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.backgroundColor = '#757575');
+  cancelBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('キャンセルボタン押下');
+    closeDialog();
+  });
+
+  // 「既存のものに上書きする」ボタン
+  const overwriteBtn = document.createElement('button');
+  overwriteBtn.textContent = '既存のものに上書きする';
+  overwriteBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+    font-family: 'Meiryo', Arial, sans-serif;
+    transition: background-color 0.3s;
+  `;
+  overwriteBtn.addEventListener('mouseenter', () => overwriteBtn.style.backgroundColor = '#da190b');
+  overwriteBtn.addEventListener('mouseleave', () => overwriteBtn.style.backgroundColor = '#f44336');
+  overwriteBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('上書きボタン押下');
+    closeDialog();
+    // ✅ ダイアログ削除後に遅延でコールバック実行
+    setTimeout(() => {
+      onOverwrite();
+    }, 100);
+  });
+
+  // 「別のものとして登録する」ボタン
+  const newBtn = document.createElement('button');
+  newBtn.textContent = '別のものとして登録する';
+  newBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+    font-family: 'Meiryo', Arial, sans-serif;
+    transition: background-color 0.3s;
+  `;
+  newBtn.addEventListener('mouseenter', () => newBtn.style.backgroundColor = '#0b7dda');
+  newBtn.addEventListener('mouseleave', () => newBtn.style.backgroundColor = '#2196F3');
+  newBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('新規登録ボタン押下');
+    closeDialog();
+    // ✅ ダイアログ削除後に遅延でコールバック実行
+    setTimeout(() => {
+      onNewRegister();
+    }, 100);
+  });
+
+  buttonGroup.appendChild(cancelBtn);
+  buttonGroup.appendChild(overwriteBtn);
+  buttonGroup.appendChild(newBtn);
+
+  dialog.appendChild(titleEl);
+  dialog.appendChild(messageEl);
+  dialog.appendChild(buttonGroup);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  console.log('✅ ダイアログを表示しました: ' + overlay.id);
+
+  // ✅ オーバーレイをクリックでキャンセル
+  overlay.addEventListener('click', (e) => {
+    // ✅ ダイアログ本体をクリックした場合は何もしない
+    if (e.target === dialog || dialog.contains(e.target)) {
+      return;
+    }
+    // ✅ オーバーレイ背景をクリックした場合のみ閉じる
+    if (e.target === overlay) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('オーバーレイ背景クリック');
+      closeDialog();
+    }
+  }, true);  // ✅ キャプチャフェーズで処理
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 初期化・セットアップ
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * アプリケーション初期化
+ * ページ読み込み時に実行される
+ */
+
+  function initEditor() {
+    setupSelectionPanel();
+    loadYears();
+    setupEventListeners();
+    loadLogo();
+  }
+
+/**
+ * ロゴ画像をGASから取得して表示
+ */
+      function loadLogo() {
+        google.script.run.withSuccessHandler(logoUrl => {
+          console.log('Logo URL:', logoUrl);
+          if (logoUrl) {
+            const logoImg = document.createElement('img');
+            logoImg.src = logoUrl;
+            logoImg.style.cssText = 'height: 30px; width: auto; object-fit: contain; margin-right: 15px;';
+      
+            const headerTitle = document.querySelector('.selection-header');
+            if (headerTitle) {
+              headerTitle.insertBefore(logoImg, headerTitle.firstChild);
+            }
+          }
+        }).getEditorLogoUrl();
+      }
+
+/**
+ * 選択パネルの折りたたみ機能をセットアップ
+ */
+      function setupSelectionPanel() {
+        const header = document.getElementById('selectionHeader');
+        const panel = document.getElementById('selectionPanel');
+        const toggle = document.getElementById('selectionToggle');
+
+        header.addEventListener('click', () => {
+        panel.classList.toggle('expanded');
+        panel.classList.toggle('collapsed');
+
+        const icon = document.querySelector('.toggle-icon');
+        icon.classList.toggle('collapsed');
+        });
+
+      }
+
+      function setupEventListeners() {
+        document.getElementById('yearSelect').addEventListener('change', handleYearChange);
+        document.getElementById('textbookSelect').addEventListener('change', handleTextbookChange);
+        document.getElementById('gradeSelect').addEventListener('change', handleGradeChange);
+        document.getElementById('lessonSelect').addEventListener('change', handleLessonChange);
+        document.getElementById('customLessonInput').addEventListener('input', updateNewButton);
+  
+        document.getElementById('newBtn').addEventListener('click', () => {
+          if (!state.year || !state.textbook || !state.grade || !state.lesson) {
+            alert('全ての項目を選択してください');
+            return;
+          }
+
+          state.isEditorOpen = true;
+          loadEditorData();
+        });
+
+        document.getElementById('useCustomBtn').addEventListener('click', handleUseCustom);
+        document.getElementById('resetBtn').addEventListener('click', handleReset);
+      }
+
+/**
+ * ════════════════════════════════════════════════════════
+ * データ取得：年度→教科書→学年→レッスン（階層的）
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * 年度一覧をサーバーから取得してセレクトに追加
+ */
+function loadYears() {
+  showLoadingIndicator('年度を読み込み中...');
+  
+  google.script.run
+    .withSuccessHandler(data => {
+      hideLoadingIndicator();
+      
+      const select = document.getElementById('yearSelect');
+      select.innerHTML = '<option value="">選択してください</option>';
+      data.years.forEach(year => {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        select.appendChild(option);
+      });
+    })
+    .withFailureHandler(err => {
+      hideLoadingIndicator();
+      console.error('getYears エラー:', err);
+      alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
+    })
+    .getEditorYears();
+}
+
+/**
+ * 年度が変更された時の処理
+ * 教科書一覧を取得
+ */
+function handleYearChange(e) {
+  state.year = e.target.value;
+  state.textbook = '';
+  state.grade = '';
+  state.lesson = '';
+  state.isCustomLesson = false;
+
+  document.getElementById('textbookSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('gradeSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('gradeSelect').style.display = 'block'; // ✅ リセット時に表示
+  document.getElementById('lessonSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('customLessonGroup').classList.add('hidden');
+  document.getElementById('customLessonInput').value = '';
+
+  if (state.year) {
+    showLoadingIndicator('教科書を読み込み中...');
+    
+    google.script.run
+      .withSuccessHandler(data => {
+        hideLoadingIndicator();
+        
+        const select = document.getElementById('textbookSelect');
+        data.textbooks.forEach(tb => {
+          const option = document.createElement('option');
+          option.value = tb;
+          option.textContent = tb;
+          select.appendChild(option);
+        });
+        document.getElementById('textbookSelect').disabled = false;
+      })
+      .withFailureHandler(err => {
+        hideLoadingIndicator();
+        console.error('getTextbooks エラー:', err);
+        alert('❌ 教科書の読み込みに失敗しました。\n\nエラー: ' + err);
+        document.getElementById('textbookSelect').disabled = true;
+      })
+      .getEditorTextbooks(state.year);
+  } else {
+    document.getElementById('textbookSelect').disabled = true;
+  }
+
+  updateNewButton();
+}
+
+/**
+ * 教科書が変更された時の処理
+ * 学年一覧を取得
+ */
+function handleTextbookChange(e) {
+  state.textbook = e.target.value;
+  state.grade = '';
+  state.lesson = '';
+  state.isCustomLesson = false;
+
+  document.getElementById('gradeSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('lessonSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('customLessonGroup').classList.add('hidden');
+  document.getElementById('customLessonInput').value = '';
+
+  if (state.textbook) {
+    // ✅ 修正：入試対策編かどうかで分岐
+    if (state.textbook === '入試対策編') {
+      // ───────────────────────────────────────
+      // 入試対策編の場合
+      // ───────────────────────────────────────
+      const gradeSelect = document.getElementById('gradeSelect');
+      gradeSelect.style.display = 'none';
+      gradeSelect.disabled = true;
+      
+      state.grade = '通常';  // デフォルト値
+
+      showLoadingIndicator('レッスンを読み込み中...');
+
+      google.script.run
+        .withSuccessHandler(data => {
+          hideLoadingIndicator();
+
+          existingLessons = data.lessons;
+
+          const select = document.getElementById('lessonSelect');
+          data.lessons.forEach(lesson => {
+            const option = document.createElement('option');
+            option.value = lesson;
+            option.textContent = lesson;
+            select.appendChild(option);
+          });
+
+          // 「その他」オプションを追加
+          const otherOption = document.createElement('option');
+          otherOption.value = 'other';
+          otherOption.textContent = '--- その他 ---';
+          select.appendChild(otherOption);
+
+          document.getElementById('lessonSelect').disabled = false;
+        })
+        .withFailureHandler(err => {
+          hideLoadingIndicator();
+          console.error('getExamPrepLessons エラー:', err);
+          alert('❌ レッスンの読み込みに失敗しました。\n\nエラー: ' + err);
+          document.getElementById('lessonSelect').disabled = true;
+        })
+        .getExamPrepLessons(state.year);
+
+    } else {
+      // ───────────────────────────────────────
+      // 通常の教科書の場合
+      // ───────────────────────────────────────
+      const gradeSelect = document.getElementById('gradeSelect');
+      gradeSelect.style.display = 'block';
+      gradeSelect.disabled = false;
+
+      showLoadingIndicator('学年を読み込み中...');
+
+      google.script.run
+        .withSuccessHandler(data => {
+          hideLoadingIndicator();
+
+          const select = document.getElementById('gradeSelect');
+          data.grades.forEach(grade => {
+            const option = document.createElement('option');
+            option.value = grade;
+            option.textContent = grade;
+            select.appendChild(option);
+          });
+          document.getElementById('gradeSelect').disabled = false;
+        })
+        .withFailureHandler(err => {
+          hideLoadingIndicator();
+          console.error('getGrades エラー:', err);
+          alert('❌ 学年の読み込みに失敗しました。\n\nエラー: ' + err);
+          document.getElementById('gradeSelect').disabled = true;
+        })
+        .getEditorGrades(state.year, state.textbook);  // ✅ 修正：正しい関数を呼び出し
+    }
+  } else {
+    document.getElementById('gradeSelect').disabled = true;
+  }
+
+  updateNewButton();
+}
+
+/**
+ * 学年が変更された時の処理
+ * レッスン一覧を取得
+ */
+function handleGradeChange(e) {
+  state.grade = e.target.value;
+  state.lesson = '';
+  state.isCustomLesson = false;
+
+  document.getElementById('lessonSelect').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('customLessonGroup').classList.add('hidden');
+  document.getElementById('customLessonInput').value = '';
+
+  if (state.grade) {
+    showLoadingIndicator('レッスンを読み込み中...');
+
+    google.script.run
+      .withSuccessHandler(data => {
+        hideLoadingIndicator();
+
+        existingLessons = data.lessons;
+
+        const select = document.getElementById('lessonSelect');
+        data.lessons.forEach(lesson => {
+          const option = document.createElement('option');
+          option.value = lesson;
+          option.textContent = lesson;
+          select.appendChild(option);
+        });
+
+        // ✅ 修正：「その他」オプションを追加
+        // 入試対策編の不規則動詞①②の場合は「その他」を追加しない
+        const isFukisoku = state.textbook === '入試対策編' &&
+                          (state.grade === '不規則動詞①' || state.grade === '不規則動詞②');
+
+        if (!isFukisoku) {
+          const otherOption = document.createElement('option');
+          otherOption.value = 'other';
+          otherOption.textContent = '--- その他 ---';
+          select.appendChild(otherOption);
+        }
+
+        document.getElementById('lessonSelect').disabled = false;
+      })
+      .withFailureHandler(err => {
+        hideLoadingIndicator();
+        console.error('getLessons エラー:', err);
+        alert('❌ レッスンの読み込みに失敗しました。\n\nエラー: ' + err);
+        document.getElementById('lessonSelect').disabled = true;
+      })
+      .getEditorLessons(state.year, state.textbook, state.grade);
+  } else {
+    document.getElementById('lessonSelect').disabled = true;
+  }
+
+  updateNewButton();
+}
+
+/**
+ * レッスンが選択された時の処理
+ * カスタムレッスン入力フィールドの表示・非表示を切り替え
+ */
+function handleLessonChange(e) {
+  console.log('=== handleLessonChange called ===');
+  console.log('selected lesson:', e.target.value);
+
+  state.lesson = e.target.value;
+  
+  // ✅ 修正：元のレッスン名を保存（編集時に元の名前が必要）
+  state.originalLessonName = state.lesson;
+  state.isEdited = false;
+
+  // ✅ 修正：入試対策編の場合、レッスン名からsheetを判定
+  if (state.textbook === '入試対策編') {
+    if (state.lesson.startsWith('不規則動詞①')) {
+      state.grade = '不規則動詞①';
+    } else if (state.lesson.startsWith('不規則動詞②')) {
+      state.grade = '不規則動詞②';
+    } else {
+      state.grade = '通常';
+    }
+    console.log('📌 入試対策編: state.grade set to', state.grade);
+  }
+
+  const customGroup = document.getElementById('customLessonGroup');
+
+  if (state.lesson === 'other') {
+    console.log('Selected "other", showing custom input');
+    customGroup.classList.remove('hidden');
+    state.isCustomLesson = false;
+  } else {
+    console.log('Selected existing lesson:', state.lesson);
+    customGroup.classList.add('hidden');
+    state.isCustomLesson = false;
+  }
+
+  updateNewButton();
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * カスタムレッスン処理
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * 「編集」ボタンがクリックされた時の処理
+ * レッスン名を確定してエディターを起動
+ */
+function handleUseCustom() {
+  const customLesson = document.getElementById('customLessonInput').value.trim();
+
+  if (!customLesson) {
+    alert('レッスン名を入力してください');
+    return;
+  }
+
+  // ✅ 既存レッスンと一致するかチェック
+  const isExisting = existingLessons.includes(customLesson);
+
+  state.lesson = customLesson;
+  state.originalLessonName = customLesson;  // 元の名前を保存
+  state.isCustomLesson = !isExisting;
+  state.isEdited = false;
+
+  // ✅ 入試対策編の場合、レッスン名から grade を推測
+  if (state.textbook === '入試対策編') {
+    if (customLesson.includes('不規則動詞①')) {
+      state.grade = '不規則動詞①';
+      console.log('📌 Detected 不規則動詞①, setting state.grade');
+    } else if (customLesson.includes('不規則動詞②')) {
+      state.grade = '不規則動詞②';
+      console.log('📌 Detected 不規則動詞②, setting state.grade');
+    } else {
+      // デフォルト値
+      state.grade = '通常';
+      console.log('📌 No specific type detected, setting state.grade to 通常');
+    }
+  }
+
+  state.isEditorOpen = true;
+
+  console.log(`✅ レッスン名確定: "${customLesson}" (既存: ${isExisting})`);
+  console.log('state:', state);
+
+  // ✅ 新規：選択欄を更新
+  updateLessonSelectForCustom(customLesson);
+
+  document.getElementById('customLessonGroup').classList.add('hidden');
+  loadEditorData();
+}
+
+/**
+ * ✅ 新規関数：カスタムレッスン入力時の選択欄更新
+ * 「その他」で入力したレッスン名を選択欄に反映
+ * 
+ * @param {string} customLesson - カスタムレッスン名
+ */
+function updateLessonSelectForCustom(customLesson) {
+  const lessonSelect = document.getElementById('lessonSelect');
+  
+  if (!lessonSelect) {
+    console.warn('⚠️ lessonSelect が見つかりません');
+    return;
+  }
+
+  // 選択欄内に該当するレッスン名のオプションがあるか確認
+  const options = lessonSelect.querySelectorAll('option');
+  let found = false;
+
+  options.forEach(option => {
+    if (option.value === customLesson) {
+      lessonSelect.value = customLesson;
+      found = true;
+      console.log(`✅ 選択欄を「${customLesson}」に更新しました`);
+    }
+  });
+
+  if (!found) {
+    // 選択欄にない場合は、新しいオプションをカスタムレッスンの前に追加
+    console.log(`⚠️ 選択欄に「${customLesson}」が見つかりません。新しいオプションを追加します。`);
+    
+    // 「その他」オプションを探す
+    let otherOptionIndex = -1;
+    const optionsArray = Array.from(options);
+    optionsArray.forEach((option, index) => {
+      if (option.value === 'other') {
+        otherOptionIndex = index;
+      }
+    });
+
+    // 新しいオプションを作成
+    const newOption = document.createElement('option');
+    newOption.value = customLesson;
+    newOption.textContent = customLesson;
+
+    // 「その他」の前に挿入（または最後に追加）
+    if (otherOptionIndex !== -1 && otherOptionIndex < optionsArray.length - 1) {
+      lessonSelect.insertBefore(newOption, optionsArray[otherOptionIndex]);
+      console.log(`✅ 新しいオプション「${customLesson}」を「その他」の前に追加しました`);
+    } else {
+      lessonSelect.appendChild(newOption);
+      console.log(`✅ 新しいオプション「${customLesson}」を追加しました`);
+    }
+
+    // 新しいオプションを選択
+    lessonSelect.value = customLesson;
+    console.log(`✅ 選択欄を「${customLesson}」に設定しました`);
+  }
+}
+
+/**
+ * ✅ 新規関数：保存後の選択欄更新（保存後処理専用）
+ * 保存後にレッスン一覧を再取得して、新しく追加されたレッスンが
+ * 選択欄に含まれるようにする
+ */
+function updateLessonSelectAfterSave() {
+  console.log('=== updateLessonSelectAfterSave called ===');
+  
+  const lessonSelect = document.getElementById('lessonSelect');
+  
+  if (!lessonSelect) {
+    console.warn('⚠️ lessonSelect が見つかりません');
+    return;
+  }
+
+  // 現在の選択欄の値を保持
+  const currentValue = lessonSelect.value;
+  console.log('現在の選択値:', currentValue);
+
+  // レッスン一覧を再取得して更新
+  google.script.run
+    .withSuccessHandler(lessons => {
+      console.log('✅ getLessonListForSave success, lessons:', lessons);
+      
+      if (!lessons || lessons.length === 0) {
+        console.warn('⚠️ レッスンが見つかりません');
+        return;
+      }
+
+      // 選択肢をリセット
+      lessonSelect.innerHTML = '<option value="">選択してください</option>';
+      
+      // 新しいレッスン一覧を追加
+      lessons.forEach(lesson => {
+        const option = document.createElement('option');
+        option.value = lesson;
+        option.textContent = lesson;
+        lessonSelect.appendChild(option);
+      });
+
+      // 保存したレッスン名を選択状態に設定
+      if (state.lesson && lessons.includes(state.lesson)) {
+        lessonSelect.value = state.lesson;
+        console.log(`✅ 選択欄を「${state.lesson}」に設定しました`);
+      } else if (currentValue) {
+        lessonSelect.value = currentValue;
+        console.log(`✅ 選択欄を「${currentValue}」に設定しました`);
+      }
+
+      console.log(`✅ ${lessons.length}件のレッスンを追加しました`);
+    })
+    .withFailureHandler(err => {
+      console.error('❌ getLessonListForSave error:', err);
+    })
+    .getLessonListForSave(state.year, state.textbook, state.grade);
+}
+
+/**
+ * 指定されたレッスン名でエディターを起動
+ * @param {string} lesson - レッスン名
+ * @param {boolean} isCustom - カスタムレッスンかどうか
+ */
+      function loadEditorWithLesson(lesson, isCustom) {
+        console.log('=== loadEditorWithLesson called ===');
+        console.log('lesson:', lesson);
+        console.log('isCustom:', isCustom);
+  
+        // ✅ 必要な行のみ
+        state.lesson = lesson;
+        state.isCustomLesson = isCustom;
+        state.isEditorOpen = true;
+
+        console.log('state:', state);
+        loadEditorData();
+      }
+
+/**
+ * ════════════════════════════════════════════════════════
+ * エディター読み込み・UI更新
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * ✅ 新規関数：ローディングインジケーターを表示
+ */
+function showLoadingIndicator(message = '読み込み中...') {
+  const existing = document.getElementById('editorLoadingIndicator');
+  if (existing) {
+    existing.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'editorLoadingIndicator';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+  `;
+
+  const container = document.createElement('div');
+  container.style.cssText = `
+    background-color: white;
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-family: 'Meiryo', Arial, sans-serif;
+  `;
+
+  const spinner = document.createElement('div');
+  spinner.style.cssText = `
+    width: 50px;
+    height: 50px;
+    margin: 0 auto 20px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #2196F3;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  `;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  const messageEl = document.createElement('div');
+  messageEl.style.cssText = `
+    font-size: 16px;
+    color: #333;
+    font-weight: bold;
+  `;
+  messageEl.textContent = message;
+
+  container.appendChild(spinner);
+  container.appendChild(messageEl);
+  overlay.appendChild(container);
+  document.body.appendChild(overlay);
+}
+
+/**
+ * ✅ 新規関数：ローディングインジケーターを非表示
+ */
+function hideLoadingIndicator() {
+  const indicator = document.getElementById('editorLoadingIndicator');
+  if (indicator) {
+    indicator.remove();
+  }
+}
+
+/**
+ * ✅ 修正版：loadEditorData()
+ * 不規則動詞の場合、tableData の行数を拡張して loadFukisokuData と連携
+ */
+function loadEditorData() {
+  console.log('=== loadEditorData called ===');
+  console.log('state:', state);
+  
+  searchQuery = '';
+  currentItemType = 'word';
+  rightPanelFocusCell = { rowIdx: 0, colIdx: 0 };
+  
+  const isFukisoku1 = state.lesson && state.lesson.startsWith('不規則動詞①');
+  const isFukisoku2 = state.lesson && state.lesson.startsWith('不規則動詞②');
+
+  let maxRows = 16;
+  if (isFukisoku1) {
+    maxRows = 22;
+  } else if (isFukisoku2) {
+    maxRows = 25;
+  }
+
+  tableData = Array(maxRows).fill(null).map(() => [null, null, null]);
+  
+  showLoadingIndicator('データを読み込み中...');
+  
+  google.script.run
+    .withSuccessHandler(data => {
+      console.log('✅ getAllWordsAndSentences success');
+      allWords = data.words;
+      allSentences = data.sentences;
+
+      if (isFukisoku1 || isFukisoku2) {
+        console.log('📌 Loading fukisoku data...');
+        
+        let sheetGrade = state.grade;
+        if (state.textbook === '入試対策編') {
+          if (isFukisoku1) {
+            sheetGrade = '不規則動詞①';
+          } else if (isFukisoku2) {
+            sheetGrade = '不規則動詞②';
+          }
+        }
+
+        console.log('📌 Loading fukisoku data with sheetGrade:', sheetGrade);
+        
+        google.script.run
+          .withSuccessHandler(fukisokuResult => {
+            console.log('✅ loadFukisokuData success');
+            
+            if (fukisokuResult.success && fukisokuResult.fukisokuDataMap) {
+              // ✅ 修正版：fukisokuDataMap を tableData に変換
+              tableData = convertFukisokuMapToTableData(
+                fukisokuResult.fukisokuDataMap,
+                isFukisoku1
+              );
+              
+              // ✅ メモリに保持（保存時に過去形・過去分詞データを参照するため）
+              if (isFukisoku1) {
+                window.fukisoku1DataMap = fukisokuResult.fukisokuDataMap;
+              } else {
+                window.fukisoku2DataMap = fukisokuResult.fukisokuDataMap;
+              }
+              
+              console.log('✅ tableData converted:', tableData.length, 'rows');
+              console.log('fukisokuDataMap saved:', fukisokuResult.fukisokuDataMap);
+            } else {
+              console.log('⚠️ fukisokuDataMap is empty or error');
+              tableData = Array(maxRows).fill(null).map(() => [null, null, null]);
+            }
+
+            renderEditor();
+            renderTabs();
+            renderWordList();
+            renderTable();
+
+            hideLoadingIndicator();
+          })
+          .withFailureHandler(err => {
+            console.error('❌ loadFukisokuData エラー:', err);
+            hideLoadingIndicator();
+            alert('❌ 不規則動詞データの読み込みに失敗しました。\n\nエラー: ' + err);
+            closeEditor();
+          })
+          .loadFukisokuData(state.year, state.textbook, sheetGrade, state.lesson, allWords);
+      } else {
+        // 通常レッスンの処理
+        console.log('📌 Loading existing data (normal lesson)...');
+        google.script.run
+          .withSuccessHandler(existingData => {
+            console.log('✅ getExistingData success');
+            
+            if (existingData.tableData && existingData.tableData.length > 0) {
+              loadExistingData(existingData.tableData);
+            } else {
+              tableData = Array(16).fill(null).map(() => [null, null, null]);
+            }
+
+            renderEditor();
+            renderTabs();
+            renderWordList();
+            renderTable();
+
+            hideLoadingIndicator();
+          })
+          .withFailureHandler(err => {
+            console.error('❌ getExistingData エラー:', err);
+            hideLoadingIndicator();
+            alert('❌ 既存データの読み込みに失敗しました。\n\nエラー: ' + err);
+            closeEditor();
+          })
+          .getExistingData(state.year, state.textbook, state.grade, state.lesson);
+      }
+    })
+    .withFailureHandler(err => {
+      console.error('❌ getAllWordsAndSentences エラー:', err);
+      hideLoadingIndicator();
+      alert('❌ 単語・文データの読み込みに失敗しました。\n\nエラー: ' + err);
+      closeEditor();
+    })
+    .getAllWordsAndSentences();
+}
+
+/**
+ * 「編集」ボタンの有効・無効を更新
+ */
+      function updateNewButton() {
+        const btn = document.getElementById('newBtn');
+
+        // 「その他」を選んで、カスタムレッスン名を入力した場合のみ有効化
+        const hasCustomLesson = state.lesson === 'other' &&
+                               document.getElementById('customLessonInput').value.trim().length > 0;
+
+        // または既存レッスンが選ばれた場合
+        const hasExistingLesson = state.lesson && state.lesson !== 'other';
+
+        const hasAllRequired = state.year && state.textbook && state.grade &&
+                              (hasCustomLesson || hasExistingLesson);
+
+        btn.disabled = !hasAllRequired;
+      }
+
+/**
+ * リセットボタンがクリックされた時の処理
+ * 全ての選択をクリアしてエディターを閉じる
+ */
+      function handleReset() {
+        if (hasChanges) {
+          const confirmReset = window.confirm(
+            '⚠️ 変更内容が保存されていません。\n本当にリセットしますか？'
+          );
+          if (!confirmReset) {
+            return;
+          }
+        }
+
+        state.year = '';
+        state.textbook = '';
+        state.grade = '';
+        state.lesson = '';
+        state.isCustomLesson = false;
+
+        document.getElementById('yearSelect').value = '';
+        document.getElementById('textbookSelect').value = '';
+        document.getElementById('textbookSelect').disabled = true;
+        document.getElementById('gradeSelect').value = '';
+        document.getElementById('gradeSelect').disabled = true;
+        document.getElementById('lessonSelect').value = '';
+        document.getElementById('lessonSelect').disabled = true;
+        document.getElementById('customLessonGroup').classList.add('hidden');
+        document.getElementById('customLessonInput').value = '';
+
+        closeEditor();
+        updateNewButton();
+      }
+
+/**
+ * エディター画面を閉じて初期表示に戻す
+ */
+function closeEditor() {
+  hasChanges = false;
+  searchQuery = '';  // ✅ 新規追加
+  currentItemType = 'word';  // ✅ 新規追加
+  
+  const editorArea = document.getElementById('editorArea');
+  editorArea.className = 'editor-area no-data';
+  editorArea.innerHTML = '<div class="no-data-message">上部で年度・教科書・学年・レッスンを選択して「編集」をクリックしてください</div>';
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 修正1: インクリメンタル検索の改善
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * 単語の検索用キーを生成（先頭文字検索用）
+ * 記号を除いて、英字から始まる部分を基準にする
+ * 例：~as...as → as
+ * 例：(about) → about
+ */
