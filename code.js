@@ -467,80 +467,6 @@ function getMaxColumnsForSheet(textbook, grade) {
   return 7;
 }
 
-/**
- * スプレッドシートのデータをテーブルデータ構造に変換
- * cellIdから行列位置を計算し、単語・文を適切に配置
- * @param {Array} rawData - スプレッドシートから取得した生データ
- * @param {string} lesson - フィルタ対象のレッスン名
- * @returns {Array} 16行3列のtableData構造
- */
-function loadDataIntoTable(rawData, lesson) {
-  // 16行3列の初期化（全てnull）
-  const tableData = Array(16).fill(null).map(() => [null, null, null]);
-  
-  // レッスンが一致するデータのみをフィルタリング
-  const lessonData = rawData.filter(row => {
-    const lessonCell = row[1] ? row[1].toString().trim() : '';
-    return lessonCell === lesson;
-  });
-  
-  // フィルタされたデータをtableDataに配置
-  lessonData.forEach(row => {
-    const cellId = validateCellId(row[0]);
-    if (cellId === null) return; // 不正なcellIdはスキップ
-    
-    // cellIdから行列インデックスを計算
-    const rowIdx = Math.floor((cellId - 1) / 3);
-    const colIdx = (cellId - 1) % 3;
-    
-    // 行インデックスが範囲外ならスキップ
-    if (rowIdx < 0 || rowIdx >= 16) {
-      Logger.log(`警告: cellId ${cellId} は範囲外です (rowIdx: ${rowIdx})`);
-      return;
-    }
-    
-    // 3列データを解析
-    const english = row[3] ? row[3].toString().trim() : '';
-    const japanese = row[2] ? row[2].toString().trim() : '';
-    const pronunciation = row[4] ? row[4].toString().trim() : '';
-    const masterId = row[5] ? parseInt(row[5]) : null;
-    
-    // 単語か文かを判定
-    if (english) {
-      // 単語の場合：englishが存在
-      tableData[rowIdx][colIdx] = {
-        type: 'word',
-        english: english,
-        japanese: japanese,
-        pronunciation: pronunciation,
-        masterWordId: masterId,
-        cellId: cellId
-      };
-    } else if (japanese) {
-      // 文の場合：englishがなく、japaneseがある
-      // ただし、その行に既に単語がないかチェック
-      const hasWordInRow = tableData[rowIdx].some(cell => cell && cell.type === 'word');
-      
-      if (!hasWordInRow) {
-        // その行に単語がなければ配置可能
-        tableData[rowIdx][0] = {
-          type: 'sentence',
-          text: japanese,
-          masterSentenceId: masterId,
-          cellId: cellId
-        };
-        tableData[rowIdx][1] = null;
-        tableData[rowIdx][2] = null;
-      } else {
-        // その行に既に単語がある場合はログに出力（データ矛盾）
-        Logger.log(`警告: row ${rowIdx} に単語が存在するため、文 "${japanese}" は無視されました`);
-      }
-    }
-  });
-  
-  return tableData;
-}
-
 // ════════════════════════════════════════════════════════
 // データ保存
 // ════════════════════════════════════════════════════════
@@ -783,7 +709,7 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
           return;
         }
 
-        const cellId = cell.cellId || (rowIdx * 3 + colIdx + 1);
+        const cellId = cell.cellId || (rowIdx + colIdx * 16 + 1);
 
         if (cell.type === 'word') {
           const masterWord = allWords.find(w => w.id === cell.masterWordId);
@@ -4387,7 +4313,7 @@ function extractQuestionsFromSheet(sheet, targetLesson, lessonCol) {
       if (sheetName === '不規則動詞②') {
         if (row[12] || row[13] || row[14]) {
           questions.push({
-            wordId: row[11] || '', english: row[12] || '', pronunciation: '',
+            wordId: row[11] || '', english: row[12] || '', pronunciation: row[13] || '',
             japanese: row[3] || '', audio: row[14] || '', lesson: row[5] || '',
             cellId: row[6] || '', formType: 'past_participle', questionNumber: questionNumber
           });
