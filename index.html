@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>発音練習</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
+            background-color: #f0f2f5;
+            padding: 12px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .selector-panel {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            margin-bottom: 12px;
+            position: sticky;
+            top: 12px;
+            z-index: 100;
+        }
+
+        .selector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+
+        .selector-header h2 {
+            font-size: 18px;
+            color: #1a1a1a;
+        }
+
+        .toggle-icon {
+            font-size: 24px;
+            color: #2196f3;
+            transition: transform 0.3s ease;
+        }
+
+        .toggle-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .selector-content {
+            max-height: 600px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        .selector-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
+
+        .form-group {
+            margin-top: 16px;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #333;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background-color: #fff;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        }
+
+        select:disabled {
+            background-color: #f5f5f5;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .loading-spinner {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #2196f3;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+            pointer-events: none;
+            margin-top: 5px;
+        }
+
+        .loading-spinner.show {
+            display: block;
+        }
+
+        @keyframes spin {
+            to {
+                transform: translateY(-50%) rotate(360deg);
+            }
+        }
+
+        .form-group.grade-group {
+            display: none;
+        }
+
+        .form-group.grade-group.show {
+            display: block;
+        }
+
+        .questions-panel {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .questions-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .question {
+            margin-bottom: 12px;
+            border: 1px solid #e0e0e0;
+            padding: 14px;
+            background-color: #f9f9f9;
+            border-radius: 10px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .question-number {
+            font-size: 16px;
+            font-weight: 700;
+            color: #2196f3;
+            width: 40px;
+            height: 40px;
+            border: 2px solid #2196f3;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .question-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .question-text {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .japanese {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .english {
+            font-size: 15px;
+            color: #2196f3;
+            font-weight: 600;
+        }
+
+        .audio-container {
+            margin-top: 6px;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+            background-color: #2196f3;
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .form-section {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .form-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        audio {
+            width: 100%;
+            max-width: 100%;
+            height: 36px;
+            border-radius: 6px;
+        }
+
+        .no-audio {
+            color: #999;
+            font-size: 12px;
+            font-style: italic;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .global-loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.3);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .global-loading-overlay.show {
+            display: flex;
+        }
+
+        .global-loading-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .global-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #2196f3;
+            border-radius: 50%;
+            animation: spinLarge 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spinLarge {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .global-loading-text {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .pronoun-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            margin-top: 16px;
+        }
+
+        .pronoun-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .pronoun-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .pronoun-table thead {
+            background-color: #f0f0f0;
+        }
+
+        .pronoun-table th {
+            border: 1px solid #ddd;
+            padding: 10px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .pronoun-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+            vertical-align: middle;
+            min-height: 80px;
+        }
+
+        .pronoun-label {
+            background-color: #f0f0f0;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .header-logo img {
+            height: 40px;
+            max-width: 40px;
+            object-fit: contain;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        .header-logo img:hover {
+            opacity: 0.8;
+        }
+
+        .header-logo a {
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .header-title img {
+            height: 40px;
+            max-width: 40px;
+            object-fit: contain;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+        }
+
+        .header-right a {
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+        }
+
+        .header-right img {
+            height: 40px;
+            max-width: 40px;
+            object-fit: contain;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        .header-right img:hover {
+            opacity: 0.8;
+        }
+
+        .footer {
+            margin-top: 24px;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            font-size: 13px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .footer a {
+            color: #2196f3;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 8px;
+            }
+
+            .selector-panel {
+                padding: 12px;
+                margin-bottom: 8px;
+                top: 8px;
+            }
+
+            .selector-header h2 {
+                font-size: 16px;
+            }
+
+            .form-group {
+                margin-top: 12px;
+            }
+
+            label {
+                font-size: 13px;
+            }
+
+            select {
+                padding: 8px;
+                font-size: 13px;
+            }
+
+            .questions-panel {
+                padding: 12px;
+            }
+
+            .questions-header {
+                font-size: 18px;
+                margin-bottom: 12px;
+            }
+
+            .question {
+                padding: 12px;
+                margin-bottom: 10px;
+            }
+
+            .japanese {
+                font-size: 14px;
+            }
+
+            .english {
+                font-size: 14px;
+            }
+
+            audio {
+                height: 32px;
+            }
+        }
+    </style>
+    <script>
+        let years = [];
+        let currentQuestions = [];
+
+        try {
+            const yearsJsonString = '<?= yearsJson ?>';
+            years = JSON.parse(yearsJsonString);
+        } catch (e) {
+            years = [];
+        }
+
+        function callServerFunction(functionName, ...args) {
+            return new Promise((resolve, reject) => {
+                google.script.run
+                    .withSuccessHandler(resolve)
+                    .withFailureHandler(reject)
+                    [functionName](...args);
+            });
+        }
+
+        function toggleSelector() {
+            const content = document.querySelector('.selector-content');
+            const icon = document.querySelector('.toggle-icon');
+            content.classList.toggle('collapsed');
+            icon.classList.toggle('collapsed');
+        }
+
+        function showSpinner(selectId) {
+            const select = document.getElementById(selectId);
+            const spinner = select.parentElement.querySelector('.loading-spinner');
+            if (spinner) {
+                spinner.classList.add('show');
+            }
+            select.disabled = true;
+        }
+
+        function hideSpinner(selectId) {
+            const select = document.getElementById(selectId);
+            const spinner = select.parentElement.querySelector('.loading-spinner');
+            if (spinner) {
+                spinner.classList.remove('show');
+            }
+            select.disabled = false;
+        }
+
+        function showGlobalLoading() {
+            const overlay = document.getElementById('global-loading-overlay');
+            overlay.classList.add('show');
+        }
+
+        function hideGlobalLoading() {
+            const overlay = document.getElementById('global-loading-overlay');
+            overlay.classList.remove('show');
+        }
+
+        function updateTextbooks() {
+            const year = document.getElementById('year').value;
+            showSpinner('textbook');
+
+            if (!year) {
+                document.getElementById('textbook').innerHTML = '<option value="">---</option>';
+                hideSpinner('textbook');
+                updateGrades();
+                return;
+            }
+
+            callServerFunction('getTextbooks', year)
+                .then(result => {
+                    const textbooks = result.textbooks || [];
+                    const textbookSelect = document.getElementById('textbook');
+                    textbookSelect.innerHTML = '<option value="">---</option>';
+                    textbooks.forEach(textbook => {
+                        const option = document.createElement('option');
+                        option.value = textbook;
+                        option.textContent = textbook;
+                        textbookSelect.appendChild(option);
+                    });
+                    hideSpinner('textbook');
+                    updateGrades();
+                })
+                .catch(e => {
+                    hideSpinner('textbook');
+                });
+        }
+
+        function updateGrades() {
+            const year = document.getElementById('year').value;
+            const textbook = document.getElementById('textbook').value;
+            const gradeSelect = document.getElementById('grade');
+            const gradeGroup = document.querySelector('.form-group.grade-group');
+
+            if (!year || !textbook) {
+                gradeSelect.innerHTML = '<option value="">---</option>';
+                gradeSelect.disabled = true;
+                gradeGroup.classList.remove('show');
+                clearQuestions();
+                return;
+            }
+
+            showSpinner('grade');
+
+            if (textbook === '入試対策編') {
+                gradeSelect.innerHTML = '<option value="入試対策編" selected>（学年不要）</option>';
+                gradeSelect.disabled = true;
+                gradeGroup.classList.remove('show');
+                hideSpinner('grade');
+                updateLessons();
+                return;
+            }
+
+            callServerFunction('getGrades', year, textbook)
+                .then(result => {
+                    const grades = result.grades || [];
+                    gradeSelect.innerHTML = '<option value="">---</option>';
+                    grades.forEach(grade => {
+                        const option = document.createElement('option');
+                        option.value = grade;
+                        option.textContent = grade;
+                        gradeSelect.appendChild(option);
+                    });
+                    gradeSelect.disabled = false;
+                    gradeGroup.classList.add('show');
+                    hideSpinner('grade');
+                    updateLessons();
+                })
+                .catch(e => {
+                    hideSpinner('grade');
+                });
+        }
+
+        function updateLessons() {
+            const year = document.getElementById('year').value;
+            const textbook = document.getElementById('textbook').value;
+            const grade = document.getElementById('grade').value;
+            const lessonSelect = document.getElementById('lesson');
+
+            if (!year || !textbook || !grade) {
+                lessonSelect.innerHTML = '<option value="">---</option>';
+                clearQuestions();
+                return;
+            }
+
+            showSpinner('lesson');
+
+            callServerFunction('getLessons', year, textbook, grade)
+                .then(result => {
+                    const lessons = result.lessons || [];
+                    lessonSelect.innerHTML = '<option value="">---</option>';
+                    lessons.forEach(lesson => {
+                        const option = document.createElement('option');
+                        option.value = lesson;
+                        option.textContent = lesson;
+                        lessonSelect.appendChild(option);
+                    });
+                    hideSpinner('lesson');
+                })
+                .catch(e => {
+                    hideSpinner('lesson');
+                });
+        }
+
+        function handleLessonChange() {
+            const year = document.getElementById('year').value;
+            const textbook = document.getElementById('textbook').value;
+            let grade = document.getElementById('grade').value;
+            const lesson = document.getElementById('lesson').value;
+
+            if (textbook === '入試対策編') {
+                grade = '入試対策編';
+            }
+
+            if (year && textbook && lesson && grade) {
+                loadQuestions(year, textbook, grade, lesson);
+            } else {
+                clearQuestions();
+            }
+            
+            window.scrollTo(0, 0);
+        }
+
+        function loadQuestions(year, textbook, grade, lesson) {
+            showGlobalLoading();
+            
+            callServerFunction('getPracticeQuestions', year, textbook, grade, lesson)
+                .then(questions => {
+                    currentQuestions = questions;
+                    displayQuestions();
+                    hideGlobalLoading();
+                })
+                .catch(e => {
+                    clearQuestions();
+                    hideGlobalLoading();
+                });
+        }
+
+        function displayQuestions() {
+            const container = document.getElementById('questions-container');
+            
+            if (!currentQuestions || currentQuestions.length === 0) {
+                clearQuestions();
+                return;
+            }
+
+            const lesson = document.getElementById('lesson').value;
+            let html = '<div class="questions-header">📢 ' + lesson + '</div>';
+            
+            const normalQuestions = currentQuestions.filter(q => !q.isPronoun);
+            const pronounQuestions = currentQuestions.filter(q => q.isPronoun);
+
+            const wordIdLte10000 = normalQuestions.filter(q => {
+                const wordId = parseInt(q.wordId || '0');
+                return wordId <= 10000;
+            });
+            
+            const wordIdGt10000 = normalQuestions.filter(q => {
+                const wordId = parseInt(q.wordId || '0');
+                return wordId > 10000;
+            });
+
+            const processQuestionGroup = (questions, startNumber = 1) => {
+                if (questions.length === 0) return { html: '', lastNumber: startNumber - 1 };
+
+                const sortedQuestions = questions.sort((a, b) => {
+                    const cellIdA = parseInt(a.cellId || '0');
+                    const cellIdB = parseInt(b.cellId || '0');
+                    return cellIdA - cellIdB;
+                });
+
+                const groupedQuestions = {};
+                let newQuestionNumber = startNumber - 1;
+                let prevCellId = null;
+                
+                sortedQuestions.forEach(q => {
+                    if (q.cellId !== prevCellId) {
+                        newQuestionNumber++;
+                        prevCellId = q.cellId;
+                    }
+                    
+                    if (!groupedQuestions[newQuestionNumber]) {
+                        groupedQuestions[newQuestionNumber] = [];
+                    }
+                    groupedQuestions[newQuestionNumber].push(q);
+                });
+
+                let groupHtml = '';
+                let lastNumber = startNumber - 1;
+                Object.keys(groupedQuestions).forEach(num => {
+                    const group = groupedQuestions[num];
+                    let cardHtml = '<div class="question"><div class="question-number">' + num + '</div><div class="question-content">';
+
+                    group.forEach(q => {
+                        let audioHtml;
+                        if (q.audio) {
+                            audioHtml = '<audio controls preload="metadata" style="width:100%;"><source src="' + q.audio + '" type="audio/mpeg">お使いのブラウザは音声再生に対応していません。</audio>';
+                        } else {
+                            audioHtml = '<div class="no-audio">🔇 音声ファイルなし</div>';
+                        }
+
+                        let formLabel = '現在形';
+                        if (q.formType === 'past') formLabel = '過去形';
+                        if (q.formType === 'past_participle') formLabel = '過去分詞形';
+
+                        const japaneseDisplay = (q.formType === 'present') 
+                            ? '<div class="japanese">' + (q.japanese || '（記載なし）') + '</div>' 
+                            : '';
+
+                        cardHtml += '<div class="form-section"><div class="form-label">' + formLabel + '</div><div class="question-text">' + japaneseDisplay + '<div class="english">' + (q.english || '（記載なし）') + '</div></div><div class="audio-container">' + audioHtml + '</div></div>';
+                    });
+
+                    cardHtml += '</div></div>';
+                    groupHtml += cardHtml;
+                    lastNumber = parseInt(num);
+                });
+
+                return { html: groupHtml, lastNumber: lastNumber };
+            };
+
+            const group1Result = processQuestionGroup(wordIdLte10000, 1);
+            html += group1Result.html;
+
+            const group2Result = processQuestionGroup(wordIdGt10000, group1Result.lastNumber + 1);
+            html += group2Result.html;
+
+            const pronounGroups = {};
+            if (pronounQuestions.length > 0) {
+                const allNormalQuestions = [...wordIdLte10000, ...wordIdGt10000];
+                const sortedAllQuestions = allNormalQuestions.sort((a, b) => {
+                    const cellIdA = parseInt(a.cellId || '0');
+                    const cellIdB = parseInt(b.cellId || '0');
+                    return cellIdA - cellIdB;
+                });
+
+                let maxQuestionNumber = 0;
+                let prevCellId = null;
+                sortedAllQuestions.forEach(q => {
+                    if (q.cellId !== prevCellId) {
+                        maxQuestionNumber++;
+                        prevCellId = q.cellId;
+                    }
+                });
+
+                let pronounNumber = maxQuestionNumber + 1;
+                pronounQuestions.forEach(q => {
+                    if (!pronounGroups[pronounNumber]) {
+                        pronounGroups[pronounNumber] = [];
+                    }
+                    
+                    pronounGroups[pronounNumber].push(q);
+                    
+                    if (pronounGroups[pronounNumber].length === 4) {
+                        pronounNumber++;
+                    }
+                });
+            }
+
+            if (Object.keys(pronounGroups).length > 0) {
+                html += createPronounTable(pronounGroups);
+            }
+
+            container.innerHTML = html;
+        }
+
+        function createPronounTable(pronounGroups) {
+            let tableHtml = '<div class="pronoun-card"><div class="pronoun-header">代名詞</div><table class="pronoun-table"><thead><tr><th></th><th>～は・が</th><th>～の</th><th>～を・に</th><th>～のもの</th></tr></thead><tbody>';
+
+            Object.keys(pronounGroups).forEach(num => {
+                const group = pronounGroups[num];
+                const columns = { nominative: null, genitive: null, objective: null, possessive: null };
+                
+                group.forEach(q => {
+                    columns[q.pronounColumn] = q;
+                });
+
+                const japaneseText = group[0].japanese || '';
+                tableHtml += '<tr><td class="pronoun-label">' + japaneseText + '</td><td>' + createPronounCell(columns.nominative) + '</td><td>' + createPronounCell(columns.genitive) + '</td><td>' + createPronounCell(columns.objective) + '</td><td>' + createPronounCell(columns.possessive) + '</td></tr>';
+            });
+
+            tableHtml += '</tbody></table></div>';
+            return tableHtml;
+        }
+
+        function createPronounCell(questionData) {
+            if (!questionData) return '<div class="no-audio">-</div>';
+            
+            if (questionData.english === '×') {
+                return '<div style="text-align: center;">×</div>';
+            }
+
+            let audioHtml = '';
+            if (questionData.audio) {
+                audioHtml = '<audio controls preload="metadata" style="width:100%; margin-top: 6px;"><source src="' + questionData.audio + '" type="audio/mpeg">お使いのブラウザは音声再生に対応していません。</audio>';
+            }
+
+            return '<div style="text-align: center;"><div style="font-size: 14px; font-weight: 600; color: #2196f3; margin-bottom: 6px;">' + questionData.english + '</div>' + audioHtml + '</div>';
+        }
+
+        function clearQuestions() {
+            currentQuestions = [];
+            const container = document.getElementById('questions-container');
+            container.innerHTML = '<div class="empty-state"><p>レッスンを選択してください</p></div>';
+        }
+
+        window.onload = function() {
+            document.querySelector('.selector-header').addEventListener('click', toggleSelector);
+            document.getElementById('year').addEventListener('change', updateTextbooks);
+            document.getElementById('textbook').addEventListener('change', updateGrades);
+            document.getElementById('grade').addEventListener('change', updateLessons);
+            document.getElementById('lesson').addEventListener('change', handleLessonChange);
+            
+            clearQuestions();
+            loadLogo();
+        };
+
+        function loadLogo() {
+            callServerFunction('getLogoUrl')
+                .then(result => {
+                    if (result) {
+                        // applogo.pngの読み込み
+                        if (result.appLogoUrl) {
+                            const appLogoImg = document.getElementById('app-logo-img');
+                            appLogoImg.src = result.appLogoUrl;
+                            appLogoImg.style.display = 'block';
+                        }
+                        
+                        // logo.pngの読み込み
+                        if (result.logoUrl) {
+                            const logoImg = document.getElementById('logo-img');
+                            const logoLink = document.getElementById('logo-link');
+                            logoImg.src = result.logoUrl;
+                            logoImg.style.display = 'block';
+                            
+                            if (result.homepageUrl) {
+                                logoLink.href = result.homepageUrl;
+                            } else {
+                                logoLink.style.cursor = 'default';
+                            }
+                        }
+                    }
+                })
+                .catch(e => {
+                    // ロゴ読み込み失敗時は無視
+                });
+        }
+    </script>
+</head>
+<body>
+    <div id="global-loading-overlay" class="global-loading-overlay">
+        <div class="global-loading-content">
+            <div class="global-spinner"></div>
+            <div class="global-loading-text">読み込み中...</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="selector-panel">
+            <div class="selector-header">
+                <div class="header-title">
+                    <img id="app-logo-img" src="" alt="アプリロゴ" style="display:none; height:100px; max-width:120px; object-fit:contain;">
+                    <h2>📚 発音練習</h2>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <a id="logo-link" href="#" target="_blank">
+                        <img id="logo-img" src="" alt="ロゴ" style="display:none; height:100px; max-width:120px; object-fit:contain;">
+                    </a>
+                    <span class="toggle-icon">▼</span>
+                </div>
+            </div>
+
+            <div class="selector-content">
+                <div class="form-group">
+                    <label for="year">年度:</label>
+                    <select id="year">
+                        <option value="">---</option>
+                        <? years.forEach(y => { ?>
+                            <option value="<?= y.originalName ?>">
+                                <?= y.displayName ?>
+                            </option>
+                        <? }); ?>
+                    </select>
+                    <div class="loading-spinner"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="textbook">教科書:</label>
+                    <select id="textbook">
+                        <option value="">---</option>
+                    </select>
+                    <div class="loading-spinner"></div>
+                </div>
+
+                <div class="form-group grade-group">
+                    <label for="grade">学年:</label>
+                    <select id="grade">
+                        <option value="">---</option>
+                    </select>
+                    <div class="loading-spinner"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="lesson">レッスン:</label>
+                    <select id="lesson">
+                        <option value="">---</option>
+                    </select>
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="questions-panel">
+            <div id="questions-container">
+                <div class="empty-state">
+                    <p>レッスンを選択してください</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>※この音声は動画制作会社VIDWEBのボイスゲートを利用しています（<a href="https://vidweb.co.jp/" target="_blank">https://vidweb.co.jp/</a>）</p>
+            <p style="margin-top: 16px;">このアプリに関するお問い合わせや不具合の報告は担当講師またはこちらのメールにお願いします。
+            (<a href="mailto:square1995square@gmail.com?subject=スクエア英単語音声アプリの問い合わせ&body=問い合わせ内容：%0D%0A%0D%0A">square1995square@gmail.com</a>)</p>
+        </div>
+    </div>
+</body>
+</html>
