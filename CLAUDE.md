@@ -150,8 +150,31 @@ englishtest/
 
 ---
 
-## Git ブランチ・開発規則
+## Git・デプロイ規則（重要）
 
-- 本番ブランチ: `master`
-- Claude の作業ブランチ: `claude/<task-description>-<session-id>` 形式
-- `master` へのマージ後、GitHub Actions が自動デプロイを実行する
+### 基本ワークフロー
+**ユーザーから修正依頼 → コード修正 → `master` へ直接プッシュ → GitHub Actions が自動デプロイ → アプリに反映**
+
+ユーザーは何もしなくてよい。Claude がすべて完結させる。
+
+### ブランチルール
+- **常に `master` ブランチへ直接プッシュする**
+- feature ブランチや PR は使わない
+- `git push origin master` で完了
+
+### 自動デプロイの仕組み
+`master` へのプッシュで GitHub Actions (`.github/workflows/deploy.yml`) が自動起動：
+
+1. `clasp push --force` — コードを Google Apps Script へ転送
+2. `clasp deploy` — GAS のデプロイメントを更新（`GAS_DEPLOYMENT_ID` Secret 使用）
+
+**必要な GitHub Secrets（リポジトリ管理者が設定済み）:**
+| Secret 名 | 内容 |
+|---|---|
+| `CLASPRC_JSON` | clasp 認証情報（`~/.clasprc.json` の内容） |
+| `GAS_DEPLOYMENT_ID` | GAS のデプロイメント ID |
+
+### Claude が毎回すること
+1. `master` ブランチで作業
+2. 修正が完了したら `git push origin master`
+3. GitHub Actions のデプロイ完了を確認してユーザーに報告
