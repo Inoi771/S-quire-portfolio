@@ -162,13 +162,14 @@ englishtest/
 - ブランチ名: `claude/<作業内容>-<セッションID末尾>` 形式
 - `git push -u origin claude/<branch-name>` で完了
 
-### 自動デプロイの仕組み
-`claude/*` または `master` へのプッシュで GitHub Actions (`.github/workflows/deploy.yml`) が自動起動：
+### 自動化の仕組み（2ワークフロー構成）
 
-1. `clasp push --force` — コードを Google Apps Script へ転送
-2. `clasp deploy` — GAS のデプロイメントを更新（`GAS_DEPLOYMENT_ID` Secret 使用）
+| ワークフロー | トリガー | 役割 |
+|---|---|---|
+| `merge-to-master.yml` | `claude/*` への全プッシュ | master への自動マージのみ |
+| `deploy.yml` | `.js` `.html` `appsscript.json` `.github/workflows/*.yml` の変更時のみ | GAS へのデプロイのみ |
 
-**必要な GitHub Secrets（リポジトリ管理者が設定済み）:**
+**必要な GitHub Secrets（設定済み・変更不要）:**
 | Secret 名 | 内容 |
 |---|---|
 | `CLASPRC_JSON` | clasp 認証情報（`~/.clasprc.json` の内容） |
@@ -177,4 +178,22 @@ englishtest/
 ### Claude が毎回すること
 1. `claude/<task>-<sessionId>` ブランチで作業
 2. 修正が完了したら `git push -u origin <branch-name>`
-3. GitHub Actions のデプロイが自動実行される（ユーザー操作不要）
+3. GitHub Actions が自動実行（ユーザー操作不要）
+
+### ⚠️ Claude がやってはいけないこと
+- `clasp` のインストール・ログインをユーザーに案内すること（GitHub Actions が自動実行）
+- GAS エディタでの手動デプロイをユーザーに案内すること（自動化済み）
+- `clasp push` を手動実行しようとすること
+
+### プッシュ後の報告文ルール（必ず使い分けること）
+
+| 変更したファイル | GAS デプロイ | 報告文 |
+|---|---|---|
+| `.js` `.html` `appsscript.json` `.github/workflows/*.yml` を含む | ✅ 実行 | 「GitHubにプッシュしました。1〜2分後にアプリに反映されます。」 |
+| `CLAUDE.md` のみなど上記以外 | ❌ 非実行 | 「GitHubにプッシュしました。今回はコードに変更がないためデプロイは実行されません。」 |
+
+### 大きな変更前のバックアップルール
+新機能追加・大幅修正・複数ファイル変更の前に、確認なしでコミットを作成すること。
+- コミットメッセージ形式: `作業前バックアップ: [作業内容]`
+- 例: `作業前バックアップ: PDF生成機能の追加前`
+- コミット後「バックアップを作成しました」とユーザーに報告してから作業開始
