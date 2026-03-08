@@ -470,7 +470,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
           questions.push({
             wordId: row[11] || '',
             english: row[12] || '',
-            pronunciation: '',
+            pronunciation: row[13] || '',
             japanese: row[3] || '',
             audio: row[14] || '',
             lesson: row[5] || '',
