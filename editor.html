@@ -1704,7 +1704,7 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
               headerTitle.insertBefore(logoImg, headerTitle.firstChild);
             }
           }
-        }).getLogoPngUrl();
+        }).getEditorLogoUrl();
       }
 
 /**
@@ -1776,7 +1776,7 @@ function loadYears() {
       console.error('getYears エラー:', err);
       alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
     })
-    .getYears();
+    .getEditorYears();
 }
 
 /**
@@ -1819,7 +1819,7 @@ function handleYearChange(e) {
         alert('❌ 教科書の読み込みに失敗しました。\n\nエラー: ' + err);
         document.getElementById('textbookSelect').disabled = true;
       })
-      .getTextbooks(state.year);
+      .getEditorTextbooks(state.year);
   } else {
     document.getElementById('textbookSelect').disabled = true;
   }
@@ -1915,7 +1915,7 @@ function handleTextbookChange(e) {
           alert('❌ 学年の読み込みに失敗しました。\n\nエラー: ' + err);
           document.getElementById('gradeSelect').disabled = true;
         })
-        .getGrades(state.year, state.textbook);  // ✅ 修正：正しい関数を呼び出し
+        .getEditorGrades(state.year, state.textbook);  // ✅ 修正：正しい関数を呼び出し
     }
   } else {
     document.getElementById('gradeSelect').disabled = true;
@@ -1974,7 +1974,7 @@ function handleGradeChange(e) {
         alert('❌ レッスンの読み込みに失敗しました。\n\nエラー: ' + err);
         document.getElementById('lessonSelect').disabled = true;
       })
-      .getLessons(state.year, state.textbook, state.grade);
+      .getEditorLessons(state.year, state.textbook, state.grade);
   } else {
     document.getElementById('lessonSelect').disabled = true;
   }
@@ -7513,7 +7513,7 @@ function loadLogoWB() {
         headerLogo.appendChild(logoImg);
       }
     }
-  }).getLogoPngUrl();
+  }).getEditorLogoUrl();
 }
 
 /**
@@ -7553,7 +7553,7 @@ function loadYearsWB() {
       console.error('getYears エラー:', err);
       alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
     })
-    .getYears();
+    .getEditorYears();
 }
 
 /**
@@ -7593,7 +7593,7 @@ function handleYearChangeWB(e) {
         alert('❌ 教科書の読み込みに失敗しました。\n\nエラー: ' + err);
         document.getElementById('textbookSelectWB').disabled = true;
       })
-      .getTextbooks(currentYear);
+      .getEditorTextbooks(currentYear);
   } else {
     document.getElementById('textbookSelectWB').disabled = true;
   }
@@ -7630,7 +7630,7 @@ function handleTextbookChangeWB(e) {
         alert('❌ 学年の読み込みに失敗しました。\n\nエラー: ' + err);
         document.getElementById('gradeSelectWB').disabled = true;
       })
-      .getGrades(currentYear, currentTextbook);
+      .getEditorGrades(currentYear, currentTextbook);
   } else {
     document.getElementById('gradeSelectWB').disabled = true;
   }
