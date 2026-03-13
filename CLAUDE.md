@@ -653,3 +653,10 @@ code_init.js      — 初期化・セットアップ（validateScriptProperties,
 - コミットメッセージ形式: `作業前バックアップ: [作業内容]`
 - 例: `作業前バックアップ: PDF生成機能の追加前`
 - コミット後「バックアップを作成しました」とユーザーに報告してから作業開始
+
+---
+
+## メインアプリとの連携
+メインアプリのパス：/home/user/gas-App
+別プロジェクトを参照する場合は以下のコマンドを使う：
+cd /home/user/gas-App && CLAUDECODE= claude -p '質問内容' --output-format stream-json --verbose --allowedTools "Read,Grep,Glob" --max-turns 5 | jq -rj '(.event.delta.text? // empty), (.message.content[]?.text? // empty)'
