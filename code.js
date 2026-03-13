@@ -1,39 +1,39 @@
 /**
  * GASアプリケーションのエントリーポイント
- * ?page=student → 生徒向け音声アプリ (index.html)
- * それ以外       → 教師向け編集アプリ (editor.html)
- * Last updated: 2026-03-08
+ * ?page=editor&key=xxx → 教師向け編集アプリ (editor.html)
+ * それ以外（デフォルト） → 生徒向け音声アプリ (index.html)
+ * Last updated: 2026-03-13
  */
 function doGet(e) {
   const page = e && e.parameter && e.parameter.page;
   const key  = e && e.parameter && e.parameter.key;
 
-  if (page === 'student') {
-    try {
-      const template = HtmlService.createTemplateFromFile('index');
-      const yearsData = getStudentYears();
-      template.years = yearsData.years;
-      template.yearsJson = JSON.stringify(yearsData.years);
-      return template.evaluate()
-        .setTitle('スクエア英単語音声アプリ')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    } catch (err) {
-      Logger.log('doGet student error: ' + err);
-      return HtmlService.createHtmlOutput('エラーが発生しました。管理者に連絡してください。');
+  // 教師用エディター：?page=editor&key=xxx でのみアクセス可能
+  if (page === 'editor') {
+    if (key !== 'Tz8mX3kR7vQ2nP9w') {
+      return HtmlService.createHtmlOutput(
+        '<p style="font-family:sans-serif;margin:40px;color:#555;">このページにはアクセスできません。</p>'
+      ).setTitle('アクセス拒否');
     }
+    return HtmlService
+      .createTemplateFromFile('editor')
+      .evaluate()
+      .setTitle('単語帳作成アプリ');
   }
 
-  // 教師用エディター：アクセスキー必須
-  if (key !== 'Tz8mX3kR7vQ2nP9w') {
-    return HtmlService.createHtmlOutput(
-      '<p style="font-family:sans-serif;margin:40px;color:#555;">このページにはアクセスできません。</p>'
-    ).setTitle('アクセス拒否');
+  // デフォルト：生徒向け音声アプリ
+  try {
+    const template = HtmlService.createTemplateFromFile('index');
+    const yearsData = getStudentYears();
+    template.years = yearsData.years;
+    template.yearsJson = JSON.stringify(yearsData.years);
+    return template.evaluate()
+      .setTitle('スクエア英単語音声アプリ')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  } catch (err) {
+    Logger.log('doGet student error: ' + err);
+    return HtmlService.createHtmlOutput('エラーが発生しました。管理者に連絡してください。');
   }
-
-  return HtmlService
-    .createTemplateFromFile('editor')
-    .evaluate()
-    .setTitle('単語帳作成アプリ');
 }
 
 // ════════════════════════════════════════════════════════
