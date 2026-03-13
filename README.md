@@ -72,18 +72,18 @@ initializeAllResources('2026年度版')
 
 ## アクセス URL
 
+### 生徒用（発音練習）— デフォルト
+```
+https://script.google.com/macros/s/〈デプロイID〉/exec
+```
+
 ### 教師用（エディター）
 ```
-https://script.google.com/macros/s/〈デプロイID〉/exec?key=Tz8mX3kR7vQ2nP9w
+https://script.google.com/macros/s/〈デプロイID〉/exec?page=editor&key=Tz8mX3kR7vQ2nP9w
 ```
 
-### 生徒用（発音練習）
-```
-https://script.google.com/macros/s/〈デプロイID〉/exec?page=student
-```
-
-> **注意:** 教師用 URL のキー `Tz8mX3kR7vQ2nP9w` は他人に教えないこと。
-> キーなしでアクセスした場合は「このページにはアクセスできません。」と表示される。
+> **注意:** 教師用 URL は生徒に教えないこと。
+> デフォルト URL（パラメータなし）は生徒用ページを表示するため、生徒が教師用ページの存在に気付くことはない。
 
 ### デプロイ URL の確認方法
 
