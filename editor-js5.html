@@ -1589,6 +1589,11 @@ function updateLoadButton() {
     if (activeContent) {
       activeContent.classList.add('active');
     }
+
+    // 設定タブに切り替えたときだけ設定値を遅延ロード
+    if (tabName === 'settings') {
+      loadSettingsValues();
+    }
   }
 
 /**
