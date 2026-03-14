@@ -1197,4 +1197,151 @@
   /* フォーカスリングなし（照準で視認性を確保） */
 }
 
+/* ════════════════════════════════════════
+   設定タブ
+   ════════════════════════════════════════ */
+.settings-container {
+  max-width: 680px;
+  margin: 24px auto;
+  padding: 0 16px 40px;
+}
+
+.settings-title {
+  font-size: 20px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 24px;
+}
+
+.settings-section {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.settings-section h3 {
+  font-size: 15px;
+  font-weight: bold;
+  color: #444;
+  margin: 0 0 6px;
+}
+
+.settings-desc {
+  font-size: 12px;
+  color: #888;
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.settings-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  font-family: monospace;
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="password"] {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.settings-field input:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+.settings-password-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.settings-password-wrap input {
+  flex: 1;
+}
+
+.settings-password-wrap button {
+  padding: 7px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.settings-password-wrap button:hover {
+  background: #e8e8e8;
+}
+
+.settings-auto-btn {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 0.2s;
+}
+
+.settings-auto-btn:hover {
+  background: #c8e6c9;
+}
+
+#qr-generate-btn {
+  margin-top: 6px;
+  padding: 7px 14px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+#qr-generate-btn:hover {
+  background: #bbdefb;
+}
+
+.settings-save-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.2s;
+}
+
+.settings-save-btn:hover {
+  background: #1976d2;
+}
+
   </style>
