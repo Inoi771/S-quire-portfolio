@@ -103,3 +103,7 @@ function generateQrCode() {
     const area = document.getElementById('qr-code-area');
     if (area) area.style.display = 'block';
 }
+
+// onclick 属性から呼べるようにグローバルに公開
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.generateQrCode = generateQrCode;
