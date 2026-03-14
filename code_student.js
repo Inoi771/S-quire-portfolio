@@ -21,8 +21,8 @@ function getAppConfig() {
     GITHUB_BASE_URL: getScriptProperty('GITHUB_BASE_URL'),
     HOMEPAGE_URL: getScriptProperty('HOMEPAGE_URL')
   };
-  if (!config.VOCABULARY_FOLDER_ID || !config.GITHUB_BASE_URL) {
-    throw new Error('必要なスクリプトプロパティが設定されていません。');
+  if (!config.VOCABULARY_FOLDER_ID) {
+    throw new Error('必要なスクリプトプロパティが設定されていません: ENGLISHWORDS_FOLDER_ID');
   }
   return config;
 }
@@ -31,7 +31,7 @@ function getAppConfig() {
  * キャッシュを手動リセットする
  */
 function clearCache() {
-  CacheService.getScriptCache().removeAll(['years', 'textbooks', 'grades']);
+  CacheService.getScriptCache().removeAll(['student_years', 'years', 'textbooks', 'grades']);
   Logger.log('キャッシュをリセットしました。');
 }
 
