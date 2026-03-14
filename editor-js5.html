@@ -910,12 +910,8 @@ function setupEventListenersWB() {
  * 年度一覧を読み込み
  */
 function loadYearsWB() {
-  showLoadingIndicator('年度を読み込み中...');
-  
   google.script.run
     .withSuccessHandler(data => {
-      hideLoadingIndicator();
-      
       const select = document.getElementById('yearSelectWB');
       select.innerHTML = '<option value="">選択してください</option>';
       data.years.forEach(year => {
@@ -926,7 +922,6 @@ function loadYearsWB() {
       });
     })
     .withFailureHandler(err => {
-      hideLoadingIndicator();
       console.error('getYears エラー:', err);
       alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
     })
