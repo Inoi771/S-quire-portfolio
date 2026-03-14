@@ -5,7 +5,7 @@
 function initSettingsTab() {
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
     document.getElementById('auto-setup-btn').addEventListener('click', runAutoSetup);
-    loadSettingsValues();
+    // loadSettingsValues は switchTab('settings') 時に遅延ロードされる
 }
 
 function loadSettingsValues() {
