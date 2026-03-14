@@ -133,15 +133,24 @@ id | english | pronunciation | japanese | audio
 
 ### Script Properties（設定値）
 
-| キー | 内容 |
-|------|------|
-| `ENGLISHWORDS_FOLDER_ID` | Google Drive ルートフォルダID（年度フォルダの親） |
-| `ENGLISHWORDS_SHEET_ID` | マスターデータスプレッドシートID（英単語・英文シート） |
-| `VOCABULARY_FOLDER_ID` | `ENGLISHWORDS_FOLDER_ID` の別名（同じ値） |
-| `GITHUB_BASE_URL` | 音声ファイルの GitHub ベース URL |
-| `HOMEPAGE_URL` | アプリのホームページ URL |
-| `GOOGLE_CLOUD_TTS_API_KEY` | Google Cloud TTS API キー（音声自動生成用） |
-| `GITHUB_TOKEN` | GitHub Personal Access Token（音声ファイルアップロード用、repoスコープ） |
+> **⚙️ 設定方法**: Script Properties はすべて **教師用ページの「⚙️ 設定」タブ** からブラウザで設定できる。
+> GAS エディタの「プロジェクトの設定 → スクリプトプロパティ」を直接操作する必要はない。
+
+| キー | 設定方法 | 内容 |
+|------|----------|------|
+| `ENGLISHWORDS_FOLDER_ID` | ✅ 自動作成可（設定タブ） | Google Drive ルートフォルダID（年度フォルダの親） |
+| `ENGLISHWORDS_SHEET_ID` | ✅ 自動作成可（設定タブ） | マスターデータスプレッドシートID（英単語・英文シート） |
+| `VOCABULARY_FOLDER_ID` | 自動（UI 非表示） | `ENGLISHWORDS_FOLDER_ID` の別名（保存時に自動同期） |
+| `GITHUB_BASE_URL` | ❌ 手動（設定タブ） | 音声ファイルの GitHub ベース URL |
+| `HOMEPAGE_URL` | ❌ 手動（設定タブ） | アプリのホームページ URL（設定タブでQRコード生成可） |
+| `GOOGLE_CLOUD_TTS_API_KEY` | ❌ 手動（設定タブ） | Google Cloud TTS API キー（音声自動生成用） |
+| `GITHUB_TOKEN` | ❌ 手動（設定タブ） | GitHub Personal Access Token（音声ファイルアップロード用、repoスコープ） |
+
+#### 新規プロパティを設定タブに追加するとき
+1. `code.js` の `getScriptPropertiesForSettings()` と `saveScriptProperties()` の `keys` 配列に追加
+2. `editor.html` の設定タブ HTML に入力フィールドを追加（`id="setting-プロパティ名"` 形式）
+3. `editor-js6.html` のキー配列に追加
+4. この表を更新
 
 ---
 

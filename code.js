@@ -843,3 +843,74 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
     return { success: false, error: e.toString() };
   }
 }
+
+// ════════════════════════════════════════════════════════
+// 設定タブ用 API（Script Properties の取得・保存）
+// ════════════════════════════════════════════════════════
+
+/**
+ * 設定タブ用に Script Properties の現在値を返す
+ * @returns {Object} { success, ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
+ */
+function getScriptPropertiesForSettings() {
+  try {
+    var keys = [
+      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
+      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+    ];
+    var result = { success: true };
+    keys.forEach(function(k) {
+      result[k] = getScriptProperty(k) || '';
+    });
+    return result;
+  } catch (e) {
+    Logger.log('Error getScriptPropertiesForSettings: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 設定タブから Script Properties を保存する
+ * 空文字の場合は既存の値を上書きしない
+ * ENGLISHWORDS_FOLDER_ID を保存する際は VOCABULARY_FOLDER_ID にも同じ値を設定する
+ * @param {Object} settings - { ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
+ * @returns {Object} { success, error? }
+ */
+function saveScriptProperties(settings) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var keys = [
+      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
+      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+    ];
+    keys.forEach(function(k) {
+      if (settings[k] !== undefined && settings[k] !== '') {
+        props.setProperty(k, settings[k]);
+        if (k === 'ENGLISHWORDS_FOLDER_ID') {
+          props.setProperty('VOCABULARY_FOLDER_ID', settings[k]);
+        }
+      }
+    });
+    Logger.log('✅ Script Properties を設定タブから更新しました');
+    return { success: true };
+  } catch (e) {
+    Logger.log('Error saveScriptProperties: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 設定タブから Drive リソース自動作成を実行する
+ * code_init.js の setupScriptProperties() を呼び出すラッパー
+ * @returns {Object} setupScriptProperties() の戻り値
+ */
+function runSetupScriptProperties() {
+  try {
+    return setupScriptProperties();
+  } catch (e) {
+    Logger.log('Error runSetupScriptProperties: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
