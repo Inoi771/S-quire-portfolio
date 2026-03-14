@@ -269,7 +269,7 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
         panel.classList.toggle('expanded');
         panel.classList.toggle('collapsed');
 
-        const icon = document.querySelector('.toggle-icon');
+        const icon = header.querySelector('.toggle-icon');
         icon.classList.toggle('collapsed');
         });
 
@@ -306,12 +306,8 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
  * 年度一覧をサーバーから取得してセレクトに追加
  */
 function loadYears() {
-  showLoadingIndicator('年度を読み込み中...');
-  
   google.script.run
     .withSuccessHandler(data => {
-      hideLoadingIndicator();
-      
       const select = document.getElementById('yearSelect');
       select.innerHTML = '<option value="">選択してください</option>';
       data.years.forEach(year => {
@@ -322,7 +318,6 @@ function loadYears() {
       });
     })
     .withFailureHandler(err => {
-      hideLoadingIndicator();
       console.error('getYears エラー:', err);
       alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
     })
