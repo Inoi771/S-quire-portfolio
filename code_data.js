@@ -498,16 +498,16 @@ function updateLessonWord(year, textbook, grade, lesson, masterWordId, newEnglis
         if (sheet) {
           const lastRow = sheet.getLastRow();
           if (lastRow > 1) {
-            const data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+            const data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
 
             for (let i = 0; i < data.length; i++) {
-              const cellMasterId = data[i][5] ? parseInt(data[i][5]) : null;
-              const cellLesson = data[i][1] ? data[i][1].toString().trim() : '';
+              const cellMasterId = data[i][0] ? parseInt(data[i][0]) : null;
+              const cellLesson = data[i][5] ? data[i][5].toString().trim() : '';
 
               if (cellMasterId === masterWordId && cellLesson === lesson) {
                 const actualRow = i + 2;
-                sheet.getRange(actualRow, 3).setValue(newJapanese);
-                sheet.getRange(actualRow, 4).setValue(newEnglish);
+                sheet.getRange(actualRow, 2).setValue(newEnglish);
+                sheet.getRange(actualRow, 4).setValue(newJapanese);
               }
             }
           }
