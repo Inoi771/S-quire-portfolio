@@ -237,6 +237,86 @@ function initializeYearResources(year) {
 }
 
 /**
+ * Script Properties を自動セットアップする
+ * Driveフォルダ・マスタースプレッドシートを自動作成してIDをプロパティに保存する。
+ * GITHUB_BASE_URL / GITHUB_TOKEN / GOOGLE_CLOUD_TTS_API_KEY は外部サービスのため手動設定が必要。
+ *
+ * GAS エディタで実行: setupScriptProperties()
+ *
+ * @returns {Object} { success, created, existing, manualRequired }
+ */
+function setupScriptProperties() {
+  var props = PropertiesService.getScriptProperties();
+  var created = [];
+  var existing = [];
+
+  // ── ENGLISHWORDS_FOLDER_ID ──
+  var folderId = props.getProperty('ENGLISHWORDS_FOLDER_ID');
+  if (!folderId) {
+    var folder = DriveApp.createFolder('ENGLISHWORDS');
+    folderId = folder.getId();
+    props.setProperty('ENGLISHWORDS_FOLDER_ID', folderId);
+    props.setProperty('VOCABULARY_FOLDER_ID', folderId);
+    created.push('ENGLISHWORDS_FOLDER_ID = ' + folderId + '（Drive フォルダ「ENGLISHWORDS」を作成）');
+    created.push('VOCABULARY_FOLDER_ID = ' + folderId + '（ENGLISHWORDS_FOLDER_ID と同値）');
+  } else {
+    existing.push('ENGLISHWORDS_FOLDER_ID は設定済み');
+    // VOCABULARY_FOLDER_ID が未設定なら同じ値をセット
+    if (!props.getProperty('VOCABULARY_FOLDER_ID')) {
+      props.setProperty('VOCABULARY_FOLDER_ID', folderId);
+      created.push('VOCABULARY_FOLDER_ID = ' + folderId + '（ENGLISHWORDS_FOLDER_ID と同値）');
+    } else {
+      existing.push('VOCABULARY_FOLDER_ID は設定済み');
+    }
+  }
+
+  // ── ENGLISHWORDS_SHEET_ID ──
+  var sheetId = props.getProperty('ENGLISHWORDS_SHEET_ID');
+  if (!sheetId) {
+    var ss = SpreadsheetApp.create('マスターデータ（英単語・英文）');
+    // 英単語シート
+    var wordSheet = ss.insertSheet('英単語');
+    wordSheet.getRange(1, 1, 1, 5).setValues([['id', 'english', 'pronunciation', 'japanese', 'audio']]);
+    wordSheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#e8e8e8');
+    // 英文シート
+    var sentenceSheet = ss.insertSheet('英文');
+    sentenceSheet.getRange(1, 1, 1, 5).setValues([['id', 'text', 'pronunciation', 'japanese', 'audio']]);
+    sentenceSheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#e8e8e8');
+    // デフォルトシート削除
+    removeDefaultSheet_(ss);
+    sheetId = ss.getId();
+    props.setProperty('ENGLISHWORDS_SHEET_ID', sheetId);
+    created.push('ENGLISHWORDS_SHEET_ID = ' + sheetId + '（マスタースプレッドシートを作成）');
+  } else {
+    existing.push('ENGLISHWORDS_SHEET_ID は設定済み');
+  }
+
+  // ── 手動設定が必要なプロパティ ──
+  var manualRequired = [];
+  var manualProps = ['GITHUB_BASE_URL', 'GITHUB_TOKEN', 'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'];
+  for (var i = 0; i < manualProps.length; i++) {
+    if (!props.getProperty(manualProps[i])) {
+      manualRequired.push(manualProps[i]);
+    }
+  }
+
+  Logger.log('✅ setupScriptProperties 完了');
+  if (created.length > 0) Logger.log('📌 自動設定済み:\n  ' + created.join('\n  '));
+  if (existing.length > 0) Logger.log('📌 設定済み（スキップ）:\n  ' + existing.join('\n  '));
+  if (manualRequired.length > 0) {
+    Logger.log('⚠️ 手動設定が必要なプロパティ: ' + manualRequired.join(', '));
+    Logger.log('   GAS エディタ → プロジェクトの設定 → スクリプトプロパティ で手動設定してください');
+  }
+
+  return {
+    success: true,
+    created: created,
+    existing: existing,
+    manualRequired: manualRequired
+  };
+}
+
+/**
  * 全リソースの初期化（メインエントリポイント）
  * Script Properties の検証 → 年度リソースの作成
  * @param {string} year - "2026年度版" 形式
