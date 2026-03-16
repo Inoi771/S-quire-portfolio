@@ -1937,7 +1937,10 @@ function generatePdfSuffix(displayItems) {
   // アプリケーション起動
   // ════════════════════════════════════════
 
+  let appInitialized = false;
   function initApp() {
+    if (appInitialized) return;
+    appInitialized = true;
     console.log('🚀 アプリケーション起動');
     try { initEditor(); } catch(e) { console.error('❌ initEditor エラー:', e); }
     try { initWordbook(); } catch(e) { console.error('❌ initWordbook エラー:', e); }
@@ -2012,13 +2015,15 @@ function generatePdfSuffix(displayItems) {
       .bulkGenerateAudio(type, 50);
   }
 
-  // startBulkAudioGeneration をグローバルに公開
+  // グローバルに公開
   window.startBulkAudioGeneration = startBulkAudioGeneration;
+  window.switchTab = switchTab;
 
-  // ページロード状態に応じて実行
+  // ページロード状態に応じて実行（複数フォールバック付き）
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initApp);
   } else {
     setTimeout(initApp, 0);
   }
+  window.addEventListener('load', initApp);
 
