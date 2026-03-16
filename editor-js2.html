@@ -1,3 +1,9 @@
+/**
+ * 単語の検索用キーを生成（先頭文字検索用）
+ * 記号を除いて、英字から始まる部分を基準にする
+ * 例：~as...as → as
+ * 例：(about) → about
+ */
 function getSearchKeyForWord(word) {
   // 英語：先頭の記号を除去して、英字から始まる部分を取得
   let english = word.english.trim();

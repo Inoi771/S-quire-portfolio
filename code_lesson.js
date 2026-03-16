@@ -784,11 +784,4 @@ function loadFukisokuData(year, textbook, grade, lesson, allWords) {
   }
 }
 
-/**
- * ✅ 新規関数：不規則動詞用 - マスターデータ修正時に tableData と fukisokuDataMap を更新
- *
- * @param {number} masterId - 修正されたマスターワードID
- * @param {string} newEnglish - 新しい英語
- * @param {string} newPronunciation - 新しい発音
- * @param {string} newJapanese - 新しい日本語
- */
+
