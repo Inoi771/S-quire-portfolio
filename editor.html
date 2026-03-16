@@ -410,13 +410,37 @@ function toggleSelectionPanel() {
         .getEditorGrades(_s.year, _s.textbook);
     });
 
-    // 学年 → レッスン（レッスン読み込みは editor-js1 の handleGradeChange が担当）
+    // 学年 → レッスン
     var grSel = document.getElementById('gradeSelect');
     if (grSel) grSel.addEventListener('change', function(e) {
       _s.grade = e.target.value;
       _s.lesson = '';
       _disable('lessonSelect');
       _updateNewBtn();
+      if (!_s.grade) return;
+      google.script.run
+        .withSuccessHandler(function(d) {
+          var sel = document.getElementById('lessonSelect');
+          if (!sel) return;
+          sel.innerHTML = '<option value="">選択してください</option>';
+          (d.lessons || []).forEach(function(v) {
+            var o = document.createElement('option');
+            o.value = v; o.textContent = v; sel.appendChild(o);
+          });
+          // 「その他」を追加（入試対策編の不規則動詞以外）
+          var isFuk = _s.textbook === '入試対策編' &&
+                      (_s.grade === '不規則動詞①' || _s.grade === '不規則動詞②');
+          if (!isFuk) {
+            var o2 = document.createElement('option');
+            o2.value = 'other'; o2.textContent = '--- その他 ---'; sel.appendChild(o2);
+          }
+          sel.disabled = false;
+        })
+        .withFailureHandler(function() {
+          var sel = document.getElementById('lessonSelect');
+          if (sel) sel.disabled = true;
+        })
+        .getEditorLessons(_s.year, _s.textbook, _s.grade);
     });
 
     // レッスン選択

@@ -505,6 +505,8 @@ function handleGradeChange(e) {
         existingLessons = data.lessons;
 
         const select = document.getElementById('lessonSelect');
+        // 重複を防ぐためコールバック内でも innerHTML をクリア
+        select.innerHTML = '<option value="">選択してください</option>';
         data.lessons.forEach(lesson => {
           const option = document.createElement('option');
           option.value = lesson;
