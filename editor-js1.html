@@ -38,6 +38,17 @@
   let draggedLessonIdx = undefined;
 
 /**
+ * in-page エラートースト（GAS iframe では alert() がブロックされるため代替として使用）
+ */
+function showEditorError(msg) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:16px;right:16px;background:#c0392b;color:#fff;padding:12px 20px;border-radius:6px;z-index:10001;font-size:14px;max-width:360px;box-shadow:0 4px 12px rgba(0,0,0,.3);white-space:pre-wrap;';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 5000);
+}
+
+/**
  * ✅ 新規関数：重複確認のカスタムダイアログを表示
  */
 function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
@@ -281,8 +292,18 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
  * 「✏️ 編集」ボタンのクリック処理（onclick 属性から呼ばれる）
  */
 function handleNewBtnClick() {
+  // DOM から直接値を読んで state を同期（event listener タイミング問題のフォールバック）
+  const yearEl = document.getElementById('yearSelect');
+  const textbookEl = document.getElementById('textbookSelect');
+  const gradeEl = document.getElementById('gradeSelect');
+  const lessonEl = document.getElementById('lessonSelect');
+  if (yearEl && yearEl.value) state.year = yearEl.value;
+  if (textbookEl && textbookEl.value) state.textbook = textbookEl.value;
+  if (gradeEl && gradeEl.value) state.grade = gradeEl.value;
+  if (lessonEl && lessonEl.value) state.lesson = lessonEl.value;
+
   if (!state.year || !state.textbook || !state.grade) {
-    alert('年度・教科書・学年を選択してください');
+    showEditorError('年度・教科書・学年を選択してください');
     return;
   }
   if (state.lesson === 'other') {
@@ -290,7 +311,7 @@ function handleNewBtnClick() {
     return;
   }
   if (!state.lesson) {
-    alert('レッスンを選択してください');
+    showEditorError('レッスンを選択してください');
     return;
   }
   state.isEditorOpen = true;
@@ -593,7 +614,7 @@ function handleUseCustom() {
   const customLesson = document.getElementById('customLessonInput').value.trim();
 
   if (!customLesson) {
-    alert('レッスン名を入力してください');
+    showEditorError('レッスン名を入力してください');
     return;
   }
 
@@ -932,7 +953,7 @@ function loadEditorData() {
           .withFailureHandler(err => {
             console.error('❌ loadFukisokuData エラー:', err);
             hideLoadingIndicator();
-            alert('❌ 不規則動詞データの読み込みに失敗しました。\n\nエラー: ' + err);
+            showEditorError('❌ 不規則動詞データの読み込みに失敗しました。\n\nエラー: ' + err);
             closeEditor();
           })
           .loadFukisokuData(state.year, state.textbook, sheetGrade, state.lesson, allWords);
@@ -959,7 +980,7 @@ function loadEditorData() {
           .withFailureHandler(err => {
             console.error('❌ getExistingData エラー:', err);
             hideLoadingIndicator();
-            alert('❌ 既存データの読み込みに失敗しました。\n\nエラー: ' + err);
+            showEditorError('❌ 既存データの読み込みに失敗しました。\n\nエラー: ' + err);
             closeEditor();
           })
           .getExistingData(state.year, state.textbook, state.grade, state.lesson);
@@ -968,7 +989,7 @@ function loadEditorData() {
     .withFailureHandler(err => {
       console.error('❌ getAllWordsAndSentences エラー:', err);
       hideLoadingIndicator();
-      alert('❌ 単語・文データの読み込みに失敗しました。\n\nエラー: ' + err);
+      showEditorError('❌ 単語・文データの読み込みに失敗しました。\n\nエラー: ' + err);
       closeEditor();
     })
     .getAllWordsAndSentences();
