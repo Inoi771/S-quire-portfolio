@@ -12,10 +12,8 @@
     
     <!-- 新規：タブヘッダー -->
     <div class="tab-header">
-      <button class="tab-btn active" data-tab="editor" onclick="switchTab('editor')">✏️ エディター</button>
-      <button class="tab-btn" data-tab="wordbook" onclick="switchTab('wordbook')">📚 単語帳作成</button>
-      <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">⚙️ 設定</button>
-      <button class="tab-btn" onclick="startBulkAudioGeneration()" style="margin-left: auto; background: #4CAF50; color: white; border-radius: 6px; padding: 6px 14px; font-size: 13px;">🔊 音声一括生成</button>
+      <button class="tab-btn active" data-tab="editor">✏️ エディター</button>
+      <button class="tab-btn" data-tab="wordbook">📚 単語帳作成</button>
     </div>
 
     <!-- タブ1：エディター（既存コンテンツ） -->
@@ -29,7 +27,7 @@
               <!-- ロゴが挿入される -->
               <span style="font-size: 16px; font-weight: bold;">英単語テストエディタ</span>
             </div>
-              <div class="selection-toggle" id="selectionToggle">
+              <div class="selection-toggle" id="wordbookSelectionToggle">
                 <span class="toggle-text">上部折りたたみ</span>
                 <span class="toggle-icon">▲</span>
               </div>
@@ -244,80 +242,7 @@
         </div>
       </div>
     </div>
-
-  <!-- タブ3：設定 -->
-  <div class="tab-content" id="settings-tab">
-    <div class="settings-container">
-      <h2 class="settings-title">⚙️ アプリ設定</h2>
-
-      <!-- Drive設定 -->
-      <div class="settings-section">
-        <h3>Google Drive 設定</h3>
-        <p class="settings-desc">Drive フォルダとマスタースプレッドシートの ID を設定します。未設定の場合は「自動作成」で新規作成できます。</p>
-        <button id="auto-setup-btn" class="settings-auto-btn">🔧 Drive リソースを自動作成</button>
-        <div class="settings-field">
-          <label>ENGLISHWORDS_FOLDER_ID</label>
-          <input type="text" id="setting-ENGLISHWORDS_FOLDER_ID" placeholder="Google Drive フォルダ ID">
-        </div>
-        <div class="settings-field">
-          <label>ENGLISHWORDS_SHEET_ID</label>
-          <input type="text" id="setting-ENGLISHWORDS_SHEET_ID" placeholder="マスタースプレッドシート ID">
-        </div>
-      </div>
-
-      <!-- GitHub設定 -->
-      <div class="settings-section">
-        <h3>GitHub 設定（音声ファイル）</h3>
-        <p class="settings-desc">音声ファイルをホストする GitHub リポジトリの情報を設定します。</p>
-        <div class="settings-field">
-          <label>GITHUB_BASE_URL</label>
-          <input type="text" id="setting-GITHUB_BASE_URL" placeholder="https://raw.githubusercontent.com/ユーザー名/リポジトリ名/main">
-        </div>
-        <div class="settings-field">
-          <label>GITHUB_TOKEN</label>
-          <div class="settings-password-wrap">
-            <input type="password" id="setting-GITHUB_TOKEN" placeholder="ghp_...">
-            <button type="button" onclick="togglePasswordVisibility('setting-GITHUB_TOKEN')">👁</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 音声生成設定 -->
-      <div class="settings-section">
-        <h3>音声自動生成設定（Google Cloud TTS）</h3>
-        <p class="settings-desc">音声ファイルを自動生成する際に使用する Google Cloud TTS の API キーです。</p>
-        <div class="settings-field">
-          <label>GOOGLE_CLOUD_TTS_API_KEY</label>
-          <div class="settings-password-wrap">
-            <input type="password" id="setting-GOOGLE_CLOUD_TTS_API_KEY" placeholder="AIza...">
-            <button type="button" onclick="togglePasswordVisibility('setting-GOOGLE_CLOUD_TTS_API_KEY')">👁</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- その他 -->
-      <div class="settings-section">
-        <h3>その他</h3>
-        <div class="settings-field">
-          <label>HOMEPAGE_URL（任意）</label>
-          <input type="text" id="setting-HOMEPAGE_URL" placeholder="https://...">
-          <button type="button" id="qr-generate-btn" onclick="generateQrCode()">QRコード生成</button>
-        </div>
-        <div id="qr-code-area" style="display:none; margin-top:16px; text-align:center;">
-          <img id="qr-code-img" src="" alt="QRコード" style="width:200px; height:200px; border:1px solid #ddd; border-radius:8px;">
-          <div style="margin-top:10px;">
-            <a id="qr-download-link" href="" download="qrcode.png">
-              <button type="button" class="settings-auto-btn">⬇️ QRコードをダウンロード</button>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <button id="save-settings-btn" class="settings-save-btn">💾 設定を保存</button>
-    </div>
   </div>
-
-  </div><!-- app-container 閉じ -->
 
   <div class="saving-indicator" id="savingIndicator">💾 保存中...</div>
 
@@ -328,7 +253,6 @@
 <?!= HtmlService.createHtmlOutputFromFile('editor-js3').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js4').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js5').getContent() ?>
-<?!= HtmlService.createHtmlOutputFromFile('editor-js6').getContent() ?>
 })();
 </script>
 </body>

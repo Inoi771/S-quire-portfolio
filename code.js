@@ -1,39 +1,27 @@
 /**
  * GASアプリケーションのエントリーポイント
- * ?page=editor&key=xxx → 教師向け編集アプリ (editor.html)
- * それ以外（デフォルト） → 生徒向け音声アプリ (index.html)
- * Last updated: 2026-03-13
+ * ?page=student → 生徒用 index.html
+ * それ以外       → 教師用 editor.html
  */
 function doGet(e) {
-  const page = e && e.parameter && e.parameter.page;
-  const key  = e && e.parameter && e.parameter.key;
-
-  // 教師用エディター：?page=editor&key=xxx でのみアクセス可能
-  if (page === 'editor') {
-    if (key !== 'Tz8mX3kR7vQ2nP9w') {
-      return HtmlService.createHtmlOutput(
-        '<p style="font-family:sans-serif;margin:40px;color:#555;">このページにはアクセスできません。</p>'
-      ).setTitle('アクセス拒否');
+  if (e && e.parameter && e.parameter.page === 'student') {
+    try {
+      const template = HtmlService.createTemplateFromFile('index');
+      const yearsData = getStudentYears();
+      template.years = yearsData.years;
+      template.yearsJson = JSON.stringify(yearsData.years);
+      return template.evaluate()
+        .setTitle('スクエア英単語音声アプリ')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    } catch (err) {
+      Logger.log('doGet student error: ' + err);
+      return HtmlService.createHtmlOutput('エラーが発生しました。');
     }
-    return HtmlService
-      .createTemplateFromFile('editor')
-      .evaluate()
-      .setTitle('単語帳作成アプリ');
   }
-
-  // デフォルト：生徒向け音声アプリ
-  try {
-    const template = HtmlService.createTemplateFromFile('index');
-    const yearsData = getStudentYears();
-    template.years = yearsData.years;
-    template.yearsJson = JSON.stringify(yearsData.years);
-    return template.evaluate()
-      .setTitle('スクエア英単語音声アプリ')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (err) {
-    Logger.log('doGet student error: ' + err);
-    return HtmlService.createHtmlOutput('エラーが発生しました。管理者に連絡してください。');
-  }
+  return HtmlService
+    .createTemplateFromFile('editor')
+    .evaluate()
+    .setTitle('単語帳作成アプリ');
 }
 
 // ════════════════════════════════════════════════════════
@@ -56,18 +44,18 @@ function getScriptProperty(key) {
  */
 function validateCellId(cellId) {
   const id = parseInt(cellId);
-
+  
   // NaNまたは整数でない場合
   if (isNaN(id)) {
     return null;
   }
-
+  
   // 範囲チェック（1～48）
   if (id < 1 || id > 48) {
     Logger.log(`警告: cellId ${id} は有効な範囲 (1-48) 外です`);
     return null;
   }
-
+  
   return id;
 }
 
@@ -81,14 +69,14 @@ function getEditorLogoUrl() {
     const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
     const folder = DriveApp.getFolderById(englishwordsFolderId);
     const files = folder.getFilesByName('logo.png');
-
+    
     if (files.hasNext()) {
       const file = files.next();
       // ファイルをBlob取得 → Base64に変換
       const blob = file.getBlob();
       const base64 = Utilities.base64Encode(blob.getBytes());
       const mimeType = blob.getContentType();
-
+      
       // Data URLフォーマットで返す
       return `data:${mimeType};base64,${base64}`;
     } else {
@@ -114,7 +102,7 @@ function getEditorYears() {
     const folder = DriveApp.getFolderById(englishwordsFolderId);
     const folders = folder.getFolders();
     const years = [];
-
+    
     while (folders.hasNext()) {
       const f = folders.next();
       const name = f.getName();
@@ -122,7 +110,7 @@ function getEditorYears() {
         years.push(name);
       }
     }
-
+    
     return { years: years.sort().reverse() };
   } catch (e) {
     Logger.log('Error getYears: ' + e);
@@ -142,12 +130,12 @@ function getEditorTextbooks(year) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const textbooks = [];
-
+    
     while (files.hasNext()) {
       const file = files.next();
       textbooks.push(file.getName());
     }
-
+    
     return { textbooks: textbooks.sort() };
   } catch (e) {
     Logger.log('Error getTextbooks: ' + e);
@@ -168,7 +156,7 @@ function getEditorGrades(year, textbook) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const gradesSet = new Set();
-
+    
     while (files.hasNext()) {
       const file = files.next();
       if (file.getName() === textbook) {
@@ -183,7 +171,7 @@ function getEditorGrades(year, textbook) {
         break;
       }
     }
-
+    
     const grades = Array.from(gradesSet);
     return { grades: grades };
   } catch (e) {
@@ -206,13 +194,13 @@ function getEditorLessons(year, textbook, grade) {
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
     let lessons = [];
-
+    
     while (files.hasNext()) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
         const sheet = ss.getSheetByName(grade);
-
+        
         if (sheet) {
           const lastRow = sheet.getLastRow();
           if (lastRow > 1) {
@@ -224,7 +212,7 @@ function getEditorLessons(year, textbook, grade) {
         break;
       }
     }
-
+    
     return { lessons: lessons };
   } catch (e) {
     Logger.log('Error getLessons: ' + e);
@@ -246,7 +234,7 @@ function getAllWordsAndSentences() {
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     let words = [];
     let sentences = [];
-
+    
     const wordSheet = ss.getSheetByName("英単語");
     if (wordSheet) {
       const lastRow = wordSheet.getLastRow();
@@ -265,34 +253,34 @@ function getAllWordsAndSentences() {
               });
             }
           });
-
+          
           // ✅ デバッグログを追加
           Logger.log('✅ 英単語取得完了: ' + words.length + '件');
-
+          
           // 最初の5件をログ出力
           Logger.log('📌 最初の5件:');
           for (let i = 0; i < Math.min(5, words.length); i++) {
             Logger.log(`  [${i}] english="${words[i].english}", pronunciation="${words[i].pronunciation}"`);
           }
-
+          
           // 「I」が含まれているか確認
           const iWord = words.find(w => w.english === 'I');
           Logger.log('📌 「I」の検索結果: ' + (iWord ? `発音="${iWord.pronunciation}"` : '見つかりません'));
-
+          
           // 「my」が含まれているか確認
           const myWord = words.find(w => w.english === 'my');
           Logger.log('📌 「my」の検索結果: ' + (myWord ? `発音="${myWord.pronunciation}"` : '見つかりません'));
-
+          
           // 「me」が含まれているか確認
           const meWord = words.find(w => w.english === 'me');
           Logger.log('📌 「me」の検索結果: ' + (meWord ? `発音="${meWord.pronunciation}"` : '見つかりません'));
-
+          
         } catch (err) {
           Logger.log('英単語データ取得エラー: ' + err);
         }
       }
     }
-
+    
     const sentenceSheet = ss.getSheetByName("英文");
     if (sentenceSheet) {
       const lastRow = sentenceSheet.getLastRow();
@@ -308,7 +296,7 @@ function getAllWordsAndSentences() {
         })).filter(s => s.text && s.text !== '');
       }
     }
-
+    
     return { words, sentences };
   } catch (e) {
     Logger.log('Error getAllWordsAndSentences: ' + e);
@@ -321,9 +309,69 @@ function getAllWordsAndSentences() {
 // ════════════════════════════════════════════════════════
 
 /**
+ * ✅ 修正版：入試対策編のすべてのレッスン一覧を取得（ソート済み）
+ * 3つのシート（通常・不規則動詞①②）から全レッスンを取得
+ * 
+ * @param {string} year - 年度
+ * @returns {Object} { lessons: [ソート済みレッスン名の配列] }
+ */
+function getExamPrepLessons(year) {
+  try {
+    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
+    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
+    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+    let lessons = [];
+
+    while (files.hasNext()) {
+      const file = files.next();
+      
+      // ✅ 修正：「入試対策編」のみを処理
+      if (file.getName() === '入試対策編') {
+        const ss = SpreadsheetApp.open(file);
+        
+        // ✅ 修正：3つのシートすべてから取得
+        const sheetNames = ['通常', '不規則動詞①', '不規則動詞②'];
+        
+        sheetNames.forEach(sheetName => {
+          const sheet = ss.getSheetByName(sheetName);
+          
+          if (sheet) {
+            const lastRow = sheet.getLastRow();
+            if (lastRow > 1) {
+              // カラムF（lesson列）を取得
+              const data = sheet.getRange(1, 6, lastRow, 1).getValues();
+              
+              const sheetLessons = data.slice(1)
+                .map(row => row[0])
+                .filter(val => val && typeof val === 'string')
+                .map(val => val.trim());
+
+              lessons = lessons.concat(sheetLessons);
+            }
+          }
+        });
+
+        break;
+      }
+    }
+
+    // 重複除外＆ソート
+    lessons = lessons
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort();
+
+    return { lessons: lessons };
+  } catch (e) {
+    Logger.log('Error getExamPrepLessons: ' + e);
+    return { lessons: [] };
+  }
+}
+
+/**
  * ✅ 修正版：指定レッスンの既存データを取得
  * 入試対策編の3シート対応
- *
+ * 
  * @param {string} year - 年度
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（入試対策編の場合は「通常」「不規則動詞①」「不規則動詞②」）
@@ -342,7 +390,7 @@ function getExistingData(year, textbook, grade, lesson) {
       const file = files.next();
       if (file.getName() === textbook) {
         const ss = SpreadsheetApp.open(file);
-
+        
         // ✅ 修正：grade はシート名として使用
         // 通常教科書：学年名（「中学1年」など）
         // 入試対策編：「通常」「不規則動詞①」「不規則動詞②」
@@ -400,7 +448,7 @@ function getExistingData(year, textbook, grade, lesson) {
 /**
  * ✅ 新規関数：シートのカラム数を取得
  * 通常シート（7列）か拡張シート（10列または13列）かを判定
- *
+ * 
  * @param {string} textbook - 教科書名
  * @param {string} grade - シート名
  * @returns {number} カラム数
@@ -418,6 +466,80 @@ function getMaxColumnsForSheet(textbook, grade) {
   return 7;
 }
 
+/**
+ * スプレッドシートのデータをテーブルデータ構造に変換
+ * cellIdから行列位置を計算し、単語・文を適切に配置
+ * @param {Array} rawData - スプレッドシートから取得した生データ
+ * @param {string} lesson - フィルタ対象のレッスン名
+ * @returns {Array} 16行3列のtableData構造
+ */
+function loadDataIntoTable(rawData, lesson) {
+  // 16行3列の初期化（全てnull）
+  const tableData = Array(16).fill(null).map(() => [null, null, null]);
+  
+  // レッスンが一致するデータのみをフィルタリング
+  const lessonData = rawData.filter(row => {
+    const lessonCell = row[1] ? row[1].toString().trim() : '';
+    return lessonCell === lesson;
+  });
+  
+  // フィルタされたデータをtableDataに配置
+  lessonData.forEach(row => {
+    const cellId = validateCellId(row[0]);
+    if (cellId === null) return; // 不正なcellIdはスキップ
+    
+    // cellIdから行列インデックスを計算
+    const rowIdx = Math.floor((cellId - 1) / 3);
+    const colIdx = (cellId - 1) % 3;
+    
+    // 行インデックスが範囲外ならスキップ
+    if (rowIdx < 0 || rowIdx >= 16) {
+      Logger.log(`警告: cellId ${cellId} は範囲外です (rowIdx: ${rowIdx})`);
+      return;
+    }
+    
+    // 3列データを解析
+    const english = row[3] ? row[3].toString().trim() : '';
+    const japanese = row[2] ? row[2].toString().trim() : '';
+    const pronunciation = row[4] ? row[4].toString().trim() : '';
+    const masterId = row[5] ? parseInt(row[5]) : null;
+    
+    // 単語か文かを判定
+    if (english) {
+      // 単語の場合：englishが存在
+      tableData[rowIdx][colIdx] = {
+        type: 'word',
+        english: english,
+        japanese: japanese,
+        pronunciation: pronunciation,
+        masterWordId: masterId,
+        cellId: cellId
+      };
+    } else if (japanese) {
+      // 文の場合：englishがなく、japaneseがある
+      // ただし、その行に既に単語がないかチェック
+      const hasWordInRow = tableData[rowIdx].some(cell => cell && cell.type === 'word');
+      
+      if (!hasWordInRow) {
+        // その行に単語がなければ配置可能
+        tableData[rowIdx][0] = {
+          type: 'sentence',
+          text: japanese,
+          masterSentenceId: masterId,
+          cellId: cellId
+        };
+        tableData[rowIdx][1] = null;
+        tableData[rowIdx][2] = null;
+      } else {
+        // その行に既に単語がある場合はログに出力（データ矛盾）
+        Logger.log(`警告: row ${rowIdx} に単語が存在するため、文 "${japanese}" は無視されました`);
+      }
+    }
+  });
+  
+  return tableData;
+}
+
 // ════════════════════════════════════════════════════════
 // データ保存
 // ════════════════════════════════════════════════════════
@@ -431,7 +553,7 @@ function saveWords(words) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const wordSheet = ss.getSheetByName("英単語");
-
+    
     if (!wordSheet) {
       throw new Error('「英単語」シートが見つかりません');
     }
@@ -470,7 +592,7 @@ function saveSentences(sentences) {
     const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     const ss = SpreadsheetApp.openById(englishwordsSheetId);
     const sentenceSheet = ss.getSheetByName("英文");
-
+    
     if (!sentenceSheet) {
       throw new Error('「英文」シートが見つかりません');
     }
@@ -514,37 +636,37 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
   try {
     const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
     const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-
+    
     // 指定年度のフォルダを取得
     const yearFolder = englishwordsFolder.getFoldersByName(year).next();
     const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-
+    
     let updatedCount = 0;
     const updateLog = []; // 更新ログ
-
+    
     // 年度内のすべての教科書を処理
     while (files.hasNext()) {
       const file = files.next();
       const ss = SpreadsheetApp.open(file);
       const sheets = ss.getSheets();
       const textbookName = file.getName();
-
+      
       // すべてのシート（学年）を処理
       sheets.forEach(sheet => {
         const lastRow = sheet.getLastRow();
-
+        
         if (lastRow > 1) {
           // 行データを取得：word_id(0), english(1), pronunciation(2), japanese(3), audio(4), lesson(5), cell_id(6)
           const data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-
+          
           // マスターIDが一致する行を検索
           data.forEach((row, idx) => {
             const cellMasterId = row[0] ? parseInt(row[0]) : null;
-
+            
             if (cellMasterId === masterId) {
               // シート上の実際の行番号を計算（データ範囲の開始は2行目）
               const actualRow = idx + 2;
-
+              
               // ログに記録（どの行を更新するかを明確にする）
               updateLog.push({
                 file: textbookName,
@@ -553,14 +675,14 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
                 masterId: masterId,
                 lesson: row[5] // lesson列の値
               });
-
+              
               // 対応する列を更新
               if (itemType === 'word') {
                 // 単語：列2（english）、列3（pronunciation）、列4（japanese）を更新
                 sheet.getRange(actualRow, 2).setValue(newField1);  // english
                 sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
                 sheet.getRange(actualRow, 4).setValue(newField3);  // japanese
-
+                
                 // ✅ 修正：マスターから音声ファイル名を取得して更新
                 const masterWord = allWords.find(w => w.id === masterId);
                 if (masterWord && masterWord.audio) {
@@ -571,21 +693,21 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
                 sheet.getRange(actualRow, 2).setValue(newField1);  // text（文）
                 sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
                 sheet.getRange(actualRow, 4).setValue(newField3);  // ✅ 修正：日本語も更新
-
+                
                 // ✅ 修正：マスターから音声ファイル名を取得して更新
                 const masterSentence = allSentences.find(s => s.id === masterId);
                 if (masterSentence && masterSentence.audio) {
                   sheet.getRange(actualRow, 5).setValue(masterSentence.audio);  // audio
                 }
               }
-
+              
               updatedCount++;
             }
           });
         }
       });
     }
-
+    
     // ログを出力（デバッグ用）
     if (updateLog.length > 0) {
       Logger.log('=== 更新ログ ===');
@@ -593,10 +715,10 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
         Logger.log(`✅ ${log.file} > ${log.sheet} > 行${log.actualRow} (レッスン: ${log.lesson}, ID: ${log.masterId})`);
       });
     }
-
+    
     Logger.log(`✅ 合計 ${updatedCount}件のレッスンデータを更新しました (ID: ${masterId})`);
     return { success: true, updatedCount: updatedCount };
-
+    
   } catch (e) {
     Logger.log('Error updateAllLessonDataInYear: ' + e);
     return { success: false, error: e.toString() };
@@ -607,9 +729,9 @@ function updateAllLessonDataInYear(year, masterId, newField1, newField2, newFiel
  * ✅ 完全修正版：レッスンデータ保存
  * 入試対策編の拡張カラムに対応
  * 既存レッスンデータの正確な削除と新規データの追加
- *
+ * 
  * ✅ 修正：現在のレッスン名で削除（既に updateLessonName() で名前が変更されている）
- *
+ * 
  * @param {string} year - 年度
  * @param {string} textbook - 教科書名
  * @param {string} grade - 学年（またはシート名）
@@ -660,7 +782,7 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
           return;
         }
 
-        const cellId = cell.cellId || (rowIdx + colIdx * 16 + 1);
+        const cellId = cell.cellId || (rowIdx * 3 + colIdx + 1);
 
         if (cell.type === 'word') {
           const masterWord = allWords.find(w => w.id === cell.masterWordId);
@@ -815,12 +937,12 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
       for (let i = 0; i < rowsToAdd.length; i++) {
         if (rowsToAdd[i].length !== maxCols) {
           Logger.log(`⚠️ 警告：行${i}のカラム数が不正: ${rowsToAdd[i].length}（期待値: ${maxCols}）`);
-
+          
           // 不足分を空文字で埋める
           while (rowsToAdd[i].length < maxCols) {
             rowsToAdd[i].push('');
           }
-
+          
           // 余分な列を削除
           rowsToAdd[i] = rowsToAdd[i].slice(0, maxCols);
         }
@@ -844,69 +966,442 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
   }
 }
 
-// ════════════════════════════════════════════════════════
-// 設定タブ用 API（Script Properties の取得・保存）
-// ════════════════════════════════════════════════════════
-
 /**
- * 設定タブ用に Script Properties の現在値を返す
- * @returns {Object} { success, ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
+ * ✅ 完全修正版：レッスン名を変更（レッスン順序シートのみ更新）
+ * 
+ * ★ 重要な修正 ★
+ * - データシートのレッスン名は更新しない（saveLessonData で処理）
+ * - レッスン順序シートのみを更新する
+ * - これにより単語データの重複を完全に防ぐ
+ * 
+ * @param {string} year - 年度（例：「2024年度版」）
+ * @param {string} textbook - 教科書名
+ * @param {string} grade - 学年（またはシート名）
+ * @param {string} oldLessonName - 元のレッスン名
+ * @param {string} newLessonName - 新しいレッスン名
+ * @returns {Object} { success: boolean, updatedCount: number, error?: string }
  */
-function getScriptPropertiesForSettings() {
+function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
   try {
-    var keys = [
-      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
-      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
-    ];
-    var result = { success: true };
-    keys.forEach(function(k) {
-      result[k] = getScriptProperty(k) || '';
-    });
-    return result;
-  } catch (e) {
-    Logger.log('Error getScriptPropertiesForSettings: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
+    console.log('=== updateLessonName called ===');
+    console.log(`year: ${year}`);
+    console.log(`textbook: ${textbook}`);
+    console.log(`grade: ${grade}`);
+    console.log(`oldLessonName: "${oldLessonName}"`);
+    console.log(`newLessonName: "${newLessonName}"`);
 
-/**
- * 設定タブから Script Properties を保存する
- * 空文字の場合は既存の値を上書きしない
- * @param {Object} settings - { ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
- * @returns {Object} { success, error? }
- */
-function saveScriptProperties(settings) {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var keys = [
-      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
-      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
-    ];
-    keys.forEach(function(k) {
-      if (settings[k] !== undefined && settings[k] !== '') {
-        props.setProperty(k, settings[k]);
+    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
+    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
+    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+
+    let targetFile = null;
+    const allFiles = [];
+
+    // ✅ 修正：全ファイルを配列に格納
+    while (files.hasNext()) {
+      const file = files.next();
+      allFiles.push(file);
+      
+      if (file.getName() === textbook) {
+        targetFile = file;
       }
-    });
-    Logger.log('✅ Script Properties を設定タブから更新しました');
-    return { success: true };
+    }
+
+    if (!targetFile) {
+      throw new Error(`スプレッドシート「${textbook}」が見つかりません`);
+    }
+
+    console.log(`✅ 対象ファイル取得: ${targetFile.getName()}`);
+
+    const ss = SpreadsheetApp.open(targetFile);
+    
+    // ════════════════════════════════════════════════════════
+    // ✅ 修正：データシートのレッスン名を更新
+    // （単語データには触らずにレッスン名列のみを更新）
+    // ════════════════════════════════════════════════════════
+    let dataUpdateCount = 0;
+    
+    let targetSheetName = grade;
+    
+    // 入試対策編の場合、grade がシート名
+    if (textbook === '入試対策編') {
+      if (oldLessonName.startsWith('不規則動詞①')) {
+        targetSheetName = '不規則動詞①';
+      } else if (oldLessonName.startsWith('不規則動詞②')) {
+        targetSheetName = '不規則動詞②';
+      } else {
+        targetSheetName = '通常';
+      }
+      console.log(`📌 入試対策編: 対象シート: ${targetSheetName}`);
+    }
+
+    const sheet = ss.getSheetByName(targetSheetName);
+
+    if (sheet) {
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const maxCols = getMaxColumnsForSheet(textbook, targetSheetName);
+        const data = sheet.getRange(2, 1, lastRow - 1, maxCols).getValues();
+
+        console.log(`📌 データシート更新処理開始: ${targetSheetName}`);
+
+        // データシート内のレッスン名を更新（列6 = レッスン列）
+        data.forEach((row, idx) => {
+          const cellLesson = row[5] ? row[5].toString().trim() : '';
+          
+          // 前方一致で判定
+          const lessonBase = oldLessonName.split('(')[0].trim();
+          const cellLessonBase = cellLesson.split('(')[0].trim();
+
+          if (cellLessonBase === lessonBase) {
+            const actualRow = idx + 2;
+            sheet.getRange(actualRow, 6).setValue(newLessonName);
+
+            console.log(`  ✅ データシート行${actualRow}: "${cellLesson}" → "${newLessonName}"`);
+            dataUpdateCount++;
+          }
+        });
+
+        console.log(`📌 データシート更新完了: ${dataUpdateCount}件`);
+      }
+    } else {
+      console.log(`⚠️ シート「${targetSheetName}」が見つかりません`);
+    }
+
+    let orderUpdateCount = 0;
+
+    // ════════════════════════════════════════════════════════
+    // 「レッスン順序」シートを検索して更新（これだけを実施）
+    // ════════════════════════════════════════════════════════
+
+    if (textbook === '入試対策編') {
+      // 入試対策編の場合は全教科書のレッスン順序シートを更新
+      console.log(`\n📌 入試対策編のレッスンを編集したため、全教科書のレッスン順序シートを検索`);
+      console.log(`対象ファイル数: ${allFiles.length}`);
+
+      allFiles.forEach((file) => {
+        // 入試対策編以外のファイルのみを処理
+        if (file.getName() === '入試対策編') {
+          console.log(`  ⏭️ スキップ: ${file.getName()}`);
+          return;
+        }
+
+        console.log(`\n  📂 ファイル: ${file.getName()}`);
+
+        const targetSs = SpreadsheetApp.open(file);
+        const orderSheet = targetSs.getSheetByName('レッスン順序');
+
+        if (!orderSheet) {
+          console.log(`    ⚠️ 「レッスン順序」シートが見つかりません`);
+          return;
+        }
+
+        console.log(`    ✅ 「レッスン順序」シート発見`);
+
+        const orderLastRow = orderSheet.getLastRow();
+        const orderLastCol = orderSheet.getLastColumn();
+
+        if (orderLastRow > 1 && orderLastCol >= 1) {
+          const orderData = orderSheet.getRange(2, 1, orderLastRow - 1, orderLastCol).getValues();
+
+          console.log(`    📊 データ行数: ${orderData.length}, 列数: ${orderLastCol}`);
+
+          // 全列を走査
+          orderData.forEach((row, rowIdx) => {
+            row.forEach((cell, colIdx) => {
+              const cellValue = cell ? cell.toString().trim() : '';
+
+              // 完全一致で検索・更新
+              if (cellValue === oldLessonName) {
+                const actualRow = rowIdx + 2;
+                const actualCol = colIdx + 1;
+
+                orderSheet.getRange(actualRow, actualCol).setValue(newLessonName);
+
+                console.log(`    ✅ 行${actualRow}列${actualCol}: "${oldLessonName}" → "${newLessonName}"`);
+                orderUpdateCount++;
+              }
+            });
+          });
+        }
+      });
+
+    } else {
+      // 通常教科書の場合は該当教科書のレッスン順序シートのみ更新
+      console.log(`\n📌 通常教科書のレッスンを編集したため、該当教科書のレッスン順序シートを検索`);
+
+      const orderSheet = ss.getSheetByName('レッスン順序');
+
+      if (orderSheet) {
+        console.log(`✅ 「レッスン順序」シート発見`);
+
+        const orderLastRow = orderSheet.getLastRow();
+        const orderLastCol = orderSheet.getLastColumn();
+
+        if (orderLastRow > 1 && orderLastCol >= 1) {
+          const orderData = orderSheet.getRange(2, 1, orderLastRow - 1, orderLastCol).getValues();
+
+          console.log(`📊 「レッスン順序」データ行数: ${orderData.length}, 列数: ${orderLastCol}`);
+
+          // 全列を走査
+          orderData.forEach((row, rowIdx) => {
+            row.forEach((cell, colIdx) => {
+              const cellValue = cell ? cell.toString().trim() : '';
+
+              // 完全一致で検索・更新
+              if (cellValue === oldLessonName) {
+                const actualRow = rowIdx + 2;
+                const actualCol = colIdx + 1;
+
+                orderSheet.getRange(actualRow, actualCol).setValue(newLessonName);
+
+                console.log(`  ✅ 「レッスン順序」シート行${actualRow}列${actualCol}: "${oldLessonName}" → "${newLessonName}"`);
+                orderUpdateCount++;
+              }
+            });
+          });
+        }
+      } else {
+        console.log(`⚠️ 「レッスン順序」シートが見つかりません`);
+      }
+    }
+
+    console.log(`\n=== 更新完了 ===`);
+    console.log(`「レッスン順序」シート更新数: ${orderUpdateCount}`);
+
+    return { success: true, updatedCount: orderUpdateCount };
+
   } catch (e) {
-    Logger.log('Error saveScriptProperties: ' + e);
-    return { success: false, error: e.toString() };
+    Logger.log('❌ Error updateLessonName: ' + e);
+    Logger.log(e.stack);
+    return { success: false, updatedCount: 0, error: e.toString() };
   }
 }
 
 /**
- * 設定タブから Drive リソース自動作成を実行する
- * code_init.js の setupScriptProperties() を呼び出すラッパー
- * @returns {Object} setupScriptProperties() の戻り値
+ * ✅ 新規関数：指定教科書・学年のレッスン一覧を取得
+ * 通常教科書 + 入試対策編のレッスンを両方取得してマージ
+ * 重複除外・ソート済み
+ * 
+ * @param {string} year - 年度（例：「2024年度版」）
+ * @param {string} textbook - 教科書名
+ * @param {string} grade - 学年（またはシート名）
+ * @returns {Array} レッスン名の配列（ソート済み・重複なし）
  */
-function runSetupScriptProperties() {
+function getLessonList(year, textbook, grade) {
   try {
-    return setupScriptProperties();
+    console.log('=== getLessonList called ===');
+    console.log(`year: ${year}, textbook: ${textbook}, grade: ${grade}`);
+
+    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
+    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
+    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+
+    let lessons = new Set();
+    let fileArray = [];
+
+    // ✅ ファイル配列に変換
+    while (files.hasNext()) {
+      fileArray.push(files.next());
+    }
+
+    // ========================================
+    // ① 指定教科書からレッスン取得
+    // ========================================
+    console.log(`① 教科書「${textbook}」からレッスン取得中...`);
+
+    fileArray.forEach(file => {
+      if (file.getName() !== textbook) return;
+
+      const ss = SpreadsheetApp.open(file);
+      const sheet = ss.getSheetByName(grade);
+
+      if (!sheet) {
+        console.log(`  ⚠️ シート「${grade}」が見つかりません`);
+        return;
+      }
+
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        console.log(`  ⚠️ データがありません`);
+        return;
+      }
+
+      // 列6（lesson列）を取得
+      const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+
+      data.forEach(row => {
+        const lessonName = row[0] ? row[0].toString().trim() : '';
+        if (lessonName) {
+          lessons.add(lessonName);
+        }
+      });
+
+      console.log(`  ✅ ${lessons.size}件のレッスンを取得`);
+    });
+
+    // ========================================
+    // ② 入試対策編からレッスン取得
+    // ========================================
+    console.log(`② 入試対策編からレッスン取得中...`);
+
+    fileArray.forEach(file => {
+      if (file.getName() !== '入試対策編') return;
+
+      const ss = SpreadsheetApp.open(file);
+      const sheets = ss.getSheets();
+
+      sheets.forEach(sheet => {
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) return;
+
+        // 列6（lesson列）を取得
+        const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+
+        data.forEach(row => {
+          const lessonName = row[0] ? row[0].toString().trim() : '';
+          if (lessonName) {
+            lessons.add(lessonName);
+          }
+        });
+      });
+
+      console.log(`  ✅ 入試対策編から${lessons.size}件のレッスンを取得`);
+    });
+
+    // ========================================
+    // ③ 重複除外＆ソート
+    // ========================================
+    const sortedLessons = Array.from(lessons).sort();
+
+    console.log(`=== 結果 ===`);
+    console.log(`取得レッスン数: ${sortedLessons.length}`);
+    console.log('レッスン一覧:', sortedLessons);
+
+    return sortedLessons;
+
   } catch (e) {
-    Logger.log('Error runSetupScriptProperties: ' + e);
-    return { success: false, error: e.toString() };
+    console.error('❌ Error getLessonList: ' + e);
+    Logger.log('Error getLessonList: ' + e);
+    return [];
   }
 }
+
+/**
+ * ✅ 新規関数：保存後処理専用のレッスン一覧取得
+ * 
+ * 処理：
+ * 1. 指定教科書のレッスンのみを取得
+ * 2. 入試対策編のレッスンは含めない（通常教科書の場合）
+ * 3. 入試対策編の場合のみ、すべてのシートからレッスンを取得
+ * 
+ * @param {string} year - 年度（例：「2024年度版」）
+ * @param {string} textbook - 教科書名
+ * @param {string} grade - 学年（またはシート名）
+ * @returns {Array} レッスン名の配列（ソート済み・重複なし）
+ */
+function getLessonListForSave(year, textbook, grade) {
+  try {
+    console.log('=== getLessonListForSave called ===');
+    console.log(`year: ${year}, textbook: ${textbook}, grade: ${grade}`);
+
+    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
+    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
+    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+
+    let lessons = new Set();
+    let fileArray = [];
+
+    // ✅ ファイル配列に変換
+    while (files.hasNext()) {
+      fileArray.push(files.next());
+    }
+
+    // ========================================
+    // 入試対策編の場合
+    // ========================================
+    if (textbook === '入試対策編') {
+      console.log(`① 入試対策編：すべてのシートからレッスン取得`);
+
+      fileArray.forEach(file => {
+        if (file.getName() !== '入試対策編') return;
+
+        const ss = SpreadsheetApp.open(file);
+        const sheets = ss.getSheets();
+
+        sheets.forEach(sheet => {
+          const lastRow = sheet.getLastRow();
+          if (lastRow <= 1) return;
+
+          // 列6（lesson列）を取得
+          const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+
+          data.forEach(row => {
+            const lessonName = row[0] ? row[0].toString().trim() : '';
+            if (lessonName) {
+              lessons.add(lessonName);
+            }
+          });
+        });
+
+        console.log(`  ✅ ${lessons.size}件のレッスンを取得`);
+      });
+    } 
+    // ========================================
+    // 通常教科書の場合
+    // ========================================
+    else {
+      console.log(`① 教科書「${textbook}」からレッスン取得（入試対策編は除外）`);
+
+      fileArray.forEach(file => {
+        if (file.getName() !== textbook) return;
+
+        const ss = SpreadsheetApp.open(file);
+        const sheet = ss.getSheetByName(grade);
+
+        if (!sheet) {
+          console.log(`  ⚠️ シート「${grade}」が見つかりません`);
+          return;
+        }
+
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) {
+          console.log(`  ⚠️ シート「${grade}」にデータがありません`);
+          return;
+        }
+
+        // 列6（lesson列）を取得
+        const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+
+        data.forEach(row => {
+          const lessonName = row[0] ? row[0].toString().trim() : '';
+          if (lessonName) {
+            lessons.add(lessonName);
+          }
+        });
+
+        console.log(`  ✅ ${lessons.size}件のレッスンを取得`);
+      });
+    }
+
+    // ========================================
+    // 重複除外＆ソート
+    // ========================================
+    const sortedLessons = Array.from(lessons).sort();
+
+    console.log(`=== 結果 ===`);
+    console.log(`取得レッスン数: ${sortedLessons.length}`);
+    console.log('レッスン一覧:', sortedLessons);
+
+    return sortedLessons;
+
+  } catch (e) {
+    console.error('❌ Error getLessonListForSave: ' + e);
+    Logger.log('Error getLessonListForSave: ' + e);
+    return [];
+  }
+}
+
