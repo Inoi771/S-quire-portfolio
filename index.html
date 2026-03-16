@@ -749,15 +749,20 @@
                             audioHtml = '<div class="no-audio">🔇 音声ファイルなし</div>';
                         }
 
-                        let formLabel = '現在形';
+                        let formLabel = '';
+                        if (q.formType === 'present') formLabel = '現在形';
                         if (q.formType === 'past') formLabel = '過去形';
                         if (q.formType === 'past_participle') formLabel = '過去分詞形';
 
-                        const japaneseDisplay = (q.formType === 'present') 
-                            ? '<div class="japanese">' + (q.japanese || '（記載なし）') + '</div>' 
+                        const formLabelHtml = formLabel
+                            ? '<div class="form-label">' + formLabel + '</div>'
                             : '';
 
-                        cardHtml += '<div class="form-section"><div class="form-label">' + formLabel + '</div><div class="question-text">' + japaneseDisplay + '<div class="english">' + (q.english || '（記載なし）') + '</div></div><div class="audio-container">' + audioHtml + '</div></div>';
+                        const japaneseDisplay = (!q.formType || q.formType === 'present')
+                            ? '<div class="japanese">' + (q.japanese || '（記載なし）') + '</div>'
+                            : '';
+
+                        cardHtml += '<div class="form-section">' + formLabelHtml + '<div class="question-text">' + japaneseDisplay + '<div class="english">' + (q.english || '（記載なし）') + '</div></div><div class="audio-container">' + audioHtml + '</div></div>';
                     });
 
                     cardHtml += '</div></div>';

@@ -4283,6 +4283,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   const sheetName = sheet.getName();
+  const isFukisokuSheet = (sheetName === '不規則動詞①' || sheetName === '不規則動詞②');
   let maxCol = 7;
   if (sheetName === '不規則動詞①') maxCol = 11;
   else if (sheetName === '不規則動詞②') maxCol = 18;
@@ -4298,7 +4299,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
       questions.push({
         wordId: row[0] || '', english: row[1] || '', pronunciation: row[2] || '',
         japanese: row[3] || '', audio: row[4] || '', lesson: row[5] || '',
-        cellId: row[6] || '', formType: 'present', questionNumber
+        cellId: row[6] || '', formType: isFukisokuSheet ? 'present' : null, questionNumber
       });
       if (sheetName === '不規則動詞①' || sheetName === '不規則動詞②') {
         if (row[8] || row[9] || row[10]) {
