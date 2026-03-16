@@ -66,14 +66,14 @@
             <div class="form-group hidden" id="customLessonGroup">
               <label>レッスン名を入力</label>
               <div class="lesson-input-group">
-                <input type="text" id="customLessonInput" placeholder="自由に入力してください" oninput="updateNewButton()">
-                <button id="useCustomBtn" onclick="handleUseCustom()">編集</button>
+                <input type="text" id="customLessonInput" placeholder="自由に入力してください">
+                <button id="useCustomBtn">編集</button>
               </div>
             </div>
 
             <div class="button-group">
-              <button class="btn-new" id="newBtn" disabled onclick="handleNewBtnClick()">✏️ 編集</button>
-              <button class="btn-reset" id="resetBtn" onclick="handleReset()">リセット</button>
+              <button class="btn-new" id="newBtn" disabled>✏️ 編集</button>
+              <button class="btn-reset" id="resetBtn">リセット</button>
             </div>
           </div>
         </div>
@@ -320,27 +320,6 @@
   </div><!-- app-container 閉じ -->
 
   <div class="saving-indicator" id="savingIndicator">💾 保存中...</div>
-
-<!-- グローバルユーティリティ（IIFE スコープ不要な純粋な UI ヘルパー） -->
-<script>
-function switchTab(t) {
-  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
-  var btn = document.querySelector('.tab-btn[data-tab="' + t + '"]');
-  if (btn) btn.classList.add('active');
-  var con = document.getElementById(t + '-tab');
-  if (con) con.classList.add('active');
-  if (t === 'settings' && typeof window.loadSettingsValues === 'function') window.loadSettingsValues();
-}
-function toggleSelectionPanel() {
-  var p = document.getElementById('selectionPanel');
-  if (!p) return;
-  p.classList.toggle('expanded');
-  p.classList.toggle('collapsed');
-  var icon = p.querySelector('.toggle-icon');
-  if (icon) icon.classList.toggle('collapsed');
-}
-</script>
 
   <script>
 (() => {
