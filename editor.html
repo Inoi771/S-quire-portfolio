@@ -66,14 +66,14 @@
             <div class="form-group hidden" id="customLessonGroup">
               <label>レッスン名を入力</label>
               <div class="lesson-input-group">
-                <input type="text" id="customLessonInput" placeholder="自由に入力してください">
-                <button id="useCustomBtn">編集</button>
+                <input type="text" id="customLessonInput" placeholder="自由に入力してください" oninput="updateNewButton()">
+                <button id="useCustomBtn" onclick="handleUseCustom()">編集</button>
               </div>
             </div>
 
             <div class="button-group">
-              <button class="btn-new" id="newBtn" disabled>✏️ 編集</button>
-              <button class="btn-reset" id="resetBtn">リセット</button>
+              <button class="btn-new" id="newBtn" disabled onclick="handleNewBtnClick()">✏️ 編集</button>
+              <button class="btn-reset" id="resetBtn" onclick="handleReset()">リセット</button>
             </div>
           </div>
         </div>
