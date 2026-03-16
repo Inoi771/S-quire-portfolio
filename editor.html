@@ -410,23 +410,27 @@ function toggleSelectionPanel() {
         .getEditorGrades(_s.year, _s.textbook);
     });
 
-    // 学年 → レッスン
+    // 学年 → レッスン（レッスン読み込みは editor-js1 の handleGradeChange が担当）
     var grSel = document.getElementById('gradeSelect');
     if (grSel) grSel.addEventListener('change', function(e) {
       _s.grade = e.target.value;
       _s.lesson = '';
       _disable('lessonSelect');
       _updateNewBtn();
-      if (!_s.grade) return;
-      google.script.run
-        .withSuccessHandler(function(d) { _fill('lessonSelect', d.lessons); })
-        .getEditorLessons(_s.year, _s.textbook, _s.grade);
     });
 
     // レッスン選択
     var lsSel = document.getElementById('lessonSelect');
     if (lsSel) lsSel.addEventListener('change', function(e) {
       _s.lesson = e.target.value;
+      var customGroup = document.getElementById('customLessonGroup');
+      if (customGroup) {
+        if (_s.lesson === 'other') {
+          customGroup.classList.remove('hidden');
+        } else {
+          customGroup.classList.add('hidden');
+        }
+      }
       _updateNewBtn();
     });
   });

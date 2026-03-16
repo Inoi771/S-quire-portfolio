@@ -285,8 +285,19 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
         document.getElementById('customLessonInput').addEventListener('input', updateNewButton);
   
         document.getElementById('newBtn').addEventListener('click', () => {
-          if (!state.year || !state.textbook || !state.grade || !state.lesson) {
+          if (!state.year || !state.textbook || !state.grade) {
             alert('全ての項目を選択してください');
+            return;
+          }
+
+          // 「その他」選択時はカスタムレッスン名で処理
+          if (state.lesson === 'other') {
+            handleUseCustom();
+            return;
+          }
+
+          if (!state.lesson) {
+            alert('レッスンを選択してください');
             return;
           }
 
