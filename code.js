@@ -1,26 +1,27 @@
 /**
  * GASアプリケーションのエントリーポイント
- * ?page=student → 生徒用 index.html
- * それ以外       → 教師用 editor.html
+ * ?key=TEACHER_ACCESS_KEY → 教師用 editor.html
+ * それ以外                → 生徒用 index.html
  */
 function doGet(e) {
-  if (e && e.parameter && e.parameter.page === 'student') {
-    try {
-      const template = HtmlService.createTemplateFromFile('index');
-      const yearsData = getStudentYears();
-      template.years = yearsData.years;
-      template.yearsJson = JSON.stringify(yearsData.years);
-      return template.evaluate()
-        .setTitle('スクエア英単語音声アプリ')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    } catch (err) {
-      Logger.log('doGet student error: ' + err);
-      return HtmlService.createHtmlOutput('エラーが発生しました。');
-    }
+  const accessKey = getScriptProperty('TEACHER_ACCESS_KEY');
+  if (accessKey && e && e.parameter && e.parameter.key === accessKey) {
+    return HtmlService
+      .createHtmlOutputFromFile('editor')
+      .setTitle('単語帳作成アプリ');
   }
-  return HtmlService
-    .createHtmlOutputFromFile('editor')
-    .setTitle('単語帳作成アプリ');
+  try {
+    const template = HtmlService.createTemplateFromFile('index');
+    const yearsData = getStudentYears();
+    template.years = yearsData.years;
+    template.yearsJson = JSON.stringify(yearsData.years);
+    return template.evaluate()
+      .setTitle('スクエア英単語音声アプリ')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  } catch (err) {
+    Logger.log('doGet student error: ' + err);
+    return HtmlService.createHtmlOutput('エラーが発生しました。');
+  }
 }
 
 // ════════════════════════════════════════════════════════
