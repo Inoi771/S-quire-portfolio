@@ -557,7 +557,7 @@
                 return;
             }
 
-            callServerFunction('getTextbooks', year)
+            callServerFunction('getStudentTextbooks', year)
                 .then(result => {
                     const textbooks = result.textbooks || [];
                     const textbookSelect = document.getElementById('textbook');
@@ -601,7 +601,7 @@
                 return;
             }
 
-            callServerFunction('getGrades', year, textbook)
+            callServerFunction('getStudentGrades', year, textbook)
                 .then(result => {
                     const grades = result.grades || [];
                     gradeSelect.innerHTML = '<option value="">---</option>';
@@ -635,7 +635,7 @@
 
             showSpinner('lesson');
 
-            callServerFunction('getLessons', year, textbook, grade)
+            callServerFunction('getStudentLessons', year, textbook, grade)
                 .then(result => {
                     const lessons = result.lessons || [];
                     lessonSelect.innerHTML = '<option value="">---</option>';
@@ -865,7 +865,7 @@
         };
 
         function loadLogo() {
-            callServerFunction('getLogoUrl')
+            callServerFunction('getStudentLogoUrl')
                 .then(result => {
                     if (result) {
                         // applogo.pngの読み込み
