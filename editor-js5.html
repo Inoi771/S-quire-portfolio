@@ -2023,7 +2023,7 @@ function generatePdfSuffix(displayItems) {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initApp);
   } else {
-    setTimeout(initApp, 0);
+    initApp();
   }
   window.addEventListener('load', initApp);
 
