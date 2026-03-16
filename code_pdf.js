@@ -1,3 +1,124 @@
+function convertToTableDataNormal(items) {
+  // 16行 × 3列
+  const table = Array.from({ length: 16 }, () => [null, null, null]);
+
+  items.forEach(item => {
+    if (!item.cellId || item.cellId < 1 || item.cellId > 48) return;
+
+    // cellId 1～48 を行列に変換
+    // 1～16 → 行0～15、列0
+    // 17～32 → 行0～15、列1
+    // 33～48 → 行0～15、列2
+    const cellIdx = item.cellId - 1;
+    const colIdx = Math.floor(cellIdx / 16);
+    const rowIdx = cellIdx % 16;
+
+    if (rowIdx < 0 || rowIdx >= 16 || colIdx < 0 || colIdx >= 3) return;
+
+    const masterId = item.wordId;
+    if (!masterId) return;
+
+    // ========= 単語 =========
+    if (masterId < 10000) {
+      table[rowIdx][colIdx] = {
+        type: 'word',
+        english: item.english || '',
+        japanese: item.japanese || '',
+        pronunciation: item.pronunciation || '',
+        audio: item.audio || '',
+        masterId
+      };
+      return;
+    }
+
+    // ========= 英文 =========
+    if (masterId >= 10000) {
+      // 英文の場合は1列目に配置（2列目・3列目はnull）
+      table[rowIdx][0] = {
+        type: 'sentence',
+        text: item.english || '',
+        pronunciation: item.pronunciation || '',
+        japanese: item.japanese || '',
+        masterId
+      };
+      table[rowIdx][1] = null;
+      table[rowIdx][2] = null;
+    }
+  });
+
+  return table;
+}
+
+/**
+ * ✅ 新規：convertToTableDataFukisoku()
+ * 不規則動詞①②用 - 3列が原形・過去形・過去分詞
+ */
+function convertToTableDataFukisoku(items) {
+  // 16行 × 3列（原形 / 過去形 / 過去分詞）
+  const table = Array.from({ length: 16 }, () => [null, null, null]);
+
+  items.forEach(item => {
+    if (!item.cellId || item.cellId < 1 || item.cellId > 16) {
+      console.log(`⚠️ 不正なcellId: ${item.cellId}`);
+      return;
+    }
+
+    const rowIdx = item.cellId - 1; // 0～15
+
+    if (rowIdx < 0 || rowIdx >= 16) return;
+
+    const masterId = item.wordId;
+    if (!masterId) return;
+
+    // ========= 列0：原形 =========
+    table[rowIdx][0] = {
+      type: 'word',
+      english: item.english || '',
+      japanese: item.japanese || '',
+      pronunciation: item.pronunciation || '',
+      audio: item.audio || '',
+      masterId: masterId
+    };
+
+    // ========= 列1：過去形 =========
+    if (item.pastEnglish || item.pastWordId) {
+      table[rowIdx][1] = {
+        type: 'word',
+        english: item.pastEnglish || '',
+        japanese: item.japanese ? `${item.japanese}(過去形)` : '',
+        pronunciation: item.pastPronunciation || '',
+        audio: item.pastAudio || '',
+        masterId: item.pastWordId || null
+      };
+    }
+
+    // ========= 列2：過去分詞（②のみ） =========
+    if (item.pastParticipleEnglish || item.pastPartWordId) {
+      table[rowIdx][2] = {
+        type: 'word',
+        english: item.pastParticipleEnglish || '',
+        japanese: item.japanese ? `${item.japanese}(過去分詞)` : '',
+        pronunciation: item.pastParticiplePronunciation || '',
+        audio: item.pastParticipleAudio || '',
+        masterId: item.pastPartWordId || null
+      };
+    }
+  });
+
+  return table;
+}
+
+/**
+ * ✅ 修正版：convertToTableData()
+ * レッスンのタイプに応じて適切な変換関数を呼び出す
+ */
+function convertToTableData(items, isFukisoku = false) {
+  if (isFukisoku) {
+    return convertToTableDataFukisoku(items);
+  } else {
+    return convertToTableDataNormal(items);
+  }
+}
 
 /**
  * PDF生成・保存
@@ -135,7 +256,7 @@ function isExamPrepLessonName(lessonName) {
 
   // 入試対策編特有のレッスン名リスト
   // 以下の条件に当てはまれば入試対策編と判定
-  if (lessonName.startsWith('不規則動詞①') ||
+  if (lessonName.startsWith('不規則動詞①') || 
       lessonName.startsWith('不規則動詞②') ||
       lessonName === '曜日・月・季節・代名詞') {
     return true;
@@ -151,13 +272,13 @@ function isExamPrepLessonName(lessonName) {
  */
 function formatGrade(grade) {
   if (!grade) return '';
-
+  
   const gradeMap = {
     '中学1年': '中1',
     '中学2年': '中2',
     '中学3年': '中3',
   };
-
+  
   return gradeMap[grade] || grade;
 }
 
@@ -169,21 +290,21 @@ function generatePdfLayout(year, textbook, grade, displayItems, lessonsData, isS
   // ✅ デバッグログを追加
   Logger.log('=== generatePdfLayout 開始 ===');
   Logger.log('allWords受け取り: ' + (allWords && allWords.length ? allWords.length : 0) + '件');
-
+  
   // allWords の最初の3件をログ出力
   if (allWords && allWords.length > 0) {
     Logger.log('📌 allWords の最初の3件:');
     for (let i = 0; i < Math.min(3, allWords.length); i++) {
       Logger.log(`  allWords[${i}]: english="${allWords[i].english}", pronunciation="${allWords[i].pronunciation}"`);
     }
-
+    
     // 「I」が含まれているか確認
     const iWord = allWords.find(w => w.english === 'I');
     Logger.log('📌 「I」の検索: ' + (iWord ? `発音="${iWord.pronunciation}"` : '見つかりません'));
   } else {
     Logger.log('⚠️ allWords が空または undefined です');
   }
-
+  
 const cssStyles = `
 <style>
 /* ===============================
@@ -391,37 +512,37 @@ ${cssStyles}
 `;
 
   let pageNum = 1;
-
+  
   lessonsData.forEach(ld => {
     const lessonName = ld.lesson;
     const source = ld.source;
-
+    
     let displayHeader = '';
     if (source === 'examPrep') {
       displayHeader = escapeHtml(lessonName);
     } else {
       displayHeader = `${escapeHtml(formatGrade(grade))}　　　${escapeHtml(lessonName)}`;
     }
-
+    
     const isSpecialLayoutForThisLesson = isSpecialLayoutLessonGAS(lessonName);
-
+    
     if (isSpecialLayoutForThisLesson) {
       if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞②')) {
         html += generatePdfPageFukisoku(
-          displayHeader,
-          ld.tableData,
-          displayItems,
+          displayHeader, 
+          ld.tableData, 
+          displayItems, 
           lessonName.startsWith('不規則動詞②'),
           pageNum
         );
       } else if (lessonName === '曜日・月・季節・代名詞') {
         // ✅ ここにもデバッグログを追加
         Logger.log('📌 代名詞テーブル生成中: allWords=' + (allWords ? allWords.length : 0) + '件');
-
+        
         html += generatePdfPageSpecialLayout(
-          displayHeader,
-          ld.tableData,
-          displayItems,
+          displayHeader, 
+          ld.tableData, 
+          displayItems, 
           pageNum,
           allWords  // ✅ allWords を渡す
         );
@@ -434,7 +555,7 @@ ${cssStyles}
         pageNum
       );
     }
-
+    
     pageNum++;
   });
 
@@ -478,11 +599,11 @@ function generatePdfPageFukisoku(displayHeader, tableData, displayItems, isFukis
   const circleCount = collectedWords.length;
   const triangleCount = Math.round(circleCount * 0.9);
 
-  const scoreDisplay = displayItems.includes('score')
+  const scoreDisplay = displayItems.includes('score') 
     ? `<div style="flex: 1; text-align: right; font-size: 13pt; font-weight: bold; color: #000;">${triangleCount}/${circleCount}</div>`
     : `<div style="flex: 1; text-align: right;"></div>`;
 
-  const headers = isFukisoku2
+  const headers = isFukisoku2 
     ? ['意味', '現在形', '過去形', '過去分詞']
     : ['意味', '現在形', '過去形'];
 
@@ -582,7 +703,7 @@ function generatePdfPageFukisoku(displayHeader, tableData, displayItems, isFukis
 /**
  * ✅ 新規関数：マスターデータから代名詞の発音を検索
  * 代名詞テーブル用に英単語から発音を取得
- *
+ * 
  * @param {string} englishWord - 代名詞の英単語（例：「I」「my」「me」）
  * @param {Array} allWords - マスター単語配列
  * @returns {Object} { english, pronunciation } または { english, pronunciation: '' }
@@ -593,7 +714,7 @@ function findPronounData(englishWord, allWords) {
   }
 
   // 完全一致で検索
-  const found = allWords.find(word =>
+  const found = allWords.find(word => 
     word.english && word.english.toLowerCase() === englishWord.toLowerCase()
   );
 
@@ -614,48 +735,48 @@ function findPronounData(englishWord, allWords) {
 /**
  * ✅ 改修版：generatePronounTableHtml()
  * displayItems パラメータを受け取り、英語と発音の表示を制御
- *
+ * 
  * @param {Array} allWords - マスター単語配列
  * @param {Array} displayItems - 表示項目（'english', 'pronunciation' など）
  * @returns {string} 代名詞テーブルのHTML
  */
 function generatePronounTableHtml(allWords, displayItems = ['english', 'pronunciation']) {
   const pronounData = [
-    {
-      japanese: '私',
-      nominative: 'I', genitive: 'my', objective: 'me', possessive: 'mine'
+    { 
+      japanese: '私', 
+      nominative: 'I', genitive: 'my', objective: 'me', possessive: 'mine' 
     },
-    {
-      japanese: 'あなた・あなたたち',
-      nominative: 'you', genitive: 'your', objective: 'you', possessive: 'yours'
+    { 
+      japanese: 'あなた・あなたたち', 
+      nominative: 'you', genitive: 'your', objective: 'you', possessive: 'yours' 
     },
-    {
-      japanese: '私たち',
-      nominative: 'we', genitive: 'our', objective: 'us', possessive: 'ours'
+    { 
+      japanese: '私たち', 
+      nominative: 'we', genitive: 'our', objective: 'us', possessive: 'ours' 
     },
-    {
-      japanese: '彼',
-      nominative: 'he', genitive: 'his', objective: 'him', possessive: 'his'
+    { 
+      japanese: '彼', 
+      nominative: 'he', genitive: 'his', objective: 'him', possessive: 'his' 
     },
-    {
-      japanese: '彼女',
-      nominative: 'she', genitive: 'her', objective: 'her', possessive: 'hers'
+    { 
+      japanese: '彼女', 
+      nominative: 'she', genitive: 'her', objective: 'her', possessive: 'hers' 
     },
-    {
-      japanese: 'それ',
-      nominative: 'it', genitive: 'its', objective: 'it', possessive: '×'
+    { 
+      japanese: 'それ', 
+      nominative: 'it', genitive: 'its', objective: 'it', possessive: '×' 
     },
-    {
-      japanese: '彼ら・彼女ら・それら',
-      nominative: 'they', genitive: 'their', objective: 'them', possessive: 'theirs'
+    { 
+      japanese: '彼ら・彼女ら・それら', 
+      nominative: 'they', genitive: 'their', objective: 'them', possessive: 'theirs' 
     },
-    {
-      japanese: 'トム',
+    { 
+      japanese: 'トム', 
       nominative: 'Tom', genitive: 'Tom\'s', objective: 'Tom', possessive: 'Tom\'s',
       isHardcoded: true
     },
-    {
-      japanese: '私の兄',
+    { 
+      japanese: '私の兄', 
       nominative: 'my brother', genitive: 'my brother\'s', objective: 'my brother', possessive: 'my brother\'s',
       isHardcoded: true
     }
@@ -709,11 +830,11 @@ function generatePronounTableHtml(allWords, displayItems = ['english', 'pronunci
 
     // 各列（nominative, genitive, objective, possessive）を処理
     const columns = ['nominative', 'genitive', 'objective', 'possessive'];
-
+    
     columns.forEach(col => {
       const word = row[col];
       const isHardcoded = row.isHardcoded;
-
+      
       html += `
         <td style="border: 1pt solid #000; padding: 2px; text-align: center; vertical-align: middle;">
 `;
@@ -726,7 +847,7 @@ function generatePronounTableHtml(allWords, displayItems = ['english', 'pronunci
       // ✅ 発音を表示
       if (showPronunciation) {
         let pronunciationText = '';
-
+        
         if (isHardcoded) {
           const pronunciationMap = {
             'Tom': 'トム',
@@ -783,7 +904,7 @@ function generatePdfPageSpecialLayout(displayHeader, tableData, displayItems, pa
   const circleCount = wordCount + sentenceCount * 2 + 9;
   const triangleCount = Math.round(circleCount * 0.9);
 
-  const scoreDisplay = displayItems.includes('score')
+  const scoreDisplay = displayItems.includes('score') 
     ? `<div style="flex: 1; text-align: right; font-size: 13pt; font-weight: bold; color: #000;">${triangleCount}/${circleCount}</div>`
     : `<div style="flex: 1; text-align: right;"></div>`;
 
@@ -853,12 +974,12 @@ function generatePdfPageSpecialLayout(displayHeader, tableData, displayItems, pa
 </tr>`;
     } else {
       html += `<tr>`;
-
+      
       for (let colIdx = 0; colIdx < 3; colIdx++) {
         const cell = row[colIdx];
         const key = `${rowIdx}-${colIdx}`;
         const num = cellNumberMap[key];
-
+        
         if (cell && cell.type === 'word') {
           html += `
   <td>
@@ -876,7 +997,7 @@ function generatePdfPageSpecialLayout(displayHeader, tableData, displayItems, pa
           html += `  <td style="border: none;"></td>`;
         }
       }
-
+      
       html += `</tr>`;
     }
   }
@@ -991,3 +1112,18 @@ function generatePdfPage(displayHeader, tableData, displayItems, pageNum = 1) {
 
   return html;
 }
+
+/**
+ * HTMLエスケープ関数
+ */
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
+  );
+}
+// ============================================================
+// 生徒向け API（元 subcode.js）
+// ============================================================
+
+const scriptCache = CacheService.getScriptCache();
+

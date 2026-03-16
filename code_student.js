@@ -1,76 +1,58 @@
-/**
- * HTMLエスケープ関数
- */
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
-  );
-}
-
-// ════════════════════════════════════════════════════════
-// 生徒向けアプリ（index.html）用関数
-// ════════════════════════════════════════════════════════
-
-/**
- * 生徒アプリで使用する設定値を返す
- * @returns {Object} { ENGLISHWORDS_FOLDER_ID, GITHUB_BASE_URL, HOMEPAGE_URL }
- */
-function getAppConfig() {
+function getConfig() {
   const config = {
-    ENGLISHWORDS_FOLDER_ID: getScriptProperty('ENGLISHWORDS_FOLDER_ID'),
+    VOCABULARY_FOLDER_ID: getScriptProperty('VOCABULARY_FOLDER_ID'),
     GITHUB_BASE_URL: getScriptProperty('GITHUB_BASE_URL'),
     HOMEPAGE_URL: getScriptProperty('HOMEPAGE_URL')
   };
-  if (!config.ENGLISHWORDS_FOLDER_ID) {
-    throw new Error('必要なスクリプトプロパティが設定されていません: ENGLISHWORDS_FOLDER_ID');
+  if (!config.VOCABULARY_FOLDER_ID || !config.GITHUB_BASE_URL) {
+    throw new Error('必要なスクリプトプロパティが設定されていません。');
   }
   return config;
 }
 
 /**
- * キャッシュを手動リセットする
+ * 生徒用ロゴ画像のURLを取得する関数
  */
-function clearCache() {
-  CacheService.getScriptCache().removeAll(['student_years', 'years', 'textbooks', 'grades']);
-  Logger.log('キャッシュをリセットしました。');
-}
-
-/**
- * 生徒アプリ用ロゴURLを取得する
- * @returns {Object} { appLogoUrl, logoUrl, homepageUrl }
- */
-function getStudentLogoUrls() {
+function getStudentLogoUrl() {
   try {
-    const config = getAppConfig();
+    const config = getConfig();
     const githubBase = config.GITHUB_BASE_URL;
     if (!githubBase) {
       return { appLogoUrl: null, logoUrl: null, homepageUrl: '' };
     }
+    const appLogoUrl = githubBase + '/images/applogo.png';
+    const logoUrl = githubBase + '/images/logo.png';
+    Logger.log('appLogoUrl: ' + appLogoUrl);
+    Logger.log('logoUrl: ' + logoUrl);
+    Logger.log('homepageUrl: ' + (config.HOMEPAGE_URL || ''));
     return {
-      appLogoUrl: githubBase + '/images/applogo.png',
-      logoUrl: githubBase + '/images/logo.png',
+      appLogoUrl: appLogoUrl,
+      logoUrl: logoUrl,
       homepageUrl: config.HOMEPAGE_URL || ''
     };
   } catch (e) {
-    Logger.log('getStudentLogoUrls エラー: ' + e);
+    Logger.log('getStudentLogoUrl エラー: ' + e);
     return { appLogoUrl: null, logoUrl: null, homepageUrl: '' };
   }
 }
 
 /**
- * 生徒アプリ用年度一覧を取得（表示名付き、キャッシュあり）
- * @returns {Object} { years: [{originalName, displayName}] }
+ * キャッシュを手動リセットする関数
  */
+function manualCacheClear() {
+  scriptCache.removeAll(['years', 'textbooks', 'grades']);
+  Logger.log('キャッシュをリセットしました。');
+}
+
 function getStudentYears() {
   try {
-    const cache = CacheService.getScriptCache();
-    const cacheKey = 'student_years';
-    const cached = cache.get(cacheKey);
+    const cacheKey = 'years';
+    const cached = scriptCache.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID);
-    const folders = folder.getFolders();
+    const config = getConfig();
+    const englishwordsFolder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID);
+    const folders = englishwordsFolder.getFolders();
     const years = [];
 
     while (folders.hasNext()) {
@@ -88,7 +70,7 @@ function getStudentYears() {
     });
 
     const resultData = { years: result };
-    cache.put(cacheKey, JSON.stringify(resultData), 3600);
+    scriptCache.put(cacheKey, JSON.stringify(resultData), 3600);
     return resultData;
   } catch (e) {
     Logger.log('getStudentYears エラー: ' + e);
@@ -96,15 +78,10 @@ function getStudentYears() {
   }
 }
 
-/**
- * 生徒アプリ用教科書一覧を取得
- * @param {string} year - 年度
- * @returns {Object} { textbooks: [教科書名の配列] }
- */
 function getStudentTextbooks(year) {
   try {
-    const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
+    const config = getConfig();
+    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
     const files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const textbooks = [];
     while (files.hasNext()) {
@@ -117,16 +94,10 @@ function getStudentTextbooks(year) {
   }
 }
 
-/**
- * 生徒アプリ用学年一覧を取得
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @returns {Object} { grades: [学年の配列] }
- */
 function getStudentGrades(year, textbook) {
   try {
-    const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
+    const config = getConfig();
+    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const ss = SpreadsheetApp.open(file);
     const grades = ss.getSheets()
@@ -139,22 +110,13 @@ function getStudentGrades(year, textbook) {
   }
 }
 
-/**
- * 生徒アプリ用レッスン一覧を取得
- * 入試対策編・レッスン順序シートに対応した複雑版
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年
- * @returns {Object} { lessons: [レッスン名の配列] }
- */
 function getStudentLessons(year, textbook, grade) {
   try {
-    const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
+    const config = getConfig();
+    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const ss = SpreadsheetApp.open(file);
 
-    // 入試対策編の場合
     if (textbook === '入試対策編') {
       const allLessons = [];
       const sheetNames = ['不規則動詞①', '不規則動詞②', '通常'];
@@ -164,7 +126,9 @@ function getStudentLessons(year, textbook, grade) {
         const lastRow = sheet.getLastRow();
         if (lastRow < 2) return;
         const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
-        data.forEach(r => { if (r[0]) allLessons.push(r[0].toString().trim()); });
+        data.forEach(r => {
+          if (r[0]) allLessons.push(r[0].toString().trim());
+        });
       });
       const uniqueLessons = [...new Set(allLessons)];
       const lessonOrder = [
@@ -175,14 +139,18 @@ function getStudentLessons(year, textbook, grade) {
         '副詞➀', '副詞➁', '副詞➂', '前置詞', '助動詞・接続詞',
         '不規則動詞➀(1)', '不規則動詞➀(2)', '不規則動詞➁(1)', '不規則動詞➁(2)', '不規則動詞➁(3)'
       ];
-      const sortedLessons = [
-        ...lessonOrder.filter(l => uniqueLessons.includes(l)),
-        ...uniqueLessons.filter(l => !lessonOrder.includes(l))
-      ];
+      let sortedLessons;
+      if (lessonOrder.length > 0) {
+        sortedLessons = [
+          ...lessonOrder.filter(l => uniqueLessons.includes(l)),
+          ...uniqueLessons.filter(l => !lessonOrder.includes(l))
+        ];
+      } else {
+        sortedLessons = uniqueLessons.sort();
+      }
       return { lessons: sortedLessons };
     }
 
-    // その他の教科書の場合
     const lessonOrderSheet = ss.getSheetByName('レッスン順序');
     if (!lessonOrderSheet) {
       const sheet = ss.getSheetByName(grade);
@@ -212,36 +180,32 @@ function getStudentLessons(year, textbook, grade) {
     let examPrepLessons = [];
     if (examPrepFile) {
       const examPrepSs = SpreadsheetApp.open(examPrepFile);
-      ['不規則動詞①', '不規則動詞②', '通常'].forEach(sheetName => {
+      const sheetNames = ['不規則動詞①', '不規則動詞②', '通常'];
+      sheetNames.forEach(sheetName => {
         const sheet = examPrepSs.getSheetByName(sheetName);
         if (!sheet) return;
-        const lr = sheet.getLastRow();
-        if (lr < 2) return;
-        const data = sheet.getRange(2, 6, lr - 1, 1).getValues();
-        data.forEach(r => { if (r[0]) examPrepLessons.push(r[0].toString().trim()); });
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return;
+        const data = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+        data.forEach(r => {
+          if (r[0]) examPrepLessons.push(r[0].toString().trim());
+        });
       });
       examPrepLessons = [...new Set(examPrepLessons)];
     }
 
-    return { lessons: lessonsFromOrder.filter(l => !examPrepLessons.includes(l)) };
+    const filteredLessons = lessonsFromOrder.filter(l => !examPrepLessons.includes(l));
+    return { lessons: filteredLessons };
   } catch (e) {
     Logger.log('getStudentLessons エラー: ' + e);
     return { lessons: [] };
   }
 }
 
-/**
- * 発音練習ページ用のデータを取得する
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年
- * @param {string} lesson - レッスン名
- * @returns {Array} 問題データの配列
- */
 function getPracticeQuestions(year, textbook, grade, lesson) {
   try {
-    const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
+    const config = getConfig();
+    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const spreadsheet = SpreadsheetApp.open(file);
     const questions = [];
@@ -249,20 +213,22 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
     if (textbook === '入試対策編') {
       spreadsheet.getSheets().forEach(sheet => {
         if (sheet.getName() === 'レッスン順序') return;
-        questions.push(...extractQuestionsFromSheet(sheet, lesson, 6));
+        questions.push(...extractQuestionsFromSheetByColumn(sheet, lesson, 6));
       });
     } else {
       const sheet = spreadsheet.getSheetByName(grade);
-      if (sheet) questions.push(...extractQuestionsFromSheet(sheet, lesson, 6));
+      if (sheet) questions.push(...extractQuestionsFromSheetByColumn(sheet, lesson, 6));
     }
 
     const githubBase = config.GITHUB_BASE_URL;
-    const timestamp = new Date().getTime();
     const resultQuestions = questions.map(q => {
-      if (!q.audio || !githubBase) return { ...q, audio: null };
+      if (!q.audio || !githubBase) {
+        return { ...q, audio: null };
+      }
       const fileName = q.audio.trim();
       const firstChar = fileName.charAt(0).toLowerCase();
       const encodedFile = encodeURIComponent(fileName);
+      const timestamp = new Date().getTime();
       const audioUrl = `${githubBase}/sounds/${firstChar}/${encodedFile}?v=${timestamp}`;
       return { ...q, audio: audioUrl };
     });
@@ -270,9 +236,12 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
     if (lesson === '曜日・月・季節・代名詞') {
       let maxQuestionNumber = 0;
       resultQuestions.forEach(q => {
-        if (q.questionNumber > maxQuestionNumber) maxQuestionNumber = q.questionNumber;
+        if (q.questionNumber > maxQuestionNumber) {
+          maxQuestionNumber = q.questionNumber;
+        }
       });
-      resultQuestions.push(...generatePronounQuestions(githubBase, maxQuestionNumber));
+      const pronounQuestions = generatePronounQuestions(githubBase, maxQuestionNumber);
+      resultQuestions.push(...pronounQuestions);
     }
 
     return resultQuestions;
@@ -282,12 +251,6 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
   }
 }
 
-/**
- * 代名詞の問題データを生成する
- * @param {string} githubBase - GitHubベースURL
- * @param {number} startNumber - 問題番号の開始値
- * @returns {Array} 代名詞問題データの配列
- */
 function generatePronounQuestions(githubBase, startNumber) {
   const timestamp = new Date().getTime();
   const pronounData = [
@@ -305,15 +268,24 @@ function generatePronounQuestions(githubBase, startNumber) {
   const questions = [];
   let pronounNumber = startNumber + 1;
   pronounData.forEach(row => {
-    ['nominative', 'genitive', 'objective', 'possessive'].forEach(col => {
+    const columns = ['nominative', 'genitive', 'objective', 'possessive'];
+    columns.forEach(col => {
       const wordData = row[col];
       const audioUrl = wordData.audio
         ? `${githubBase}/sounds/${wordData.audio.charAt(0).toLowerCase()}/${wordData.audio}?v=${timestamp}`
         : null;
       questions.push({
-        wordId: '', english: wordData.english, pronunciation: '', japanese: row.japanese,
-        audio: audioUrl, lesson: '曜日・月・季節・代名詞', cellId: '', formType: 'present',
-        questionNumber: pronounNumber, isPronoun: true, pronounColumn: col
+        wordId: '',
+        english: wordData.english,
+        pronunciation: '',
+        japanese: row.japanese,
+        audio: audioUrl,
+        lesson: '曜日・月・季節・代名詞',
+        cellId: '',
+        formType: 'present',
+        questionNumber: pronounNumber,
+        isPronoun: true,
+        pronounColumn: col
       });
     });
     pronounNumber++;
@@ -321,14 +293,7 @@ function generatePronounQuestions(githubBase, startNumber) {
   return questions;
 }
 
-/**
- * シートから指定レッスンの問題データを列指定で抽出する
- * @param {Sheet} sheet - 対象シート
- * @param {string} targetLesson - レッスン名
- * @param {number} lessonCol - レッスン列番号
- * @returns {Array} 問題データの配列
- */
-function extractQuestionsFromSheet(sheet, targetLesson, lessonCol) {
+function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
@@ -346,18 +311,32 @@ function extractQuestionsFromSheet(sheet, targetLesson, lessonCol) {
     .forEach(row => {
       questionNumber++;
       questions.push({
-        wordId: row[0] || '', english: row[1] || '', pronunciation: row[2] || '',
-        japanese: row[3] || '', audio: row[4] || '', lesson: row[5] || '',
-        cellId: row[6] || '', formType: 'present', questionNumber: questionNumber
+        wordId: row[0] || '',
+        english: row[1] || '',
+        pronunciation: row[2] || '',
+        japanese: row[3] || '',
+        audio: row[4] || '',
+        lesson: row[5] || '',
+        cellId: row[6] || '',
+        formType: 'present',
+        questionNumber: questionNumber
       });
 
       if (sheetName === '不規則動詞①' || sheetName === '不規則動詞②') {
-        const pastEnglish = row[8], pastPronunciation = row[9], pastAudio = row[10];
+        const pastEnglish = row[8];
+        const pastPronunciation = row[9];
+        const pastAudio = row[10];
         if (pastEnglish || pastPronunciation || pastAudio) {
           questions.push({
-            wordId: row[7] || '', english: pastEnglish || '', pronunciation: pastPronunciation || '',
-            japanese: row[3] || '', audio: pastAudio || '', lesson: row[5] || '',
-            cellId: row[6] || '', formType: 'past', questionNumber: questionNumber
+            wordId: row[7] || '',
+            english: pastEnglish || '',
+            pronunciation: pastPronunciation || '',
+            japanese: row[3] || '',
+            audio: pastAudio || '',
+            lesson: row[5] || '',
+            cellId: row[6] || '',
+            formType: 'past',
+            questionNumber: questionNumber
           });
         }
       }
@@ -365,9 +344,15 @@ function extractQuestionsFromSheet(sheet, targetLesson, lessonCol) {
       if (sheetName === '不規則動詞②') {
         if (row[12] || row[13] || row[14]) {
           questions.push({
-            wordId: row[11] || '', english: row[12] || '', pronunciation: row[13] || '',
-            japanese: row[3] || '', audio: row[14] || '', lesson: row[5] || '',
-            cellId: row[6] || '', formType: 'past_participle', questionNumber: questionNumber
+            wordId: row[11] || '',
+            english: row[12] || '',
+            pronunciation: '',
+            japanese: row[3] || '',
+            audio: row[14] || '',
+            lesson: row[5] || '',
+            cellId: row[6] || '',
+            formType: 'past_participle',
+            questionNumber: questionNumber
           });
         }
       }

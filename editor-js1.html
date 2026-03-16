@@ -1,3 +1,5 @@
+
+(() => {
   // ════════════════════════════════════════
   // 🎯 グローバル変数（エディター用）
   // ════════════════════════════════════════
@@ -36,17 +38,6 @@
   let selectedLessons = [];
   let draggedLessonName = null;
   let draggedLessonIdx = undefined;
-
-/**
- * in-page エラートースト（GAS iframe では alert() がブロックされるため代替として使用）
- */
-function showEditorError(msg) {
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;top:16px;right:16px;background:#c0392b;color:#fff;padding:12px 20px;border-radius:6px;z-index:10001;font-size:14px;max-width:360px;box-shadow:0 4px 12px rgba(0,0,0,.3);white-space:pre-wrap;';
-  d.textContent = msg;
-  document.body.appendChild(d);
-  setTimeout(() => d.remove(), 5000);
-}
 
 /**
  * ✅ 新規関数：重複確認のカスタムダイアログを表示
@@ -274,56 +265,37 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
       function setupSelectionPanel() {
         const header = document.getElementById('selectionHeader');
         const panel = document.getElementById('selectionPanel');
+        const toggle = document.getElementById('selectionToggle');
 
-        header.addEventListener('click', toggleSelectionPanel);
-      }
-
-      function toggleSelectionPanel() {
-        const panel = document.getElementById('selectionPanel');
-        if (!panel) return;
+        header.addEventListener('click', () => {
         panel.classList.toggle('expanded');
         panel.classList.toggle('collapsed');
-        const icon = panel.querySelector('.toggle-icon');
-        if (icon) icon.classList.toggle('collapsed');
+
+        const icon = document.querySelector('.toggle-icon');
+        icon.classList.toggle('collapsed');
+        });
+
       }
-      window.toggleSelectionPanel = toggleSelectionPanel;
-
-/**
- * 「✏️ 編集」ボタンのクリック処理（onclick 属性から呼ばれる）
- */
-function handleNewBtnClick() {
-  // DOM から直接値を読んで state を同期（event listener タイミング問題のフォールバック）
-  const yearEl = document.getElementById('yearSelect');
-  const textbookEl = document.getElementById('textbookSelect');
-  const gradeEl = document.getElementById('gradeSelect');
-  const lessonEl = document.getElementById('lessonSelect');
-  if (yearEl && yearEl.value) state.year = yearEl.value;
-  if (textbookEl && textbookEl.value) state.textbook = textbookEl.value;
-  if (gradeEl && gradeEl.value) state.grade = gradeEl.value;
-  if (lessonEl && lessonEl.value) state.lesson = lessonEl.value;
-
-  if (!state.year || !state.textbook || !state.grade) {
-    showEditorError('年度・教科書・学年を選択してください');
-    return;
-  }
-  if (state.lesson === 'other') {
-    handleUseCustom();
-    return;
-  }
-  if (!state.lesson) {
-    showEditorError('レッスンを選択してください');
-    return;
-  }
-  state.isEditorOpen = true;
-  loadEditorData();
-}
 
       function setupEventListeners() {
         document.getElementById('yearSelect').addEventListener('change', handleYearChange);
         document.getElementById('textbookSelect').addEventListener('change', handleTextbookChange);
         document.getElementById('gradeSelect').addEventListener('change', handleGradeChange);
         document.getElementById('lessonSelect').addEventListener('change', handleLessonChange);
-        // ボタン・入力は onclick/oninput 属性で処理するため addEventListener は不要
+        document.getElementById('customLessonInput').addEventListener('input', updateNewButton);
+  
+        document.getElementById('newBtn').addEventListener('click', () => {
+          if (!state.year || !state.textbook || !state.grade || !state.lesson) {
+            alert('全ての項目を選択してください');
+            return;
+          }
+
+          state.isEditorOpen = true;
+          loadEditorData();
+        });
+
+        document.getElementById('useCustomBtn').addEventListener('click', handleUseCustom);
+        document.getElementById('resetBtn').addEventListener('click', handleReset);
       }
 
 /**
@@ -336,8 +308,12 @@ function handleNewBtnClick() {
  * 年度一覧をサーバーから取得してセレクトに追加
  */
 function loadYears() {
+  showLoadingIndicator('年度を読み込み中...');
+  
   google.script.run
     .withSuccessHandler(data => {
+      hideLoadingIndicator();
+      
       const select = document.getElementById('yearSelect');
       select.innerHTML = '<option value="">選択してください</option>';
       data.years.forEach(year => {
@@ -348,6 +324,7 @@ function loadYears() {
       });
     })
     .withFailureHandler(err => {
+      hideLoadingIndicator();
       console.error('getYears エラー:', err);
       alert('❌ 年度の読み込みに失敗しました。\n\nエラー: ' + err);
     })
@@ -522,8 +499,6 @@ function handleGradeChange(e) {
         existingLessons = data.lessons;
 
         const select = document.getElementById('lessonSelect');
-        // 重複を防ぐためコールバック内でも innerHTML をクリア
-        select.innerHTML = '<option value="">選択してください</option>';
         data.lessons.forEach(lesson => {
           const option = document.createElement('option');
           option.value = lesson;
@@ -614,7 +589,7 @@ function handleUseCustom() {
   const customLesson = document.getElementById('customLessonInput').value.trim();
 
   if (!customLesson) {
-    showEditorError('レッスン名を入力してください');
+    alert('レッスン名を入力してください');
     return;
   }
 
@@ -953,7 +928,7 @@ function loadEditorData() {
           .withFailureHandler(err => {
             console.error('❌ loadFukisokuData エラー:', err);
             hideLoadingIndicator();
-            showEditorError('❌ 不規則動詞データの読み込みに失敗しました。\n\nエラー: ' + err);
+            alert('❌ 不規則動詞データの読み込みに失敗しました。\n\nエラー: ' + err);
             closeEditor();
           })
           .loadFukisokuData(state.year, state.textbook, sheetGrade, state.lesson, allWords);
@@ -980,7 +955,7 @@ function loadEditorData() {
           .withFailureHandler(err => {
             console.error('❌ getExistingData エラー:', err);
             hideLoadingIndicator();
-            showEditorError('❌ 既存データの読み込みに失敗しました。\n\nエラー: ' + err);
+            alert('❌ 既存データの読み込みに失敗しました。\n\nエラー: ' + err);
             closeEditor();
           })
           .getExistingData(state.year, state.textbook, state.grade, state.lesson);
@@ -989,7 +964,7 @@ function loadEditorData() {
     .withFailureHandler(err => {
       console.error('❌ getAllWordsAndSentences エラー:', err);
       hideLoadingIndicator();
-      showEditorError('❌ 単語・文データの読み込みに失敗しました。\n\nエラー: ' + err);
+      alert('❌ 単語・文データの読み込みに失敗しました。\n\nエラー: ' + err);
       closeEditor();
     })
     .getAllWordsAndSentences();
@@ -1053,10 +1028,482 @@ function loadEditorData() {
  */
 function closeEditor() {
   hasChanges = false;
-  searchQuery = '';
-  currentItemType = 'word';
-
+  searchQuery = '';  // ✅ 新規追加
+  currentItemType = 'word';  // ✅ 新規追加
+  
   const editorArea = document.getElementById('editorArea');
   editorArea.className = 'editor-area no-data';
   editorArea.innerHTML = '<div class="no-data-message">上部で年度・教科書・学年・レッスンを選択して「編集」をクリックしてください</div>';
 }
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 修正1: インクリメンタル検索の改善
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * 単語の検索用キーを生成（先頭文字検索用）
+ * 記号を除いて、英字から始まる部分を基準にする
+ * 例：~as...as → as
+ * 例：(about) → about
+ */
+function getSearchKeyForWord(word) {
+  // 英語：先頭の記号を除去して、英字から始まる部分を取得
+  let english = word.english.trim();
+  
+  // 先頭の記号を全て除去（英字が出現するまで）
+  let englishKey = english.replace(/^[^a-zA-Z]+/, '').toLowerCase();
+  
+  // 日本語：そのまま使用
+  let japaneseKey = word.japanese.toLowerCase();
+  
+  return { englishKey, japaneseKey, originalEnglish: english };
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * エディター描画：DOM生成とレンダリング
+ * ════════════════════════════════════════════════════════
+ */
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
+  );
+}
+
+/**
+ * エディター画面全体のDOM構造を作成
+ * トップバー、左パネル（単語リスト）、右パネル（テーブル）を生成
+ */
+function renderEditor() {
+  console.log('=== renderEditor called ===');
+  const editorArea = document.getElementById('editorArea');
+
+  editorArea.className = 'editor-area';
+  editorArea.innerHTML = '';
+
+  // トップバー（使い方ガイド表示）
+  const topBar = document.createElement('div');
+  topBar.className = 'editor-top-bar';
+  topBar.innerHTML = `
+    <div style="display: flex; gap: 30px; align-items: flex-start; width: 100%; padding: 0 20px;">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-weight: bold; color: #333; font-size: 14px;">📋 左パネルの使い方</div>
+        <div style="font-size: 12px; color: #666; line-height: 1.8;">
+          • 「単語」「英文」タブから選択（タブをクリックまたは⇄キー），検索欄に文字（英語のみ）を入力して絞り込み<br>
+          • ↑↓キーまたはクリックで照準を移動，escapeキーで編集モード開始（編集内容は自動保存，解除は外側クリック）<br>
+          • Enterキーで右パネルの照準位置に追加，ドラッグ&ドロップでも追加可能<br>
+        </div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-weight: bold; color: #333; font-size: 14px;">📊 右パネルの使い方</div>
+        <div style="font-size: 12px; color: #666; line-height: 1.8;">
+          • 照準は自動移動（1列目から縦方向），Tabキーで列を移動，または指定のセルをクリック<br>
+          • 単語の配置はドラッグで並べ替え<br>
+          • 単語・英文ともに単語がない行に自動配置
+        </div>
+      </div>
+    </div>
+    <button class="btn-save" id="saveBtn" disabled>💾 保存</button>
+  `;
+
+  // 左パネル（単語・文のリスト）
+  const leftPanel = document.createElement('div');
+  leftPanel.className = 'editor-left-panel';
+  leftPanel.id = 'leftPanel';
+
+  // 右パネル（テーブル）
+  const rightPanel = document.createElement('div');
+  rightPanel.className = 'editor-right-panel';
+
+  // テーブルの上に表示（学年ーレッスン名と数値表示）
+  const titleBar = document.createElement('div');
+  titleBar.className = 'editor-title-bar';
+  titleBar.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 30px;">
+      <div style="flex: 1;"></div>
+      <div style="text-align: center; flex: 1;">
+        <span id="lessonDisplay" style="font-size: 20px; font-weight: bold; color: #333;"></span>
+      </div>
+      <div style="flex: 1; text-align: right;">
+        <div style="font-size: 16px; font-weight: bold; color: #333;">
+          <span id="countTriangle" style="color: #f57c00;">0</span>/<span id="countCircle" style="color: #2196F3;">0</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // テーブルヘッダー
+  const editorHeader = document.createElement('div');
+  editorHeader.className = 'editor-header';
+  editorHeader.innerHTML = '';
+
+  // テーブル本体
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'table-wrapper';
+  const table = document.createElement('table');
+  table.className = 'word-table';
+  table.id = 'wordTable';
+  tableWrapper.appendChild(table);
+
+  rightPanel.appendChild(titleBar);
+  rightPanel.appendChild(editorHeader);
+  rightPanel.appendChild(tableWrapper);
+
+  editorArea.appendChild(topBar);
+  editorArea.appendChild(leftPanel);
+  editorArea.appendChild(rightPanel);
+
+  console.log('DOM elements created');
+
+  // lessonDisplayを設定（常に編集可能にする）
+  const lessonDisplay = document.getElementById('lessonDisplay');
+  
+  // ✅ 修正：「入試対策編」の場合は学年を表示しない
+  if (state.textbook === '入試対策編') {
+    lessonDisplay.textContent = state.lesson;
+  } else {
+    lessonDisplay.textContent = `${state.grade}ー${state.lesson}`;
+  }
+
+  // ✅ 修正：既存レッスンでも編集可能にする
+  // カスタムレッスン以外でも常に編集可能なスタイルを適用
+  lessonDisplay.classList.add('editor-lesson-title-custom');
+  lessonDisplay.style.cursor = 'pointer';
+  lessonDisplay.addEventListener('click', editLessonTitle);
+
+  // 保存ボタンのイベント
+  document.getElementById('saveBtn').addEventListener('click', handleSave);
+
+  // 左パネルのドラッグ&ドロップ処理
+  setupLeftPanelDragDrop();
+
+  renderTabs();
+  renderWordList();
+  renderTable();
+  updateCounts();
+  console.log('=== renderEditor finished ===');
+}
+
+/**
+ * 新規関数：右パネルのカウント数を更新
+ * 〇 = テーブル内の単語数 + 英文数×2
+ * △ = 〇 × 0.9 の整数部分
+ * 表示形式：△/〇（例：9/10）
+ */
+function updateCounts() {
+  let wordCount = 0;
+  let sentenceCount = 0;
+
+  tableData.forEach((row) => {
+    row.forEach((cell) => {
+      if (!cell) return;
+
+      if (cell.type === 'word') {
+        wordCount++;
+      } else if (cell.type === 'sentence') {
+        sentenceCount++;
+      }
+    });
+  });
+
+  // 〇 = 単語数 + 英文数×2
+  const circleCount = wordCount + sentenceCount * 2;
+
+  // △ = 〇 × 0.9 の整数部分（小数点以下切り捨て）
+  const triangleCount = Math.round(circleCount * 0.9);
+
+  const countCircleEl = document.getElementById('countCircle');
+  const countTriangleEl = document.getElementById('countTriangle');
+
+  if (countCircleEl && countTriangleEl) {
+    countTriangleEl.textContent = triangleCount;
+    countCircleEl.textContent = circleCount;
+  }
+
+  console.log(`カウント更新: △=${triangleCount}, 〇=${circleCount}`);
+}
+
+
+/**
+ * 単語タブを生成
+ */
+function renderTabs() {
+  console.log('=== renderTabs called (修正版) ===');
+  const leftPanel = document.getElementById('leftPanel');
+  console.log('leftPanel:', leftPanel);
+
+  if (!leftPanel) {
+    console.error('ERROR: leftPanel not found!');
+    return;
+  }
+
+  // ✅ 修正：既存のタブラッパー全体を削除
+  const existingWrapper = leftPanel.querySelector('div[style*="flex-direction: column"]');
+  if (existingWrapper) {
+    existingWrapper.remove();
+  }
+
+  const existingTabs = leftPanel.querySelector('.tabs');
+  if (existingTabs) {
+    existingTabs.remove();
+  }
+
+  const tabsWrapper = document.createElement('div');
+  tabsWrapper.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;';
+
+  // ════════════════════════════════════════
+  // タブコンテナ（「単語」「英文」のみ）
+  // ════════════════════════════════════════
+  const tabContainer = document.createElement('div');
+  tabContainer.className = 'tabs';
+  tabContainer.id = 'tabContainer';
+
+  const wordTab = document.createElement('button');
+  wordTab.className = 'tab-button active';
+  wordTab.textContent = '単語';
+  wordTab.addEventListener('click', () => {
+    currentItemType = 'word';
+    updateTabStyles();
+    searchQuery = '';
+    document.getElementById('searchInput').value = '';
+    leftPanelFocusIndex = 0;
+    renderWordList();
+  });
+  tabContainer.appendChild(wordTab);
+
+  const sentenceTab = document.createElement('button');
+  sentenceTab.className = 'tab-button';
+  sentenceTab.textContent = '英文';
+  sentenceTab.addEventListener('click', () => {
+    currentItemType = 'sentence';
+    updateTabStyles();
+    searchQuery = '';
+    document.getElementById('searchInput').value = '';
+    leftPanelFocusIndex = 0;
+    renderWordList();
+  });
+  tabContainer.appendChild(sentenceTab);
+
+  // ════════════════════════════════════════
+  // 検索欄
+  // ════════════════════════════════════════
+  const searchContainer = document.createElement('div');
+  searchContainer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+
+  const searchLabel = document.createElement('label');
+  searchLabel.textContent = '🔍';
+  searchLabel.style.cssText = 'font-size: 14px; font-weight: bold;';
+
+  const searchInput = document.createElement('input');
+  searchInput.id = 'searchInput';
+  searchInput.type = 'text';
+  searchInput.placeholder = currentItemType === 'word' ? '英語で検索' : '英文で検索';
+  searchInput.style.cssText = `
+    flex: 1;
+    padding: 8px;
+    font-size: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: 'Meiryo', Arial, sans-serif;
+  `;
+
+  // ✅ インクリメンタル検索：入力するたびに絞る
+  searchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value.toLowerCase().trim();
+    leftPanelFocusIndex = 0;  // ✅ 新規：検索時に照準をリセット
+    renderWordList();
+    
+    // ✅ 新規：検索入力欄にフォーカスを保持
+    setTimeout(() => {
+      searchInput.focus();
+    }, 0);
+  });
+
+  // ✅ 新規：Enterキーで照準のアイテムをテーブルに追加
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      
+      // 現在のフィルター済みアイテムを取得
+      let filteredItems = [];
+      
+      if (currentItemType === 'sentence') {
+        let filtered = allSentences;
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          filtered = allSentences.filter(sentence => {
+            return sentence.text.toLowerCase().startsWith(query);
+          });
+        }
+        filteredItems = filtered;
+      } else {
+        let filtered = allWords;
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          filtered = allWords.filter(word => {
+            const { englishKey, japaneseKey } = getSearchKeyForWord(word);
+            return englishKey.startsWith(query) || japaneseKey.startsWith(query);
+          });
+        }
+        filtered.sort((a, b) => a.english.localeCompare(b.english));
+        filteredItems = filtered;
+      }
+      
+      // 照準のアイテムをテーブルに追加
+      if (filteredItems.length > leftPanelFocusIndex) {
+        const focusedItem = filteredItems[leftPanelFocusIndex];
+        addFocusedItemToTable(focusedItem);
+        
+        // 下の項目に照準を移動
+        if (leftPanelFocusIndex < filteredItems.length - 1) {
+          leftPanelFocusIndex++;
+        }
+        renderWordList();
+      }
+      
+      // ✅ 修正：検索欄をクリア
+      searchQuery = '';
+      searchInput.value = '';
+      leftPanelFocusIndex = 0;
+      renderWordList();
+      
+      // フォーカスを検索入力欄に保持
+      searchInput.focus();
+    }
+    
+    // ✅ 新規：左右キーでタブ切り替え
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (currentItemType === 'sentence') {
+        currentItemType = 'word';
+        updateTabStyles();
+        searchQuery = '';
+        searchInput.value = '';
+        leftPanelFocusIndex = 0;
+        renderWordList();
+        searchInput.focus();
+      }
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (currentItemType === 'word') {
+        currentItemType = 'sentence';
+        updateTabStyles();
+        searchQuery = '';
+        searchInput.value = '';
+        leftPanelFocusIndex = 0;
+        renderWordList();
+        searchInput.focus();
+      }
+    }
+  });
+
+  // タブ切り替え時にプレースホルダを変更
+  const updatePlaceholder = () => {
+    searchInput.placeholder = currentItemType === 'word' 
+      ? '英語で検索' 
+      : '英文で検索';
+  };
+
+  // 既存の updateTabStyles を上書き（placeholder更新を含める）
+  window.updateTabStylesWithPlaceholder = updatePlaceholder;
+
+  searchContainer.appendChild(searchLabel);
+  searchContainer.appendChild(searchInput);
+
+  // ════════════════════════════════════════
+  // 登録ボタングループ
+  // ════════════════════════════════════════
+  const buttonGroup = document.createElement('div');
+  buttonGroup.style.cssText = 'display: flex; gap: 8px;';
+
+  const registerWordBtn = document.createElement('button');
+  registerWordBtn.className = 'btn-register';
+  registerWordBtn.textContent = '➕ 単語登録';
+  registerWordBtn.style.cssText = `
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    font-family: 'Meiryo', Arial, sans-serif;
+    transition: background-color 0.3s;
+  `;
+  registerWordBtn.addEventListener('mouseenter', () => registerWordBtn.style.backgroundColor = '#0b7dda');
+  registerWordBtn.addEventListener('mouseleave', () => registerWordBtn.style.backgroundColor = '#2196F3');
+  registerWordBtn.addEventListener('click', startRegisterWord);
+
+  const registerSentenceBtn = document.createElement('button');
+  registerSentenceBtn.className = 'btn-register';
+  registerSentenceBtn.textContent = '➕ 英文登録';
+  registerSentenceBtn.style.cssText = `
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    font-family: 'Meiryo', Arial, sans-serif;
+    transition: background-color 0.3s;
+  `;
+  registerSentenceBtn.addEventListener('mouseenter', () => registerSentenceBtn.style.backgroundColor = '#45a049');
+  registerSentenceBtn.addEventListener('mouseleave', () => registerSentenceBtn.style.backgroundColor = '#4CAF50');
+  registerSentenceBtn.addEventListener('click', startRegisterSentence);
+
+  buttonGroup.appendChild(registerWordBtn);
+  buttonGroup.appendChild(registerSentenceBtn);
+
+  // ═════════════════════════════════════
+  // DOM組み立て
+  // ═════════════════════════════════════
+  tabsWrapper.appendChild(tabContainer);
+  tabsWrapper.appendChild(searchContainer);
+  tabsWrapper.appendChild(buttonGroup);
+
+  leftPanel.insertBefore(tabsWrapper, leftPanel.firstChild);
+  console.log('Tab container, search input, and button group created');
+  console.log('=== renderTabs finished ===');
+}
+
+
+/**
+ * ✅ 新規関数: タブのアクティブ状態を更新
+ */
+function updateTabStyles() {
+  const tabButtons = document.querySelectorAll('.tab-button');
+  tabButtons.forEach(btn => {
+    const isActive = 
+      (btn.textContent === '単語' && currentItemType === 'word') ||
+      (btn.textContent === '英文' && currentItemType === 'sentence');
+    
+    if (isActive) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // ✅ タブ切り替え時にプレースホルダを更新
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.placeholder = currentItemType === 'word' 
+      ? '英語で検索' 
+      : '英文で検索';
+  }
+}
+
+/**
+ * 選択タブの単語・文リストを表示
+ */
+/**
+ * 単語・文リストを表示（ドラッグ&ドロップ・ダブルクリック編集機能）
+ */

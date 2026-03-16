@@ -1,473 +1,3 @@
-/**
- * ════════════════════════════════════════════════════════
- * 修正1: インクリメンタル検索の改善
- * ════════════════════════════════════════════════════════
- */
-/**
- * 単語の検索用キーを生成（先頭文字検索用）
- * 記号を除いて、英字から始まる部分を基準にする
- * 例：~as...as → as
- * 例：(about) → about
- */
-function getSearchKeyForWord(word) {
-  // 英語：先頭の記号を除去して、英字から始まる部分を取得
-  let english = word.english.trim();
-  
-  // 先頭の記号を全て除去（英字が出現するまで）
-  let englishKey = english.replace(/^[^a-zA-Z]+/, '').toLowerCase();
-  
-  // 日本語：そのまま使用
-  let japaneseKey = word.japanese.toLowerCase();
-  
-  return { englishKey, japaneseKey, originalEnglish: english };
-}
-
-/**
- * ════════════════════════════════════════════════════════
- * エディター描画：DOM生成とレンダリング
- * ════════════════════════════════════════════════════════
- */
-
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
-  );
-}
-
-/**
- * エディター画面全体のDOM構造を作成
- * トップバー、左パネル（単語リスト）、右パネル（テーブル）を生成
- */
-function renderEditor() {
-  console.log('=== renderEditor called ===');
-  const editorArea = document.getElementById('editorArea');
-
-  editorArea.className = 'editor-area';
-  editorArea.innerHTML = '';
-
-  // トップバー（使い方ガイド表示）
-  const topBar = document.createElement('div');
-  topBar.className = 'editor-top-bar';
-  topBar.innerHTML = `
-    <div style="display: flex; gap: 30px; align-items: flex-start; width: 100%; padding: 0 20px;">
-      <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-weight: bold; color: #333; font-size: 14px;">📋 左パネルの使い方</div>
-        <div style="font-size: 12px; color: #666; line-height: 1.8;">
-          • 「単語」「英文」タブから選択（タブをクリックまたは⇄キー），検索欄に文字（英語のみ）を入力して絞り込み<br>
-          • ↑↓キーまたはクリックで照準を移動，escapeキーで編集モード開始（編集内容は自動保存，解除は外側クリック）<br>
-          • Enterキーで右パネルの照準位置に追加，ドラッグ&ドロップでも追加可能<br>
-        </div>
-      </div>
-      <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-weight: bold; color: #333; font-size: 14px;">📊 右パネルの使い方</div>
-        <div style="font-size: 12px; color: #666; line-height: 1.8;">
-          • 照準は自動移動（1列目から縦方向），Tabキーで列を移動，または指定のセルをクリック<br>
-          • 単語の配置はドラッグで並べ替え<br>
-          • 単語・英文ともに単語がない行に自動配置
-        </div>
-      </div>
-    </div>
-    <button class="btn-save" id="saveBtn" disabled>💾 保存</button>
-  `;
-
-  // 左パネル（単語・文のリスト）
-  const leftPanel = document.createElement('div');
-  leftPanel.className = 'editor-left-panel';
-  leftPanel.id = 'leftPanel';
-
-  // 右パネル（テーブル）
-  const rightPanel = document.createElement('div');
-  rightPanel.className = 'editor-right-panel';
-
-  // テーブルの上に表示（学年ーレッスン名と数値表示）
-  const titleBar = document.createElement('div');
-  titleBar.className = 'editor-title-bar';
-  titleBar.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 30px;">
-      <div style="flex: 1;"></div>
-      <div style="text-align: center; flex: 1;">
-        <span id="lessonDisplay" style="font-size: 20px; font-weight: bold; color: #333;"></span>
-      </div>
-      <div style="flex: 1; text-align: right;">
-        <div style="font-size: 16px; font-weight: bold; color: #333;">
-          <span id="countTriangle" style="color: #f57c00;">0</span>/<span id="countCircle" style="color: #2196F3;">0</span>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // テーブルヘッダー
-  const editorHeader = document.createElement('div');
-  editorHeader.className = 'editor-header';
-  editorHeader.innerHTML = '';
-
-  // テーブル本体
-  const tableWrapper = document.createElement('div');
-  tableWrapper.className = 'table-wrapper';
-  const table = document.createElement('table');
-  table.className = 'word-table';
-  table.id = 'wordTable';
-  tableWrapper.appendChild(table);
-
-  rightPanel.appendChild(titleBar);
-  rightPanel.appendChild(editorHeader);
-  rightPanel.appendChild(tableWrapper);
-
-  editorArea.appendChild(topBar);
-  editorArea.appendChild(leftPanel);
-  editorArea.appendChild(rightPanel);
-
-  console.log('DOM elements created');
-
-  // lessonDisplayを設定（常に編集可能にする）
-  const lessonDisplay = document.getElementById('lessonDisplay');
-  
-  // ✅ 修正：「入試対策編」の場合は学年を表示しない
-  if (state.textbook === '入試対策編') {
-    lessonDisplay.textContent = state.lesson;
-  } else {
-    lessonDisplay.textContent = `${state.grade}ー${state.lesson}`;
-  }
-
-  // ✅ 修正：既存レッスンでも編集可能にする
-  // カスタムレッスン以外でも常に編集可能なスタイルを適用
-  lessonDisplay.classList.add('editor-lesson-title-custom');
-  lessonDisplay.style.cursor = 'pointer';
-  lessonDisplay.addEventListener('click', editLessonTitle);
-
-  // 保存ボタンのイベント
-  document.getElementById('saveBtn').addEventListener('click', handleSave);
-
-  // 左パネルのドラッグ&ドロップ処理
-  setupLeftPanelDragDrop();
-
-  renderTabs();
-  renderWordList();
-  renderTable();
-  updateCounts();
-  console.log('=== renderEditor finished ===');
-}
-
-/**
- * 新規関数：右パネルのカウント数を更新
- * 〇 = テーブル内の単語数 + 英文数×2
- * △ = 〇 × 0.9 の整数部分
- * 表示形式：△/〇（例：9/10）
- */
-function updateCounts() {
-  let wordCount = 0;
-  let sentenceCount = 0;
-
-  tableData.forEach((row) => {
-    row.forEach((cell) => {
-      if (!cell) return;
-
-      if (cell.type === 'word') {
-        wordCount++;
-      } else if (cell.type === 'sentence') {
-        sentenceCount++;
-      }
-    });
-  });
-
-  // 〇 = 単語数 + 英文数×2
-  const circleCount = wordCount + sentenceCount * 2;
-
-  // △ = 〇 × 0.9 の整数部分（小数点以下切り捨て）
-  const triangleCount = Math.round(circleCount * 0.9);
-
-  const countCircleEl = document.getElementById('countCircle');
-  const countTriangleEl = document.getElementById('countTriangle');
-
-  if (countCircleEl && countTriangleEl) {
-    countTriangleEl.textContent = triangleCount;
-    countCircleEl.textContent = circleCount;
-  }
-
-  console.log(`カウント更新: △=${triangleCount}, 〇=${circleCount}`);
-}
-
-
-/**
- * 単語タブを生成
- */
-function renderTabs() {
-  console.log('=== renderTabs called (修正版) ===');
-  const leftPanel = document.getElementById('leftPanel');
-  console.log('leftPanel:', leftPanel);
-
-  if (!leftPanel) {
-    console.error('ERROR: leftPanel not found!');
-    return;
-  }
-
-  // ✅ 修正：既存のタブラッパー全体を削除
-  const existingWrapper = leftPanel.querySelector('div[style*="flex-direction: column"]');
-  if (existingWrapper) {
-    existingWrapper.remove();
-  }
-
-  const existingTabs = leftPanel.querySelector('.tabs');
-  if (existingTabs) {
-    existingTabs.remove();
-  }
-
-  const tabsWrapper = document.createElement('div');
-  tabsWrapper.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;';
-
-  // ════════════════════════════════════════
-  // タブコンテナ（「単語」「英文」のみ）
-  // ════════════════════════════════════════
-  const tabContainer = document.createElement('div');
-  tabContainer.className = 'tabs';
-  tabContainer.id = 'tabContainer';
-
-  const wordTab = document.createElement('button');
-  wordTab.className = 'tab-button active';
-  wordTab.textContent = '単語';
-  wordTab.addEventListener('click', () => {
-    currentItemType = 'word';
-    updateTabStyles();
-    searchQuery = '';
-    document.getElementById('searchInput').value = '';
-    leftPanelFocusIndex = 0;
-    renderWordList();
-  });
-  tabContainer.appendChild(wordTab);
-
-  const sentenceTab = document.createElement('button');
-  sentenceTab.className = 'tab-button';
-  sentenceTab.textContent = '英文';
-  sentenceTab.addEventListener('click', () => {
-    currentItemType = 'sentence';
-    updateTabStyles();
-    searchQuery = '';
-    document.getElementById('searchInput').value = '';
-    leftPanelFocusIndex = 0;
-    renderWordList();
-  });
-  tabContainer.appendChild(sentenceTab);
-
-  // ════════════════════════════════════════
-  // 検索欄
-  // ════════════════════════════════════════
-  const searchContainer = document.createElement('div');
-  searchContainer.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-
-  const searchLabel = document.createElement('label');
-  searchLabel.textContent = '🔍';
-  searchLabel.style.cssText = 'font-size: 14px; font-weight: bold;';
-
-  const searchInput = document.createElement('input');
-  searchInput.id = 'searchInput';
-  searchInput.type = 'text';
-  searchInput.placeholder = currentItemType === 'word' ? '英語で検索' : '英文で検索';
-  searchInput.style.cssText = `
-    flex: 1;
-    padding: 8px;
-    font-size: 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-family: 'Meiryo', Arial, sans-serif;
-  `;
-
-  // ✅ インクリメンタル検索：入力するたびに絞る
-  searchInput.addEventListener('input', (e) => {
-    searchQuery = e.target.value.toLowerCase().trim();
-    leftPanelFocusIndex = 0;  // ✅ 新規：検索時に照準をリセット
-    renderWordList();
-    
-    // ✅ 新規：検索入力欄にフォーカスを保持
-    setTimeout(() => {
-      searchInput.focus();
-    }, 0);
-  });
-
-  // ✅ 新規：Enterキーで照準のアイテムをテーブルに追加
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      
-      // 現在のフィルター済みアイテムを取得
-      let filteredItems = [];
-      
-      if (currentItemType === 'sentence') {
-        let filtered = allSentences;
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase();
-          filtered = allSentences.filter(sentence => {
-            return sentence.text.toLowerCase().startsWith(query);
-          });
-        }
-        filteredItems = filtered;
-      } else {
-        let filtered = allWords;
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase();
-          filtered = allWords.filter(word => {
-            const { englishKey, japaneseKey } = getSearchKeyForWord(word);
-            return englishKey.startsWith(query) || japaneseKey.startsWith(query);
-          });
-        }
-        filtered.sort((a, b) => a.english.localeCompare(b.english));
-        filteredItems = filtered;
-      }
-      
-      // 照準のアイテムをテーブルに追加
-      if (filteredItems.length > leftPanelFocusIndex) {
-        const focusedItem = filteredItems[leftPanelFocusIndex];
-        addFocusedItemToTable(focusedItem);
-        
-        // 下の項目に照準を移動
-        if (leftPanelFocusIndex < filteredItems.length - 1) {
-          leftPanelFocusIndex++;
-        }
-        renderWordList();
-      }
-      
-      // ✅ 修正：検索欄をクリア
-      searchQuery = '';
-      searchInput.value = '';
-      leftPanelFocusIndex = 0;
-      renderWordList();
-      
-      // フォーカスを検索入力欄に保持
-      searchInput.focus();
-    }
-    
-    // ✅ 新規：左右キーでタブ切り替え
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      if (currentItemType === 'sentence') {
-        currentItemType = 'word';
-        updateTabStyles();
-        searchQuery = '';
-        searchInput.value = '';
-        leftPanelFocusIndex = 0;
-        renderWordList();
-        searchInput.focus();
-      }
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      if (currentItemType === 'word') {
-        currentItemType = 'sentence';
-        updateTabStyles();
-        searchQuery = '';
-        searchInput.value = '';
-        leftPanelFocusIndex = 0;
-        renderWordList();
-        searchInput.focus();
-      }
-    }
-  });
-
-  // タブ切り替え時にプレースホルダを変更
-  const updatePlaceholder = () => {
-    searchInput.placeholder = currentItemType === 'word' 
-      ? '英語で検索' 
-      : '英文で検索';
-  };
-
-  // 既存の updateTabStyles を上書き（placeholder更新を含める）
-  window.updateTabStylesWithPlaceholder = updatePlaceholder;
-
-  searchContainer.appendChild(searchLabel);
-  searchContainer.appendChild(searchInput);
-
-  // ════════════════════════════════════════
-  // 登録ボタングループ
-  // ════════════════════════════════════════
-  const buttonGroup = document.createElement('div');
-  buttonGroup.style.cssText = 'display: flex; gap: 8px;';
-
-  const registerWordBtn = document.createElement('button');
-  registerWordBtn.className = 'btn-register';
-  registerWordBtn.textContent = '➕ 単語登録';
-  registerWordBtn.style.cssText = `
-    flex: 1;
-    padding: 8px 12px;
-    background-color: #2196F3;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: bold;
-    font-family: 'Meiryo', Arial, sans-serif;
-    transition: background-color 0.3s;
-  `;
-  registerWordBtn.addEventListener('mouseenter', () => registerWordBtn.style.backgroundColor = '#0b7dda');
-  registerWordBtn.addEventListener('mouseleave', () => registerWordBtn.style.backgroundColor = '#2196F3');
-  registerWordBtn.addEventListener('click', startRegisterWord);
-
-  const registerSentenceBtn = document.createElement('button');
-  registerSentenceBtn.className = 'btn-register';
-  registerSentenceBtn.textContent = '➕ 英文登録';
-  registerSentenceBtn.style.cssText = `
-    flex: 1;
-    padding: 8px 12px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: bold;
-    font-family: 'Meiryo', Arial, sans-serif;
-    transition: background-color 0.3s;
-  `;
-  registerSentenceBtn.addEventListener('mouseenter', () => registerSentenceBtn.style.backgroundColor = '#45a049');
-  registerSentenceBtn.addEventListener('mouseleave', () => registerSentenceBtn.style.backgroundColor = '#4CAF50');
-  registerSentenceBtn.addEventListener('click', startRegisterSentence);
-
-  buttonGroup.appendChild(registerWordBtn);
-  buttonGroup.appendChild(registerSentenceBtn);
-
-  // ═════════════════════════════════════
-  // DOM組み立て
-  // ═════════════════════════════════════
-  tabsWrapper.appendChild(tabContainer);
-  tabsWrapper.appendChild(searchContainer);
-  tabsWrapper.appendChild(buttonGroup);
-
-  leftPanel.insertBefore(tabsWrapper, leftPanel.firstChild);
-  console.log('Tab container, search input, and button group created');
-  console.log('=== renderTabs finished ===');
-}
-
-
-/**
- * ✅ 新規関数: タブのアクティブ状態を更新
- */
-function updateTabStyles() {
-  const tabButtons = document.querySelectorAll('.tab-button');
-  tabButtons.forEach(btn => {
-    const isActive = 
-      (btn.textContent === '単語' && currentItemType === 'word') ||
-      (btn.textContent === '英文' && currentItemType === 'sentence');
-    
-    if (isActive) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
-
-  // ✅ タブ切り替え時にプレースホルダを更新
-  const searchInput = document.getElementById('searchInput');
-  if (searchInput) {
-    searchInput.placeholder = currentItemType === 'word' 
-      ? '英語で検索' 
-      : '英文で検索';
-  }
-}
-
-/**
- * 選択タブの単語・文リストを表示
- */
-/**
- * 単語・文リストを表示（ドラッグ&ドロップ・ダブルクリック編集機能）
- */
 function renderWordList() {
   console.log('=== renderWordList called ===');
   console.log('currentItemType:', currentItemType);
@@ -656,6 +186,71 @@ function renderWordList() {
 /**
  * ✅ 新規関数：左パネルのキーボード操作を設定
  */
+function setupLeftPanelKeyboardHandling(filteredItems) {
+  const wordList = document.getElementById('wordList');
+  if (!wordList) return;
+
+  // 既存のリスナーを削除して新規に追加（重複防止）
+  wordList.removeEventListener('keydown', handleLeftPanelKeyDown);
+  wordList.addEventListener('keydown', (e) => handleLeftPanelKeyDown(e, filteredItems));
+
+  // フォーカスを当てる（キーボード入力を受け付けるため）
+  wordList.tabIndex = 0;
+  wordList.focus();
+}
+
+/**
+ * ✅ 新規関数：左パネルのキーダウンハンドラ
+ */
+function handleLeftPanelKeyDown(e, filteredItems) {
+  if (filteredItems.length === 0) return;
+
+  switch (e.key) {
+    case 'ArrowUp':
+      e.preventDefault();
+      leftPanelFocusIndex = Math.max(0, leftPanelFocusIndex - 1);
+      renderWordList();
+      break;
+
+    case 'ArrowDown':
+      e.preventDefault();
+      leftPanelFocusIndex = Math.min(filteredItems.length - 1, leftPanelFocusIndex + 1);
+      renderWordList();
+      break;
+
+    case 'Enter':
+      e.preventDefault();
+      if (filteredItems.length > leftPanelFocusIndex) {
+        const focusedItem = filteredItems[leftPanelFocusIndex];
+        addFocusedItemToTable(focusedItem);
+      }
+      break;
+
+    case 'Escape':
+      // ✅ 修正：Escapeキーで編集モード開始
+      e.preventDefault();
+      if (filteredItems.length > leftPanelFocusIndex) {
+        const focusedItem = filteredItems[leftPanelFocusIndex];
+        const wordList = document.getElementById('wordList');
+        if (wordList) {
+          const itemDivs = wordList.querySelectorAll('[draggable="true"]');
+          if (itemDivs[leftPanelFocusIndex]) {
+            const div = itemDivs[leftPanelFocusIndex];
+            if (currentItemType === 'sentence') {
+              editSentenceItem(div, focusedItem);
+            } else {
+              editWordItem(div, focusedItem);
+            }
+          }
+        }
+      }
+      break;
+
+    default:
+      break;
+  }
+}
+
 /**
  * ✅ 新規関数：照準のアイテムをテーブルに追加
  */
@@ -1117,3 +712,541 @@ function setupRightPanelAutoScroll() {
     block: 'nearest'
   });
 }
+
+/**
+ * 特殊レイアウト判定と実行
+ */
+function renderTableSpecialLayout() {
+  const table = document.getElementById('wordTable');
+  table.innerHTML = '';
+
+  if (state.lesson === '曜日・月・季節・代名詞') {
+    renderSpecialLayout_DayMonthSeason();
+  } else if (state.lesson && state.lesson.includes('不規則動詞①')) {
+    renderSpecialLayout_Fukisoku1();
+  } else if (state.lesson && state.lesson.includes('不規則動詞②')) {
+    renderSpecialLayout_Fukisoku2();
+  } else {
+    renderTable();
+  }
+}
+
+/**
+ * 曜日・月・季節・代名詞 レイアウト
+ * 上段：3列のテーブル（10行）で単語・英文を配置可能
+ * 下段：代名詞テーブル（固定）
+ * ✅ 修正：tableパラメータを受け取る
+ */
+function renderSpecialLayout_DayMonthSeason(table) {
+
+  // tableData が未定義・非配列でも安全にする
+  const safeTableData = Array.isArray(tableData) ? tableData : [];
+  const upperTableData = safeTableData.slice(0, 10);
+
+  const upperTableDiv = document.createElement('div');
+  upperTableDiv.style.cssText = `
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  `;
+
+  const upperTitle = document.createElement('div');
+  upperTitle.style.cssText = `
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    color: #333;
+  `;
+  upperTitle.textContent = '曜日・月・季節';
+  upperTableDiv.appendChild(upperTitle);
+
+  const upperTable = document.createElement('table');
+  upperTable.style.cssText = `
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+  `;
+
+  for (let rowIdx = 0; rowIdx < 10; rowIdx++) {
+
+    // 行データがなくても必ず配列になる
+    const row = upperTableData[rowIdx] || [];
+    const tr = document.createElement('tr');
+    tr.style.height = '60px';
+
+    const sentenceCell = row.find(c => c && c.type === 'sentence');
+
+    if (sentenceCell) {
+
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.style.cssText = `
+        border: 1px solid #999;
+        padding: 8px;
+        vertical-align: top;
+        background-color: #fff9e6;
+        position: relative;
+        overflow: hidden;
+        min-width: 100px;
+      `;
+
+      if (
+        rowIdx === rightPanelFocusCell.rowIdx &&
+        rightPanelFocusCell.colIdx === 0
+      ) {
+        td.style.backgroundColor = '#ffeb3b';
+        td.style.borderColor = '#f57f17';
+      }
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'cell-content';
+      contentDiv.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        cursor: grab;
+        height: 100%;
+      `;
+      contentDiv.draggable = true;
+
+      const japaneseDiv = document.createElement('div');
+      japaneseDiv.className = 'cell-japanese';
+      japaneseDiv.textContent = sentenceCell.japanese || '';
+
+      const englishDiv = document.createElement('div');
+      englishDiv.className = 'cell-english';
+      englishDiv.textContent = sentenceCell.text || '';
+
+      const pronunciationDiv = document.createElement('div');
+      pronunciationDiv.className = 'cell-pronunciation';
+      pronunciationDiv.textContent = sentenceCell.pronunciation || '';
+
+      contentDiv.appendChild(japaneseDiv);
+      contentDiv.appendChild(englishDiv);
+      contentDiv.appendChild(pronunciationDiv);
+      td.appendChild(contentDiv);
+
+      td.addEventListener('click', () => {
+        rightPanelFocusCell = { rowIdx, colIdx: 0 };
+        renderTable();
+      });
+
+      setupSentenceCellDragDrop(td, contentDiv, sentenceCell, rowIdx);
+      tr.appendChild(td);
+
+    } else {
+
+      for (let colIdx = 0; colIdx < 3; colIdx++) {
+
+        const cell = row[colIdx];
+        const td = document.createElement('td');
+        td.style.cssText = `
+          border: 1px solid #999;
+          padding: 8px;
+          vertical-align: top;
+          background-color: #fff;
+          position: relative;
+          overflow: hidden;
+          min-width: 100px;
+          width: 33.333%;
+        `;
+
+        if (cell) {
+
+          td.style.backgroundColor = '#fffacd';
+
+          if (
+            rowIdx === rightPanelFocusCell.rowIdx &&
+            colIdx === rightPanelFocusCell.colIdx
+          ) {
+            td.style.backgroundColor = '#ffeb3b';
+            td.style.borderColor = '#f57f17';
+          }
+
+          const contentDiv = document.createElement('div');
+          contentDiv.className = 'cell-content';
+          contentDiv.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            cursor: grab;
+            height: 100%;
+          `;
+          contentDiv.draggable = true;
+
+          const japaneseDiv = document.createElement('div');
+          japaneseDiv.className = 'cell-japanese';
+          japaneseDiv.textContent = cell.japanese || '';
+
+          const englishDiv = document.createElement('div');
+          englishDiv.className = 'cell-english';
+          englishDiv.textContent = cell.english || '';
+
+          const pronunciationDiv = document.createElement('div');
+          pronunciationDiv.className = 'cell-pronunciation';
+          pronunciationDiv.textContent = cell.pronunciation || '';
+
+          contentDiv.appendChild(japaneseDiv);
+          contentDiv.appendChild(englishDiv);
+          contentDiv.appendChild(pronunciationDiv);
+          td.appendChild(contentDiv);
+
+          td.addEventListener('click', () => {
+            rightPanelFocusCell = { rowIdx, colIdx };
+            renderTable();
+          });
+
+          setupWordCellDragDrop(td, contentDiv, cell, rowIdx, colIdx);
+
+        } else {
+
+          if (
+            rowIdx === rightPanelFocusCell.rowIdx &&
+            colIdx === rightPanelFocusCell.colIdx
+          ) {
+            td.style.backgroundColor = '#ffeb3b';
+            td.style.borderColor = '#f57f17';
+          }
+
+          setupEmptyCellDragDrop(td, rowIdx, colIdx);
+
+          td.addEventListener('click', () => {
+            rightPanelFocusCell = { rowIdx, colIdx };
+            renderTable();
+          });
+        }
+
+        tr.appendChild(td);
+      }
+    }
+
+    upperTable.appendChild(tr);
+  }
+
+  upperTableDiv.appendChild(upperTable);
+  table.appendChild(upperTableDiv);
+
+  const lowerTableDiv = document.createElement('div');
+  lowerTableDiv.style.cssText = `
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  `;
+
+  const lowerTitle = document.createElement('div');
+  lowerTitle.style.cssText = `
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    color: #333;
+  `;
+  lowerTitle.textContent = '代名詞';
+  lowerTableDiv.appendChild(lowerTitle);
+
+  const pronounTableHtml = renderPronounTable();
+  lowerTableDiv.appendChild(pronounTableHtml);
+
+  table.appendChild(lowerTableDiv);
+
+  updateCounts();
+}
+
+/**
+ * ✅ 新規関数：特殊レイアウトのセルドラッグ&ドロップ処理
+ */
+
+function setupSpecialLayoutCellDragDrop(cellDiv, cell, colIdx, rowIdx) {
+  cellDiv.addEventListener('dragstart', (e) => {
+    draggedItem = null;
+    draggedFromTable = {
+      rowIdx: rowIdx,
+      colIdx: colIdx,
+      isFromTable: true,
+      isSpecialLayout: true,
+      cell: cell
+    };
+    cellDiv.style.opacity = '0.5';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  cellDiv.addEventListener('dragend', () => {
+    cellDiv.style.opacity = '1';
+  });
+}
+
+/**
+ * ✅ 修正版：特殊レイアウト用の空セルドラッグ&ドロップ処理
+ * 左パネルからのドラッグを受け取る
+ */
+function setupSpecialLayoutEmptyCellDragDrop(cellDiv, colIdx, rowIdx) {
+  cellDiv.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    cellDiv.classList.add('drag-over');
+    cellDiv.style.backgroundColor = '#ffeb3b';
+  });
+
+  cellDiv.addEventListener('dragleave', () => {
+    cellDiv.classList.remove('drag-over');
+    cellDiv.style.backgroundColor = '#fffacd';
+  });
+
+  cellDiv.addEventListener('drop', (e) => {
+    e.preventDefault();
+    cellDiv.classList.remove('drag-over');
+
+    if (!draggedItem) return;
+
+    // ✅ 左パネルからのドラッグを処理
+    if (draggedItem.type === 'word') {
+      const wordId = draggedItem.id || draggedItem.data.id;
+      
+      if (!wordId) {
+        console.error('⚠️ WARNING: Word ID が取得できません', draggedItem);
+        alert('⚠️ エラー：単語のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      // tableDataに追加（特殊レイアウト用に最初の行に追加）
+      const firstEmptyIdx = tableData.findIndex(row => row[0] === null);
+      if (firstEmptyIdx === -1) {
+        alert('❌ 配置可能なセルがありません');
+        return;
+      }
+
+      tableData[firstEmptyIdx][0] = {
+        type: 'word',
+        english: draggedItem.data.english,
+        japanese: draggedItem.data.japanese,
+        pronunciation: draggedItem.data.pronunciation || '',
+        masterWordId: wordId,
+        cellId: calculateCellId(firstEmptyIdx, 0)
+      };
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+
+    } else if (draggedItem.type === 'sentence') {
+      const sentenceId = draggedItem.id || draggedItem.data.id;
+      
+      if (!sentenceId) {
+        console.error('⚠️ WARNING: Sentence ID が取得できません', draggedItem);
+        alert('⚠️ エラー：英文のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      // tableDataに追加
+      const firstEmptyIdx = tableData.findIndex(row => row[0] === null);
+      if (firstEmptyIdx === -1) {
+        alert('❌ 配置可能な行がありません');
+        return;
+      }
+
+      tableData[firstEmptyIdx][0] = {
+        type: 'sentence',
+        text: draggedItem.data.text,
+        pronunciation: draggedItem.data.pronunciation || '',
+        japanese: draggedItem.data.japanese || '',
+        masterSentenceId: sentenceId,
+        cellId: calculateCellId(firstEmptyIdx, 0)
+      };
+      tableData[firstEmptyIdx][1] = null;
+      tableData[firstEmptyIdx][2] = null;
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+    }
+  });
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 不規則動詞の過去形・過去分詞形を自動取得して入力
+ * ════════════════════════════════════════════════════════
+ */
+/**
+ * ✅ 新規関数：単語から対応する過去形・過去分詞形を取得
+ * マスターデータの日本語部分を検索して、過去形・過去分詞形を探す
+ * 
+ * @param {Object} word - 現在形の単語オブジェクト
+ * @returns {Object} { past: {word}, pastParticiple: {word} } または { past: null, pastParticiple: null }
+ */
+function getIrregularVerbForms(word) {
+  const baseEnglish = word.english.trim().toLowerCase();
+
+  // ✅ 過去形と過去分詞が同じ場合（ドット・カンマ・スペース柔軟対応、プレフィックスオプション）
+  const combinedWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去形[・，、\\-\\s]*過去分詞形`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  if (combinedWord) {
+    return {
+      past: combinedWord,
+      pastParticiple: combinedWord
+    };
+  }
+
+  // ✅ 過去形を探す（プレフィックスオプション、終端柔軟対応）
+  const pastWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去形[・，、\\-\\s]*$`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  // ✅ 過去分詞形を探す（プレフィックスオプション、スペース柔軟対応）
+  const pastParticipleWord = allWords.find(w => {
+    const japaneseText = (w.japanese || '').trim();
+    const regex = new RegExp(`(【動】\\s*)?${baseEnglish}\\s*の過去分詞形`, 'i');
+    return regex.test(japaneseText);
+  });
+
+  return {
+    past: pastWord || null,
+    pastParticiple: pastParticipleWord || null
+  };
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 【新規追加関数】Part 1
+ * 不規則動詞対応：データ変換関数
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * ✅ 新規関数：fukisokuDataMap を tableData に変換
+ * スプレッドシートから読み込んだデータを、画面描画用に変換
+ * 
+ * @param {Object} fukisokuDataMap - { 0: {...}, 1: {...}, ... }
+ * @param {boolean} isFukisoku1 - 不規則動詞①かどうか
+ * スプレッドシートから読み込んだ14列・18列のデータを tableData に変換
+ */
+function convertFukisokuMapToTableData(fukisokuDataMap, isFukisoku1) {
+  const maxRows = isFukisoku1 ? 22 : 25;
+  const tableData = Array(maxRows).fill(null).map(() => [null, null, null]);
+  
+  Object.entries(fukisokuDataMap).forEach(([rowIdx, data]) => {
+    const r = Number(rowIdx);
+    if (r < 0 || r >= maxRows) return;
+    
+    // ✅ GAS側から読み込んだワードID（[0]番目）を保持
+    tableData[r][0] = {
+      type: 'word',
+      english: data.present || '',
+      japanese: data.meaning || '',
+      pronunciation: data.presentPronunciation || '',
+      masterWordId: data.meaningMasterId,  // ✅ ワードID
+      cellId: data.cellId || calculateCellId(r, 0)
+    };
+    tableData[r][1] = null;
+    tableData[r][2] = null;
+  });
+  
+  console.log(`✅ convertFukisokuMapToTableData: ${maxRows}行に変換完了`);
+  return tableData;
+}
+
+/**
+ * ✅ 完全修正版：convertTableDataToFukisokuMap()
+ * 
+ * 不規則動詞①：14列
+ * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio, 
+ * [5] lesson, [6] cell_id, [7] past_word_id, [8] past_english, 
+ * [9] past_pronunciation, [10] past_audio
+ * 
+ * 不規則動詞②：18列
+ * [0] word_id, [1] english, [2] pronunciation, [3] japanese, [4] audio,
+ * [5] lesson, [6] cell_id, [7] past_word_id, [8] past_english,
+ * [9] past_pronunciation, [10] past_audio, [11] past_participle_word_id,
+ * [12] past_participle_english, [13] past_participle_pronunciation, [14] past_participle_audio
+ */
+function convertTableDataToFukisokuMap(tableData, isFukisoku1) {
+  const fukisokuDataMap = {};
+  
+  tableData.forEach((row, rowIdx) => {
+    const cell = row[0];
+    if (!cell || cell.type !== 'word') {
+      return;
+    }
+    
+    if (isFukisoku1) {
+      // 不規則動詞①：以下の11個のフィールドを全て指定（GAS側で [5] lesson と [4] audio を追加）
+      fukisokuDataMap[rowIdx] = {
+        // [0] word_id
+        meaningMasterId: cell.masterWordId || '',
+        // [1] english
+        present: cell.english || '',
+        // [2] pronunciation
+        presentPronunciation: cell.pronunciation || '',
+        // [3] japanese
+        meaning: cell.japanese || '',
+        // [4] audio - GAS側で取得するためここは空でOK
+        // [5] lesson - GAS側で追加
+        // [6] cell_id
+        cellId: cell.cellId || calculateCellId(rowIdx, 0),
+        // [7] past_word_id
+        pastMasterId: null,
+        // [8] past_english
+        past: '',
+        // [9] past_pronunciation
+        pastPronunciation: '',
+        // [10] past_audio - GAS側で取得するためここは空でOK
+      };
+    } else {
+      // 不規則動詞②：以下の15個のフィールドを全て指定
+      fukisokuDataMap[rowIdx] = {
+        // [0] word_id
+        meaningMasterId: cell.masterWordId || '',
+        // [1] english
+        present: cell.english || '',
+        // [2] pronunciation
+        presentPronunciation: cell.pronunciation || '',
+        // [3] japanese
+        meaning: cell.japanese || '',
+        // [4] audio - GAS側で取得するためここは空でOK
+        // [5] lesson - GAS側で追加
+        // [6] cell_id
+        cellId: cell.cellId || calculateCellId(rowIdx, 0),
+        // [7] past_word_id
+        pastMasterId: null,
+        // [8] past_english
+        past: '',
+        // [9] past_pronunciation
+        pastPronunciation: '',
+        // [10] past_audio - GAS側で取得するためここは空でOK
+        // [11] past_participle_word_id
+        pastPartMasterId: null,
+        // [12] past_participle_english
+        pastPart: '',
+        // [13] past_participle_pronunciation
+        pastPartPronunciation: '',
+        // [14] past_participle_audio - GAS側で取得するためここは空でOK
+      };
+    }
+  });
+  
+  console.log(`✅ convertTableDataToFukisokuMap: ${Object.keys(fukisokuDataMap).length}行を変換完了`);
+  console.log('fukisokuDataMap:', fukisokuDataMap);
+  return fukisokuDataMap;
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 【新規追加関数】Part 2
+ * 不規則動詞対応：テーブル描画関数
+ * ════════════════════════════════════════════════════════
+ */
+/**
+ * ✅ 修正版：不規則動詞テーブルを描画（ドラッグ&ドロップ + 過去形自動入力 完全対応）
+ * @param {HTMLElement} table - 描画対象のtable要素
+ * @param {Array} tableData - テーブルデータ（22行 or 25行 × 3列）
+ * @param {boolean} isFukisoku1 - 不規則動詞①かどうか
+ * @param {Object} fukisokuDataFromSheet - スプレッドシートから読み込んだ過去形・過去分詞データ
+ */
