@@ -263,17 +263,19 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
       function setupSelectionPanel() {
         const header = document.getElementById('selectionHeader');
         const panel = document.getElementById('selectionPanel');
-        const toggle = document.getElementById('selectionToggle');
 
-        header.addEventListener('click', () => {
+        header.addEventListener('click', toggleSelectionPanel);
+      }
+
+      function toggleSelectionPanel() {
+        const panel = document.getElementById('selectionPanel');
+        if (!panel) return;
         panel.classList.toggle('expanded');
         panel.classList.toggle('collapsed');
-
-        const icon = header.querySelector('.toggle-icon');
-        icon.classList.toggle('collapsed');
-        });
-
+        const icon = panel.querySelector('.toggle-icon');
+        if (icon) icon.classList.toggle('collapsed');
       }
+      window.toggleSelectionPanel = toggleSelectionPanel;
 
       function setupEventListeners() {
         document.getElementById('yearSelect').addEventListener('change', handleYearChange);

@@ -12,9 +12,9 @@
     
     <!-- 新規：タブヘッダー -->
     <div class="tab-header">
-      <button class="tab-btn active" data-tab="editor">✏️ エディター</button>
-      <button class="tab-btn" data-tab="wordbook">📚 単語帳作成</button>
-      <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
+      <button class="tab-btn active" data-tab="editor" onclick="switchTab('editor')">✏️ エディター</button>
+      <button class="tab-btn" data-tab="wordbook" onclick="switchTab('wordbook')">📚 単語帳作成</button>
+      <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">⚙️ 設定</button>
       <button class="tab-btn" onclick="startBulkAudioGeneration()" style="margin-left: auto; background: #4CAF50; color: white; border-radius: 6px; padding: 6px 14px; font-size: 13px;">🔊 音声一括生成</button>
     </div>
 
@@ -24,7 +24,7 @@
         <!-- 既存の top-bar （削除した場合は以下をそのまま使用） -->
         <!-- 既存の selection-panel ここから -->
         <div class="selection-panel expanded" id="selectionPanel">
-          <div class="selection-header" id="selectionHeader">
+          <div class="selection-header" id="selectionHeader" onclick="toggleSelectionPanel()">
             <div style="display: flex; align-items: center; gap: 10px;">
               <!-- ロゴが挿入される -->
               <span style="font-size: 16px; font-weight: bold;">英単語テストエディタ</span>
