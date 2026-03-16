@@ -434,21 +434,12 @@ function toggleSelectionPanel() {
 </script>
 
   <script>
-try {
-(() => {
 <?!= HtmlService.createHtmlOutputFromFile('editor-js1').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js2').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js3').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js4').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js5').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js6').getContent() ?>
-})();
-} catch(e) {
-  var _ed = document.createElement('div');
-  _ed.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#c00;color:#fff;padding:8px;font-size:11px;z-index:99999;word-break:break-all;';
-  _ed.textContent = 'IIFE Error: ' + e.name + ': ' + e.message;
-  document.body.appendChild(_ed);
-}
 </script>
 </body>
 </html>
