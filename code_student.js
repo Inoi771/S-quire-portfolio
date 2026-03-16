@@ -13,15 +13,15 @@ function escapeHtml(s) {
 
 /**
  * 生徒アプリで使用する設定値を返す
- * @returns {Object} { VOCABULARY_FOLDER_ID, GITHUB_BASE_URL, HOMEPAGE_URL }
+ * @returns {Object} { ENGLISHWORDS_FOLDER_ID, GITHUB_BASE_URL, HOMEPAGE_URL }
  */
 function getAppConfig() {
   const config = {
-    VOCABULARY_FOLDER_ID: getScriptProperty('ENGLISHWORDS_FOLDER_ID'),
+    ENGLISHWORDS_FOLDER_ID: getScriptProperty('ENGLISHWORDS_FOLDER_ID'),
     GITHUB_BASE_URL: getScriptProperty('GITHUB_BASE_URL'),
     HOMEPAGE_URL: getScriptProperty('HOMEPAGE_URL')
   };
-  if (!config.VOCABULARY_FOLDER_ID) {
+  if (!config.ENGLISHWORDS_FOLDER_ID) {
     throw new Error('必要なスクリプトプロパティが設定されていません: ENGLISHWORDS_FOLDER_ID');
   }
   return config;
@@ -69,7 +69,7 @@ function getStudentYears() {
     if (cached) return JSON.parse(cached);
 
     const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID);
+    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID);
     const folders = folder.getFolders();
     const years = [];
 
@@ -104,7 +104,7 @@ function getStudentYears() {
 function getStudentTextbooks(year) {
   try {
     const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
+    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
     const files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
     const textbooks = [];
     while (files.hasNext()) {
@@ -126,7 +126,7 @@ function getStudentTextbooks(year) {
 function getStudentGrades(year, textbook) {
   try {
     const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
+    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const ss = SpreadsheetApp.open(file);
     const grades = ss.getSheets()
@@ -150,7 +150,7 @@ function getStudentGrades(year, textbook) {
 function getStudentLessons(year, textbook, grade) {
   try {
     const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
+    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const ss = SpreadsheetApp.open(file);
 
@@ -241,7 +241,7 @@ function getStudentLessons(year, textbook, grade) {
 function getPracticeQuestions(year, textbook, grade, lesson) {
   try {
     const config = getAppConfig();
-    const folder = DriveApp.getFolderById(config.VOCABULARY_FOLDER_ID).getFoldersByName(year).next();
+    const folder = DriveApp.getFolderById(config.ENGLISHWORDS_FOLDER_ID).getFoldersByName(year).next();
     const file = folder.getFilesByName(textbook).next();
     const spreadsheet = SpreadsheetApp.open(file);
     const questions = [];
