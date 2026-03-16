@@ -24,7 +24,7 @@
         <!-- 既存の top-bar （削除した場合は以下をそのまま使用） -->
         <!-- 既存の selection-panel ここから -->
         <div class="selection-panel expanded" id="selectionPanel">
-          <div class="selection-header" id="selectionHeader" onclick="toggleSelectionPanel()">
+          <div class="selection-header" id="selectionHeader">
             <div style="display: flex; align-items: center; gap: 10px;">
               <!-- ロゴが挿入される -->
               <span style="font-size: 16px; font-weight: bold;">英単語テストエディタ</span>
@@ -321,7 +321,7 @@
 
   <div class="saving-indicator" id="savingIndicator">💾 保存中...</div>
 
-<!-- タブ・折りたたみの直接実装（IIFE scriplet に依存しないフォールバック） -->
+<!-- グローバルユーティリティ（IIFE スコープ不要な純粋な UI ヘルパー） -->
 <script>
 function switchTab(t) {
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -330,7 +330,7 @@ function switchTab(t) {
   if (btn) btn.classList.add('active');
   var con = document.getElementById(t + '-tab');
   if (con) con.classList.add('active');
-  if (t === 'settings' && typeof loadSettingsValues === 'function') loadSettingsValues();
+  if (t === 'settings' && typeof window.loadSettingsValues === 'function') window.loadSettingsValues();
 }
 function toggleSelectionPanel() {
   var p = document.getElementById('selectionPanel');
@@ -340,134 +340,17 @@ function toggleSelectionPanel() {
   var icon = p.querySelector('.toggle-icon');
   if (icon) icon.classList.toggle('collapsed');
 }
-
-// ─────────────────────────────────────────
-// フォールバック初期化（IIFE が動かない場合の保険）
-// 年度・教科書・学年・レッスン のカスケードを直接実装
-// ─────────────────────────────────────────
-(function() {
-  var _s = { year: '', textbook: '', grade: '', lesson: '' };
-
-  function _fill(id, items) {
-    var sel = document.getElementById(id);
-    if (!sel) return;
-    sel.innerHTML = '<option value="">選択してください</option>';
-    (items || []).forEach(function(v) {
-      var o = document.createElement('option');
-      o.value = v; o.textContent = v; sel.appendChild(o);
-    });
-    sel.disabled = false;
-  }
-
-  function _disable(id) {
-    var sel = document.getElementById(id);
-    if (sel) { sel.innerHTML = '<option value="">選択してください</option>'; sel.disabled = true; }
-  }
-
-  function _updateNewBtn() {
-    var btn = document.getElementById('newBtn');
-    if (!btn) return;
-    var hasLesson = _s.lesson && _s.lesson !== 'other';
-    var customInput = document.getElementById('customLessonInput');
-    var hasCustom = _s.lesson === 'other' && customInput && customInput.value.trim().length > 0;
-    btn.disabled = !(_s.year && _s.textbook && _s.grade && (hasLesson || hasCustom));
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
-
-    // 年度読み込み（エディタータブ + 単語帳タブ）
-    google.script.run
-      .withSuccessHandler(function(d) { _fill('yearSelect', d.years); })
-      .getEditorYears();
-    google.script.run
-      .withSuccessHandler(function(d) { _fill('yearSelectWB', d.years); })
-      .getEditorYears();
-
-    // 年度 → 教科書
-    var ySel = document.getElementById('yearSelect');
-    if (ySel) ySel.addEventListener('change', function(e) {
-      _s.year = e.target.value;
-      _s.textbook = _s.grade = _s.lesson = '';
-      _disable('textbookSelect'); _disable('gradeSelect'); _disable('lessonSelect');
-      _updateNewBtn();
-      if (!_s.year) return;
-      google.script.run
-        .withSuccessHandler(function(d) { _fill('textbookSelect', d.textbooks); })
-        .getEditorTextbooks(_s.year);
-    });
-
-    // 教科書 → 学年
-    var tbSel = document.getElementById('textbookSelect');
-    if (tbSel) tbSel.addEventListener('change', function(e) {
-      _s.textbook = e.target.value;
-      _s.grade = _s.lesson = '';
-      _disable('gradeSelect'); _disable('lessonSelect');
-      _updateNewBtn();
-      if (!_s.textbook) return;
-      google.script.run
-        .withSuccessHandler(function(d) { _fill('gradeSelect', d.grades); })
-        .getEditorGrades(_s.year, _s.textbook);
-    });
-
-    // 学年 → レッスン
-    var grSel = document.getElementById('gradeSelect');
-    if (grSel) grSel.addEventListener('change', function(e) {
-      _s.grade = e.target.value;
-      _s.lesson = '';
-      _disable('lessonSelect');
-      _updateNewBtn();
-      if (!_s.grade) return;
-      google.script.run
-        .withSuccessHandler(function(d) {
-          var sel = document.getElementById('lessonSelect');
-          if (!sel) return;
-          sel.innerHTML = '<option value="">選択してください</option>';
-          (d.lessons || []).forEach(function(v) {
-            var o = document.createElement('option');
-            o.value = v; o.textContent = v; sel.appendChild(o);
-          });
-          // 「その他」を追加（入試対策編の不規則動詞以外）
-          var isFuk = _s.textbook === '入試対策編' &&
-                      (_s.grade === '不規則動詞①' || _s.grade === '不規則動詞②');
-          if (!isFuk) {
-            var o2 = document.createElement('option');
-            o2.value = 'other'; o2.textContent = '--- その他 ---'; sel.appendChild(o2);
-          }
-          sel.disabled = false;
-        })
-        .withFailureHandler(function() {
-          var sel = document.getElementById('lessonSelect');
-          if (sel) sel.disabled = true;
-        })
-        .getEditorLessons(_s.year, _s.textbook, _s.grade);
-    });
-
-    // レッスン選択
-    var lsSel = document.getElementById('lessonSelect');
-    if (lsSel) lsSel.addEventListener('change', function(e) {
-      _s.lesson = e.target.value;
-      var customGroup = document.getElementById('customLessonGroup');
-      if (customGroup) {
-        if (_s.lesson === 'other') {
-          customGroup.classList.remove('hidden');
-        } else {
-          customGroup.classList.add('hidden');
-        }
-      }
-      _updateNewBtn();
-    });
-  });
-})();
 </script>
 
   <script>
+(() => {
 <?!= HtmlService.createHtmlOutputFromFile('editor-js1').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js2').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js3').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js4').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js5').getContent() ?>
 <?!= HtmlService.createHtmlOutputFromFile('editor-js6').getContent() ?>
+})();
 </script>
 </body>
 </html>

@@ -1051,11 +1051,19 @@ function loadEditorData() {
 /**
  * エディター画面を閉じて初期表示に戻す
  */
+// ════════════════════════════════════════
+// onclick/oninput 属性から呼ばれる関数を window に公開
+// ════════════════════════════════════════
+window.handleNewBtnClick = handleNewBtnClick;
+window.handleUseCustom = handleUseCustom;
+window.updateNewButton = updateNewButton;
+window.handleReset = handleReset;
+
 function closeEditor() {
   hasChanges = false;
-  searchQuery = '';  // ✅ 新規追加
-  currentItemType = 'word';  // ✅ 新規追加
-  
+  searchQuery = '';
+  currentItemType = 'word';
+
   const editorArea = document.getElementById('editorArea');
   editorArea.className = 'editor-area no-data';
   editorArea.innerHTML = '<div class="no-data-message">上部で年度・教科書・学年・レッスンを選択して「編集」をクリックしてください</div>';
