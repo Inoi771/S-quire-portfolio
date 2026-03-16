@@ -321,6 +321,27 @@
 
   <div class="saving-indicator" id="savingIndicator">💾 保存中...</div>
 
+<!-- タブ・折りたたみの直接実装（IIFE scriplet に依存しないフォールバック） -->
+<script>
+function switchTab(t) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+  var btn = document.querySelector('.tab-btn[data-tab="' + t + '"]');
+  if (btn) btn.classList.add('active');
+  var con = document.getElementById(t + '-tab');
+  if (con) con.classList.add('active');
+  if (t === 'settings' && typeof loadSettingsValues === 'function') loadSettingsValues();
+}
+function toggleSelectionPanel() {
+  var p = document.getElementById('selectionPanel');
+  if (!p) return;
+  p.classList.toggle('expanded');
+  p.classList.toggle('collapsed');
+  var icon = p.querySelector('.toggle-icon');
+  if (icon) icon.classList.toggle('collapsed');
+}
+</script>
+
   <script>
 
 (() => {
