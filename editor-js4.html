@@ -1,0 +1,1356 @@
+/**
+ * スプレッドシートから取得したデータをtableDataに復元
+ * cellIdから行列位置を計算して正確に復元
+ */
+function loadExistingData(existingData) {
+  console.log('=== loadExistingData called (デバッグ版) ===');
+  console.log('existingData count:', existingData.length);
+  console.log('existingData:', existingData);  // ✅ デバッグ：完全なデータを出力
+  
+  tableData = Array(16).fill(null).map(() => [null, null, null]);
+
+  existingData.forEach((data, index) => {
+    console.log(`\n--- Processing data ${index} ---`);
+    console.log('data object:', data);
+    
+    if (data.cellId === null || data.cellId < 1 || data.cellId > 48) {
+      console.warn(`❌ Invalid cellId: ${data.cellId}`);
+      return;
+    }
+    
+    // ✅ 修正：cellIdから行列を逆算（縦方向）
+    const indices = getCellIndices(data.cellId);
+    if (!indices) {
+      console.warn(`❌ Cannot calculate indices for cellId: ${data.cellId}`);
+      return;
+    }
+
+    const { rowIdx, colIdx } = indices;
+
+    console.log(`✅ cellId: ${data.cellId} → rowIdx: ${rowIdx}, colIdx: ${colIdx}`);
+
+    // ✅ 修正：masterWordId の判定を追加
+    if (data.english && data.english !== '') {
+      // 単語の場合（masterWordId < 10000）
+      if (data.masterWordId && data.masterWordId < 10000) {
+        tableData[rowIdx][colIdx] = {
+          type: 'word',
+          english: data.english,
+          japanese: data.japanese,
+          pronunciation: data.pronunciation || '',
+          masterWordId: data.masterWordId,
+          cellId: data.cellId
+        };
+        console.log(`✅ Word added: ${data.english} (ID: ${data.masterWordId})`);
+      } 
+      // 英文の場合（masterWordId >= 10000）
+      else if (data.masterWordId && data.masterWordId >= 10000) {
+        tableData[rowIdx][0] = {
+          type: 'sentence',
+          text: data.english,
+          japanese: data.japanese || '',
+          pronunciation: data.pronunciation || '',
+          masterSentenceId: data.masterWordId,
+          cellId: data.cellId
+        };
+        tableData[rowIdx][1] = null;
+        tableData[rowIdx][2] = null;
+        console.log(`✅ Sentence added: ${data.english} (ID: ${data.masterWordId})`);
+      } else {
+        console.warn(`⚠️ No masterWordId or invalid: ${data.masterWordId}`);
+      }
+    } else if (data.japanese && data.japanese !== '') {
+      // 文の場合（日本語のみ）
+      console.log('Processing sentence (japanese only)');
+      tableData[rowIdx][0] = {
+        type: 'sentence',
+        text: data.japanese,
+        japanese: data.japanese || '',
+        pronunciation: data.pronunciation || '',
+        masterSentenceId: data.masterWordId,
+        cellId: data.cellId
+      };
+      tableData[rowIdx][1] = null;
+      tableData[rowIdx][2] = null;
+      console.log(`✅ Sentence added: ${data.japanese} (ID: ${data.masterWordId})`);
+    } else {
+      console.warn(`⚠️ No english or japanese: `, data);
+    }
+  });
+
+  console.log('=== loadExistingData finished ===');
+  console.log('tableData:', tableData);
+  console.log('✅ テーブル内の単語数:', tableData.flat().filter(c => c && c.type === 'word').length);
+  console.log('✅ テーブル内の文数:', tableData.flat().filter(c => c && c.type === 'sentence').length);
+
+  const isFukisoku1 = state.textbook === '入試対策編' && state.grade === '不規則動詞①';
+  const isFukisoku2 = state.textbook === '入試対策編' && state.grade === '不規則動詞②';
+
+  if (isFukisoku1 || isFukisoku2) {
+  const fukisokuDataMap = {};
+
+  tableData.slice(0, isFukisoku1 ? 22 : 25).forEach((row, rowIdx) => {
+    if (row[0] && row[0].type === 'word') {
+      const mapData = {
+        meaning: row[0].japanese,
+        meaningMasterId: row[0].masterWordId,
+        present: row[0].english,
+        presentPronunciation: row[0].pronunciation || '',
+        presentMasterId: row[0].masterWordId,
+        cellId: row[0].cellId
+      };
+
+      // ✅ 修正：拡張カラムのデータを取得
+      // existingData から同じcellIdを持つレコードを探して過去形・過去分詞を取得
+      const existingRecord = existingData.find(d => d.cellId === row[0].cellId);
+      
+      if (existingRecord) {
+        mapData.past = existingRecord.pastEnglish || '';
+        mapData.pastPronunciation = existingRecord.pastPronunciation || '';
+        mapData.pastMasterId = null;  // masterIdは使用しない（データから直接取得）
+        
+        if (isFukisoku2) {
+          mapData.pastPart = existingRecord.pastParticipleEnglish || '';
+          mapData.pastPartPronunciation = existingRecord.pastParticiplePronunciation || '';
+          mapData.pastPartMasterId = null;
+        }
+      } else {
+        mapData.past = '';
+        mapData.pastPronunciation = '';
+        mapData.pastMasterId = null;
+        
+        if (isFukisoku2) {
+          mapData.pastPart = '';
+          mapData.pastPartPronunciation = '';
+          mapData.pastPartMasterId = null;
+        }
+      }
+
+      fukisokuDataMap[rowIdx] = mapData;
+    }
+  });
+
+  if (isFukisoku1) {
+    window.fukisoku1DataMap = fukisokuDataMap;
+  } else {
+    window.fukisoku2DataMap = fukisokuDataMap;
+  }
+  }
+
+} 
+
+/**
+ * 左パネルの単語をescapeキーで編集
+ */
+function editWordItem(div, word) {
+  if (editingWordItem) return;
+  editingWordItem = div;
+
+  const form = document.createElement('div');
+  form.className = 'word-item-edit-form';
+  form.innerHTML = `
+    <div class="form-label">日本語</div>
+    <input type="text" class="edit-japanese" value="${word.japanese || ''}">
+    <div class="form-label">発音</div>
+    <input type="text" class="edit-pronunciation" value="${word.pronunciation || ''}">
+    <div class="form-label">英語</div>
+    <input type="text" class="edit-english" value="${word.english}">
+  `;
+
+  div.classList.add('editing');
+  const displayDiv = div.querySelector('.word-item-display');
+  if (displayDiv) {
+    displayDiv.remove();
+  }
+  div.appendChild(form);
+
+  const inputs = form.querySelectorAll('input');
+  inputs[0].focus();
+  inputs[0].select();
+
+  let handleClickOutside = null;
+
+  const saveEdit = () => {
+    const newJapanese = inputs[0].value.trim();
+    const newPronunciation = inputs[1].value.trim();
+    const newEnglish = inputs[2].value.trim();
+
+    if (!newEnglish) {
+      alert('英語を入力してください');
+      inputs[2].focus();
+      return;
+    }
+
+    if (handleClickOutside) {
+      document.removeEventListener('click', handleClickOutside);
+    }
+
+    showLoadingIndicator('単語を更新中...');
+    isSaving = true;
+    updateUIForSaving();
+
+    google.script.run
+      .withSuccessHandler(() => {
+        google.script.run
+          .withSuccessHandler(() => {
+            word.english = newEnglish;
+            word.pronunciation = newPronunciation;
+            word.japanese = newJapanese;
+
+            const masterWord = allWords.find(w => w.id === word.id);
+            if (masterWord) {
+              masterWord.english = newEnglish;
+              masterWord.pronunciation = newPronunciation;
+              masterWord.japanese = newJapanese;
+            }
+
+            updateTableDisplayByMasterId(word.id);
+
+            editingWordItem = null;
+            renderWordList();
+
+            isSaving = false;
+            updateUIForSaving();
+            hideLoadingIndicator();
+          })
+          .withFailureHandler(err => {
+            console.error('updateAllLessonDataInYear エラー:', err);
+            hideLoadingIndicator();
+            alert('❌ レッスンデータの更新に失敗しました。\n\nエラー: ' + err);
+            isSaving = false;
+            updateUIForSaving();
+            editingWordItem = null;
+          })
+          .updateAllLessonDataInYear(state.year, word.id, newEnglish, newPronunciation, newJapanese, 'word', allWords, allSentences);
+      })
+      .withFailureHandler(err => {
+        console.error('updateMasterWord エラー:', err);
+        hideLoadingIndicator();
+        alert('❌ マスター単語の保存に失敗しました。\n\nエラー: ' + err);
+        isSaving = false;
+        updateUIForSaving();
+        editingWordItem = null;
+      })
+      .updateMasterWord(word.id, newEnglish, newPronunciation, newJapanese);
+  };
+
+  const cancelEdit = () => {
+    if (handleClickOutside) {
+      document.removeEventListener('click', handleClickOutside);
+    }
+    editingWordItem = null;
+    div.classList.remove('editing');
+    renderWordList();
+  };
+
+  inputs.forEach((input, idx) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        saveEdit();
+        return;
+      }
+      
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          const prevIdx = (idx - 1 + inputs.length) % inputs.length;
+          inputs[prevIdx].focus();
+          inputs[prevIdx].select();
+        } else {
+          const nextIdx = (idx + 1) % inputs.length;
+          inputs[nextIdx].focus();
+          inputs[nextIdx].select();
+        }
+        return;
+      }
+    });
+  });
+
+  handleClickOutside = (e) => {
+    if (!div.contains(e.target) && editingWordItem === div) {
+      saveEdit();
+    }
+  };
+
+  setTimeout(() => {
+    if (editingWordItem === div) {
+      document.addEventListener('click', handleClickOutside);
+    }
+  }, 0);
+}
+
+/**
+ * 左パネルの文をescapeキーで編集
+ */
+function editSentenceItem(div, sentence) {
+  if (editingWordItem) return;
+  editingWordItem = div;
+
+  const form = document.createElement('div');
+  form.className = 'sentence-item-edit-form';
+  form.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  `;
+  
+  form.innerHTML = `
+    <div class="form-label">日本語</div>
+    <input type="text" class="edit-japanese" style="
+      width: 100%;
+      padding: 6px;
+      font-size: 12px;
+      border: 1px solid #999;
+      border-radius: 3px;
+      font-family: 'Meiryo', Arial, sans-serif;
+    " value="${sentence.japanese || ''}">
+    
+    <div class="form-label">英文</div>
+    <textarea class="edit-sentence" style="
+      width: 100%;
+      min-height: 60px;
+      padding: 8px;
+      font-size: 12px;
+      border: 1px solid #999;
+      border-radius: 3px;
+      font-family: 'Meiryo', Arial, sans-serif;
+      resize: vertical;
+    ">${escapeHtml(sentence.text)}</textarea>
+    
+    <div class="form-label">読み方</div>
+    <input type="text" class="edit-pronunciation" style="
+      width: 100%;
+      padding: 6px;
+      font-size: 12px;
+      border: 1px solid #999;
+      border-radius: 3px;
+      font-family: 'Meiryo', Arial, sans-serif;
+    " value="${escapeHtml(sentence.pronunciation || '')}">
+  `;
+
+  div.classList.add('editing');
+  const displayDiv = div.querySelector('.sentence-item-display');
+  if (displayDiv) {
+    displayDiv.remove();
+  }
+  div.appendChild(form);
+
+  const japaneseInput = form.querySelector('.edit-japanese');
+  const textareaEl = form.querySelector('.edit-sentence');
+  const pronunciationInput = form.querySelector('.edit-pronunciation');
+
+  const fields = [japaneseInput, textareaEl, pronunciationInput];
+
+  japaneseInput.focus();
+
+  let handleClickOutside = null;
+
+  const saveEdit = () => {
+    const newJapanese = japaneseInput.value.trim();
+    const newText = textareaEl.value.trim();
+    const newPronunciation = pronunciationInput.value.trim();
+
+    if (!newText) {
+      alert('英文を入力してください');
+      textareaEl.focus();
+      return;
+    }
+
+    if (handleClickOutside) {
+      document.removeEventListener('click', handleClickOutside);
+    }
+
+    showLoadingIndicator('英文を更新中...');
+    isSaving = true;
+    updateUIForSaving();
+
+    google.script.run
+      .withSuccessHandler(() => {
+        google.script.run
+          .withSuccessHandler(() => {
+            sentence.text = newText;
+            sentence.pronunciation = newPronunciation;
+            sentence.japanese = newJapanese;
+
+            const masterSentence = allSentences.find(s => s.id === sentence.id);
+            if (masterSentence) {
+              masterSentence.text = newText;
+              masterSentence.pronunciation = newPronunciation;
+              masterSentence.japanese = newJapanese;
+            }
+
+            updateTableDisplayByMasterId(sentence.id);
+
+            editingWordItem = null;
+            renderWordList();
+
+            isSaving = false;
+            updateUIForSaving();
+            hideLoadingIndicator();
+          })
+          .withFailureHandler(err => {
+            console.error('updateAllLessonDataInYear エラー:', err);
+            hideLoadingIndicator();
+            alert('❌ レッスンデータの更新に失敗しました。\n\nエラー: ' + err);
+            isSaving = false;
+            updateUIForSaving();
+            editingWordItem = null;
+          })
+          .updateAllLessonDataInYear(state.year, sentence.id, newText, newPronunciation, newJapanese, 'sentence', allWords, allSentences);
+      })
+      .withFailureHandler(err => {
+        console.error('updateMasterSentence エラー:', err);
+        hideLoadingIndicator();
+        alert('❌ マスター文の保存に失敗しました。\n\nエラー: ' + err);
+        isSaving = false;
+        updateUIForSaving();
+        editingWordItem = null;
+      })
+      .updateMasterSentence(sentence.id, newText, newPronunciation);
+  };
+
+  const cancelEdit = () => {
+    if (handleClickOutside) {
+      document.removeEventListener('click', handleClickOutside);
+    }
+    editingWordItem = null;
+    div.classList.remove('editing');
+    renderWordList();
+  };
+
+  fields.forEach((field, idx) => {
+    field.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        saveEdit();
+        return;
+      }
+      
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          const prevIdx = (idx - 1 + fields.length) % fields.length;
+          fields[prevIdx].focus();
+          if (fields[prevIdx] !== textareaEl) {
+            fields[prevIdx].select();
+          }
+        } else {
+          const nextIdx = (idx + 1) % fields.length;
+          fields[nextIdx].focus();
+          if (fields[nextIdx] !== textareaEl) {
+            fields[nextIdx].select();
+          }
+        }
+        return;
+      }
+    });
+  });
+
+  handleClickOutside = (e) => {
+    if (!div.contains(e.target) && editingWordItem === div) {
+      saveEdit();
+    }
+  };
+
+  setTimeout(() => {
+    if (editingWordItem === div) {
+      document.addEventListener('click', handleClickOutside);
+    }
+  }, 0);
+}
+
+/**
+ * レッスンタイトルをクリックして編集（カスタムレッスン時）
+ * ✅ 修正：「入試対策編」対応
+ */
+function editLessonTitle() {
+  const lessonDisplay = document.getElementById('lessonDisplay');
+  
+  // 既に編集中なら何もしない
+  if (lessonDisplay.classList.contains('editing')) {
+    return;
+  }
+
+  const oldLessonName = state.lesson;  // 編集前のレッスン名を保持
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = state.lesson;
+  input.style.cssText = 'width: 300px; padding: 8px; font-size: 20px; border: 2px solid #2196F3; border-radius: 4px; text-align: center; font-weight: bold;';
+
+  lessonDisplay.classList.add('editing');
+  lessonDisplay.innerHTML = '';
+  lessonDisplay.appendChild(input);
+  input.focus();
+  input.select();
+
+  const updateDisplay = () => {
+    lessonDisplay.classList.remove('editing');
+    
+    if (state.textbook === '入試対策編') {
+      lessonDisplay.textContent = state.lesson;
+    } else {
+      lessonDisplay.textContent = `${state.grade}ー${state.lesson}`;
+    }
+  };
+
+  const save = () => {
+    const newLesson = input.value.trim();
+    
+    if (!newLesson) {
+      // 空欄なら変更なし
+      state.lesson = oldLessonName;
+      updateDisplay();
+      return;
+    }
+
+    if (newLesson === oldLessonName) {
+      // 変更なし
+      console.log('レッスン名に変更がありません');
+      updateDisplay();
+      return;
+    }
+
+    // ✅ 修正：レッスン名が変更された場合、即座に保存
+    console.log(`レッスン名変更: "${oldLessonName}" → "${newLesson}"`);
+    
+    state.lesson = newLesson;
+    state.originalLessonName = oldLessonName;
+    state.isEdited = true;
+    
+    updateDisplay();
+
+    // ✅ 修正：即座にレッスン名を保存
+    saveLessonNameImmediately(oldLessonName, newLesson, () => {
+      // ✅ 新規：保存完了後に選択欄の値も更新
+      updateLessonSelectValue(newLesson);
+    });
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      save();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      state.lesson = oldLessonName;
+      updateDisplay();
+    }
+  });
+}
+
+/**
+ * ✅ 新規関数：レッスン選択欄の値を更新
+ * @param {string} lessonName - 新しいレッスン名
+ */
+function updateLessonSelectValue(lessonName) {
+  const lessonSelect = document.getElementById('lessonSelect');
+  
+  if (!lessonSelect) {
+    console.warn('⚠️ lessonSelect が見つかりません');
+    return;
+  }
+
+  // 選択欄内に該当するレッスン名のオプションがあるか確認
+  const options = lessonSelect.querySelectorAll('option');
+  let found = false;
+
+  options.forEach(option => {
+    if (option.value === lessonName) {
+      lessonSelect.value = lessonName;
+      found = true;
+      console.log(`✅ 選択欄を「${lessonName}」に更新しました`);
+    }
+  });
+
+  if (!found) {
+    // 選択欄にない場合は、新しいオプションを追加
+    console.log(`⚠️ 選択欄に「${lessonName}」が見つかりません。新しいオプションを追加します。`);
+    
+    const newOption = document.createElement('option');
+    newOption.value = lessonName;
+    newOption.textContent = lessonName;
+    lessonSelect.appendChild(newOption);
+    lessonSelect.value = lessonName;
+
+    console.log(`✅ 新しいオプション「${lessonName}」を追加して選択しました`);
+  }
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * ドラッグ&ドロップ：各セルタイプ別の処理
+ * ════════════════════════════════════════════════════════
+ */
+/**
+ * 右パネルのドラッグオーバーイベント設定
+ * ✅ 修正：左パネルからのドラッグ（コピー）と右パネル内のドラッグ（移動）を区別
+ */
+function setupRightPanelDragDrop() {
+  const panel = document.getElementById('selectedLessonPanel');
+
+  panel.addEventListener('dragover', (e) => {
+    // ✅ 左パネルからのドラッグの場合のみ許可（draggedLessonIdx === undefined）
+    if (draggedLessonName && draggedLessonIdx === undefined) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      panel.classList.add('drag-over');
+    }
+  });
+
+  panel.addEventListener('dragleave', (e) => {
+    if (e.target === panel) {
+      panel.classList.remove('drag-over');
+    }
+  });
+
+  panel.addEventListener('drop', (e) => {
+    e.preventDefault();
+    panel.classList.remove('drag-over');
+
+    // ✅ 左パネルからのドラッグの場合のみ処理
+    if (draggedLessonName && draggedLessonIdx === undefined && availableLessons.includes(draggedLessonName)) {
+      // ✅ 重複を許可：同じレッスンを複数回追加可能
+      if (!selectedLessons.includes(draggedLessonName)) {
+        selectedLessons.push(draggedLessonName);
+      } else {
+        // 既に含まれている場合は末尾に追加
+        selectedLessons.push(draggedLessonName);
+      }
+
+      renderSelectedLessonPanel();
+      draggedLessonName = null;
+      draggedLessonIdx = undefined;
+    }
+  });
+}
+
+/**
+ * 左パネルのドラッグ&ドロップ設定
+ * テーブルから左パネルへドラッグするとセルクリア
+ */
+      function setupLeftPanelDragDrop() {
+        const leftPanel = document.getElementById('leftPanel');
+
+        leftPanel.addEventListener('dragover', (e) => {
+          if (draggedFromTable) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            leftPanel.classList.add('drag-over');
+          }
+        });
+
+        leftPanel.addEventListener('dragleave', (e) => {
+          if (e.target === leftPanel) {
+            leftPanel.classList.remove('drag-over');
+          }
+        });
+
+        leftPanel.addEventListener('drop', (e) => {
+          e.preventDefault();
+          leftPanel.classList.remove('drag-over');
+
+          if (draggedFromTable) {
+            const { rowIdx, colIdx } = draggedFromTable;
+            tableData[rowIdx][colIdx] = null;
+            hasChanges = true;
+            document.getElementById('saveBtn').disabled = false;
+            renderTable();
+            draggedFromTable = null;
+          }
+        });
+      }
+
+/**
+ * 空のセルへのドラッグ&ドロップ処理
+ * 単語・文を新たに配置
+ */ 
+function setupEmptyCellDragDrop(td, rowIdx, colIdx) {
+  td.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    td.classList.add('drag-over');
+  });
+
+  td.addEventListener('dragleave', () => {
+    td.classList.remove('drag-over');
+  });
+
+  td.addEventListener('drop', (e) => {
+    e.preventDefault();
+    td.classList.remove('drag-over');
+
+    if (!draggedItem) return;
+
+    const newCellId = calculateCellId(rowIdx, colIdx);
+
+    if (draggedItem.type === 'word') {
+      const wordId = draggedItem.id || draggedItem.data.id;
+      
+      if (!wordId) {
+        console.error('⚠️ WARNING: Word ID が取得できません', draggedItem);
+        alert('⚠️ エラー：単語のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      tableData[rowIdx][colIdx] = {
+        type: 'word',
+        english: draggedItem.data.english,
+        japanese: draggedItem.data.japanese,
+        pronunciation: draggedItem.data.pronunciation || '',
+        masterWordId: wordId,
+        cellId: newCellId
+      };
+
+      if (draggedFromTable && draggedFromTable.isFromTable) {
+        tableData[draggedFromTable.rowIdx][draggedFromTable.colIdx] = null;
+      }
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+
+      moveRightPanelFocusToNextEmpty(rowIdx, colIdx);
+
+      // ✅ 新規：ドラッグ完了後に検索欄をクリア
+      clearSearchAfterDrop();
+
+    } else if (draggedItem.type === 'sentence') {
+      const sentenceId = draggedItem.id || draggedItem.data.id;
+      
+      if (!sentenceId) {
+        console.error('⚠️ WARNING: Sentence ID が取得できません', draggedItem);
+        alert('⚠️ エラー：英文のIDが取得できません。ページをリロードしてください。');
+        return;
+      }
+
+      const hasWordInRow = tableData[rowIdx].some(cell => 
+        cell && cell.type === 'word'
+      );
+
+      if (hasWordInRow) {
+        alert('❌ この行には既に単語があるため、文を配置できません。\n\n文は単語がない行にのみ配置可能です。');
+        return;
+      }
+
+      tableData[rowIdx][0] = {
+        type: 'sentence',
+        text: draggedItem.data.text,
+        pronunciation: draggedItem.data.pronunciation || '',
+        japanese: draggedItem.data.japanese || '',
+        masterSentenceId: sentenceId,
+        cellId: newCellId
+      };
+      tableData[rowIdx][1] = null;
+      tableData[rowIdx][2] = null;
+
+      if (draggedFromTable && draggedFromTable.isFromTable) {
+        tableData[draggedFromTable.rowIdx][draggedFromTable.colIdx] = null;
+      }
+
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+      renderTable();
+
+      // ✅ 新規：ドラッグ完了後に検索欄をクリア
+      clearSearchAfterDrop();
+    }
+  });
+}
+
+/**
+ * ✅ 新規関数：ドラッグ後に検索欄をクリア
+ * 左パネルからのドラッグが完了したら自動クリア
+ */
+function clearSearchAfterDrop() {
+  searchQuery = '';
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  leftPanelFocusIndex = 0;
+  renderWordList();
+}
+
+/**
+ * ✅ 新規関数：左パネルのドラッグオーバーイベント設定（削除用）
+ * 右パネルのレッスンを左パネルへドラッグすると削除
+ */
+function setupLeftPanelDragDropForDelete() {
+  const leftPanel = document.getElementById('availableLessonPanel');
+
+  // ドラッグオーバー時の処理
+  leftPanel.addEventListener('dragover', (e) => {
+    // ✅ 右パネルからのドラッグのみを許可
+    if (draggedLessonName && draggedLessonIdx !== undefined) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      leftPanel.classList.add('drag-over');
+    }
+  });
+
+  leftPanel.addEventListener('dragleave', (e) => {
+    if (e.target === leftPanel) {
+      leftPanel.classList.remove('drag-over');
+    }
+  });
+
+  leftPanel.addEventListener('drop', (e) => {
+    e.preventDefault();
+    leftPanel.classList.remove('drag-over');
+
+    // ✅ 右パネルからのドラッグの場合のみ処理
+    if (draggedLessonName && draggedLessonIdx !== undefined) {
+      // レッスンを削除
+      selectedLessons.splice(draggedLessonIdx, 1);
+      
+      // パネルを再描画
+      renderSelectedLessonPanel();
+      
+      // 状態をリセット
+      draggedLessonName = null;
+      draggedLessonIdx = undefined;
+    }
+  });
+}
+
+/**
+ * 単語が配置されているセルへのドラッグ&ドロップ処理
+ * 単語の入れ替え、または文への置換
+ */
+function setupWordCellDragDrop(td, contentDiv, cell, rowIdx, colIdx) {
+  contentDiv.addEventListener('dragstart', (e) => {
+    draggedItem = { 
+      type: 'word', 
+      data: cell,
+      id: cell.masterWordId
+    };
+    draggedFromTable = { rowIdx, colIdx, isFromTable: true };
+    e.dataTransfer.effectAllowed = 'move';
+    td.style.opacity = '0.5';
+  });
+
+  contentDiv.addEventListener('dragend', () => {
+    td.style.opacity = '1';
+  });
+
+  td.addEventListener('dragover', (e) => {
+    if (!draggedItem) return;
+
+    // ✅ ドラッグ元がテーブル内でない場合は禁止
+    if (!draggedFromTable || !draggedFromTable.isFromTable) {
+      e.dataTransfer.dropEffect = 'none';
+      td.classList.remove('drag-over');
+      td.classList.add('drag-forbidden');
+      return;
+    }
+
+    // ✅ ドラッグ元が単語の場合のみ許可
+    if (draggedItem.type === 'word') {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      td.classList.add('drag-over');
+      td.classList.remove('drag-forbidden');
+    } else if (draggedItem.type === 'sentence') {
+      // 文は単語セルには配置不可
+      e.dataTransfer.dropEffect = 'none';
+      td.classList.remove('drag-over');
+      td.classList.add('drag-forbidden');
+    }
+  });
+
+  td.addEventListener('dragleave', () => {
+    td.classList.remove('drag-over');
+    td.classList.remove('drag-forbidden');
+  });
+
+  td.addEventListener('drop', (e) => {
+    e.preventDefault();
+    td.classList.remove('drag-over');
+    td.classList.remove('drag-forbidden');
+
+    if (!draggedItem) return;
+
+    // ✅ ドラッグ元がテーブル内でない場合は無視
+    if (!draggedFromTable || !draggedFromTable.isFromTable) {
+      draggedFromTable = null;
+      return;
+    }
+
+    // ✅ ドラッグ元が単語でない場合は無視
+    if (draggedItem.type !== 'word') {
+      draggedFromTable = null;
+      return;
+    }
+
+    // ✅ 同じセルへのドラッグは無視
+    if (draggedFromTable.rowIdx === rowIdx && draggedFromTable.colIdx === colIdx) {
+      draggedFromTable = null;
+      return;
+    }
+
+    const oldRowIdx = draggedFromTable.rowIdx;
+    const oldColIdx = draggedFromTable.colIdx;
+
+    // ✅ セルIDを再計算（新しい位置用）
+    const newCellId = calculateCellId(rowIdx, colIdx);
+    const oldCellId = calculateCellId(oldRowIdx, oldColIdx);
+
+    // ✅ 修正：セル内のデータから正確にIDを取得
+    const targetCell = {
+      type: cell.type,
+      english: cell.english,
+      japanese: cell.japanese,
+      pronunciation: cell.pronunciation,
+      masterWordId: cell.masterWordId,
+      cellId: newCellId  // ✅ 新しいセルIDを設定
+    };
+
+    const sourceCell = {
+      type: draggedItem.data.type,
+      english: draggedItem.data.english,
+      japanese: draggedItem.data.japanese,
+      pronunciation: draggedItem.data.pronunciation,
+      masterWordId: draggedItem.data.masterWordId,
+      cellId: oldCellId  // ✅ 元のセルIDを保持
+    };
+
+    // ✅ 入れ替え処理
+    tableData[oldRowIdx][oldColIdx] = targetCell;
+    tableData[rowIdx][colIdx] = sourceCell;
+
+    hasChanges = true;
+    document.getElementById('saveBtn').disabled = false;
+    renderTable();
+
+    // ✅ 新規：ドラッグ後、次の空きセルに照準を移動
+    moveRightPanelFocusToNextEmpty(rowIdx, colIdx);
+
+    draggedFromTable = null;
+  });
+}
+
+/**
+ * 文が配置されているセルへのドラッグ&ドロップ処理
+ * 文の入れ替え、または単語への置換
+ */
+function setupSentenceCellDragDrop(td, contentDiv, cell, rowIdx) {
+  contentDiv.addEventListener('dragstart', (e) => {
+    draggedItem = { 
+      type: 'sentence', 
+      data: cell,
+      id: cell.masterSentenceId
+    };
+    draggedFromTable = { rowIdx, colIdx: 0, isFromTable: true };
+    e.dataTransfer.effectAllowed = 'move';
+    td.style.opacity = '0.5';
+  });
+
+  contentDiv.addEventListener('dragend', () => {
+    td.style.opacity = '1';
+  });
+
+  td.addEventListener('dragover', (e) => {
+    if (!draggedItem) return;
+
+    if (!draggedFromTable || !draggedFromTable.isFromTable) {
+      e.dataTransfer.dropEffect = 'none';
+      td.classList.remove('drag-over');
+      td.classList.add('drag-forbidden');
+      return;
+    }
+
+    if (draggedItem.type === 'sentence') {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      td.classList.add('drag-over');
+      td.classList.remove('drag-forbidden');
+    } else if (draggedItem.type === 'word') {
+      e.dataTransfer.dropEffect = 'none';
+      td.classList.remove('drag-over');
+      td.classList.add('drag-forbidden');
+    }
+  });
+
+  td.addEventListener('dragleave', () => {
+    td.classList.remove('drag-over');
+    td.classList.remove('drag-forbidden');
+  });
+
+  td.addEventListener('drop', (e) => {
+    e.preventDefault();
+    td.classList.remove('drag-over');
+    td.classList.remove('drag-forbidden');
+
+    if (!draggedItem) return;
+
+    if (!draggedFromTable || !draggedFromTable.isFromTable) {
+      draggedFromTable = null;
+      return;
+    }
+
+    if (draggedItem.type !== 'sentence') {
+      draggedFromTable = null;
+      return;
+    }
+
+    if (draggedFromTable.rowIdx === rowIdx) {
+      draggedFromTable = null;
+      return;
+    }
+
+    const oldRowIdx = draggedFromTable.rowIdx;
+
+    const newCellId = calculateCellId(rowIdx, 0);
+    const oldCellId = calculateCellId(oldRowIdx, 0);
+
+    const targetCell = {
+      type: cell.type,
+      text: cell.text,
+      pronunciation: cell.pronunciation,
+      japanese: cell.japanese || '',
+      masterSentenceId: cell.masterSentenceId,
+      cellId: newCellId
+    };
+
+    const sourceCell = {
+      type: draggedItem.data.type,
+      text: draggedItem.data.text,
+      pronunciation: draggedItem.data.pronunciation,
+      japanese: draggedItem.data.japanese || '',
+      masterSentenceId: draggedItem.data.masterSentenceId,
+      cellId: oldCellId
+    };
+
+    tableData[oldRowIdx][0] = targetCell;
+    tableData[oldRowIdx][1] = null;
+    tableData[oldRowIdx][2] = null;
+
+    tableData[rowIdx][0] = sourceCell;
+    tableData[rowIdx][1] = null;
+    tableData[rowIdx][2] = null;
+
+    hasChanges = true;
+    document.getElementById('saveBtn').disabled = false;
+    renderTable();
+
+    draggedFromTable = null;
+  });
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * データ保存：スプレッドシートに保存
+ * ════════════════════════════════════════════════════════
+ */
+
+/**
+ * 保存完了インジケータを表示
+ */
+      function showSavingIndicator() {
+        const indicator = document.getElementById('savingIndicator');
+        indicator.classList.add('show');
+        setTimeout(() => {
+          indicator.classList.remove('show');
+        }, 2000);
+      }
+
+/**
+ * ✅ 修正版：updateTableDisplayByMasterId()
+ * 通常レッスンと不規則動詞の両方に対応
+ * マスターデータ修正時に tableData と fukisokuDataMap を自動更新
+ */
+function updateTableDisplayByMasterId(masterId) {
+  // ✅ 不規則動詞①②の判定
+  const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
+  const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+
+  if (isFukisoku1Check || isFukisoku2Check) {
+    // ════════════════════════════════════════
+    // 不規則動詞の場合
+    // ════════════════════════════════════════
+    const masterWord = allWords.find(w => w.id === masterId);
+    if (!masterWord) {
+      console.warn(`マスターワードID ${masterId} が見つかりません`);
+      return;
+    }
+
+    const fukisokuDataMap = isFukisoku1Check
+      ? (window.fukisoku1DataMap || {})
+      : (window.fukisoku2DataMap || {});
+
+    let updateCount = 0;
+
+    // ✅ ケース1：現在形のマスターが更新された場合
+    Object.entries(fukisokuDataMap).forEach(([rowIdx, data]) => {
+      if (data.meaningMasterId === masterId) {
+        console.log(`✅ 現在形を更新: ${data.present} → ${masterWord.english}`);
+        
+        // fukisokuDataMap を更新
+        data.present = masterWord.english;
+        data.presentPronunciation = masterWord.pronunciation || '';
+        data.presentAudio = masterWord.audio || '';
+        data.meaning = masterWord.japanese || '';
+
+        // tableData も更新
+        if (tableData[rowIdx] && tableData[rowIdx][0]) {
+          tableData[rowIdx][0].english = masterWord.english;
+          tableData[rowIdx][0].pronunciation = masterWord.pronunciation || '';
+          tableData[rowIdx][0].japanese = masterWord.japanese || '';
+        }
+
+        updateCount++;
+      }
+    });
+
+    // ✅ ケース2：過去形のマスターが更新された場合
+    Object.entries(fukisokuDataMap).forEach(([rowIdx, data]) => {
+      if (data.pastMasterId === masterId) {
+        console.log(`✅ 過去形を更新: ${data.past} → ${masterWord.english}`);
+        
+        // fukisokuDataMap を更新
+        data.past = masterWord.english;
+        data.pastPronunciation = masterWord.pronunciation || '';
+        data.pastAudio = masterWord.audio || '';
+
+        updateCount++;
+      }
+    });
+
+    // ✅ ケース3：過去分詞のマスターが更新された場合（②のみ）
+    if (isFukisoku2Check) {
+      Object.entries(fukisokuDataMap).forEach(([rowIdx, data]) => {
+        if (data.pastPartMasterId === masterId) {
+          console.log(`✅ 過去分詞を更新: ${data.pastPart} → ${masterWord.english}`);
+          
+          // fukisokuDataMap を更新
+          data.pastPart = masterWord.english;
+          data.pastPartPronunciation = masterWord.pronunciation || '';
+          data.pastPartAudio = masterWord.audio || '';
+
+          updateCount++;
+        }
+      });
+    }
+
+    // ✅ メモリに保存
+    if (isFukisoku1Check) {
+      window.fukisoku1DataMap = fukisokuDataMap;
+    } else {
+      window.fukisoku2DataMap = fukisokuDataMap;
+    }
+
+    console.log(`✅ ${updateCount}件の不規則動詞データを更新しました`);
+
+    // ✅ テーブルを再描画
+    if (updateCount > 0) {
+      renderTable();
+      hasChanges = true;
+      document.getElementById('saveBtn').disabled = false;
+    }
+
+    return;
+  }
+
+  // ════════════════════════════════════════
+  // 通常レッスンの場合（既存コード）
+  // ════════════════════════════════════════
+  tableData.forEach((row, rowIdx) => {
+    row.forEach((cell, colIdx) => {
+      if (!cell) return;
+
+      if (cell.type === 'word' && cell.masterWordId === masterId) {
+        const masterWord = allWords.find(w => w.id === masterId);
+        if (masterWord) {
+          cell.english = masterWord.english;
+          cell.japanese = masterWord.japanese;
+          cell.pronunciation = masterWord.pronunciation;
+        }
+      } else if (cell.type === 'sentence' && cell.masterSentenceId === masterId) {
+        const masterSentence = allSentences.find(s => s.id === masterId);
+        if (masterSentence) {
+          cell.text = masterSentence.text;
+        }
+      }
+    });
+  });
+
+  // テーブルを再描画
+  renderTable();
+}
+
+/**
+ * ✅ 修正版：refreshLessonSelect()
+ * コールバック関数をサポート（完了後の処理を指定可能）
+ */
+function refreshLessonSelect(callback) {
+  console.log('=== refreshLessonSelect called ===');
+  console.log('現在の state:', JSON.stringify(state, null, 2));
+  
+  const selectElement = document.getElementById('lessonSelect');
+  if (!selectElement) {
+    console.warn('⚠️ lessonSelect が見つかりません');
+    if (callback) callback();
+    return;
+  }
+
+  // ✅ 修正：条件を緩和（state.gradeが空でも大丈夫）
+  if (!state.year || !state.textbook || !state.grade) {
+    console.warn('⚠️ 必要な情報が不足しています:', {
+      year: state.year,
+      textbook: state.textbook,
+      grade: state.grade
+    });
+    if (callback) callback();
+    return;
+  }
+
+  console.log('✅ getLessonListForSave() を呼び出します:', {
+    year: state.year,
+    textbook: state.textbook,
+    grade: state.grade
+  });
+
+  // ✅ 修正：getLessonListForSave() を呼び出す（保存後処理専用）
+  google.script.run
+    .withFailureHandler(err => {
+      console.error('❌ getLessonListForSave error:', err);
+      alert('レッスン一覧の読み込みに失敗しました: ' + err);
+      if (callback) callback();
+    })
+    .withSuccessHandler(lessons => {
+      console.log('✅ getLessonListForSave success, lessons:', lessons);
+      
+      if (!lessons || lessons.length === 0) {
+        console.warn('⚠️ レッスンが見つかりません');
+        selectElement.innerHTML = '<option value="">選択してください</option>';
+      } else {
+        // 選択肢をリセット
+        selectElement.innerHTML = '<option value="">選択してください</option>';
+        
+        // 新しいレッスン一覧を追加
+        lessons.forEach(lesson => {
+          const option = document.createElement('option');
+          option.value = lesson;
+          option.textContent = lesson;
+          selectElement.appendChild(option);
+        });
+        
+        console.log(`✅ ${lessons.length}件のレッスンを追加しました`);
+      }
+
+      // ✅ 修正：「その他」オプションを常に追加
+      const otherOption = document.createElement('option');
+      otherOption.value = 'other';
+      otherOption.textContent = '--- その他 ---';
+      selectElement.appendChild(otherOption);
+      console.log(`✅ 「その他」オプションを追加しました`);
+
+      // セレクトボックスを有効化
+      selectElement.disabled = false;
+      console.log('✅ レッスン選択欄を有効化しました');
+      
+      // ✅ コールバック関数を実行（完了後の処理）
+      if (callback) {
+        console.log('✅ refreshLessonSelect コールバック実行');
+        callback();
+      }
+    })
+    .getLessonListForSave(state.year, state.textbook, state.grade);
+}
+
+/**
+ * ✅ 新規関数：古いレッスン名オプションを選択欄から削除
+ * レッスン名変更時に、編集前のレッスン名を選択欄から削除
+ * 
+ * @param {string} oldLessonName - 削除対象の古いレッスン名
+ */
+function removeOldLessonOption(oldLessonName) {
+  const lessonSelect = document.getElementById('lessonSelect');
+  
+  if (!lessonSelect) {
+    console.warn('⚠️ lessonSelect が見つかりません');
+    return;
+  }
+
+  // 選択欄のオプションを走査
+  const options = lessonSelect.querySelectorAll('option');
+  
+  options.forEach(option => {
+    if (option.value === oldLessonName) {
+      console.log(`🗑️ 古いレッスン名「${oldLessonName}」をオプションから削除`);
+      option.remove();
+    }
+  });
+}
+
+/**
+ * ✅ 修正版：saveLessonNameImmediately()
+ * レッスン名を変更して保存
+ * 完了後に古いレッスン名オプションを削除
+ * 
+ * @param {string} oldLessonName - 元のレッスン名
+ * @param {string} newLessonName - 新しいレッスン名
+ * @param {Function} callback - 保存完了後に実行する関数（オプション）
+ */
+function saveLessonNameImmediately(oldLessonName, newLessonName, callback) {
+  console.log('=== saveLessonNameImmediately called ===');
+  console.log(`oldLessonName: "${oldLessonName}"`);
+  console.log(`newLessonName: "${newLessonName}"`);
+
+  // ローディング表示（簡潔版）
+  showLoadingIndicator('レッスン名を保存中...');
+
+  google.script.run
+    .withFailureHandler(err => {
+      console.error('❌ updateLessonName error:', err);
+      hideLoadingIndicator();
+      alert('❌ レッスン名の保存に失敗しました。\n\nエラー: ' + err);
+    })
+    .withSuccessHandler(result => {
+      hideLoadingIndicator();
+
+      if (result?.success) {
+        console.log(`✅ レッスン名を保存しました (更新数: ${result.updatedCount})`);
+        
+        // ✅ 修正：フラグをリセット
+        state.isEdited = false;
+        state.originalLessonName = state.lesson;
+
+        showSavingIndicator('✅ レッスン名を保存しました');
+
+        // ✅ 新規：古いレッスン名オプションを削除
+        removeOldLessonOption(oldLessonName);
+
+        // ✅ コールバック関数を実行（選択欄更新など）
+        if (callback && typeof callback === 'function') {
+          console.log('✅ saveLessonNameImmediately コールバック実行');
+          callback();
+        }
+      } else {
+        alert('❌ レッスン名の保存に失敗しました。\n\nエラー: ' + (result?.error || '不明なエラー'));
+      }
+    })
+    .updateLessonName(
+      state.year,
+      state.textbook,
+      state.grade,
+      oldLessonName,     // 元の名前
+      newLessonName      // 新しい名前
+    );
+}
+
+/**
+ * ════════════════════════════════════════════════════════
+ * 修正版：handleSave()
+ * レッスン名の変更処理を削除（editLessonTitle で既に処理済み）
+ * ════════════════════════════════════════════════════════
+ */
+
