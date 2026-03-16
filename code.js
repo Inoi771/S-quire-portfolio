@@ -4034,8 +4034,9 @@ function escapeHtml(s) {
 const scriptCache = CacheService.getScriptCache();
 
 function getConfig() {
+  const folderId = getScriptProperty('VOCABULARY_FOLDER_ID') || getScriptProperty('ENGLISHWORDS_FOLDER_ID');
   const config = {
-    VOCABULARY_FOLDER_ID: getScriptProperty('VOCABULARY_FOLDER_ID'),
+    VOCABULARY_FOLDER_ID: folderId,
     GITHUB_BASE_URL: getScriptProperty('GITHUB_BASE_URL'),
     HOMEPAGE_URL: getScriptProperty('HOMEPAGE_URL')
   };
