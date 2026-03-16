@@ -1,3 +1,7 @@
+/**
+ * ✅ 完全修正版：handleSave()
+ * レッスン名の変更処理は削除（editLessonTitle で既に処理済み）
+ */
 function handleSave() {
   console.log('=== handleSave called ===');
   console.log('state:', JSON.stringify(state, null, 2));
@@ -1540,28 +1544,34 @@ function updateLoadButton() {
 
   function initTabSwitching() {
     console.log('🚀 タブ切り替え機能を初期化中...');
-    
-    const tabHeader = document.querySelector('.tab-header');
-    if (!tabHeader) {
-      console.warn('⚠️ .tab-header が見つかりません');
+
+    // data-tab 属性を持つボタンに直接リスナーを設定（イベント委譲より確実）
+    const tabBtns = document.querySelectorAll('.tab-btn[data-tab]');
+    if (tabBtns.length === 0) {
+      console.warn('⚠️ .tab-btn[data-tab] が見つかりません');
       return;
     }
-    
-    console.log('✅ .tab-header を検出しました');
-    
-    // イベントリスナーを登録
-    tabHeader.addEventListener('click', function(e) {
-      const btn = e.target.closest('.tab-btn');
-      if (!btn) return;
-      
-      const tabName = btn.getAttribute('data-tab');
-      if (!tabName) return;
-      
-      console.log('📌 タブ切り替え:', tabName);
-      switchTab(tabName);
+
+    tabBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const tabName = btn.getAttribute('data-tab');
+        console.log('📌 タブ切り替え:', tabName);
+        switchTab(tabName);
+      });
     });
-    
-    console.log('✅ タブ切り替え機能が正常に初期化されました');
+
+    // フォールバック: tab-header へのイベント委譲も残す
+    const tabHeader = document.querySelector('.tab-header');
+    if (tabHeader) {
+      tabHeader.addEventListener('click', function(e) {
+        const btn = e.target.closest('.tab-btn[data-tab]');
+        if (!btn) return;
+        const tabName = btn.getAttribute('data-tab');
+        switchTab(tabName);
+      });
+    }
+
+    console.log('✅ タブ切り替え機能が正常に初期化されました（' + tabBtns.length + ' ボタン）');
   }
 
   function switchTab(tabName) {
@@ -1929,11 +1939,11 @@ function generatePdfSuffix(displayItems) {
 
   function initApp() {
     console.log('🚀 アプリケーション起動');
-    initEditor();
-    initWordbook();
-    initTabSwitching();
-    initPdfExport();
-    initSettingsTab();
+    try { initEditor(); } catch(e) { console.error('❌ initEditor エラー:', e); }
+    try { initWordbook(); } catch(e) { console.error('❌ initWordbook エラー:', e); }
+    try { initTabSwitching(); } catch(e) { console.error('❌ initTabSwitching エラー:', e); }
+    try { initPdfExport(); } catch(e) { console.error('❌ initPdfExport エラー:', e); }
+    try { initSettingsTab(); } catch(e) { console.error('❌ initSettingsTab エラー:', e); }
   }
 
   // ────────────────────────────────────────────

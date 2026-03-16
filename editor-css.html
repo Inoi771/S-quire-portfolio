@@ -12,9 +12,10 @@
 
     .editor-container {
       display: flex;
-      height: 100vh;
       background-color: #fff;
       flex-direction: column;
+      flex: 1;
+      overflow: hidden;
     }
 
     .top-bar {
@@ -776,14 +777,6 @@
     #settings-tab {
       flex-direction: column;
       overflow-y: auto;
-    }
-
-    /* 既存の .editor-container を調整 */
-    .editor-container {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-      flex-direction: column;
     }
 
 .word-table td.drag-forbidden {
