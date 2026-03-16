@@ -9,10 +9,19 @@ function initSettingsTab() {
 }
 
 function loadSettingsValues() {
-    showLoadingIndicator('設定を読み込み中...');
+    // 全画面オーバーレイではなくインライン表示（他タブへの切り替えをブロックしない）
+    const container = document.querySelector('.settings-container');
+    let loadingMsg = document.getElementById('settingsLoadingMsg');
+    if (!loadingMsg && container) {
+        loadingMsg = document.createElement('div');
+        loadingMsg.id = 'settingsLoadingMsg';
+        loadingMsg.textContent = '⏳ 設定を読み込み中...';
+        loadingMsg.style.cssText = 'padding: 10px; color: #666; font-size: 13px;';
+        container.prepend(loadingMsg);
+    }
     google.script.run
         .withSuccessHandler(data => {
-            hideLoadingIndicator();
+            if (loadingMsg) loadingMsg.remove();
             if (!data.success) {
                 alert('設定の読み込みに失敗しました: ' + (data.error || '不明なエラー'));
                 return;
@@ -24,7 +33,7 @@ function loadSettingsValues() {
             });
         })
         .withFailureHandler(err => {
-            hideLoadingIndicator();
+            if (loadingMsg) loadingMsg.remove();
             alert('設定の読み込みに失敗しました: ' + err);
         })
         .getScriptPropertiesForSettings();
