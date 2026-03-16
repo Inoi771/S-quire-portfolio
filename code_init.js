@@ -82,7 +82,7 @@ function setupLessonOrderHeader_(sheet) {
  */
 function validateScriptProperties() {
   var required = ['ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID', 'GITHUB_BASE_URL'];
-  var optional = ['VOCABULARY_FOLDER_ID', 'HOMEPAGE_URL', 'GOOGLE_CLOUD_TTS_API_KEY', 'GITHUB_TOKEN'];
+  var optional = ['HOMEPAGE_URL', 'GOOGLE_CLOUD_TTS_API_KEY', 'GITHUB_TOKEN'];
 
   var missing = [];
   var warnings = [];
@@ -256,18 +256,9 @@ function setupScriptProperties() {
     var folder = DriveApp.createFolder('ENGLISHWORDS');
     folderId = folder.getId();
     props.setProperty('ENGLISHWORDS_FOLDER_ID', folderId);
-    props.setProperty('VOCABULARY_FOLDER_ID', folderId);
     created.push('ENGLISHWORDS_FOLDER_ID = ' + folderId + '（Drive フォルダ「ENGLISHWORDS」を作成）');
-    created.push('VOCABULARY_FOLDER_ID = ' + folderId + '（ENGLISHWORDS_FOLDER_ID と同値）');
   } else {
     existing.push('ENGLISHWORDS_FOLDER_ID は設定済み');
-    // VOCABULARY_FOLDER_ID が未設定なら同じ値をセット
-    if (!props.getProperty('VOCABULARY_FOLDER_ID')) {
-      props.setProperty('VOCABULARY_FOLDER_ID', folderId);
-      created.push('VOCABULARY_FOLDER_ID = ' + folderId + '（ENGLISHWORDS_FOLDER_ID と同値）');
-    } else {
-      existing.push('VOCABULARY_FOLDER_ID は設定済み');
-    }
   }
 
   // ── ENGLISHWORDS_SHEET_ID ──

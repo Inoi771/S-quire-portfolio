@@ -873,7 +873,6 @@ function getScriptPropertiesForSettings() {
 /**
  * 設定タブから Script Properties を保存する
  * 空文字の場合は既存の値を上書きしない
- * ENGLISHWORDS_FOLDER_ID を保存する際は VOCABULARY_FOLDER_ID にも同じ値を設定する
  * @param {Object} settings - { ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
  * @returns {Object} { success, error? }
  */
@@ -888,9 +887,6 @@ function saveScriptProperties(settings) {
     keys.forEach(function(k) {
       if (settings[k] !== undefined && settings[k] !== '') {
         props.setProperty(k, settings[k]);
-        if (k === 'ENGLISHWORDS_FOLDER_ID') {
-          props.setProperty('VOCABULARY_FOLDER_ID', settings[k]);
-        }
       }
     });
     Logger.log('✅ Script Properties を設定タブから更新しました');
