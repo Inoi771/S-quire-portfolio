@@ -2087,27 +2087,37 @@ function generateQrCode() {
 
 function startBulkAudioGeneration() {
   const batchSize = 50;
-  if (!confirm('音声ファイルが未生成の単語・英文に TTS 音声を一括生成します。\n（1回あたり最大 ' + batchSize + ' 件処理します）\n\n続行しますか？')) return;
-  showLoadingIndicator('音声を生成中... (最大4.5分)');
-  google.script.run
-    .withSuccessHandler(function(result) {
-      hideLoadingIndicator();
-      if (!result.success) {
-        alert('❌ エラー:\n' + (result.errors || []).join('\n'));
-        return;
-      }
-      let msg = '✅ ' + result.processed + ' 件の音声を生成しました。';
-      if (result.errors && result.errors.length > 0)
-        msg += '\n⚠️ ' + result.errors.length + ' 件でエラー:\n' + result.errors.slice(0, 5).join('\n');
-      if (result.remaining > 0)
-        msg += '\n\n残り約 ' + result.remaining + ' 件あります。続けてもう一度実行してください。';
-      alert(msg);
-    })
-    .withFailureHandler(function(err) {
-      hideLoadingIndicator();
-      alert('❌ エラー: ' + err);
-    })
-    .bulkGenerateAudio('all', batchSize);
+  if (!confirm('音声ファイルが未生成の単語・英文に TTS 音声を一括生成します。\n残りがある場合は自動的に続けて処理します。\n\n続行しますか？')) return;
+
+  function runBatch(totalProcessed, allErrors) {
+    showLoadingIndicator('音声を生成中... ' + totalProcessed + ' 件完了');
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result.success) {
+          hideLoadingIndicator();
+          alert('❌ エラー:\n' + (result.errors || []).join('\n'));
+          return;
+        }
+        var newTotal = totalProcessed + result.processed;
+        var newErrors = allErrors.concat(result.errors || []);
+        if (result.remaining > 0) {
+          runBatch(newTotal, newErrors);
+        } else {
+          hideLoadingIndicator();
+          var msg = '✅ 合計 ' + newTotal + ' 件の音声を生成しました。';
+          if (newErrors.length > 0)
+            msg += '\n⚠️ ' + newErrors.length + ' 件でエラー:\n' + newErrors.slice(0, 5).join('\n');
+          alert(msg);
+        }
+      })
+      .withFailureHandler(function(err) {
+        hideLoadingIndicator();
+        alert('❌ エラー: ' + err);
+      })
+      .bulkGenerateAudio('all', batchSize);
+  }
+
+  runBatch(0, []);
 }
 
 // onclick 属性から呼べるようにグローバルに公開
