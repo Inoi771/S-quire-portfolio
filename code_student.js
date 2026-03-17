@@ -203,7 +203,7 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
     const resultQuestions = questions.map(q => {
       if (!q.audio || !githubBase) return { ...q, audio: null };
       const fileName = q.audio.trim();
-      const audioUrl = `${githubBase}/sounds/${fileName.charAt(0).toLowerCase()}/${encodeURIComponent(fileName)}?v=${new Date().getTime()}`;
+      const audioUrl = `${githubBase}/audio/${fileName.charAt(0).toLowerCase()}/${encodeURIComponent(fileName)}?v=${new Date().getTime()}`;
       return { ...q, audio: audioUrl };
     });
 
@@ -240,7 +240,7 @@ function generatePronounQuestions(githubBase, startNumber) {
       const w = row[col];
       questions.push({
         wordId: '', english: w.english, pronunciation: '', japanese: row.japanese,
-        audio: w.audio ? `${githubBase}/sounds/${w.audio.charAt(0).toLowerCase()}/${w.audio}?v=${timestamp}` : null,
+        audio: w.audio ? `${githubBase}/audio/${w.audio.charAt(0).toLowerCase()}/${w.audio}?v=${timestamp}` : null,
         lesson: '曜日・月・季節・代名詞', cellId: '', formType: 'present',
         questionNumber: num, isPronoun: true, pronounColumn: col
       });

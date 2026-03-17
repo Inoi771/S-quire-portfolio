@@ -1203,6 +1203,103 @@
   /* フォーカスリングなし（照準で視認性を確保） */
 }
 
+
+    /* ════════════════════════════════════════════════════════
+     * 設定タブ CSS
+     * ════════════════════════════════════════════════════════ */
+    .settings-container {
+      max-width: 700px;
+      margin: 30px auto;
+      padding: 0 20px 40px;
+    }
+    .settings-title {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 24px;
+      color: #333;
+    }
+    .settings-section {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .settings-section h3 {
+      font-size: 15px;
+      font-weight: bold;
+      color: #444;
+      margin-bottom: 8px;
+    }
+    .settings-desc {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .settings-field {
+      margin-bottom: 14px;
+    }
+    .settings-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    .settings-field input[type="text"],
+    .settings-field input[type="password"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: 'Meiryo', Arial, sans-serif;
+      box-sizing: border-box;
+    }
+    .settings-password-wrap {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .settings-password-wrap input {
+      flex: 1;
+    }
+    .settings-password-wrap button {
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .settings-auto-btn {
+      padding: 8px 16px;
+      background: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: 'Meiryo', Arial, sans-serif;
+      margin-bottom: 14px;
+    }
+    .settings-auto-btn:hover { background: #1976D2; }
+    .settings-save-btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+      font-family: 'Meiryo', Arial, sans-serif;
+    }
+    .settings-save-btn:hover { background: #45a049; }
+
   </style>
 </head>
 <body>
@@ -1213,6 +1310,8 @@
     <div class="tab-header">
       <button class="tab-btn active" data-tab="editor">✏️ エディター</button>
       <button class="tab-btn" data-tab="wordbook">📚 単語帳作成</button>
+      <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
+      <button onclick="startBulkAudioGeneration()" style="margin-left: auto; background: #4CAF50; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; font-family: 'Meiryo', Arial, sans-serif;">🔊 音声一括生成</button>
     </div>
 
     <!-- タブ1：エディター（既存コンテンツ） -->
@@ -1440,6 +1539,85 @@
           <button class="btn-reset" id="cancelOrderBtn">キャンセル</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- タブ3：設定 -->
+  <div class="tab-content" id="settings-tab">
+    <div class="settings-container">
+      <h2 class="settings-title">⚙️ アプリ設定</h2>
+
+      <!-- Drive設定 -->
+      <div class="settings-section">
+        <h3>Google Drive 設定</h3>
+        <p class="settings-desc">Drive フォルダとマスタースプレッドシートの ID を設定します。未設定の場合は「自動作成」で新規作成できます。</p>
+        <button id="auto-setup-btn" class="settings-auto-btn">🔧 Drive リソースを自動作成</button>
+        <div class="settings-field">
+          <label>ENGLISHWORDS_FOLDER_ID</label>
+          <input type="text" id="setting-ENGLISHWORDS_FOLDER_ID" placeholder="Google Drive フォルダ ID">
+        </div>
+        <div class="settings-field">
+          <label>ENGLISHWORDS_SHEET_ID</label>
+          <input type="text" id="setting-ENGLISHWORDS_SHEET_ID" placeholder="マスタースプレッドシート ID">
+        </div>
+      </div>
+
+      <!-- GitHub設定 -->
+      <div class="settings-section">
+        <h3>GitHub 設定（音声ファイル）</h3>
+        <p class="settings-desc">音声ファイルをホストする GitHub リポジトリの情報を設定します。</p>
+        <div class="settings-field">
+          <label>GITHUB_BASE_URL</label>
+          <input type="text" id="setting-GITHUB_BASE_URL" placeholder="https://raw.githubusercontent.com/ユーザー名/リポジトリ名/main">
+        </div>
+        <div class="settings-field">
+          <label>GITHUB_TOKEN</label>
+          <div class="settings-password-wrap">
+            <input type="password" id="setting-GITHUB_TOKEN" placeholder="ghp_...">
+            <button type="button" onclick="togglePasswordVisibility('setting-GITHUB_TOKEN')">👁</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 音声生成設定 -->
+      <div class="settings-section">
+        <h3>音声自動生成設定（Google Cloud TTS）</h3>
+        <p class="settings-desc">音声ファイルを自動生成する際に使用する Google Cloud TTS の API キーです。</p>
+        <div class="settings-field">
+          <label>GOOGLE_CLOUD_TTS_API_KEY</label>
+          <div class="settings-password-wrap">
+            <input type="password" id="setting-GOOGLE_CLOUD_TTS_API_KEY" placeholder="AIza...">
+            <button type="button" onclick="togglePasswordVisibility('setting-GOOGLE_CLOUD_TTS_API_KEY')">👁</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 音声ファイル名一括割り当て -->
+      <div class="settings-section">
+        <h3>音声ファイル名の一括割り当て</h3>
+        <p class="settings-desc">audio 列が空の単語・英文に対してファイル名を自動で付与します。TTS 音声生成は行いません。付与後は「🔊 音声一括生成」ボタンで音声ファイルを生成してください。</p>
+        <button id="fill-filenames-btn" class="settings-auto-btn" onclick="startFillMissingAudioFilenames()">📝 ファイル名を一括割り当て</button>
+      </div>
+
+      <!-- その他 -->
+      <div class="settings-section">
+        <h3>その他</h3>
+        <div class="settings-field">
+          <label>HOMEPAGE_URL（任意）</label>
+          <input type="text" id="setting-HOMEPAGE_URL" placeholder="https://...">
+          <button type="button" id="qr-generate-btn" onclick="generateQrCode()">QRコード生成</button>
+        </div>
+        <div id="qr-code-area" style="display:none; margin-top:16px; text-align:center;">
+          <img id="qr-code-img" src="" alt="QRコード" style="width:200px; height:200px; border:1px solid #ddd; border-radius:8px;">
+          <div style="margin-top:10px;">
+            <a id="qr-download-link" href="" download="qrcode.png">
+              <button type="button" class="settings-auto-btn">⬇️ QRコードをダウンロード</button>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <button id="save-settings-btn" class="settings-save-btn">💾 設定を保存</button>
     </div>
   </div>
 

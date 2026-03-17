@@ -966,3 +966,70 @@ function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allS
   }
 }
 
+
+// ────────────────────────────────────────────
+// 設定タブ用バックエンド関数
+// ────────────────────────────────────────────
+
+/**
+ * 設定タブ用の Script Properties 値を返す
+ * @returns {Object} { success, ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
+ */
+function getScriptPropertiesForSettings() {
+  try {
+    const keys = [
+      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
+      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+    ];
+    const result = { success: true };
+    keys.forEach(k => { result[k] = getScriptProperty(k) || ''; });
+    return result;
+  } catch (e) {
+    Logger.log('Error getScriptPropertiesForSettings: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 設定タブからの保存処理
+ * ENGLISHWORDS_FOLDER_ID 保存時は VOCABULARY_FOLDER_ID も自動同期する
+ * @param {Object} settings - キーと値のマップ
+ * @returns {Object} { success }
+ */
+function saveScriptProperties(settings) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const keys = [
+      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
+      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+    ];
+    keys.forEach(k => {
+      if (settings[k] !== undefined && settings[k] !== '') {
+        props.setProperty(k, settings[k]);
+        if (k === 'ENGLISHWORDS_FOLDER_ID') {
+          props.setProperty('VOCABULARY_FOLDER_ID', settings[k]);
+        }
+      }
+    });
+    Logger.log('✅ Script Properties を設定タブから更新しました');
+    return { success: true };
+  } catch (e) {
+    Logger.log('Error saveScriptProperties: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Drive リソース自動作成（code_init.js の setupScriptProperties を呼び出す）
+ * @returns {Object} { success, created, existing, manualRequired }
+ */
+function runSetupScriptProperties() {
+  try {
+    return setupScriptProperties();
+  } catch (e) {
+    Logger.log('Error runSetupScriptProperties: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
