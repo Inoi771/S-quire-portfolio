@@ -590,17 +590,35 @@ function addMasterWord(english, pronunciation, japanese) {
     const newWordId = maxId + 1;
     const insertRow = lastRow + 1;
 
+    // ファイル名を事前生成（TTS生成前にシートに保存）
+    const audioFilename = generateAudioFilename(english, newWordId, japanese);
+
     wordSheet.getRange(insertRow, 1, 1, 5).setValues([[
       newWordId,
       english,
       pronunciation,
       japanese,
-      ''
+      audioFilename
     ]]);
 
-    Logger.log(`✅ マスター単語を追加しました: 行${insertRow} (ID: ${newWordId}, 英語: ${english})`);
+    Logger.log(`✅ マスター単語を追加しました: 行${insertRow} (ID: ${newWordId}, 英語: ${english}, audio: ${audioFilename})`);
 
-    return { success: true, wordId: newWordId };
+    // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
+    let finalAudio = audioFilename;
+    try {
+      const generated = generateAndUploadAudio(english, newWordId, japanese);
+      if (generated) {
+        // generateAudioFilename と同じ名前になるはずだが、念のり確認して更新
+        if (generated !== audioFilename) {
+          wordSheet.getRange(insertRow, 5).setValue(generated);
+          finalAudio = generated;
+        }
+      }
+    } catch (ttsErr) {
+      Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${ttsErr}`);
+    }
+
+    return { success: true, wordId: newWordId, audio: finalAudio };
   } catch (e) {
     Logger.log('Error addMasterWord: ' + e);
     return { success: false, error: e.toString() };
@@ -638,20 +656,34 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
     const newSentenceId = maxId + 1;
     const insertRow = lastRow + 1;
 
-    // ✅ 修正：5列目に日本語とaudio列を含める
+    // ファイル名を事前生成（TTS生成前にシートに保存）
+    const audioFilename = generateAudioFilename(text, newSentenceId, japanese || '');
+
     sentenceSheet.getRange(insertRow, 1, 1, 5).setValues([[
       newSentenceId,
       text,
-      pronunciation,  // ✅ 発音を保存
-      japanese || '',   // ✅ 修正：日本語を保存
-      ''              // ✅ 新規：audio列を保存（初期値は空）
+      pronunciation,
+      japanese || '',
+      audioFilename
     ]]);
 
-    Logger.log(`✅ マスター文を追加しました: 行${insertRow} (ID: ${newSentenceId}, 文: ${text})`);
+    Logger.log(`✅ マスター文を追加しました: 行${insertRow} (ID: ${newSentenceId}, 文: ${text}, audio: ${audioFilename})`);
     Logger.log(`   発音: ${pronunciation || '（なし）'}`);
     Logger.log(`   日本語: ${japanese || '（なし）'}`);
 
-    return { success: true, sentenceId: newSentenceId };
+    // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
+    let finalAudio = audioFilename;
+    try {
+      const generated = generateAndUploadAudio(text, newSentenceId, japanese || '');
+      if (generated && generated !== audioFilename) {
+        sentenceSheet.getRange(insertRow, 5).setValue(generated);
+        finalAudio = generated;
+      }
+    } catch (ttsErr) {
+      Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${ttsErr}`);
+    }
+
+    return { success: true, sentenceId: newSentenceId, audio: finalAudio };
   } catch (e) {
     Logger.log('Error addMasterSentence: ' + e);
     return { success: false, error: e.toString() };
