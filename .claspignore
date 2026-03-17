@@ -4,3 +4,11 @@ subcode.js
 .git/
 .claspignore
 node_modules/
+editor-header.html
+editor-footer.html
+editor-js1.html
+editor-js2.html
+editor-js3.html
+editor-js4.html
+editor-js5.html
+.gitignore
