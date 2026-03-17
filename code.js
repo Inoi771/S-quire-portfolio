@@ -7,8 +7,7 @@ function doGet(e) {
   const accessKey = getScriptProperty('TEACHER_ACCESS_KEY');
   if (accessKey && e && e.parameter && e.parameter.key === accessKey) {
     return HtmlService
-      .createTemplateFromFile('editor')
-      .evaluate()
+      .createHtmlOutputFromFile('editor')
       .setTitle('単語帳作成アプリ');
   }
   try {
@@ -28,13 +27,6 @@ function doGet(e) {
 // ════════════════════════════════════════════════════════
 // ユーティリティ関数（基本的なヘルパー）
 // ════════════════════════════════════════════════════════
-/**
- * HTML テンプレートから他のファイルをインクルードする
- * editor.html の <?!= include('editor-css') ?> で使用
- */
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
-}
 /**
  * Script Propertiesから値を取得
  * @param {string} key - プロパティキー
