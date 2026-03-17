@@ -237,7 +237,7 @@ function ensureGithubAudioFolder(repo, firstChar, headers) {
     contentType: 'application/json',
     payload: JSON.stringify({
       message: 'Create audio/' + firstChar + '/ folder',
-      content: Utilities.base64Encode(' ')  // 1バイトの空コンテンツ
+      content: Utilities.base64Encode(Utilities.newBlob(' ').getBytes())  // 1バイトの空コンテンツ
     }),
     muteHttpExceptions: true
   });
