@@ -2085,6 +2085,31 @@ function generateQrCode() {
   if (area) area.style.display = 'block';
 }
 
+function startBulkAudioGeneration() {
+  const batchSize = 50;
+  if (!confirm('音声ファイルが未生成の単語・英文に TTS 音声を一括生成します。\n（1回あたり最大 ' + batchSize + ' 件処理します）\n\n続行しますか？')) return;
+  showLoadingIndicator('音声を生成中... (最大4.5分)');
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoadingIndicator();
+      if (!result.success) {
+        alert('❌ エラー:\n' + (result.errors || []).join('\n'));
+        return;
+      }
+      let msg = '✅ ' + result.processed + ' 件の音声を生成しました。';
+      if (result.errors && result.errors.length > 0)
+        msg += '\n⚠️ ' + result.errors.length + ' 件でエラー:\n' + result.errors.slice(0, 5).join('\n');
+      if (result.remaining > 0)
+        msg += '\n\n残り約 ' + result.remaining + ' 件あります。続けてもう一度実行してください。';
+      alert(msg);
+    })
+    .withFailureHandler(function(err) {
+      hideLoadingIndicator();
+      alert('❌ エラー: ' + err);
+    })
+    .bulkGenerateAudio('all', batchSize);
+}
+
 // onclick 属性から呼べるようにグローバルに公開
 window.togglePasswordVisibility = togglePasswordVisibility;
 window.generateQrCode = generateQrCode;
