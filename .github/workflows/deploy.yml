@@ -35,6 +35,9 @@ jobs:
       - name: Authenticate clasp
         run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
+      - name: Build editor.html from source files
+        run: cat editor-header.html editor-js1.html editor-js2.html editor-js3.html editor-js4.html editor-js5.html editor-footer.html > editor.html
+
       - name: Push to GAS
         run: clasp push --force
 
