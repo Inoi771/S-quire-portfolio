@@ -114,8 +114,8 @@ function parseGithubRepoFromUrl(githubBaseUrl) {
 // 月間使用量の追跡・制限
 // ────────────────────────────────────────────
 
-/** 月間文字数の上限（Standard音声の無料枠400万文字に対し、安全マージン込み） */
-var TTS_MONTHLY_CHAR_LIMIT = 3500000;
+/** 月間文字数の上限（Neural2/WaveNet音声の無料枠100万文字） */
+var TTS_MONTHLY_CHAR_LIMIT = 1000000;
 
 /**
  * 月間使用文字数をチェックし、上限以内なら加算して true を返す
@@ -173,7 +173,7 @@ function callGoogleCloudTts(text) {
     var url = 'https://texttospeech.googleapis.com/v1/text:synthesize?key=' + apiKey;
     var payload = {
       input: { text: text },
-      voice: { languageCode: 'en-US', ssmlGender: 'FEMALE' },
+      voice: { languageCode: 'en-US', name: 'en-US-Neural2-F' },
       audioConfig: { audioEncoding: 'MP3' }
     };
     var options = {
