@@ -2133,7 +2133,8 @@ function startBulkAudioGeneration() {
         google.script.run
           .withSuccessHandler(function(progress) {
             if (!progress) return;
-            var msg = '音声を生成中... ' + progress.processed + ' / ' + totalItems + ' 件完了';
+            var checkedCount = (progress.processed || 0) + (progress.skipped || 0);
+            var msg = '音声を生成中... ' + checkedCount + ' / ' + totalItems + ' 件完了';
             if (progress.skipped > 0) {
               msg += '\n(' + progress.skipped + ' 件は既存のためスキップ)';
             }
