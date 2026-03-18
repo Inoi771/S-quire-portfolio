@@ -493,7 +493,7 @@ function fetchExistingAudioFilesFromGithub(repo, headers) {
 
     if (response.getResponseCode() !== 200) {
       Logger.log('⚠️ GitHub Tree API エラー: ' + response.getResponseCode());
-      return null;
+      return { map: {}, complete: false };
     }
 
     var treeData = JSON.parse(response.getContentText());
@@ -511,15 +511,17 @@ function fetchExistingAudioFilesFromGithub(repo, headers) {
     }
 
     if (treeData.truncated) {
-      Logger.log('⚠️ Tree API: 結果が多すぎて一部省略されました（truncated=true）。個別チェックにフォールバックします');
-      return null;
+      // truncated でも部分マップを返す（マップに含まれるファイルは確実にスキップ可能）
+      // マップに含まれないファイルのみ個別チェックにフォールバック
+      Logger.log('⚠️ Tree API: truncated=true。部分マップ（' + Object.keys(existingFiles).length + ' 件）を使用。残りは個別チェック');
+      return { map: existingFiles, complete: false };
     }
 
-    Logger.log('📋 既存音声ファイル数（一括取得）: ' + Object.keys(existingFiles).length);
-    return existingFiles;
+    Logger.log('📋 既存音声ファイル数（一括取得・完全）: ' + Object.keys(existingFiles).length);
+    return { map: existingFiles, complete: true };
   } catch (e) {
     Logger.log('⚠️ fetchExistingAudioFilesFromGithub エラー: ' + e);
-    return null;
+    return { map: {}, complete: false };
   }
 }
 
@@ -784,13 +786,14 @@ function fillMissingAudioFilenames() {
  * @param {number} batchSize - 1回の実行で処理する件数（デフォルト 50）
  * @returns {Object} { success, processed, remaining, errors }
  */
-function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
+function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
   var cache = CacheService.getScriptCache();
   var progressKey = 'TTS_PROGRESS';
 
   try {
     batchSize = batchSize || 50;
     cumulativeProcessed = cumulativeProcessed || 0;
+    startIndex = startIndex || 0; // どの行から再開するか（前バッチの続き）
     var MAX_RUNTIME_MS = 4.5 * 60 * 1000; // 4.5分
     var startTime = Date.now();
 
@@ -813,10 +816,11 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
       'User-Agent': 'GAS-EnglishTest-TTS'
     };
 
-    // 既存ファイルを一括取得（高速化: 個別APIコールをなくす）
-    var existingAudioMap = fetchExistingAudioFilesFromGithub(repo, headers);
-    var useMapLookup = existingAudioMap !== null;
-    Logger.log(useMapLookup ? '✅ 一括ファイルリスト取得成功' : '⚠️ フォールバック: 個別チェックモード');
+    // 既存ファイルを一括取得（truncated時は部分マップ+個別チェックのハイブリッド）
+    var audioFileResult = fetchExistingAudioFilesFromGithub(repo, headers);
+    var existingAudioMap = audioFileResult.map;
+    var mapComplete = audioFileResult.complete;
+    Logger.log(mapComplete ? '✅ 一括ファイルリスト取得成功（完全）' : '⚠️ 部分マップ取得（ハイブリッドモード）: ' + Object.keys(existingAudioMap).length + ' 件');
 
     var englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     var ss = SpreadsheetApp.openById(englishwordsSheetId);
@@ -824,6 +828,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
     var processed = 0;
     var skippedCount = 0;
     var remaining = 0;
+    var nextStartIndex = startIndex; // 次バッチの開始位置
     var errors = [];
 
     var sheets = [];
@@ -845,6 +850,8 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
       currentItem: ''
     }), 600);
 
+    var absoluteIndex = 0; // シート全体を通じた行の絶対インデックス
+
     for (var s = 0; s < sheets.length; s++) {
       var sheetInfo = sheets[s];
       var sheet = sheetInfo.sheet;
@@ -864,16 +871,30 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
         if (!audio || String(audio).trim() === '') continue;
         if (!english || String(english).trim() === '') continue;
 
-        // 処理上限チェック
-        if (processed >= batchSize) { remaining++; continue; }
-        if (Date.now() - startTime > MAX_RUNTIME_MS) { remaining++; continue; }
+        absoluteIndex++;
+
+        // 前バッチで処理済みの行はスキップ（無限ループ防止）
+        if (absoluteIndex <= startIndex) continue;
+
+        // 処理上限チェック（生成件数上限）
+        if (processed >= batchSize) { remaining++; nextStartIndex = absoluteIndex - 1; continue; }
+        // 実行時間上限チェック
+        if (Date.now() - startTime > MAX_RUNTIME_MS) { remaining++; nextStartIndex = absoluteIndex - 1; continue; }
 
         var filename = String(audio).trim();
 
-        // GitHub ファイル存在確認（一括取得マップ or 個別API フォールバック）
-        var fileExists = useMapLookup
-          ? (existingAudioMap[filename] === true)
-          : checkAudioExistsOnGithub(filename, repo, headers);
+        // GitHub ファイル存在確認
+        // - マップに含まれる → 確実に存在 → スキップ
+        // - マップに含まれないかつマップ完全 → 存在しない → 生成
+        // - マップに含まれないかつマップ不完全（truncated） → 個別チェック
+        var fileExists;
+        if (existingAudioMap[filename] === true) {
+          fileExists = true;
+        } else if (mapComplete) {
+          fileExists = false;
+        } else {
+          fileExists = checkAudioExistsOnGithub(filename, repo, headers);
+        }
 
         if (fileExists) {
           Logger.log('⏭️ スキップ（既存）: ' + filename);
@@ -925,8 +946,8 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
       currentItem: ''
     }), 60);
 
-    Logger.log('✅ bulkGenerateAudio 完了: 処理=' + processed + ', スキップ=' + skippedCount + ', 残り=' + remaining + ', エラー=' + errors.length);
-    return { success: true, processed: processed, skipped: skippedCount, remaining: remaining, errors: errors };
+    Logger.log('✅ bulkGenerateAudio 完了: 処理=' + processed + ', スキップ=' + skippedCount + ', 残り=' + remaining + ', 次開始=' + nextStartIndex + ', エラー=' + errors.length);
+    return { success: true, processed: processed, skipped: skippedCount, remaining: remaining, nextStartIndex: nextStartIndex, errors: errors };
   } catch (e) {
     Logger.log('❌ bulkGenerateAudio エラー: ' + e);
     cache.put(progressKey, JSON.stringify({

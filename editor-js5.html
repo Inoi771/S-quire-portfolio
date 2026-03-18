@@ -2147,7 +2147,7 @@ function startBulkAudioGeneration() {
       }, 3000);
 
       // バッチ処理を再帰実行
-      function runBatch(totalProcessed, totalSkipped, allErrors) {
+      function runBatch(totalProcessed, totalSkipped, allErrors, startIndex) {
         google.script.run
           .withSuccessHandler(function(result) {
             if (!result.success) {
@@ -2160,7 +2160,8 @@ function startBulkAudioGeneration() {
             var newSkipped = totalSkipped + (result.skipped || 0);
             var newErrors = allErrors.concat(result.errors || []);
             if (result.remaining > 0) {
-              runBatch(newTotal, newSkipped, newErrors);
+              // nextStartIndex を次バッチに渡して同じ行を繰り返さないようにする
+              runBatch(newTotal, newSkipped, newErrors, result.nextStartIndex || 0);
             } else {
               clearInterval(pollingTimer);
               hideLoadingIndicator();
@@ -2176,10 +2177,10 @@ function startBulkAudioGeneration() {
             hideLoadingIndicator();
             alert('❌ エラー: ' + err);
           })
-          .bulkGenerateAudio('all', batchSize, totalProcessed);
+          .bulkGenerateAudio('all', batchSize, totalProcessed, startIndex || 0);
       }
 
-      runBatch(0, 0, []);
+      runBatch(0, 0, [], 0);
     })
     .withFailureHandler(function(err) {
       hideLoadingIndicator();
