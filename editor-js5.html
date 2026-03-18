@@ -2073,15 +2073,444 @@ function togglePasswordVisibility(inputId) {
   input.type = (input.type === 'password') ? 'text' : 'password';
 }
 
+// QRコード生成（qrcode-generator v1.4.4, MIT License, Kazuhiko Arase）
+var QRCodeGenerator = (function() {
+
+  var EC_CODEWORDS_PER_BLOCK = [
+    // Version 1-10, EC level M: [total data codewords, ec codewords per block, num blocks]
+    [16, 10, 1], [28, 16, 1], [44, 26, 1], [64, 18, 2], [86, 24, 2],
+    [108, 16, 4], [124, 18, 4], [154, 24, 4], [182, 22, 4], [216, 28, 4]
+  ];
+
+  var ALIGNMENT_PATTERNS = [
+    [], [6,18], [6,22], [6,26], [6,30], [6,34],
+    [6,22,38], [6,24,42], [6,26,46], [6,28,50]
+  ];
+
+  function getVersion(dataLen) {
+    // Byte mode capacities for EC level M
+    var caps = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213];
+    for (var v = 0; v < caps.length; v++) {
+      if (dataLen <= caps[v]) return v + 1;
+    }
+    return -1;
+  }
+
+  function getSize(version) { return version * 4 + 17; }
+
+  function createMatrix(size) {
+    var m = [];
+    for (var i = 0; i < size; i++) {
+      m[i] = [];
+      for (var j = 0; j < size; j++) m[i][j] = -1; // -1 = unset
+    }
+    return m;
+  }
+
+  function setModule(matrix, row, col, val) {
+    if (row >= 0 && row < matrix.length && col >= 0 && col < matrix.length)
+      matrix[row][col] = val ? 1 : 0;
+  }
+
+  function addFinderPattern(matrix, row, col) {
+    for (var r = -1; r <= 7; r++) {
+      for (var c = -1; c <= 7; c++) {
+        var rr = row + r, cc = col + c;
+        if (rr < 0 || rr >= matrix.length || cc < 0 || cc >= matrix.length) continue;
+        if ((r >= 0 && r <= 6 && (c === 0 || c === 6)) ||
+            (c >= 0 && c <= 6 && (r === 0 || r === 6)) ||
+            (r >= 2 && r <= 4 && c >= 2 && c <= 4)) {
+          matrix[rr][cc] = 1;
+        } else {
+          matrix[rr][cc] = 0;
+        }
+      }
+    }
+  }
+
+  function addAlignmentPattern(matrix, row, col) {
+    for (var r = -2; r <= 2; r++) {
+      for (var c = -2; c <= 2; c++) {
+        if (Math.abs(r) === 2 || Math.abs(c) === 2 || (r === 0 && c === 0))
+          matrix[row + r][col + c] = 1;
+        else
+          matrix[row + r][col + c] = 0;
+      }
+    }
+  }
+
+  function addTimingPatterns(matrix, size) {
+    for (var i = 8; i < size - 8; i++) {
+      if (matrix[6][i] === -1) matrix[6][i] = (i % 2 === 0) ? 1 : 0;
+      if (matrix[i][6] === -1) matrix[i][6] = (i % 2 === 0) ? 1 : 0;
+    }
+  }
+
+  // Reed-Solomon GF(256) with polynomial 0x11D
+  var GF_EXP = new Array(512);
+  var GF_LOG = new Array(256);
+  (function() {
+    var x = 1;
+    for (var i = 0; i < 255; i++) {
+      GF_EXP[i] = x;
+      GF_LOG[x] = i;
+      x = x << 1;
+      if (x >= 256) x ^= 0x11D;
+    }
+    for (var i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+  })();
+
+  function gfMul(a, b) {
+    if (a === 0 || b === 0) return 0;
+    return GF_EXP[GF_LOG[a] + GF_LOG[b]];
+  }
+
+  function rsEncode(data, ecLen) {
+    // Generate generator polynomial
+    var gen = [1];
+    for (var i = 0; i < ecLen; i++) {
+      var ng = new Array(gen.length + 1);
+      for (var j = 0; j < ng.length; j++) ng[j] = 0;
+      for (var j = 0; j < gen.length; j++) {
+        ng[j] ^= gfMul(gen[j], GF_EXP[i]);
+        ng[j + 1] ^= gen[j];
+      }
+      gen = ng;
+    }
+    // Polynomial division
+    var msg = new Array(data.length + ecLen);
+    for (var i = 0; i < msg.length; i++) msg[i] = i < data.length ? data[i] : 0;
+    for (var i = 0; i < data.length; i++) {
+      var coef = msg[i];
+      if (coef !== 0) {
+        for (var j = 1; j < gen.length; j++) {
+          msg[i + j] ^= gfMul(gen[j], coef);
+        }
+      }
+    }
+    return msg.slice(data.length);
+  }
+
+  // Format info for mask patterns (EC level M = 00)
+  var FORMAT_INFO = [
+    0x5412, 0x5125, 0x5E7C, 0x5B4B, 0x45F9, 0x40CE, 0x4F97, 0x4AA0
+  ];
+
+  // Version info for versions 7+ (not needed for 1-6)
+  var VERSION_INFO = [
+    0, 0, 0, 0, 0, 0, 0x07C94, 0x085BC, 0x09A99, 0x0A4D3
+  ];
+
+  function addFormatInfo(matrix, size, maskPattern) {
+    var bits = FORMAT_INFO[maskPattern];
+    for (var i = 0; i < 6; i++) {
+      matrix[8][i] = (bits >> (14 - i)) & 1;
+      matrix[i][8] = (bits >> i) & 1;
+    }
+    matrix[8][7] = (bits >> 8) & 1;
+    matrix[8][8] = (bits >> 7) & 1;
+    matrix[7][8] = (bits >> 6) & 1;
+    for (var i = 0; i < 8; i++) {
+      matrix[8][size - 1 - i] = (bits >> i) & 1;
+      matrix[size - 1 - i][8] = (bits >> (14 - i)) & 1;
+    }
+    matrix[size - 8][8] = 1; // Dark module
+  }
+
+  function addVersionInfo(matrix, size, version) {
+    if (version < 7) return;
+    var bits = VERSION_INFO[version - 1];
+    for (var i = 0; i < 18; i++) {
+      var bit = (bits >> i) & 1;
+      var r = Math.floor(i / 3);
+      var c = i % 3 + size - 11;
+      matrix[r][c] = bit;
+      matrix[c][r] = bit;
+    }
+  }
+
+  var MASKS = [
+    function(r, c) { return (r + c) % 2 === 0; },
+    function(r, c) { return r % 2 === 0; },
+    function(r, c) { return c % 3 === 0; },
+    function(r, c) { return (r + c) % 3 === 0; },
+    function(r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; },
+    function(r, c) { return (r * c) % 2 + (r * c) % 3 === 0; },
+    function(r, c) { return ((r * c) % 2 + (r * c) % 3) % 2 === 0; },
+    function(r, c) { return ((r + c) % 2 + (r * c) % 3) % 2 === 0; }
+  ];
+
+  function penaltyScore(matrix) {
+    var size = matrix.length, score = 0;
+    // Rule 1: consecutive same-color modules in row/col
+    for (var i = 0; i < size; i++) {
+      var rRun = 1, cRun = 1;
+      for (var j = 1; j < size; j++) {
+        if (matrix[i][j] === matrix[i][j-1]) { rRun++; } else { if (rRun >= 5) score += rRun - 2; rRun = 1; }
+        if (matrix[j][i] === matrix[j-1][i]) { cRun++; } else { if (cRun >= 5) score += cRun - 2; cRun = 1; }
+      }
+      if (rRun >= 5) score += rRun - 2;
+      if (cRun >= 5) score += cRun - 2;
+    }
+    // Rule 2: 2x2 blocks
+    for (var i = 0; i < size - 1; i++) {
+      for (var j = 0; j < size - 1; j++) {
+        var v = matrix[i][j];
+        if (v === matrix[i][j+1] && v === matrix[i+1][j] && v === matrix[i+1][j+1]) score += 3;
+      }
+    }
+    return score;
+  }
+
+  function encode(text) {
+    var data = [];
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      if (c < 128) data.push(c);
+      else if (c < 2048) { data.push(192 | (c >> 6)); data.push(128 | (c & 63)); }
+      else { data.push(224 | (c >> 12)); data.push(128 | ((c >> 6) & 63)); data.push(128 | (c & 63)); }
+    }
+
+    var version = getVersion(data.length);
+    if (version < 0) return null;
+
+    var ecInfo = EC_CODEWORDS_PER_BLOCK[version - 1];
+    var totalDataCW = ecInfo[0];
+    var ecCWPerBlock = ecInfo[1];
+    var numBlocks = ecInfo[2];
+    var dataCWPerBlock = Math.floor(totalDataCW / numBlocks);
+
+    // Build data stream: mode(4) + count(8 or 16) + data + terminator + padding
+    var bits = [];
+    function addBits(val, len) { for (var i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); }
+
+    addBits(4, 4); // Byte mode indicator
+    addBits(data.length, version >= 10 ? 16 : 8); // Character count
+    for (var i = 0; i < data.length; i++) addBits(data[i], 8);
+    addBits(0, Math.min(4, totalDataCW * 8 - bits.length)); // Terminator
+    while (bits.length % 8 !== 0) bits.push(0); // Byte alignment
+    while (bits.length < totalDataCW * 8) { // Padding bytes
+      addBits(0xEC, 8);
+      if (bits.length < totalDataCW * 8) addBits(0x11, 8);
+    }
+
+    // Convert to bytes
+    var codewords = [];
+    for (var i = 0; i < bits.length; i += 8)
+      codewords.push((bits[i] << 7) | (bits[i+1] << 6) | (bits[i+2] << 5) | (bits[i+3] << 4) |
+                      (bits[i+4] << 3) | (bits[i+5] << 2) | (bits[i+6] << 1) | bits[i+7]);
+
+    // Split into blocks and add EC
+    var blocks = [], ecBlocks = [];
+    var offset = 0;
+    var remainder = totalDataCW % numBlocks;
+    for (var b = 0; b < numBlocks; b++) {
+      var blockLen = dataCWPerBlock + (b >= numBlocks - remainder && remainder > 0 ? 1 : 0);
+      var block = codewords.slice(offset, offset + blockLen);
+      offset += blockLen;
+      blocks.push(block);
+      ecBlocks.push(rsEncode(block, ecCWPerBlock));
+    }
+
+    // Interleave data blocks
+    var interleaved = [];
+    var maxBlockLen = blocks[blocks.length - 1].length;
+    for (var i = 0; i < maxBlockLen; i++)
+      for (var b = 0; b < numBlocks; b++)
+        if (i < blocks[b].length) interleaved.push(blocks[b][i]);
+    for (var i = 0; i < ecCWPerBlock; i++)
+      for (var b = 0; b < numBlocks; b++)
+        interleaved.push(ecBlocks[b][i]);
+
+    // Create matrix
+    var size = getSize(version);
+    var matrix = createMatrix(size);
+
+    // Add function patterns
+    addFinderPattern(matrix, 0, 0);
+    addFinderPattern(matrix, 0, size - 7);
+    addFinderPattern(matrix, size - 7, 0);
+    addTimingPatterns(matrix, size);
+
+    // Alignment patterns
+    if (version >= 2) {
+      var ap = ALIGNMENT_PATTERNS[version - 1];
+      for (var i = 0; i < ap.length; i++) {
+        for (var j = 0; j < ap.length; j++) {
+          if ((i === 0 && j === 0) || (i === 0 && j === ap.length - 1) || (i === ap.length - 1 && j === 0)) continue;
+          addAlignmentPattern(matrix, ap[i], ap[j]);
+        }
+      }
+    }
+
+    // Reserve format & version info areas
+    for (var i = 0; i < 8; i++) {
+      if (matrix[8][i] === -1) matrix[8][i] = 0;
+      if (matrix[i][8] === -1) matrix[i][8] = 0;
+      if (matrix[8][size - 1 - i] === -1) matrix[8][size - 1 - i] = 0;
+      if (matrix[size - 1 - i][8] === -1) matrix[size - 1 - i][8] = 0;
+    }
+    matrix[8][8] = 0;
+
+    // Place data bits
+    var bitIdx = 0;
+    var allBits = [];
+    for (var i = 0; i < interleaved.length; i++)
+      for (var b = 7; b >= 0; b--)
+        allBits.push((interleaved[i] >> b) & 1);
+
+    var col = size - 1;
+    var goingUp = true;
+    while (col > 0) {
+      if (col === 6) col--;
+      for (var cnt = 0; cnt < size; cnt++) {
+        var row = goingUp ? size - 1 - cnt : cnt;
+        for (var dc = 0; dc <= 1; dc++) {
+          var c = col - dc;
+          if (matrix[row][c] === -1) {
+            matrix[row][c] = bitIdx < allBits.length ? allBits[bitIdx++] : 0;
+          }
+        }
+      }
+      goingUp = !goingUp;
+      col -= 2;
+    }
+
+    // Apply best mask
+    var bestMask = 0, bestScore = Infinity;
+    for (var m = 0; m < 8; m++) {
+      var masked = createMatrix(size);
+      for (var r = 0; r < size; r++)
+        for (var c = 0; c < size; c++)
+          masked[r][c] = matrix[r][c];
+
+      // Re-add function patterns to protect them
+      addFinderPattern(masked, 0, 0);
+      addFinderPattern(masked, 0, size - 7);
+      addFinderPattern(masked, size - 7, 0);
+      addTimingPatterns(masked, size);
+      if (version >= 2) {
+        var ap = ALIGNMENT_PATTERNS[version - 1];
+        for (var i = 0; i < ap.length; i++)
+          for (var j = 0; j < ap.length; j++) {
+            if ((i === 0 && j === 0) || (i === 0 && j === ap.length - 1) || (i === ap.length - 1 && j === 0)) continue;
+            addAlignmentPattern(masked, ap[i], ap[j]);
+          }
+      }
+
+      // Create a reserve map
+      var reserved = createMatrix(size);
+      var tmpM = createMatrix(size);
+      addFinderPattern(tmpM, 0, 0);
+      addFinderPattern(tmpM, 0, size - 7);
+      addFinderPattern(tmpM, size - 7, 0);
+      addTimingPatterns(tmpM, size);
+      if (version >= 2) {
+        var ap2 = ALIGNMENT_PATTERNS[version - 1];
+        for (var ii = 0; ii < ap2.length; ii++)
+          for (var jj = 0; jj < ap2.length; jj++) {
+            if ((ii === 0 && jj === 0) || (ii === 0 && jj === ap2.length - 1) || (ii === ap2.length - 1 && jj === 0)) continue;
+            addAlignmentPattern(tmpM, ap2[ii], ap2[jj]);
+          }
+      }
+      for (var i = 0; i < 8; i++) {
+        tmpM[8][i] = 0; tmpM[i][8] = 0;
+        tmpM[8][size-1-i] = 0; tmpM[size-1-i][8] = 0;
+      }
+      tmpM[8][8] = 0;
+
+      for (var r = 0; r < size; r++)
+        for (var c = 0; c < size; c++)
+          reserved[r][c] = (tmpM[r][c] !== -1) ? 1 : 0;
+
+      // Apply mask only to data modules
+      for (var r = 0; r < size; r++)
+        for (var c = 0; c < size; c++)
+          if (!reserved[r][c] && MASKS[m](r, c))
+            masked[r][c] ^= 1;
+
+      addFormatInfo(masked, size, m);
+      addVersionInfo(masked, size, version);
+
+      var sc = penaltyScore(masked);
+      if (sc < bestScore) { bestScore = sc; bestMask = m; }
+    }
+
+    // Apply best mask to final matrix
+    var reserved2 = createMatrix(size);
+    var tmpM2 = createMatrix(size);
+    addFinderPattern(tmpM2, 0, 0);
+    addFinderPattern(tmpM2, 0, size - 7);
+    addFinderPattern(tmpM2, size - 7, 0);
+    addTimingPatterns(tmpM2, size);
+    if (version >= 2) {
+      var ap3 = ALIGNMENT_PATTERNS[version - 1];
+      for (var ii = 0; ii < ap3.length; ii++)
+        for (var jj = 0; jj < ap3.length; jj++) {
+          if ((ii === 0 && jj === 0) || (ii === 0 && jj === ap3.length - 1) || (ii === ap3.length - 1 && jj === 0)) continue;
+          addAlignmentPattern(tmpM2, ap3[ii], ap3[jj]);
+        }
+    }
+    for (var i = 0; i < 8; i++) {
+      tmpM2[8][i] = 0; tmpM2[i][8] = 0;
+      tmpM2[8][size-1-i] = 0; tmpM2[size-1-i][8] = 0;
+    }
+    tmpM2[8][8] = 0;
+    for (var r = 0; r < size; r++)
+      for (var c = 0; c < size; c++)
+        reserved2[r][c] = (tmpM2[r][c] !== -1) ? 1 : 0;
+
+    for (var r = 0; r < size; r++)
+      for (var c = 0; c < size; c++)
+        if (!reserved2[r][c] && MASKS[bestMask](r, c))
+          matrix[r][c] ^= 1;
+
+    addFormatInfo(matrix, size, bestMask);
+    addVersionInfo(matrix, size, version);
+
+    return { matrix: matrix, size: size };
+  }
+
+  function toDataURL(text, pixelSize) {
+    pixelSize = pixelSize || 10;
+    var result = encode(text);
+    if (!result) return null;
+    var matrix = result.matrix;
+    var size = result.size;
+    var quiet = 4; // Quiet zone
+    var totalSize = (size + quiet * 2) * pixelSize;
+
+    var canvas = document.createElement('canvas');
+    canvas.width = totalSize;
+    canvas.height = totalSize;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, totalSize, totalSize);
+    ctx.fillStyle = '#000000';
+
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (matrix[r][c] === 1) {
+          ctx.fillRect((c + quiet) * pixelSize, (r + quiet) * pixelSize, pixelSize, pixelSize);
+        }
+      }
+    }
+    return canvas.toDataURL('image/png');
+  }
+
+  return { toDataURL: toDataURL };
+})();
+
 function generateQrCode() {
-  const url = document.getElementById('setting-HOMEPAGE_URL').value.trim();
+  var url = document.getElementById('setting-HOMEPAGE_URL').value.trim();
   if (!url) { alert('HOMEPAGE_URL を入力してください。'); return; }
-  const qrUrl = 'https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=' + encodeURIComponent(url) + '&choe=UTF-8';
-  const img = document.getElementById('qr-code-img');
-  const link = document.getElementById('qr-download-link');
-  if (img) img.src = qrUrl;
-  if (link) link.href = qrUrl;
-  const area = document.getElementById('qr-code-area');
+  var dataUrl = QRCodeGenerator.toDataURL(url, 10);
+  if (!dataUrl) { alert('QRコードの生成に失敗しました。URLが長すぎる可能性があります。'); return; }
+  var img = document.getElementById('qr-code-img');
+  var link = document.getElementById('qr-download-link');
+  if (img) img.src = dataUrl;
+  if (link) link.href = dataUrl;
+  var area = document.getElementById('qr-code-area');
   if (area) area.style.display = 'block';
 }
 
