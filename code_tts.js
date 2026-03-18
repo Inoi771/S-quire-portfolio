@@ -786,7 +786,7 @@ function fillMissingAudioFilenames() {
  * @param {number} batchSize - 1回の実行で処理する件数（デフォルト 50）
  * @returns {Object} { success, processed, remaining, errors }
  */
-function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
+function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex, cumulativeSkipped) {
   var cache = CacheService.getScriptCache();
   var progressKey = 'TTS_PROGRESS';
 
@@ -794,6 +794,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
     batchSize = batchSize || 50;
     cumulativeProcessed = cumulativeProcessed || 0;
     startIndex = startIndex || 0; // どの行から再開するか（前バッチの続き）
+    cumulativeSkipped = cumulativeSkipped || 0; // 前バッチまでの累積スキップ数
     var MAX_RUNTIME_MS = 4.5 * 60 * 1000; // 4.5分
     var startTime = Date.now();
 
@@ -846,7 +847,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
     cache.put(progressKey, JSON.stringify({
       status: 'running',
       processed: cumulativeProcessed,
-      skipped: 0,
+      skipped: cumulativeSkipped,
       errors: 0,
       currentItem: ''
     }), 600);
@@ -878,9 +879,9 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
         if (absoluteIndex <= startIndex) continue;
 
         // 処理上限チェック（生成件数上限）
-        if (processed >= batchSize) { remaining++; nextStartIndex = absoluteIndex - 1; continue; }
+        if (processed >= batchSize) { if (remaining === 0) nextStartIndex = absoluteIndex - 1; remaining++; continue; }
         // 実行時間上限チェック
-        if (Date.now() - startTime > MAX_RUNTIME_MS) { remaining++; nextStartIndex = absoluteIndex - 1; continue; }
+        if (Date.now() - startTime > MAX_RUNTIME_MS) { if (remaining === 0) nextStartIndex = absoluteIndex - 1; remaining++; continue; }
 
         var filename = String(audio).trim();
 
