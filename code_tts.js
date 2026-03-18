@@ -206,6 +206,9 @@ function preprocessTextForTts(text) {
   t = t.replace(/~/g, '');        // ASCII チルダ
   t = t.replace(/\.{2,}/g, '');   // 連続ドット（..., ....）
 
+  // 角括弧の代替表現を除去（a [one] hundred → a hundred）
+  t = t.replace(/\[[^\]]*\]/g, '');
+
   // 括弧内の任意語尾を展開（kind(s) → kinds, go(es) → goes）
   t = t.replace(/\(s\)/gi, 's');
   t = t.replace(/\(es\)/gi, 'es');
