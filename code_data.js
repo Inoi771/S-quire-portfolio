@@ -389,7 +389,6 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
         // 英語テキストが変わった場合のみ音声を更新
         const newAudio = generateAudioFilename(newEnglish, wordId, newJapanese);
         if (newAudio && newAudio !== oldAudio) {
-          // 古いファイルは他の単語が参照している可能性があるため削除しない
           const githubToken = getScriptProperty('GITHUB_TOKEN');
           const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
           const repo = parseGithubRepoFromUrl(githubBaseUrl);
@@ -398,6 +397,7 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
             'Accept': 'application/vnd.github.v3+json',
             'User-Agent': 'GAS-EnglishTest-TTS'
           };
+          // 新しい音声ファイルを生成（既存なら流用）
           if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
             generateAndUploadAudio(newEnglish, wordId, newJapanese);
           } else {
@@ -405,6 +405,15 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
           }
           wordSheet.getRange(actualRow, 5).setValue(newAudio);
           Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
+          // 古いファイルへの参照が他になければ削除
+          if (oldAudio && repo && githubToken) {
+            const refCount = countAudioReferences(oldAudio, wordId);
+            if (refCount === 0) {
+              deleteAudioFromGithub(oldAudio, repo, headers);
+            } else {
+              Logger.log(`⏭️ 古い音声は他に${refCount}件が参照中のため保持: ${oldAudio}`);
+            }
+          }
         }
 
         updateLog = { actualRow: actualRow, wordId: wordId };
@@ -462,7 +471,6 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
         // 英語テキストが変わった場合のみ音声を更新
         const newAudio = generateAudioFilename(newText, sentenceId, newJapanese || '');
         if (newAudio && newAudio !== oldAudio) {
-          // 古いファイルは他の英文が参照している可能性があるため削除しない
           const githubToken = getScriptProperty('GITHUB_TOKEN');
           const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
           const repo = parseGithubRepoFromUrl(githubBaseUrl);
@@ -471,6 +479,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
             'Accept': 'application/vnd.github.v3+json',
             'User-Agent': 'GAS-EnglishTest-TTS'
           };
+          // 新しい音声ファイルを生成（既存なら流用）
           if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
             generateAndUploadAudio(newText, sentenceId, newJapanese || '');
           } else {
@@ -478,6 +487,15 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
           }
           sentenceSheet.getRange(actualRow, 5).setValue(newAudio);
           Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
+          // 古いファイルへの参照が他になければ削除
+          if (oldAudio && repo && githubToken) {
+            const refCount = countAudioReferences(oldAudio, sentenceId);
+            if (refCount === 0) {
+              deleteAudioFromGithub(oldAudio, repo, headers);
+            } else {
+              Logger.log(`⏭️ 古い音声は他に${refCount}件が参照中のため保持: ${oldAudio}`);
+            }
+          }
         }
 
         updateLog = { actualRow: actualRow, sentenceId: sentenceId };
