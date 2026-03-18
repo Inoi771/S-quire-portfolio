@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>発音練習</title>
     <style>
         * {
@@ -492,6 +492,27 @@
         }
     </style>
     <script>
+        // スマートフォン用ズーム: GASの仮想ビューポートが実画面より大きい場合に拡大表示
+        function fitToScreen() {
+            const vw = window.innerWidth;
+            const sw = screen.width;
+            if (vw <= sw) return;
+
+            const ratio = vw / sw;
+            const container = document.querySelector('.container');
+            if (container) {
+                container.style.zoom = ratio;
+                container.style.width = (100 / ratio) + '%';
+                container.style.minHeight = (100 / ratio) + 'vh';
+            }
+
+            // position: fixed 要素は親の zoom が効かないため個別適用
+            const overlay = document.getElementById('global-loading-overlay');
+            if (overlay) {
+                overlay.style.zoom = ratio;
+            }
+        }
+
         let years = [];
         let currentQuestions = [];
 
@@ -867,6 +888,9 @@
             
             clearQuestions();
             loadLogo();
+
+            fitToScreen();
+            window.addEventListener('resize', fitToScreen);
         };
 
         function loadLogo() {
