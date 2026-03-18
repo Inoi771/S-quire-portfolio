@@ -500,9 +500,15 @@
 
             const ratio = vw / sw;
 
-            // body 全体に zoom を適用（子要素すべてが拡大される）
-            document.body.style.zoom = ratio;
-            document.body.style.width = (100 / ratio) + '%';
+            // body の padding を除去してフル幅を確保
+            document.body.style.padding = '0';
+
+            // .container に zoom を適用
+            const container = document.querySelector('.container');
+            if (container) {
+                container.style.zoom = ratio;
+                container.style.width = (100 / ratio) + '%';
+            }
 
             // position: fixed 要素は親の zoom が効かないため個別適用
             const overlay = document.getElementById('global-loading-overlay');
