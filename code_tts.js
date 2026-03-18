@@ -903,8 +903,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
             status: 'running',
             processed: cumulativeProcessed + processed,
             skipped: skippedCount,
-            errors: errors.length,
-            currentItem: String(english).trim()
+            errors: errors.length
           }), 600);
           continue;
         }
