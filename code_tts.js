@@ -205,15 +205,15 @@ function cleanupTtsText(t) {
  * 日本語由来のプレースホルダー記号（～ … － 等）や接頭辞ハイフンを除去し、
  * Google Cloud TTS が正しく読み上げられる形に整える。
  *
- * 角括弧 [alt] がある場合は両方の読み方を生成する:
- *   "a [one] hundred" → "a hundred, one hundred"
+ * 省略可能な語の表記がある場合は両方の読み方を生成する:
+ *   角括弧:      "a [one] hundred"     → "a hundred, one hundred"
+ *   独立括弧:    "It is said (that) ～" → "It is said, It is said that"
+ *   ※ 語尾括弧: "kind(s)"             → "kinds"（両形式生成しない）
  *
  * その他の例:
  *   "～ times as ... as －" → "times as as"
- *   "～, and so on"        → "and so on"
  *   "-based"               → "based"
  *   "… kind(s) of ~"      → "kinds of"
- *   "~ year(s) old"        → "years old"
  *
  * @param {string} text - 元の英語テキスト
  * @returns {string} 前処理後のテキスト（空文字の場合はTTSスキップ）
@@ -221,13 +221,28 @@ function cleanupTtsText(t) {
 function preprocessTextForTts(text) {
   if (!text) return '';
 
-  // 角括弧の代替表現がある場合は2形式を生成して両方読み上げる
-  if (/\[[^\]]+\]/.test(text)) {
-    // form1: 角括弧ごと除去 → "a hundred"
-    var form1 = cleanupTtsText(text.replace(/\[[^\]]*\]/g, ''));
-    // form2: 直前の単語を角括弧の中身に置換 → "one hundred"
-    //   "a [one] hundred" → "one hundred"
-    var form2 = cleanupTtsText(text.replace(/\S+\s*\[([^\]]+)\]/g, '$1'));
+  // 独立した括弧（スペース or 文頭の後にある括弧）= 省略可能な語
+  // 例: "said (that)" の (that) → 独立括弧
+  // 例: "kind(s)"     の (s)   → 語尾括弧（対象外）
+  var hasBrackets      = /\[[^\]]+\]/.test(text);
+  var hasStandaloneParens = /(?:^|[\s,])\([^)]+\)/.test(text);
+
+  if (hasBrackets || hasStandaloneParens) {
+    // form1: 省略形（角括弧・独立括弧を除去）
+    //   "a [one] hundred"     → "a hundred"
+    //   "It is said (that) ～" → "It is said"
+    var t1 = text
+      .replace(/\[[^\]]*\]/g, '')               // [alt] を除去（前の語は残す）
+      .replace(/(?:^|[\s,])\([^)]*\)/g, ' ');   // 独立 (...) を除去
+    var form1 = cleanupTtsText(t1);
+
+    // form2: 展開形（括弧を外してその内容を使う）
+    //   "a [one] hundred"     → "one hundred"（直前語を角括弧内容で置換）
+    //   "It is said (that) ～" → "It is said that"（括弧を外して内容を残す）
+    var t2 = text
+      .replace(/\S+\s*\[([^\]]+)\]/g, '$1')         // word [alt] → alt
+      .replace(/(?:^|[\s,])\(([^)]+)\)/g, ' $1');   // 独立 (word) → word
+    var form2 = cleanupTtsText(t2);
 
     if (form1 && form2 && form1 !== form2) {
       return form1 + ', ' + form2;
