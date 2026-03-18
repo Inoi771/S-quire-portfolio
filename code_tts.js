@@ -370,6 +370,54 @@ function uploadAudioToGithub(filename, base64Content) {
 // ────────────────────────────────────────────
 
 /**
+ * GitHub audio/ フォルダ以下の全ファイル名を一括取得する（Git Trees API）
+ * 1回のAPIコールで完結するため、個別チェックより大幅に高速。
+ * @param {string} repo    - "owner/repo" 形式
+ * @param {Object} headers - GitHub API 認証ヘッダー
+ * @returns {Object|null}  { filename: true } のマップ、失敗時は null（フォールバック用）
+ */
+function fetchExistingAudioFilesFromGithub(repo, headers) {
+  try {
+    var treeUrl = 'https://api.github.com/repos/' + repo + '/git/trees/HEAD?recursive=1';
+    var response = UrlFetchApp.fetch(treeUrl, {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true
+    });
+
+    if (response.getResponseCode() !== 200) {
+      Logger.log('⚠️ GitHub Tree API エラー: ' + response.getResponseCode());
+      return null;
+    }
+
+    var treeData = JSON.parse(response.getContentText());
+    var existingFiles = {};
+
+    if (treeData.tree) {
+      treeData.tree.forEach(function(item) {
+        if (item.type === 'blob' && item.path.indexOf('audio/') === 0) {
+          var parts = item.path.split('/');
+          if (parts.length >= 3) {
+            existingFiles[parts[parts.length - 1]] = true;
+          }
+        }
+      });
+    }
+
+    if (treeData.truncated) {
+      Logger.log('⚠️ Tree API: 結果が多すぎて一部省略されました（truncated=true）。個別チェックにフォールバックします');
+      return null;
+    }
+
+    Logger.log('📋 既存音声ファイル数（一括取得）: ' + Object.keys(existingFiles).length);
+    return existingFiles;
+  } catch (e) {
+    Logger.log('⚠️ fetchExistingAudioFilesFromGithub エラー: ' + e);
+    return null;
+  }
+}
+
+/**
  * 指定ファイルが GitHub の audio/{firstChar}/ に存在するか確認する
  * @param {string} filename - ファイル名（例: "read.mp3"）
  * @param {string} repo     - "owner/repo" 形式
@@ -576,6 +624,11 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
       'User-Agent': 'GAS-EnglishTest-TTS'
     };
 
+    // 既存ファイルを一括取得（高速化: 個別APIコールをなくす）
+    var existingAudioMap = fetchExistingAudioFilesFromGithub(repo, headers);
+    var useMapLookup = existingAudioMap !== null;
+    Logger.log(useMapLookup ? '✅ 一括ファイルリスト取得成功' : '⚠️ フォールバック: 個別チェックモード');
+
     var englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
     var ss = SpreadsheetApp.openById(englishwordsSheetId);
 
@@ -628,8 +681,12 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
 
         var filename = String(audio).trim();
 
-        // GitHub に既にファイルが存在する場合はスキップ
-        if (checkAudioExistsOnGithub(filename, repo, headers)) {
+        // GitHub ファイル存在確認（一括取得マップ or 個別API フォールバック）
+        var fileExists = useMapLookup
+          ? (existingAudioMap[filename] === true)
+          : checkAudioExistsOnGithub(filename, repo, headers);
+
+        if (fileExists) {
           Logger.log('⏭️ スキップ（既存）: ' + filename);
           skippedCount++;
           cache.put(progressKey, JSON.stringify({
