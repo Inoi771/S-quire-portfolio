@@ -98,8 +98,8 @@ ENGLISHWORDS_FOLDER_ID/
 │   │   └── レッスン順序（シート）
 │   ├── 旧教科書版.sheets（同上構成）
 │   ├── 入試対策編.sheets
-│   │   ├── 不規則動詞①（シート、10列）
-│   │   ├── 不規則動詞②（シート、13列）
+│   │   ├── 不規則動詞①（シート、14列）
+│   │   ├── 不規則動詞②（シート、18列）
 │   │   └── 通常（シート、7列）
 │   ├── 生成PDF/（PDF保存先フォルダ）
 │   └── logo.png
@@ -115,14 +115,14 @@ ENGLISHWORDS_FOLDER_ID/
 word_id | english | pronunciation | japanese | audio | lesson | cell_id
 ```
 
-**入試対策 不規則動詞①（10列）:**
+**入試対策 不規則動詞①（14列）:**
 ```
-7列 + past_word_id | past_english | past_pronunciation
+7列 + past_word_id | past_english | past_pronunciation | past_audio | (空3列)
 ```
 
-**入試対策 不規則動詞②（13列）:**
+**入試対策 不規則動詞②（18列）:**
 ```
-10列 + past_part_word_id | past_part_english | past_part_pronunciation
+14列の不規則動詞①構造 + past_part_word_id | past_part_english | past_part_pronunciation | past_part_audio | (空3列)
 ```
 
 **マスターデータ「英単語」シート（5列）:**
@@ -190,12 +190,12 @@ cellId 33-48  → 右列（colIdx=2、rowIdx=0-15）
 - `saveFukisokuData()` / `loadFukisokuData()` — 専用処理
 - 不規則動詞① : 意味masterId + present + past の2形式
 - 不規則動詞② : 意味masterId + present + past + pastPart の3形式
-- `getMaxColumnsForSheet(textbook, grade)` — 7/10/13を返す
+- `getMaxColumnsForSheet(textbook, grade)` — 7/14/18を返す
 
 ### 音声ファイル URL 構築
 
 ```
-${GITHUB_BASE_URL}/sounds/${fileName[0].toLowerCase()}/${fileName}?v=${Date.now()}
+${GITHUB_BASE_URL}/audio/${fileName[0].toLowerCase()}/${fileName}?v=${Date.now()}
 ```
 
 - ファイル名の先頭1文字をディレクトリとして使用（例: `a/apple.mp3`）
@@ -333,12 +333,11 @@ fukisokuDataMap[meaningMasterId] = {
 | 関数 | 役割 |
 |------|------|
 | `getExistingData(year, textbook, grade, lesson)` | 既存レッスンデータ読み込み |
-| `loadDataIntoTable(rawData, lesson)` | シートの生データ → tableData 変換 |
-| `saveLessonData(year, textbook, grade, lesson, tableData, allWords, allSentences)` | レッスンデータ保存（福速対応、7/10/13列） |
+| `saveLessonData(year, textbook, grade, lesson, tableData, allWords, allSentences)` | レッスンデータ保存（福速対応、7/14/18列） |
 | `updateLessonName(year, textbook, grade, oldName, newName)` | レッスン名変更（シート全体を更新） |
 | `getLessonList(year, textbook, grade)` | レッスン一覧（別形式） |
 | `getLessonListForSave(year, textbook, grade)` | 保存ダイアログ用レッスン一覧 |
-| `getMaxColumnsForSheet(textbook, grade)` | 7/10/13を返す（シート種別判定） |
+| `getMaxColumnsForSheet(textbook, grade)` | 7/14/18を返す（シート種別判定） |
 
 **不規則動詞（福速）:**
 | 関数 | 役割 |

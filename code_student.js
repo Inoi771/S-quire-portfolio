@@ -285,7 +285,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
       if (sheetName === '不規則動詞②') {
         if (row[12] || row[13] || row[14]) {
           questions.push({
-            wordId: row[11] || '', english: row[12] || '', pronunciation: '',
+            wordId: row[11] || '', english: row[12] || '', pronunciation: row[13] || '',
             japanese: row[3] || '', audio: row[14] || '', lesson: row[5] || '',
             cellId: row[6] || '', formType: 'past_participle', questionNumber
           });
