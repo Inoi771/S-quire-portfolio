@@ -964,7 +964,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex, cum
       status: urlLimit ? 'url_limit' : 'error',
       processed: cumulativeProcessed + processed,
       skipped: cumulativeSkipped + skippedCount,
-      errors: errors.length + 1,
+      errors: (errors || []).length + 1,
       currentItem: ''
     }), 60);
     return { success: false, urlLimitReached: urlLimit, processed: 0, remaining: 0, errors: [e.toString()] };
