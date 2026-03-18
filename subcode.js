@@ -285,7 +285,7 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
       const firstChar = fileName.charAt(0).toLowerCase();
       const encodedFile = encodeURIComponent(fileName);
       const timestamp = new Date().getTime();
-      const audioUrl = `${githubBase}/sounds/${firstChar}/${encodedFile}?v=${timestamp}`;
+      const audioUrl = `${githubBase}/audio/${firstChar}/${encodedFile}?v=${timestamp}`;
 
       return { ...q, audio: audioUrl };
     });
@@ -387,7 +387,7 @@ function generatePronounQuestions(githubBase, startNumber) {
     columns.forEach(col => {
       const wordData = row[col];
       const audioUrl = wordData.audio 
-        ? `${githubBase}/sounds/${wordData.audio.charAt(0).toLowerCase()}/${wordData.audio}?v=${timestamp}`
+        ? `${githubBase}/audio/${wordData.audio.charAt(0).toLowerCase()}/${wordData.audio}?v=${timestamp}`
         : null;
       
       questions.push({
@@ -470,7 +470,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
           questions.push({
             wordId: row[11] || '',
             english: row[12] || '',
-            pronunciation: '',
+            pronunciation: row[13] || '',
             japanese: row[3] || '',
             audio: row[14] || '',
             lesson: row[5] || '',

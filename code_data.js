@@ -124,9 +124,8 @@ function getLessonDataFromExamPrep(year, lesson, sheetName) {
       return { items: [], success: true };
     }
 
-    // ✅ 不規則動詞①②の列数を取得
-    // ✅ 修正：不規則動詞②は18列
-const maxCols = sheetName === '不規則動詞②' ? 18 : getMaxColumnsForSheet('入試対策編', sheetName);
+    // ✅ 不規則動詞①②の列数を取得（getMaxColumnsForSheetに統一）
+const maxCols = getMaxColumnsForSheet('入試対策編', sheetName);
 const values = sheet.getRange(2, 1, lastRow - 1, maxCols).getValues();
 
     console.log(`  取得行数: ${values.length}, 列数: ${maxCols}`);
@@ -994,26 +993,6 @@ function saveLessonOrder(year, textbook, grade, lessonOrder) {
     Logger.log('Error saveLessonOrder: ' + e);
     return { success: false, error: e.toString() };
   }
-}
-
-function getColumnMap(sheet) {
-  const headers = sheet
-    .getRange(1, 1, 1, sheet.getLastColumn())
-    .getValues()[0];
-
-  const map = {};
-  headers.forEach((header, index) => {
-    if (!header) return;
-
-    const key = header
-      .toString()
-      .trim()
-      .replace(/\s+/g, ' '); // 余分な空白対策
-
-    map[key] = index;
-  });
-
-  return map;
 }
 
 /**
