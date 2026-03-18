@@ -903,7 +903,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex, cum
           cache.put(progressKey, JSON.stringify({
             status: 'running',
             processed: cumulativeProcessed + processed,
-            skipped: skippedCount,
+            skipped: cumulativeSkipped + skippedCount,
             errors: errors.length
           }), 600);
           continue;
