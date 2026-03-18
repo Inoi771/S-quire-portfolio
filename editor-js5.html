@@ -2177,7 +2177,7 @@ function startBulkAudioGeneration() {
             hideLoadingIndicator();
             alert('❌ エラー: ' + err);
           })
-          .bulkGenerateAudio('all', batchSize, totalProcessed, startIndex || 0);
+          .bulkGenerateAudio('all', batchSize, totalProcessed, startIndex || 0, totalSkipped);
       }
 
       runBatch(0, 0, [], 0);
