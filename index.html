@@ -645,6 +645,23 @@
             }
         }
 
+        function checkAudioAvailability() {
+            var playBtns = document.querySelectorAll('.play-btn');
+            playBtns.forEach(function(btn) {
+                var src = btn.getAttribute('data-src');
+                if (!src) return;
+                var audio = new Audio();
+                audio.preload = 'metadata';
+                audio.src = src;
+                audio.onerror = function() {
+                    var container = btn.closest('.custom-audio-controls');
+                    if (container) {
+                        container.outerHTML = '<div class="no-audio">🔇 音声ファイルなし</div>';
+                    }
+                };
+            });
+        }
+
         let years = [];
         let currentQuestions = [];
 
@@ -969,6 +986,7 @@
             }
 
             container.innerHTML = html;
+            checkAudioAvailability();
         }
 
         function createPronounTable(pronounGroups) {
