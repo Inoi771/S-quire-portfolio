@@ -135,6 +135,11 @@ function parseGithubRepoFromUrl(githubBaseUrl) {
   return null;
 }
 
+function isUrlFetchLimitError(e) {
+  var msg = String(e).toLowerCase();
+  return msg.indexOf('too many times') !== -1 || msg.indexOf('urlfetch') !== -1;
+}
+
 // ────────────────────────────────────────────
 // 月間使用量の追跡・制限
 // ────────────────────────────────────────────
@@ -343,6 +348,7 @@ function callGoogleCloudTts(text, ipa) {
     var result = JSON.parse(response.getContentText());
     return result.audioContent || null;
   } catch (e) {
+    if (isUrlFetchLimitError(e)) throw e;
     Logger.log('❌ TTS API 呼び出し失敗: ' + e);
     return null;
   }
@@ -441,7 +447,7 @@ function uploadAudioToGithub(filename, base64Content) {
       if (getResponse.getResponseCode() === 200) {
         existingSha = JSON.parse(getResponse.getContentText()).sha;
       }
-    } catch (e) { /* 新規の場合は無視 */ }
+    } catch (e) { if (isUrlFetchLimitError(e)) throw e; /* 新規の場合は無視 */ }
 
     var putPayload = {
       message: existingSha ? 'Update TTS audio: ' + filename : 'Add TTS audio: ' + filename,
@@ -466,6 +472,7 @@ function uploadAudioToGithub(filename, base64Content) {
       return false;
     }
   } catch (e) {
+    if (isUrlFetchLimitError(e)) throw e;
     Logger.log('❌ GitHub アップロードエラー: ' + e);
     return false;
   }
@@ -520,6 +527,7 @@ function fetchExistingAudioFilesFromGithub(repo, headers) {
     Logger.log('📋 既存音声ファイル数（一括取得・完全）: ' + Object.keys(existingFiles).length);
     return { map: existingFiles, complete: true };
   } catch (e) {
+    if (isUrlFetchLimitError(e)) throw e;
     Logger.log('⚠️ fetchExistingAudioFilesFromGithub エラー: ' + e);
     return { map: {}, complete: false };
   }
@@ -543,6 +551,7 @@ function checkAudioExistsOnGithub(filename, repo, headers) {
     });
     return response.getResponseCode() === 200;
   } catch (e) {
+    if (isUrlFetchLimitError(e)) throw e;
     return false;
   }
 }
@@ -953,14 +962,15 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex, cum
     return { success: true, processed: processed, skipped: skippedCount, remaining: remaining, nextStartIndex: nextStartIndex, errors: errors };
   } catch (e) {
     Logger.log('❌ bulkGenerateAudio エラー: ' + e);
+    var urlLimit = isUrlFetchLimitError(e);
     cache.put(progressKey, JSON.stringify({
-      status: 'error',
-      processed: cumulativeProcessed,
-      skipped: 0,
-      errors: 1,
+      status: urlLimit ? 'url_limit' : 'error',
+      processed: cumulativeProcessed + processed,
+      skipped: cumulativeSkipped + skippedCount,
+      errors: errors.length + 1,
       currentItem: ''
     }), 60);
-    return { success: false, processed: 0, remaining: 0, errors: [e.toString()] };
+    return { success: false, urlLimitReached: urlLimit, processed: 0, remaining: 0, errors: [e.toString()] };
   }
 }
 

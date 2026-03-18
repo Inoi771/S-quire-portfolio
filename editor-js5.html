@@ -2153,7 +2153,11 @@ function startBulkAudioGeneration() {
             if (!result.success) {
               clearInterval(pollingTimer);
               hideLoadingIndicator();
-              alert('❌ エラー:\n' + (result.errors || []).join('\n'));
+              if (result.urlLimitReached) {
+                alert('⚠️ GASの1日のURL呼び出し上限に達しました。\n翌日午後4時以降に再実行してください。');
+              } else {
+                alert('❌ エラー:\n' + (result.errors || []).join('\n'));
+              }
               return;
             }
             var newTotal = totalProcessed + result.processed;
