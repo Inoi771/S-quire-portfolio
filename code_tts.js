@@ -34,6 +34,31 @@ var HETERONYM_MAP = {
   'sow':   { '雌豚': 'noun' }
 };
 
+/**
+ * ヘテロニムの正確な発音を指定するための IPA マップ。
+ * キー: ファイル名（拡張子なし）
+ * 値: IPA 発音記号文字列（en-US-Neural2-F 向け）
+ * SSML <phoneme> タグで使用し、TTS API に正確な発音を伝える。
+ */
+var HETERONYM_IPA_MAP = {
+  'read':       'riːd',
+  'read_past':  'rɛd',
+  'lead':       'liːd',
+  'lead_past':  'lɛd',
+  'live':       'lɪv',
+  'live_adj':   'laɪv',
+  'tear':       'tɪr',
+  'tear_verb':  'tɛr',
+  'wound':      'wuːnd',
+  'wound_verb': 'waʊnd',
+  'bow':        'boʊ',
+  'bow_verb':   'baʊ',
+  'row':        'roʊ',
+  'row_verb':   'raʊ',
+  'sow':        'soʊ',
+  'sow_noun':   'saʊ'
+};
+
 // ────────────────────────────────────────────
 // ファイル名生成
 // ────────────────────────────────────────────
@@ -157,10 +182,11 @@ function checkAndUpdateCharUsage(text) {
 
 /**
  * Google Cloud TTS API を呼び出して音声を生成する
- * @param {string} text - 読み上げるテキスト
+ * @param {string} text      - 読み上げるテキスト
+ * @param {string} [ipa]     - IPA発音記号（ヘテロニム用、省略可）。指定時は SSML phoneme を使用
  * @returns {string|null} base64エンコードされた音声データ、失敗時は null
  */
-function callGoogleCloudTts(text) {
+function callGoogleCloudTts(text, ipa) {
   try {
     if (!checkAndUpdateCharUsage(text)) return null;
 
@@ -170,9 +196,18 @@ function callGoogleCloudTts(text) {
       return null;
     }
 
+    // IPA が指定されている場合は SSML phoneme で正確な発音を指定する
+    var inputPayload;
+    if (ipa) {
+      var escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      inputPayload = { ssml: '<speak><phoneme alphabet="ipa" ph="' + ipa + '">' + escaped + '</phoneme></speak>' };
+    } else {
+      inputPayload = { text: text };
+    }
+
     var url = 'https://texttospeech.googleapis.com/v1/text:synthesize?key=' + apiKey;
     var payload = {
-      input: { text: text },
+      input: inputPayload,
       voice: { languageCode: 'en-US', name: 'en-US-Neural2-F' },
       audioConfig: { audioEncoding: 'MP3' }
     };
@@ -372,13 +407,17 @@ function generateAndUploadAudio(englishText, masterId, japanese) {
     var filename = generateAudioFilename(englishText, masterId, japanese);
     if (!filename) return '';
 
-    var base64Audio = callGoogleCloudTts(englishText);
+    // ヘテロニムの場合はファイル名（拡張子なし）で IPA を検索し、正確な発音を指定する
+    var baseName = filename.replace(/\.mp3$/, '');
+    var ipa = HETERONYM_IPA_MAP[baseName] || null;
+
+    var base64Audio = callGoogleCloudTts(englishText, ipa);
     if (!base64Audio) return '';
 
     var uploaded = uploadAudioToGithub(filename, base64Audio);
     if (!uploaded) return '';
 
-    Logger.log('✅ TTS音声生成完了: ' + englishText + ' → ' + filename);
+    Logger.log('✅ TTS音声生成完了: ' + englishText + (ipa ? ' [IPA: /' + ipa + '/]' : '') + ' → ' + filename);
     return filename;
   } catch (e) {
     Logger.log('⚠️ TTS音声生成失敗: ' + e);
