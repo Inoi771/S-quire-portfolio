@@ -829,6 +829,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
     var skippedCount = 0;
     var remaining = 0;
     var nextStartIndex = startIndex; // 次バッチの開始位置
+    var lastCurrentItem = ''; // 最後にTTS生成した単語（スキップ時は変えない）
     var errors = [];
 
     var sheets = [];
@@ -899,18 +900,20 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
         if (fileExists) {
           Logger.log('⏭️ スキップ（既存）: ' + filename);
           skippedCount++;
+          // スキップ時は currentItem を変えない（生成中の単語のみ表示するため）
           cache.put(progressKey, JSON.stringify({
             status: 'running',
             processed: cumulativeProcessed + processed,
             skipped: skippedCount,
             errors: errors.length,
-            currentItem: String(english).trim()
+            currentItem: lastCurrentItem
           }), 600);
           continue;
         }
 
         // TTS 生成・アップロード
-        var base64Audio = callGoogleCloudTts(String(english).trim());
+        lastCurrentItem = String(english).trim();
+        var base64Audio = callGoogleCloudTts(lastCurrentItem);
         if (base64Audio) {
           var uploaded = uploadAudioToGithub(filename, base64Audio);
           if (uploaded) {
@@ -929,7 +932,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
           processed: cumulativeProcessed + processed,
           skipped: skippedCount,
           errors: errors.length,
-          currentItem: String(english).trim()
+          currentItem: lastCurrentItem
         }), 600);
 
         // レート制限回避のためリクエスト間に 0.5 秒の間隔を入れる
