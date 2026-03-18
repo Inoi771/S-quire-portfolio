@@ -606,10 +606,21 @@ function addMasterWord(english, pronunciation, japanese) {
     // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
     let finalAudio = audioFilename;
     try {
-      const generated = generateAndUploadAudio(english, newWordId, japanese);
-      if (generated) {
-        // generateAudioFilename と同じ名前になるはずだが、念のり確認して更新
-        if (generated !== audioFilename) {
+      // 同名ファイルが既に GitHub に存在する場合はTTS生成をスキップ
+      // （例: "man"（男）登録済みの場合に "man"（男性）を登録しても man.mp3 は流用できる）
+      const githubToken = getScriptProperty('GITHUB_TOKEN');
+      const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
+      const repo = parseGithubRepoFromUrl(githubBaseUrl);
+      const headers = {
+        'Authorization': 'token ' + githubToken,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'GAS-EnglishTest-TTS'
+      };
+      if (audioFilename && repo && githubToken && checkAudioExistsOnGithub(audioFilename, repo, headers)) {
+        Logger.log(`⏭️ 音声スキップ（既存）: ${audioFilename}`);
+      } else {
+        const generated = generateAndUploadAudio(english, newWordId, japanese);
+        if (generated && generated !== audioFilename) {
           wordSheet.getRange(insertRow, 5).setValue(generated);
           finalAudio = generated;
         }
@@ -674,10 +685,23 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
     // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
     let finalAudio = audioFilename;
     try {
-      const generated = generateAndUploadAudio(text, newSentenceId, japanese || '');
-      if (generated && generated !== audioFilename) {
-        sentenceSheet.getRange(insertRow, 5).setValue(generated);
-        finalAudio = generated;
+      // 同名ファイルが既に GitHub に存在する場合はTTS生成をスキップ
+      const githubToken = getScriptProperty('GITHUB_TOKEN');
+      const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
+      const repo = parseGithubRepoFromUrl(githubBaseUrl);
+      const headers = {
+        'Authorization': 'token ' + githubToken,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'GAS-EnglishTest-TTS'
+      };
+      if (audioFilename && repo && githubToken && checkAudioExistsOnGithub(audioFilename, repo, headers)) {
+        Logger.log(`⏭️ 音声スキップ（既存）: ${audioFilename}`);
+      } else {
+        const generated = generateAndUploadAudio(text, newSentenceId, japanese || '');
+        if (generated && generated !== audioFilename) {
+          sentenceSheet.getRange(insertRow, 5).setValue(generated);
+          finalAudio = generated;
+        }
       }
     } catch (ttsErr) {
       Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${ttsErr}`);
