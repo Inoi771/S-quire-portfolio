@@ -181,13 +181,63 @@ function checkAndUpdateCharUsage(text) {
 // ────────────────────────────────────────────
 
 /**
+ * TTS に送る前に英語テキストを前処理する。
+ * 日本語由来のプレースホルダー記号（～ … － 等）や接頭辞ハイフンを除去し、
+ * Google Cloud TTS が正しく読み上げられる形に整える。
+ *
+ * 例:
+ *   "～ times as ... as －" → "times as as"
+ *   "～, and so on"        → "and so on"
+ *   "-based"               → "based"
+ *   "… kind(s) of ~"      → "kinds of"
+ *   "~ year(s) old"        → "years old"
+ *
+ * @param {string} text - 元の英語テキスト
+ * @returns {string} 前処理後のテキスト（空文字の場合はTTSスキップ）
+ */
+function preprocessTextForTts(text) {
+  if (!text) return '';
+  var t = text;
+
+  // 日本語プレースホルダー記号を除去
+  t = t.replace(/[～〜]/g, '');   // 全角チルダ
+  t = t.replace(/－/g, '');       // 全角ハイフン
+  t = t.replace(/…/g, '');        // 水平省略記号
+  t = t.replace(/~/g, '');        // ASCII チルダ
+  t = t.replace(/\.{2,}/g, '');   // 連続ドット（..., ....）
+
+  // 括弧内の任意語尾を展開（kind(s) → kinds, go(es) → goes）
+  t = t.replace(/\(s\)/gi, 's');
+  t = t.replace(/\(es\)/gi, 'es');
+  // その他の括弧表現は除去
+  t = t.replace(/\([^)]*\)/g, '');
+
+  // 先頭・末尾のハイフン・カンマ・スペースを除去
+  t = t.replace(/^[\-\s,]+/, '');
+  t = t.replace(/[\-\s,]+$/, '');
+
+  // 連続スペースを1つに
+  t = t.replace(/\s+/g, ' ').trim();
+
+  return t;
+}
+
+/**
  * Google Cloud TTS API を呼び出して音声を生成する
- * @param {string} text      - 読み上げるテキスト
+ * @param {string} text      - 読み上げるテキスト（前処理を自動適用）
  * @param {string} [ipa]     - IPA発音記号（ヘテロニム用、省略可）。指定時は SSML phoneme を使用
  * @returns {string|null} base64エンコードされた音声データ、失敗時は null
  */
 function callGoogleCloudTts(text, ipa) {
   try {
+    // TTS に送る前にプレースホルダー記号等を除去
+    var cleanedText = preprocessTextForTts(text);
+    if (!cleanedText) {
+      Logger.log('⏭️ TTS スキップ（前処理後に空になりました）: ' + text);
+      return null;
+    }
+    text = cleanedText;
+
     if (!checkAndUpdateCharUsage(text)) return null;
 
     var apiKey = getScriptProperty('GOOGLE_CLOUD_TTS_API_KEY');
