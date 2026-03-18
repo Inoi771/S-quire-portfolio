@@ -496,24 +496,28 @@
         function fitToScreen() {
             const vw = window.innerWidth;
             const sw = screen.width;
-            if (vw <= sw) return;
+            if (sw <= 0 || vw <= sw * 1.2) return; // PCなら何もしない
 
             const ratio = vw / sw;
 
-            // body の padding を除去してフル幅を確保
+            // body の padding/margin を除去
             document.body.style.padding = '0';
+            document.body.style.margin = '0';
 
-            // .container に zoom を適用
+            // .container に zoom + vw/vh で幅・高さを補正（メインアプリと同じ手法）
             const container = document.querySelector('.container');
             if (container) {
+                container.style.width = (100 / ratio) + 'vw';
+                container.style.height = (100 / ratio) + 'vh';
                 container.style.zoom = ratio;
-                container.style.width = (100 / ratio) + '%';
             }
 
-            // position: fixed 要素は親の zoom が効かないため個別適用
+            // position: fixed 要素は親の zoom が効かないため個別に zoom + サイズ補正
             const overlay = document.getElementById('global-loading-overlay');
             if (overlay) {
                 overlay.style.zoom = ratio;
+                overlay.style.width = (100 / ratio) + 'vw';
+                overlay.style.height = (100 / ratio) + 'vh';
             }
         }
 
