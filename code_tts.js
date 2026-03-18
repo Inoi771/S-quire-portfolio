@@ -439,6 +439,89 @@ function checkAudioExistsOnGithub(filename, repo, headers) {
   }
 }
 
+/**
+ * マスターシート（英単語・英文）で指定ファイル名を参照している行数を返す
+ * @param {string} filename - 確認するファイル名（例: "man.mp3"）
+ * @param {number} excludeId - チェック対象外のID（更新元の行自身）
+ * @returns {number} 参照件数
+ */
+function countAudioReferences(filename, excludeId) {
+  try {
+    var englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
+    var ss = SpreadsheetApp.openById(englishwordsSheetId);
+    var count = 0;
+    var sheetNames = ['英単語', '英文'];
+
+    sheetNames.forEach(function(name) {
+      var sheet = ss.getSheetByName(name);
+      if (!sheet) return;
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return;
+      var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+      data.forEach(function(row) {
+        var id = row[0] ? parseInt(row[0]) : null;
+        if (id === excludeId) return; // 更新元の行は除外
+        if (String(row[4] || '').trim() === filename) count++;
+      });
+    });
+
+    return count;
+  } catch (e) {
+    Logger.log('⚠️ countAudioReferences エラー: ' + e);
+    return 1; // エラー時は安全側（削除しない）
+  }
+}
+
+/**
+ * GitHub の audio/{firstChar}/{filename} を削除する
+ * ファイルの SHA を取得してから DELETE リクエストを送る
+ * @param {string} filename - 削除するファイル名
+ * @param {string} repo     - "owner/repo" 形式
+ * @param {Object} headers  - GitHub API 認証ヘッダー
+ * @returns {boolean} 削除成功なら true
+ */
+function deleteAudioFromGithub(filename, repo, headers) {
+  try {
+    var firstChar = filename.charAt(0).toLowerCase();
+    var apiUrl = 'https://api.github.com/repos/' + repo + '/contents/audio/' + firstChar + '/' + filename;
+
+    // まず SHA を取得
+    var getResp = UrlFetchApp.fetch(apiUrl, {
+      method: 'get',
+      headers: headers,
+      muteHttpExceptions: true
+    });
+    if (getResp.getResponseCode() !== 200) {
+      Logger.log('⚠️ 削除対象ファイルが見つかりません: ' + filename);
+      return false;
+    }
+    var sha = JSON.parse(getResp.getContentText()).sha;
+
+    // DELETE リクエスト
+    var deleteResp = UrlFetchApp.fetch(apiUrl, {
+      method: 'delete',
+      headers: headers,
+      payload: JSON.stringify({
+        message: 'Remove unused audio: ' + filename,
+        sha: sha
+      }),
+      contentType: 'application/json',
+      muteHttpExceptions: true
+    });
+
+    if (deleteResp.getResponseCode() === 200 || deleteResp.getResponseCode() === 204) {
+      Logger.log('🗑️ 未参照音声を削除: ' + filename);
+      return true;
+    } else {
+      Logger.log('⚠️ 音声削除失敗 (' + deleteResp.getResponseCode() + '): ' + filename);
+      return false;
+    }
+  } catch (e) {
+    Logger.log('⚠️ deleteAudioFromGithub エラー: ' + e);
+    return false;
+  }
+}
+
 // ────────────────────────────────────────────
 // TTS 生成 + アップロード（単体）
 // ────────────────────────────────────────────
