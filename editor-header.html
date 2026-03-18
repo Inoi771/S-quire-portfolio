@@ -1608,8 +1608,12 @@
       <div class="settings-section">
         <h3>その他</h3>
         <div class="settings-field">
-          <label>HOMEPAGE_URL（任意）</label>
+          <label>HOMEPAGE_URL（ロゴリンク先URL・任意）</label>
           <input type="text" id="setting-HOMEPAGE_URL" placeholder="https://...">
+        </div>
+        <div class="settings-field">
+          <label>STUDENT_HOMEPAGE_URL（生徒用アプリURL・QRコード生成用・任意）</label>
+          <input type="text" id="setting-STUDENT_HOMEPAGE_URL" placeholder="https://...">
           <button type="button" id="qr-generate-btn" onclick="generateQrCode()">QRコード生成</button>
         </div>
         <div id="qr-code-area" style="display:none; margin-top:16px; text-align:center;">

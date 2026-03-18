@@ -1982,7 +1982,7 @@ function loadSettingsValues() {
         return;
       }
       ['ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID', 'GITHUB_BASE_URL',
-       'GITHUB_TOKEN', 'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'].forEach(key => {
+       'GITHUB_TOKEN', 'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'].forEach(key => {
         const el = document.getElementById('setting-' + key);
         if (el) el.value = data[key] || '';
       });
@@ -1997,7 +1997,7 @@ function loadSettingsValues() {
 function saveSettings() {
   const settings = {};
   ['ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID', 'GITHUB_BASE_URL',
-   'GITHUB_TOKEN', 'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'].forEach(key => {
+   'GITHUB_TOKEN', 'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'].forEach(key => {
     const el = document.getElementById('setting-' + key);
     if (el) settings[key] = el.value.trim();
   });
@@ -2502,8 +2502,8 @@ var QRCodeGenerator = (function() {
 })();
 
 function generateQrCode() {
-  var url = document.getElementById('setting-HOMEPAGE_URL').value.trim();
-  if (!url) { alert('HOMEPAGE_URL を入力してください。'); return; }
+  var url = document.getElementById('setting-STUDENT_HOMEPAGE_URL').value.trim();
+  if (!url) { alert('STUDENT_HOMEPAGE_URL を入力してください。'); return; }
   var dataUrl = QRCodeGenerator.toDataURL(url, 10);
   if (!dataUrl) { alert('QRコードの生成に失敗しました。URLが長すぎる可能性があります。'); return; }
   var img = document.getElementById('qr-code-img');

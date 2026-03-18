@@ -980,7 +980,7 @@ function getScriptPropertiesForSettings() {
     const keys = [
       'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
       'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'
     ];
     const result = { success: true };
     keys.forEach(k => { result[k] = getScriptProperty(k) || ''; });
@@ -1003,7 +1003,7 @@ function saveScriptProperties(settings) {
     const keys = [
       'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
       'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL'
+      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'
     ];
     keys.forEach(k => {
       if (settings[k] !== undefined && settings[k] !== '') {
