@@ -288,6 +288,12 @@ function callGoogleCloudTts(text, ipa) {
     }
     text = cleanedText;
 
+    // 単独の "a" はアルファベット読み（エイ）になるのを防ぐため、
+    // IPA未指定の場合はシュワー /ə/ を自動設定（冠詞として発音）
+    if (!ipa && text.toLowerCase() === 'a') {
+      ipa = 'ə';
+    }
+
     if (!checkAndUpdateCharUsage(text)) return null;
 
     var apiKey = getScriptProperty('GOOGLE_CLOUD_TTS_API_KEY');
