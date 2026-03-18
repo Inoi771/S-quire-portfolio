@@ -182,20 +182,39 @@ function checkAndUpdateCharUsage(text) {
 
 /**
  * テキストの記号系クリーンアップ（角括弧処理を除く共通処理）
+ *
+ * プレースホルダー記号（～ … － ~ ...）は一旦すべてカンマに変換する。
+ * これにより文中にあるものはポーズになり、先頭・末尾のものは後のトリムで除去される。
+ *
+ * 例:
+ *   "～ times as ... as"  → "times as, as"  （中間の ... → カンマ＝ポーズ）
+ *   "～, and so on"       → "and so on"     （先頭 ～ → トリムで除去）
+ *   "kind(s) of"          → "kinds of"
+ *
  * @param {string} t
  * @returns {string}
  */
 function cleanupTtsText(t) {
-  t = t.replace(/[～〜]/g, '');   // 全角チルダ
-  t = t.replace(/－/g, '');       // 全角ハイフン
-  t = t.replace(/…/g, '');        // 水平省略記号
-  t = t.replace(/~/g, '');        // ASCII チルダ
-  t = t.replace(/\.{2,}/g, '');   // 連続ドット（..., ....）
-  t = t.replace(/\(s\)/gi, 's');  // kind(s) → kinds
+  // プレースホルダー記号をカンマに変換（文中→ポーズ、先頭末尾→後でトリム）
+  t = t.replace(/[～〜~]/g, ',');  // チルダ系
+  t = t.replace(/－/g, ',');       // 全角ハイフン
+  t = t.replace(/…/g, ',');        // 水平省略記号
+  t = t.replace(/\.{2,}/g, ',');   // 連続ドット（..., ....）
+
+  // 語尾括弧を展開
+  t = t.replace(/\(s\)/gi, 's');   // kind(s) → kinds
   t = t.replace(/\(es\)/gi, 'es');
   t = t.replace(/\([^)]*\)/g, '');
+
+  // カンマ前後のスペースを正規化し、連続カンマをひとつに
+  t = t.replace(/\s*,\s*/g, ', ');
+  t = t.replace(/(?:,\s*){2,}/g, ', ');
+
+  // 先頭・末尾のカンマ・ハイフン・スペースを除去
   t = t.replace(/^[\-\s,]+/, '');
   t = t.replace(/[\-\s,]+$/, '');
+
+  // 連続スペースを1つに
   t = t.replace(/\s+/g, ' ').trim();
   return t;
 }
