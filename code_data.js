@@ -379,13 +379,34 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
     for (let i = 0; i < data.length; i++) {
       const currentId = data[i][0] ? parseInt(data[i][0]) : i + 1;
       if (currentId === wordId) {
-        const actualRow = i + 2; // データ範囲の開始は2行目
+        const actualRow = i + 2;
+        const oldAudio = String(data[i][4] || '').trim();
         wordSheet.getRange(actualRow, 1).setValue(wordId);
         wordSheet.getRange(actualRow, 2).setValue(newEnglish);
         wordSheet.getRange(actualRow, 3).setValue(newPronunciation);
         wordSheet.getRange(actualRow, 4).setValue(newJapanese);
-        // ✅ 修正：audio列（5列目）はそのまま（更新しない）
-        
+
+        // 英語テキストが変わった場合のみ音声を更新
+        const newAudio = generateAudioFilename(newEnglish, wordId, newJapanese);
+        if (newAudio && newAudio !== oldAudio) {
+          // 古いファイルは他の単語が参照している可能性があるため削除しない
+          const githubToken = getScriptProperty('GITHUB_TOKEN');
+          const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
+          const repo = parseGithubRepoFromUrl(githubBaseUrl);
+          const headers = {
+            'Authorization': 'token ' + githubToken,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'GAS-EnglishTest-TTS'
+          };
+          if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
+            generateAndUploadAudio(newEnglish, wordId, newJapanese);
+          } else {
+            Logger.log(`⏭️ 音声スキップ（既存）: ${newAudio}`);
+          }
+          wordSheet.getRange(actualRow, 5).setValue(newAudio);
+          Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
+        }
+
         updateLog = { actualRow: actualRow, wordId: wordId };
         found = true;
         break;
@@ -430,20 +451,35 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
     for (let i = 0; i < data.length; i++) {
       const currentId = data[i][0] ? parseInt(data[i][0]) : null;
       if (currentId === sentenceId) {
-        const actualRow = i + 2; // データ範囲の開始は2行目
-        
-        // 列1：ID（そのまま）
+        const actualRow = i + 2;
+        const oldAudio = String(data[i][4] || '').trim();
+
         sentenceSheet.getRange(actualRow, 1).setValue(sentenceId);
-        
-        // 列2：文テキスト（更新）
         sentenceSheet.getRange(actualRow, 2).setValue(newText);
-        
-        // 列3：発音記号（更新）
         sentenceSheet.getRange(actualRow, 3).setValue(newPronunciation);
-        
-        // ✅ 修正：列4：日本語（新規追加対応）
         sentenceSheet.getRange(actualRow, 4).setValue(newJapanese);
-        
+
+        // 英語テキストが変わった場合のみ音声を更新
+        const newAudio = generateAudioFilename(newText, sentenceId, newJapanese || '');
+        if (newAudio && newAudio !== oldAudio) {
+          // 古いファイルは他の英文が参照している可能性があるため削除しない
+          const githubToken = getScriptProperty('GITHUB_TOKEN');
+          const githubBaseUrl = getScriptProperty('GITHUB_BASE_URL');
+          const repo = parseGithubRepoFromUrl(githubBaseUrl);
+          const headers = {
+            'Authorization': 'token ' + githubToken,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'GAS-EnglishTest-TTS'
+          };
+          if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
+            generateAndUploadAudio(newText, sentenceId, newJapanese || '');
+          } else {
+            Logger.log(`⏭️ 音声スキップ（既存）: ${newAudio}`);
+          }
+          sentenceSheet.getRange(actualRow, 5).setValue(newAudio);
+          Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
+        }
+
         updateLog = { actualRow: actualRow, sentenceId: sentenceId };
         found = true;
         break;
@@ -458,7 +494,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
     Logger.log(`   テキスト: ${newText}`);
     Logger.log(`   発音: ${newPronunciation || '（なし）'}`);
     Logger.log(`   日本語: ${newJapanese || '（なし）'}`);
-    
+
     return { success: true };
   } catch (e) {
     Logger.log('Error updateMasterSentence: ' + e);
