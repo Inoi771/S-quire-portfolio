@@ -1615,6 +1615,20 @@
           <label>STUDENT_HOMEPAGE_URL（生徒用アプリURL・任意）</label>
           <input type="text" id="setting-STUDENT_HOMEPAGE_URL" placeholder="https://...">
         </div>
+        <div class="settings-field">
+          <label>QRコード画像（アップロードして保存）</label>
+          <input type="file" id="qr-upload-input" accept="image/*" onchange="handleQrImageUpload(event)">
+          <button type="button" onclick="saveQrCode()">💾 QRコードを保存</button>
+        </div>
+        <div id="qr-preview-area" style="display:none; margin-top:12px; text-align:center;">
+          <img id="qr-preview-img" src="" alt="QRコード"
+               style="max-width:200px; max-height:200px; border:1px solid #ddd; border-radius:8px; object-fit:contain;">
+          <div style="margin-top:8px;">
+            <a id="qr-dl-link" href="" download="qrcode.png">
+              <button type="button" class="settings-auto-btn">⬇️ ダウンロード</button>
+            </a>
+          </div>
+        </div>
       </div>
 
       <button id="save-settings-btn" class="settings-save-btn">💾 設定を保存</button>
