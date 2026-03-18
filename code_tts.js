@@ -181,11 +181,34 @@ function checkAndUpdateCharUsage(text) {
 // ────────────────────────────────────────────
 
 /**
+ * テキストの記号系クリーンアップ（角括弧処理を除く共通処理）
+ * @param {string} t
+ * @returns {string}
+ */
+function cleanupTtsText(t) {
+  t = t.replace(/[～〜]/g, '');   // 全角チルダ
+  t = t.replace(/－/g, '');       // 全角ハイフン
+  t = t.replace(/…/g, '');        // 水平省略記号
+  t = t.replace(/~/g, '');        // ASCII チルダ
+  t = t.replace(/\.{2,}/g, '');   // 連続ドット（..., ....）
+  t = t.replace(/\(s\)/gi, 's');  // kind(s) → kinds
+  t = t.replace(/\(es\)/gi, 'es');
+  t = t.replace(/\([^)]*\)/g, '');
+  t = t.replace(/^[\-\s,]+/, '');
+  t = t.replace(/[\-\s,]+$/, '');
+  t = t.replace(/\s+/g, ' ').trim();
+  return t;
+}
+
+/**
  * TTS に送る前に英語テキストを前処理する。
  * 日本語由来のプレースホルダー記号（～ … － 等）や接頭辞ハイフンを除去し、
  * Google Cloud TTS が正しく読み上げられる形に整える。
  *
- * 例:
+ * 角括弧 [alt] がある場合は両方の読み方を生成する:
+ *   "a [one] hundred" → "a hundred, one hundred"
+ *
+ * その他の例:
  *   "～ times as ... as －" → "times as as"
  *   "～, and so on"        → "and so on"
  *   "-based"               → "based"
@@ -197,32 +220,22 @@ function checkAndUpdateCharUsage(text) {
  */
 function preprocessTextForTts(text) {
   if (!text) return '';
-  var t = text;
 
-  // 日本語プレースホルダー記号を除去
-  t = t.replace(/[～〜]/g, '');   // 全角チルダ
-  t = t.replace(/－/g, '');       // 全角ハイフン
-  t = t.replace(/…/g, '');        // 水平省略記号
-  t = t.replace(/~/g, '');        // ASCII チルダ
-  t = t.replace(/\.{2,}/g, '');   // 連続ドット（..., ....）
+  // 角括弧の代替表現がある場合は2形式を生成して両方読み上げる
+  if (/\[[^\]]+\]/.test(text)) {
+    // form1: 角括弧ごと除去 → "a hundred"
+    var form1 = cleanupTtsText(text.replace(/\[[^\]]*\]/g, ''));
+    // form2: 直前の単語を角括弧の中身に置換 → "one hundred"
+    //   "a [one] hundred" → "one hundred"
+    var form2 = cleanupTtsText(text.replace(/\S+\s*\[([^\]]+)\]/g, '$1'));
 
-  // 角括弧の代替表現を除去（a [one] hundred → a hundred）
-  t = t.replace(/\[[^\]]*\]/g, '');
+    if (form1 && form2 && form1 !== form2) {
+      return form1 + ', ' + form2;
+    }
+    return form1 || form2;
+  }
 
-  // 括弧内の任意語尾を展開（kind(s) → kinds, go(es) → goes）
-  t = t.replace(/\(s\)/gi, 's');
-  t = t.replace(/\(es\)/gi, 'es');
-  // その他の括弧表現は除去
-  t = t.replace(/\([^)]*\)/g, '');
-
-  // 先頭・末尾のハイフン・カンマ・スペースを除去
-  t = t.replace(/^[\-\s,]+/, '');
-  t = t.replace(/[\-\s,]+$/, '');
-
-  // 連続スペースを1つに
-  t = t.replace(/\s+/g, ' ').trim();
-
-  return t;
+  return cleanupTtsText(text);
 }
 
 /**
