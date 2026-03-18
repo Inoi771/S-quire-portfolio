@@ -2515,38 +2515,75 @@ function generateQrCode() {
 }
 
 function startBulkAudioGeneration() {
-  const batchSize = 50;
+  var batchSize = 50;
   if (!confirm('音声ファイルが未生成の単語・英文に TTS 音声を一括生成します。\n残りがある場合は自動的に続けて処理します。\n\n続行しますか？')) return;
 
-  function runBatch(totalProcessed, allErrors) {
-    showLoadingIndicator('音声を生成中... ' + totalProcessed + ' 件完了');
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (!result.success) {
-          hideLoadingIndicator();
-          alert('❌ エラー:\n' + (result.errors || []).join('\n'));
-          return;
-        }
-        var newTotal = totalProcessed + result.processed;
-        var newErrors = allErrors.concat(result.errors || []);
-        if (result.remaining > 0) {
-          runBatch(newTotal, newErrors);
-        } else {
-          hideLoadingIndicator();
-          var msg = '✅ 合計 ' + newTotal + ' 件の音声を生成しました。';
-          if (newErrors.length > 0)
-            msg += '\n⚠️ ' + newErrors.length + ' 件でエラー:\n' + newErrors.slice(0, 5).join('\n');
-          alert(msg);
-        }
-      })
-      .withFailureHandler(function(err) {
-        hideLoadingIndicator();
-        alert('❌ エラー: ' + err);
-      })
-      .bulkGenerateAudio('all', batchSize);
-  }
+  showLoadingIndicator('音声生成の準備中...');
 
-  runBatch(0, []);
+  // まず全体件数を取得
+  google.script.run
+    .withSuccessHandler(function(countResult) {
+      var totalItems = (countResult && countResult.total) || 0;
+      var pollingTimer = null;
+
+      // 3秒間隔で進捗をポーリング
+      pollingTimer = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(function(progress) {
+            if (!progress) return;
+            var msg = '音声を生成中... ' + progress.processed + ' / ' + totalItems + ' 件完了';
+            if (progress.skipped > 0) {
+              msg += '\n(' + progress.skipped + ' 件は既存のためスキップ)';
+            }
+            if (progress.currentItem) {
+              msg += '\n現在: ' + progress.currentItem;
+            }
+            updateLoadingMessage(msg);
+          })
+          .withFailureHandler(function() { /* ポーリングエラーは無視 */ })
+          .getAudioGenerationProgress();
+      }, 3000);
+
+      // バッチ処理を再帰実行
+      function runBatch(totalProcessed, totalSkipped, allErrors) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (!result.success) {
+              clearInterval(pollingTimer);
+              hideLoadingIndicator();
+              alert('❌ エラー:\n' + (result.errors || []).join('\n'));
+              return;
+            }
+            var newTotal = totalProcessed + result.processed;
+            var newSkipped = totalSkipped + (result.skipped || 0);
+            var newErrors = allErrors.concat(result.errors || []);
+            if (result.remaining > 0) {
+              runBatch(newTotal, newSkipped, newErrors);
+            } else {
+              clearInterval(pollingTimer);
+              hideLoadingIndicator();
+              var msg = '✅ 合計 ' + newTotal + ' 件の音声を生成しました。';
+              if (newSkipped > 0) msg += '\n(' + newSkipped + ' 件は既存のためスキップ)';
+              if (newErrors.length > 0)
+                msg += '\n⚠️ ' + newErrors.length + ' 件でエラー:\n' + newErrors.slice(0, 5).join('\n');
+              alert(msg);
+            }
+          })
+          .withFailureHandler(function(err) {
+            clearInterval(pollingTimer);
+            hideLoadingIndicator();
+            alert('❌ エラー: ' + err);
+          })
+          .bulkGenerateAudio('all', batchSize, totalProcessed);
+      }
+
+      runBatch(0, 0, []);
+    })
+    .withFailureHandler(function(err) {
+      hideLoadingIndicator();
+      alert('❌ アイテム数の取得に失敗しました: ' + err);
+    })
+    .countAudioItems('all');
 }
 
 // onclick 属性から呼べるようにグローバルに公開

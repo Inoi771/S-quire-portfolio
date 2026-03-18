@@ -508,9 +508,13 @@ function fillMissingAudioFilenames() {
  * @param {number} batchSize - 1回の実行で処理する件数（デフォルト 50）
  * @returns {Object} { success, processed, remaining, errors }
  */
-function bulkGenerateAudio(type, batchSize) {
+function bulkGenerateAudio(type, batchSize, cumulativeProcessed) {
+  var cache = CacheService.getScriptCache();
+  var progressKey = 'TTS_PROGRESS';
+
   try {
     batchSize = batchSize || 50;
+    cumulativeProcessed = cumulativeProcessed || 0;
     var MAX_RUNTIME_MS = 4.5 * 60 * 1000; // 4.5分
     var startTime = Date.now();
 
@@ -537,6 +541,7 @@ function bulkGenerateAudio(type, batchSize) {
     var ss = SpreadsheetApp.openById(englishwordsSheetId);
 
     var processed = 0;
+    var skippedCount = 0;
     var remaining = 0;
     var errors = [];
 
@@ -549,6 +554,15 @@ function bulkGenerateAudio(type, batchSize) {
       var sentenceSheet = ss.getSheetByName('英文');
       if (sentenceSheet) sheets.push({ sheet: sentenceSheet, name: '英文' });
     }
+
+    // 初期進捗をキャッシュに書き込み
+    cache.put(progressKey, JSON.stringify({
+      status: 'running',
+      processed: cumulativeProcessed,
+      skipped: 0,
+      errors: 0,
+      currentItem: ''
+    }), 600);
 
     for (var s = 0; s < sheets.length; s++) {
       var sheetInfo = sheets[s];
@@ -578,6 +592,14 @@ function bulkGenerateAudio(type, batchSize) {
         // GitHub に既にファイルが存在する場合はスキップ
         if (checkAudioExistsOnGithub(filename, repo, headers)) {
           Logger.log('⏭️ スキップ（既存）: ' + filename);
+          skippedCount++;
+          cache.put(progressKey, JSON.stringify({
+            status: 'running',
+            processed: cumulativeProcessed + processed,
+            skipped: skippedCount,
+            errors: errors.length,
+            currentItem: String(english).trim()
+          }), 600);
           continue;
         }
 
@@ -595,15 +617,88 @@ function bulkGenerateAudio(type, batchSize) {
           errors.push(sheetInfo.name + ' ID=' + id + ' (' + english + '): TTS生成失敗');
         }
 
+        // 進捗をキャッシュに更新
+        cache.put(progressKey, JSON.stringify({
+          status: 'running',
+          processed: cumulativeProcessed + processed,
+          skipped: skippedCount,
+          errors: errors.length,
+          currentItem: String(english).trim()
+        }), 600);
+
         // レート制限回避のためリクエスト間に 0.5 秒の間隔を入れる
         Utilities.sleep(500);
       }
     }
 
-    Logger.log('✅ bulkGenerateAudio 完了: 処理=' + processed + ', 残り=' + remaining + ', エラー=' + errors.length);
-    return { success: true, processed: processed, remaining: remaining, errors: errors };
+    // 完了状態をキャッシュに書き込み
+    cache.put(progressKey, JSON.stringify({
+      status: 'complete',
+      processed: cumulativeProcessed + processed,
+      skipped: skippedCount,
+      errors: errors.length,
+      currentItem: ''
+    }), 60);
+
+    Logger.log('✅ bulkGenerateAudio 完了: 処理=' + processed + ', スキップ=' + skippedCount + ', 残り=' + remaining + ', エラー=' + errors.length);
+    return { success: true, processed: processed, skipped: skippedCount, remaining: remaining, errors: errors };
   } catch (e) {
     Logger.log('❌ bulkGenerateAudio エラー: ' + e);
+    cache.put(progressKey, JSON.stringify({
+      status: 'error',
+      processed: cumulativeProcessed,
+      skipped: 0,
+      errors: 1,
+      currentItem: ''
+    }), 60);
     return { success: false, processed: 0, remaining: 0, errors: [e.toString()] };
   }
+}
+
+/**
+ * 音声生成対象のアイテム数をカウントする（english と audio が両方設定済みの行）
+ */
+function countAudioItems(type) {
+  try {
+    var englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
+    var ss = SpreadsheetApp.openById(englishwordsSheetId);
+    var total = 0;
+    var sheets = [];
+    if (type === 'words' || type === 'all') {
+      var ws = ss.getSheetByName('英単語');
+      if (ws) sheets.push(ws);
+    }
+    if (type === 'sentences' || type === 'all') {
+      var ss2 = ss.getSheetByName('英文');
+      if (ss2) sheets.push(ss2);
+    }
+    for (var s = 0; s < sheets.length; s++) {
+      var sheet = sheets[s];
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) continue;
+      var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var english = data[i][1];
+        var audio = data[i][4];
+        if (english && String(english).trim() !== '' &&
+            audio && String(audio).trim() !== '') {
+          total++;
+        }
+      }
+    }
+    return { success: true, total: total };
+  } catch (e) {
+    Logger.log('❌ countAudioItems エラー: ' + e);
+    return { success: false, total: 0, error: e.toString() };
+  }
+}
+
+/**
+ * 音声生成の進捗状況をキャッシュから取得する（ポーリング用軽量関数）
+ */
+function getAudioGenerationProgress() {
+  var cache = CacheService.getScriptCache();
+  var data = cache.get('TTS_PROGRESS');
+  if (!data) return null;
+  return JSON.parse(data);
 }

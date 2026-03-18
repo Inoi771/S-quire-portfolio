@@ -822,10 +822,12 @@ function showLoadingIndicator(message = '読み込み中...') {
   document.head.appendChild(style);
 
   const messageEl = document.createElement('div');
+  messageEl.id = 'loadingMessage';
   messageEl.style.cssText = `
     font-size: 16px;
     color: #333;
     font-weight: bold;
+    white-space: pre-line;
   `;
   messageEl.textContent = message;
 
@@ -833,6 +835,16 @@ function showLoadingIndicator(message = '読み込み中...') {
   container.appendChild(messageEl);
   overlay.appendChild(container);
   document.body.appendChild(overlay);
+}
+
+/**
+ * ローディングインジケーターのメッセージのみ更新（ちらつき防止）
+ */
+function updateLoadingMessage(message) {
+  var messageEl = document.getElementById('loadingMessage');
+  if (messageEl) {
+    messageEl.textContent = message;
+  }
 }
 
 /**
