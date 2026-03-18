@@ -905,8 +905,7 @@ function bulkGenerateAudio(type, batchSize, cumulativeProcessed, startIndex) {
             status: 'running',
             processed: cumulativeProcessed + processed,
             skipped: skippedCount,
-            errors: errors.length,
-            currentItem: lastCurrentItem
+            errors: errors.length
           }), 600);
           continue;
         }
