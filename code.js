@@ -1022,6 +1022,51 @@ function saveScriptProperties(settings) {
 }
 
 /**
+ * QRコード画像を Google Drive に保存する
+ * @param {string} base64DataUrl - data:image/png;base64,... 形式
+ * @returns {Object} { success }
+ */
+function saveQrCodeImage(base64DataUrl) {
+  try {
+    const folderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    if (!folderId) return { success: false, error: 'ENGLISHWORDS_FOLDER_ID が未設定です' };
+    const match = base64DataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+    if (!match) return { success: false, error: '無効なデータ形式です' };
+    const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), match[1], 'qrcode.png');
+    const folder = DriveApp.getFolderById(folderId);
+    const existing = folder.getFilesByName('qrcode.png');
+    while (existing.hasNext()) existing.next().setTrashed(true);
+    folder.createFile(blob);
+    Logger.log('✅ QRコード画像を保存しました');
+    return { success: true };
+  } catch (e) {
+    Logger.log('Error saveQrCodeImage: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Google Drive から QRコード画像を base64 DataURL で返す
+ * @returns {Object} { success, data: string|null }
+ */
+function getQrCodeImage() {
+  try {
+    const folderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
+    if (!folderId) return { success: true, data: null };
+    const folder = DriveApp.getFolderById(folderId);
+    const files = folder.getFilesByName('qrcode.png');
+    if (!files.hasNext()) return { success: true, data: null };
+    const file = files.next();
+    const blob = file.getBlob();
+    const base64 = Utilities.base64Encode(blob.getBytes());
+    return { success: true, data: 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + base64 };
+  } catch (e) {
+    Logger.log('Error getQrCodeImage: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Drive リソース自動作成（code_init.js の setupScriptProperties を呼び出す）
  * @returns {Object} { success, created, existing, manualRequired }
  */

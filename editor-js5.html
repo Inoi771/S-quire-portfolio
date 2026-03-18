@@ -1992,6 +1992,49 @@ function loadSettingsValues() {
       alert('設定の読み込みに失敗しました: ' + err);
     })
     .getScriptPropertiesForSettings();
+  loadQrCodeImage();
+}
+
+function handleQrImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const dataUrl = e.target.result;
+    document.getElementById('qr-preview-img').src = dataUrl;
+    document.getElementById('qr-dl-link').href = dataUrl;
+    document.getElementById('qr-preview-area').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveQrCode() {
+  const img = document.getElementById('qr-preview-img');
+  if (!img.src || img.src === window.location.href) {
+    alert('先に画像を選択してください。');
+    return;
+  }
+  showLoadingIndicator('QRコードを保存中...');
+  google.script.run
+    .withSuccessHandler(result => {
+      hideLoadingIndicator();
+      alert(result.success ? '✅ QRコードを保存しました。' : '❌ 保存に失敗しました: ' + (result.error || ''));
+    })
+    .withFailureHandler(err => { hideLoadingIndicator(); alert('❌ 保存に失敗しました: ' + err); })
+    .saveQrCodeImage(img.src);
+}
+
+function loadQrCodeImage() {
+  google.script.run
+    .withSuccessHandler(result => {
+      if (result.success && result.data) {
+        document.getElementById('qr-preview-img').src = result.data;
+        document.getElementById('qr-dl-link').href = result.data;
+        document.getElementById('qr-preview-area').style.display = 'block';
+      }
+    })
+    .withFailureHandler(() => {})
+    .getQrCodeImage();
 }
 
 function saveSettings() {
