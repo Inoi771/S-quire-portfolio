@@ -519,7 +519,7 @@ years = JSON.parse(yearsJsonString);
 ## 作業時の注意事項
 
 1. **大きなファイルを Read する際はオフセットと行数を指定する**
-   - `editor.html` はスケルトン化済み（~400行）。CSS は `editor-css.html`、JS は `editor-js1〜5.html` に分割済み
+   - `editor.html` はスケルトン化済み。CSS は `editor-header.html`、JS は `editor-js1〜5.html` に分割済み
    - `code.js` は ~700行に削減済み。残りは `code_lesson.js` / `code_data.js` / `code_pdf.js` / `code_student.js` に分割済み
    - 各分割ファイルは ~1000〜1600行。対象関数を Grep で探してから Read する
 
@@ -587,8 +587,8 @@ years = JSON.parse(yearsJsonString);
 
 **現在の分割済み構成（editor.html）:**
 ```
-editor.html       — スケルトン（~400行）HTMLボディ + IIFE 枠組み
-editor-css.html   — CSS（<style>タグ込み）
+editor-header.html — CSS + HTMLヘッダー + script開始タグ
+editor-footer.html — script終了タグ + HTML終了タグ
 editor-js1.html   — グローバル変数・状態 + ダイアログ + 初期化 + データ階層 + カスタムレッスン
 editor-js2.html   — エディタ読込 + renderEditor + renderTabs + renderWordList + テーブル操作
 editor-js3.html   — renderTable + 特殊レイアウト + 代名詞テーブル + キーボード + セルID計算
