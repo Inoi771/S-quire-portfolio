@@ -1037,6 +1037,7 @@
             document.getElementById('lesson').addEventListener('change', handleLessonChange);
             
             clearQuestions();
+            updateTextbooks();
             loadLogo();
 
             fitToScreen();
@@ -1103,8 +1104,8 @@
                     <label for="year">年度:</label>
                     <select id="year">
                         <option value="">---</option>
-                        <? years.forEach(y => { ?>
-                            <option value="<?= y.originalName ?>">
+                        <? years.forEach((y, i) => { ?>
+                            <option value="<?= y.originalName ?>" <?= i === 0 ? 'selected' : '' ?>>
                                 <?= y.displayName ?>
                             </option>
                         <? }); ?>
