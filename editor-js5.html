@@ -638,6 +638,7 @@ function performUpdateWord(existingWord, english, pronunciation, japanese, formC
         existingWord.english = english;
         existingWord.pronunciation = pronunciation;
         existingWord.japanese = japanese;
+        if (result.audio) existingWord.audio = result.audio;
 
         isSaving = false;
         updateUIForSaving();
@@ -744,6 +745,7 @@ function performUpdateSentence(existingSentence, japanese, text, pronunciation, 
         existingSentence.japanese = japanese;
         existingSentence.text = text;
         existingSentence.pronunciation = pronunciation;
+        if (result.audio) existingSentence.audio = result.audio;
 
         isSaving = false;
         updateUIForSaving();
