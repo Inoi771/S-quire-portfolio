@@ -634,7 +634,11 @@ function performUpdateWord(existingWord, english, pronunciation, japanese, formC
         renderWordList();
         hideLoadingIndicator();
 
-        alert('✅ 既存の単語を上書きしました！');
+        if (result.ttsStatus === 'failed') {
+          showTtsRetryNotification(result.masterId, 'word', english, result.rowIndex, 'update');
+        } else {
+          alert('✅ 既存の単語を上書きしました！');
+        }
       } else {
         throw new Error(result.error);
       }
@@ -679,7 +683,11 @@ function performNewRegistrationWord(english, pronunciation, japanese, formContai
         renderWordList();
         hideLoadingIndicator();
 
-        alert('✅ 単語を新規登録しました！');
+        if (result.ttsStatus === 'failed') {
+          showTtsRetryNotification(result.wordId, 'word', english, result.rowIndex, 'add');
+        } else {
+          alert('✅ 単語を新規登録しました！');
+        }
       } else {
         throw new Error(result.error);
       }
@@ -718,7 +726,11 @@ function performUpdateSentence(existingSentence, japanese, text, pronunciation, 
         renderWordList();
         hideLoadingIndicator();
 
-        alert('✅ 既存の英文を上書きしました！');
+        if (result.ttsStatus === 'failed') {
+          showTtsRetryNotification(result.masterId, 'sentence', text, result.rowIndex, 'update');
+        } else {
+          alert('✅ 既存の英文を上書きしました！');
+        }
       } else {
         throw new Error(result.error);
       }
@@ -763,7 +775,11 @@ function performNewRegistrationSentence(japanese, text, pronunciation, formConta
         renderWordList();
         hideLoadingIndicator();
 
-        alert('✅ 英文を新規登録しました！');
+        if (result.ttsStatus === 'failed') {
+          showTtsRetryNotification(result.sentenceId, 'sentence', text, result.rowIndex, 'add');
+        } else {
+          alert('✅ 英文を新規登録しました！');
+        }
       } else {
         throw new Error(result.error);
       }
@@ -2090,6 +2106,138 @@ function togglePasswordVisibility(inputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
   input.type = (input.type === 'password') ? 'text' : 'password';
+}
+
+// ────────────────────────────────────────────
+// TTS失敗時の再生成通知UI
+// ────────────────────────────────────────────
+
+function showTtsRetryNotification(masterId, type, displayText, rowIndex, operationType) {
+  const existing = document.getElementById('tts-retry-notification');
+  if (existing) existing.remove();
+
+  const label = type === 'word' ? '単語' : '英文';
+  const notification = document.createElement('div');
+  notification.id = 'tts-retry-notification';
+  notification.style.cssText = [
+    'position:fixed', 'bottom:24px', 'right:24px', 'z-index:9999',
+    'background:#fff3cd', 'border:1px solid #ffc107', 'border-radius:8px',
+    'padding:14px 18px', 'max-width:380px', 'box-shadow:0 4px 12px rgba(0,0,0,0.15)',
+    'font-family:Meiryo,Arial,sans-serif', 'font-size:13px', 'line-height:1.6'
+  ].join(';');
+
+  const btnStyle = 'border:none;border-radius:5px;padding:6px 14px;font-size:13px;cursor:pointer;font-family:Meiryo,Arial,sans-serif;';
+
+  notification.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div style="flex:1;">
+        <div style="font-weight:bold;margin-bottom:6px;">⚠️ 音声生成に失敗しました</div>
+        <div style="color:#555;margin-bottom:10px;">${label}「${escapeHtmlClient(displayText)}」の音声ファイルを生成できませんでした。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="tts-retry-btn" style="${btnStyle}background:#4CAF50;color:white;">
+            🔄 再生成する
+          </button>
+          <button id="tts-cancel-btn" style="${btnStyle}background:#f44336;color:white;">
+            ❌ 登録をキャンセル
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="tts-retry-result" style="margin-top:8px;"></div>
+  `;
+
+  document.body.appendChild(notification);
+
+  document.getElementById('tts-retry-btn').addEventListener('click', () => {
+    retryTtsGeneration(masterId);
+  });
+
+  document.getElementById('tts-cancel-btn').addEventListener('click', () => {
+    cancelTtsRegistration(rowIndex, type, label, displayText);
+  });
+}
+
+function retryTtsGeneration(masterId) {
+  const btn = document.getElementById('tts-retry-btn');
+  const cancelBtn = document.getElementById('tts-cancel-btn');
+  const resultDiv = document.getElementById('tts-retry-result');
+  if (!btn || !resultDiv) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成中...';
+  if (cancelBtn) cancelBtn.disabled = true;
+  resultDiv.textContent = '';
+
+  google.script.run
+    .withSuccessHandler((result) => {
+      if (result.success) {
+        const btns = document.getElementById('tts-retry-notification').querySelectorAll('button');
+        btns.forEach(b => b.remove());
+        resultDiv.innerHTML = '<span style="color:#4CAF50;font-weight:bold;">✅ 音声を生成しました</span>';
+        setTimeout(() => {
+          const n = document.getElementById('tts-retry-notification');
+          if (n) n.remove();
+        }, 3000);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '🔄 再生成する';
+        if (cancelBtn) cancelBtn.disabled = false;
+        resultDiv.innerHTML = '<span style="color:#c00;">❌ 再度失敗しました。後で手動で再試行してください。</span>';
+      }
+    })
+    .withFailureHandler((err) => {
+      btn.disabled = false;
+      btn.textContent = '🔄 再生成する';
+      if (cancelBtn) cancelBtn.disabled = false;
+      resultDiv.innerHTML = '<span style="color:#c00;">❌ 再度失敗しました。後で手動で再試行してください。</span>';
+      console.error('regenerateAudio エラー:', err);
+    })
+    .regenerateAudio(masterId);
+}
+
+function cancelTtsRegistration(rowIndex, type, label, displayText) {
+  const btn = document.getElementById('tts-cancel-btn');
+  const retryBtn = document.getElementById('tts-retry-btn');
+  const resultDiv = document.getElementById('tts-retry-result');
+  if (!btn || !resultDiv) return;
+
+  btn.disabled = true;
+  btn.textContent = '🗑️ キャンセル中...';
+  if (retryBtn) retryBtn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler((result) => {
+      if (result.success) {
+        const btns = document.getElementById('tts-retry-notification').querySelectorAll('button');
+        btns.forEach(b => b.remove());
+        resultDiv.innerHTML = '<span style="color:#555;">🗑️ 登録をキャンセルしました</span>';
+        setTimeout(() => {
+          const n = document.getElementById('tts-retry-notification');
+          if (n) n.remove();
+        }, 2000);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '❌ 登録をキャンセル';
+        if (retryBtn) retryBtn.disabled = false;
+        resultDiv.innerHTML = '<span style="color:#c00;">❌ キャンセルに失敗しました。</span>';
+      }
+    })
+    .withFailureHandler((err) => {
+      btn.disabled = false;
+      btn.textContent = '❌ 登録をキャンセル';
+      if (retryBtn) retryBtn.disabled = false;
+      resultDiv.innerHTML = '<span style="color:#c00;">❌ キャンセルに失敗しました。</span>';
+      console.error('deleteMasterItemByRowIndex エラー:', err);
+    })
+    .deleteMasterItemByRowIndex(rowIndex, type);
+}
+
+function escapeHtmlClient(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // onclick 属性から呼べるようにグローバルに公開

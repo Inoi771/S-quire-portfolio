@@ -190,7 +190,7 @@ function editWordItem(div, word) {
     updateUIForSaving();
 
     google.script.run
-      .withSuccessHandler(() => {
+      .withSuccessHandler((updateResult) => {
         google.script.run
           .withSuccessHandler(() => {
             word.english = newEnglish;
@@ -212,6 +212,10 @@ function editWordItem(div, word) {
             isSaving = false;
             updateUIForSaving();
             hideLoadingIndicator();
+
+            if (updateResult && updateResult.ttsStatus === 'failed') {
+              showTtsRetryNotification(updateResult.masterId, 'word', newEnglish, updateResult.rowIndex, 'update');
+            }
           })
           .withFailureHandler(err => {
             console.error('updateAllLessonDataInYear エラー:', err);
@@ -368,7 +372,7 @@ function editSentenceItem(div, sentence) {
     updateUIForSaving();
 
     google.script.run
-      .withSuccessHandler(() => {
+      .withSuccessHandler((updateResult) => {
         google.script.run
           .withSuccessHandler(() => {
             sentence.text = newText;
@@ -390,6 +394,10 @@ function editSentenceItem(div, sentence) {
             isSaving = false;
             updateUIForSaving();
             hideLoadingIndicator();
+
+            if (updateResult && updateResult.ttsStatus === 'failed') {
+              showTtsRetryNotification(updateResult.masterId, 'sentence', newText, updateResult.rowIndex, 'update');
+            }
           })
           .withFailureHandler(err => {
             console.error('updateAllLessonDataInYear エラー:', err);
