@@ -855,6 +855,7 @@ function revertMasterItemEdit(masterId, type, oldEnglish, oldPronunciation, oldJ
 }
 
 
+/*
  * レッスン順序管理：「単語帳作成」機能用GAS関数
  * ════════════════════════════════════════════════════════
  */
