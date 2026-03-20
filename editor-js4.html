@@ -216,12 +216,14 @@ function editWordItem(div, word) {
             word.english = newEnglish;
             word.pronunciation = newPronunciation;
             word.japanese = newJapanese;
+            if (updateResult && updateResult.audio) word.audio = updateResult.audio;
 
             const masterWord = allWords.find(w => w.id === word.id);
             if (masterWord) {
               masterWord.english = newEnglish;
               masterWord.pronunciation = newPronunciation;
               masterWord.japanese = newJapanese;
+              if (updateResult && updateResult.audio) masterWord.audio = updateResult.audio;
             }
 
             updateTableDisplayByMasterId(word.id);
@@ -418,12 +420,14 @@ function editSentenceItem(div, sentence) {
             sentence.text = newText;
             sentence.pronunciation = newPronunciation;
             sentence.japanese = newJapanese;
+            if (updateResult && updateResult.audio) sentence.audio = updateResult.audio;
 
             const masterSentence = allSentences.find(s => s.id === sentence.id);
             if (masterSentence) {
               masterSentence.text = newText;
               masterSentence.pronunciation = newPronunciation;
               masterSentence.japanese = newJapanese;
+              if (updateResult && updateResult.audio) masterSentence.audio = updateResult.audio;
             }
 
             updateTableDisplayByMasterId(sentence.id);
