@@ -822,7 +822,39 @@ function deleteMasterItemByRowIndex(rowIndex, type) {
 }
 
 /**
- * ════════════════════════════════════════════════════════
+ * 編集時のTTS失敗ロールバック：マスターシートの指定IDの行を旧値に書き戻す。
+ * type: 'word' → 「英単語」シート、'sentence' → 「英文」シート
+ */
+function revertMasterItemEdit(masterId, type, oldEnglish, oldPronunciation, oldJapanese, oldAudio) {
+  try {
+    const sheetName = type === 'sentence' ? '英文' : '英単語';
+    const ss = SpreadsheetApp.openById(getScriptProperty('ENGLISHWORDS_SHEET_ID'));
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error(`「${sheetName}」シートが見つかりません`);
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) throw new Error('データが見つかりません');
+
+    const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (parseInt(data[i][0]) === masterId) {
+        const row = i + 2;
+        sheet.getRange(row, 2).setValue(oldEnglish);
+        sheet.getRange(row, 3).setValue(oldPronunciation);
+        sheet.getRange(row, 4).setValue(oldJapanese);
+        sheet.getRange(row, 5).setValue(oldAudio);
+        Logger.log(`↩️ 編集を元に戻しました: ID=${masterId} (${sheetName})`);
+        return { success: true };
+      }
+    }
+    throw new Error(`ID ${masterId} が見つかりません`);
+  } catch (e) {
+    Logger.log('Error revertMasterItemEdit: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+
  * レッスン順序管理：「単語帳作成」機能用GAS関数
  * ════════════════════════════════════════════════════════
  */

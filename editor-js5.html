@@ -614,6 +614,20 @@ function startRegisterSentence() {
  * ✅ 新規関数：単語の上書き処理
  */
 function performUpdateWord(existingWord, english, pronunciation, japanese, formContainer) {
+  // GAS呼び出し前に旧値をキャプチャ（コールバック内では existingWord が更新済みのため）
+  const oldValues = {
+    english: existingWord.english,
+    pronunciation: existingWord.pronunciation,
+    japanese: existingWord.japanese,
+    audio: existingWord.audio || ''
+  };
+  const onRevert = () => {
+    existingWord.english = oldValues.english;
+    existingWord.pronunciation = oldValues.pronunciation;
+    existingWord.japanese = oldValues.japanese;
+    renderWordList();
+  };
+
   showLoadingIndicator('単語を更新中...');
   isSaving = true;
   updateUIForSaving();
@@ -635,7 +649,7 @@ function performUpdateWord(existingWord, english, pronunciation, japanese, formC
         hideLoadingIndicator();
 
         if (result.ttsStatus === 'failed') {
-          showTtsRetryNotification(result.masterId, 'word', english, result.rowIndex, 'update');
+          showTtsRetryNotification(result.masterId, 'word', english, result.rowIndex, 'update', oldValues, onRevert);
         } else {
           alert('✅ 既存の単語を上書きしました！');
         }
@@ -706,6 +720,20 @@ function performNewRegistrationWord(english, pronunciation, japanese, formContai
  * ✅ 新規関数：英文の上書き処理
  */
 function performUpdateSentence(existingSentence, japanese, text, pronunciation, formContainer) {
+  // GAS呼び出し前に旧値をキャプチャ（コールバック内では existingSentence が更新済みのため）
+  const oldValues = {
+    text: existingSentence.text,
+    pronunciation: existingSentence.pronunciation,
+    japanese: existingSentence.japanese,
+    audio: existingSentence.audio || ''
+  };
+  const onRevert = () => {
+    existingSentence.text = oldValues.text;
+    existingSentence.pronunciation = oldValues.pronunciation;
+    existingSentence.japanese = oldValues.japanese;
+    renderWordList();
+  };
+
   showLoadingIndicator('英文を更新中...');
   isSaving = true;
   updateUIForSaving();
@@ -727,7 +755,7 @@ function performUpdateSentence(existingSentence, japanese, text, pronunciation, 
         hideLoadingIndicator();
 
         if (result.ttsStatus === 'failed') {
-          showTtsRetryNotification(result.masterId, 'sentence', text, result.rowIndex, 'update');
+          showTtsRetryNotification(result.masterId, 'sentence', text, result.rowIndex, 'update', oldValues, onRevert);
         } else {
           alert('✅ 既存の英文を上書きしました！');
         }
@@ -2112,11 +2140,14 @@ function togglePasswordVisibility(inputId) {
 // TTS失敗時の再生成通知UI
 // ────────────────────────────────────────────
 
-function showTtsRetryNotification(masterId, type, displayText, rowIndex, operationType) {
+function showTtsRetryNotification(masterId, type, displayText, rowIndex, operationType, oldValues, onRevert) {
   const existing = document.getElementById('tts-retry-notification');
   if (existing) existing.remove();
 
   const label = type === 'word' ? '単語' : '英文';
+  const isUpdate = operationType === 'update';
+  const cancelLabel = isUpdate ? '↩️ 英語を元に戻す' : '❌ 登録をキャンセル';
+
   const notification = document.createElement('div');
   notification.id = 'tts-retry-notification';
   notification.style.cssText = [
@@ -2138,7 +2169,7 @@ function showTtsRetryNotification(masterId, type, displayText, rowIndex, operati
             🔄 再生成する
           </button>
           <button id="tts-cancel-btn" style="${btnStyle}background:#f44336;color:white;">
-            ❌ 登録をキャンセル
+            ${cancelLabel}
           </button>
         </div>
       </div>
@@ -2153,7 +2184,11 @@ function showTtsRetryNotification(masterId, type, displayText, rowIndex, operati
   });
 
   document.getElementById('tts-cancel-btn').addEventListener('click', () => {
-    cancelTtsRegistration(rowIndex, type, label, displayText);
+    if (isUpdate) {
+      cancelTtsEdit(masterId, type, oldValues, onRevert);
+    } else {
+      cancelTtsRegistration(rowIndex, type);
+    }
   });
 }
 
@@ -2195,7 +2230,7 @@ function retryTtsGeneration(masterId) {
     .regenerateAudio(masterId);
 }
 
-function cancelTtsRegistration(rowIndex, type, label, displayText) {
+function cancelTtsRegistration(rowIndex, type) {
   const btn = document.getElementById('tts-cancel-btn');
   const retryBtn = document.getElementById('tts-retry-btn');
   const resultDiv = document.getElementById('tts-retry-result');
@@ -2230,6 +2265,46 @@ function cancelTtsRegistration(rowIndex, type, label, displayText) {
       console.error('deleteMasterItemByRowIndex エラー:', err);
     })
     .deleteMasterItemByRowIndex(rowIndex, type);
+}
+
+function cancelTtsEdit(masterId, type, oldValues, onRevert) {
+  const btn = document.getElementById('tts-cancel-btn');
+  const retryBtn = document.getElementById('tts-retry-btn');
+  const resultDiv = document.getElementById('tts-retry-result');
+  if (!btn || !resultDiv) return;
+
+  btn.disabled = true;
+  btn.textContent = '↩️ 元に戻し中...';
+  if (retryBtn) retryBtn.disabled = true;
+
+  const englishForRevert = type === 'sentence' ? (oldValues.text || oldValues.english || '') : (oldValues.english || '');
+
+  google.script.run
+    .withSuccessHandler((result) => {
+      if (result.success) {
+        if (onRevert) onRevert();
+        const btns = document.getElementById('tts-retry-notification').querySelectorAll('button');
+        btns.forEach(b => b.remove());
+        resultDiv.innerHTML = '<span style="color:#555;">↩️ 元に戻しました</span>';
+        setTimeout(() => {
+          const n = document.getElementById('tts-retry-notification');
+          if (n) n.remove();
+        }, 2000);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '↩️ 英語を元に戻す';
+        if (retryBtn) retryBtn.disabled = false;
+        resultDiv.innerHTML = '<span style="color:#c00;">❌ 元に戻せませんでした。</span>';
+      }
+    })
+    .withFailureHandler((err) => {
+      btn.disabled = false;
+      btn.textContent = '↩️ 英語を元に戻す';
+      if (retryBtn) retryBtn.disabled = false;
+      resultDiv.innerHTML = '<span style="color:#c00;">❌ 元に戻せませんでした。</span>';
+      console.error('revertMasterItemEdit エラー:', err);
+    })
+    .revertMasterItemEdit(masterId, type, englishForRevert, oldValues.pronunciation || '', oldValues.japanese || '', oldValues.audio || '');
 }
 
 function escapeHtmlClient(str) {
