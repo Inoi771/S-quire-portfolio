@@ -1317,7 +1317,6 @@
       <button class="tab-btn active" data-tab="editor">✏️ エディター</button>
       <button class="tab-btn" data-tab="wordbook">📚 単語帳作成</button>
       <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
-      <button onclick="startBulkAudioGeneration()" style="margin-left: auto; background: #4CAF50; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; font-family: 'Meiryo', Arial, sans-serif;">🔊 音声一括生成</button>
     </div>
 
     <!-- タブ1：エディター（既存コンテンツ） -->
@@ -1597,12 +1596,6 @@
         </div>
       </div>
 
-      <!-- 音声ファイル名一括割り当て -->
-      <div class="settings-section">
-        <h3>音声ファイル名の一括割り当て</h3>
-        <p class="settings-desc">audio 列が空の単語・英文に対してファイル名を自動で付与します。TTS 音声生成は行いません。付与後は「🔊 音声一括生成」ボタンで音声ファイルを生成してください。</p>
-        <button id="fill-filenames-btn" class="settings-auto-btn" onclick="startFillMissingAudioFilenames()">📝 ファイル名を一括割り当て</button>
-      </div>
 
       <!-- その他 -->
       <div class="settings-section">

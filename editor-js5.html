@@ -2086,117 +2086,14 @@ function runAutoSetup() {
     .runSetupScriptProperties();
 }
 
-function startFillMissingAudioFilenames() {
-  if (!confirm('audio 列が空の単語・英文にファイル名を割り当てます。\nTTS 音声生成は行いません。続行しますか？')) return;
-  showLoadingIndicator('ファイル名を割り当て中...');
-  google.script.run
-    .withSuccessHandler(result => {
-      hideLoadingIndicator();
-      if (result.success) {
-        let msg = '✅ ' + result.filled + ' 件にファイル名を割り当てました。';
-        if (result.errors && result.errors.length > 0) {
-          msg += '\n⚠️ ' + result.errors.length + ' 件でエラーが発生しました。';
-        }
-        msg += '\n\nTTS 音声生成は「🔊 音声一括生成」ボタンで実行してください。';
-        alert(msg);
-      } else {
-        alert('❌ エラーが発生しました: ' + (result.errors || []).join('\n'));
-      }
-    })
-    .withFailureHandler(err => {
-      hideLoadingIndicator();
-      alert('❌ エラー: ' + err);
-    })
-    .fillMissingAudioFilenames();
-}
-
 function togglePasswordVisibility(inputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
   input.type = (input.type === 'password') ? 'text' : 'password';
 }
 
-function startBulkAudioGeneration() {
-  var batchSize = 50;
-  if (!confirm('音声ファイルが未生成の単語・英文に TTS 音声を一括生成します。\n残りがある場合は自動的に続けて処理します。\n\n続行しますか？')) return;
-
-  showLoadingIndicator('音声生成の準備中...');
-
-  // まず全体件数を取得
-  google.script.run
-    .withSuccessHandler(function(countResult) {
-      var totalItems = (countResult && countResult.total) || 0;
-      var pollingTimer = null;
-
-      // 3秒間隔で進捗をポーリング
-      pollingTimer = setInterval(function() {
-        google.script.run
-          .withSuccessHandler(function(progress) {
-            if (!progress) return;
-            var msg = '音声を生成中... ' + (progress.processed + progress.skipped) + ' / ' + totalItems + ' 件完了';
-            if (progress.skipped > 0) {
-              msg += '\n(' + progress.skipped + ' 件は既存のためスキップ)';
-            }
-            if (progress.currentItem) {
-              msg += '\n現在: ' + progress.currentItem;
-            }
-            updateLoadingMessage(msg);
-          })
-          .withFailureHandler(function() { /* ポーリングエラーは無視 */ })
-          .getAudioGenerationProgress();
-      }, 3000);
-
-      // バッチ処理を再帰実行
-      function runBatch(totalProcessed, totalSkipped, allErrors, startIndex) {
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (!result.success) {
-              clearInterval(pollingTimer);
-              hideLoadingIndicator();
-              if (result.urlLimitReached) {
-                alert('⚠️ GASの1日のURL呼び出し上限に達しました。\n翌日午後4時以降に再実行してください。');
-              } else {
-                alert('❌ エラー:\n' + (result.errors || []).join('\n'));
-              }
-              return;
-            }
-            var newTotal = totalProcessed + result.processed;
-            var newSkipped = totalSkipped + (result.skipped || 0);
-            var newErrors = allErrors.concat(result.errors || []);
-            if (result.remaining > 0) {
-              // nextStartIndex を次バッチに渡して同じ行を繰り返さないようにする
-              runBatch(newTotal, newSkipped, newErrors, result.nextStartIndex || 0);
-            } else {
-              clearInterval(pollingTimer);
-              hideLoadingIndicator();
-              var msg = '✅ 合計 ' + newTotal + ' 件の音声を生成しました。';
-              if (newSkipped > 0) msg += '\n(' + newSkipped + ' 件は既存のためスキップ)';
-              if (newErrors.length > 0)
-                msg += '\n⚠️ ' + newErrors.length + ' 件でエラー:\n' + newErrors.slice(0, 5).join('\n');
-              alert(msg);
-            }
-          })
-          .withFailureHandler(function(err) {
-            clearInterval(pollingTimer);
-            hideLoadingIndicator();
-            alert('❌ エラー: ' + err);
-          })
-          .bulkGenerateAudio('all', batchSize, totalProcessed, startIndex || 0, totalSkipped);
-      }
-
-      runBatch(0, 0, [], 0);
-    })
-    .withFailureHandler(function(err) {
-      hideLoadingIndicator();
-      alert('❌ アイテム数の取得に失敗しました: ' + err);
-    })
-    .countAudioItems('all');
-}
-
 // onclick 属性から呼べるようにグローバルに公開
 window.togglePasswordVisibility = togglePasswordVisibility;
 window.loadSettingsValues = loadSettingsValues;
-window.startFillMissingAudioFilenames = startFillMissingAudioFilenames;
-window.startBulkAudioGeneration = startBulkAudioGeneration;
 window.handleQrImageUpload = handleQrImageUpload;
 window.saveQrCode = saveQrCode;
