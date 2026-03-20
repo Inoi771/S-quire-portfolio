@@ -185,6 +185,26 @@ function editWordItem(div, word) {
       document.removeEventListener('click', handleClickOutside);
     }
 
+    // 旧値をキャプチャ（コールバック内では word が更新済みのため）
+    const oldValues = {
+      english: word.english,
+      pronunciation: word.pronunciation,
+      japanese: word.japanese,
+      audio: word.audio || ''
+    };
+    const onRevert = () => {
+      word.english = oldValues.english;
+      word.pronunciation = oldValues.pronunciation;
+      word.japanese = oldValues.japanese;
+      const masterWord = allWords.find(w => w.id === word.id);
+      if (masterWord) {
+        masterWord.english = oldValues.english;
+        masterWord.pronunciation = oldValues.pronunciation;
+        masterWord.japanese = oldValues.japanese;
+      }
+      renderWordList();
+    };
+
     showLoadingIndicator('単語を更新中...');
     isSaving = true;
     updateUIForSaving();
@@ -214,7 +234,7 @@ function editWordItem(div, word) {
             hideLoadingIndicator();
 
             if (updateResult && updateResult.ttsStatus === 'failed') {
-              showTtsRetryNotification(updateResult.masterId, 'word', newEnglish, updateResult.rowIndex, 'update');
+              showTtsRetryNotification(updateResult.masterId, 'word', newEnglish, updateResult.rowIndex, 'update', oldValues, onRevert);
             }
           })
           .withFailureHandler(err => {
@@ -367,6 +387,26 @@ function editSentenceItem(div, sentence) {
       document.removeEventListener('click', handleClickOutside);
     }
 
+    // 旧値をキャプチャ（コールバック内では sentence が更新済みのため）
+    const oldValues = {
+      text: sentence.text,
+      pronunciation: sentence.pronunciation,
+      japanese: sentence.japanese,
+      audio: sentence.audio || ''
+    };
+    const onRevert = () => {
+      sentence.text = oldValues.text;
+      sentence.pronunciation = oldValues.pronunciation;
+      sentence.japanese = oldValues.japanese;
+      const masterSentence = allSentences.find(s => s.id === sentence.id);
+      if (masterSentence) {
+        masterSentence.text = oldValues.text;
+        masterSentence.pronunciation = oldValues.pronunciation;
+        masterSentence.japanese = oldValues.japanese;
+      }
+      renderWordList();
+    };
+
     showLoadingIndicator('英文を更新中...');
     isSaving = true;
     updateUIForSaving();
@@ -396,7 +436,7 @@ function editSentenceItem(div, sentence) {
             hideLoadingIndicator();
 
             if (updateResult && updateResult.ttsStatus === 'failed') {
-              showTtsRetryNotification(updateResult.masterId, 'sentence', newText, updateResult.rowIndex, 'update');
+              showTtsRetryNotification(updateResult.masterId, 'sentence', newText, updateResult.rowIndex, 'update', oldValues, onRevert);
             }
           })
           .withFailureHandler(err => {
