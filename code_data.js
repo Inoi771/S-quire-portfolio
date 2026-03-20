@@ -386,6 +386,8 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
         wordSheet.getRange(actualRow, 4).setValue(newJapanese);
 
         // 英語テキストが変わった場合のみ音声を更新
+        let ttsStatus = 'skipped'; // 'success' | 'skipped' | 'failed'
+        let audioForReturn = oldAudio;
         const newAudio = generateAudioFilename(newEnglish, wordId, newJapanese);
         if (newAudio && newAudio !== oldAudio) {
           const githubToken = getScriptProperty('GITHUB_TOKEN');
@@ -398,11 +400,17 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
           };
           // 新しい音声ファイルを生成（既存なら流用）
           if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
-            generateAndUploadAudio(newEnglish, wordId, newJapanese);
+            const generated = generateAndUploadAudio(newEnglish, wordId, newJapanese);
+            ttsStatus = generated ? 'success' : 'failed';
+            if (!generated) {
+              Logger.log(`⚠️ TTS生成失敗（更新は完了）: ${newEnglish}`);
+            }
           } else {
+            ttsStatus = 'skipped';
             Logger.log(`⏭️ 音声スキップ（既存）: ${newAudio}`);
           }
           wordSheet.getRange(actualRow, 5).setValue(newAudio);
+          audioForReturn = newAudio;
           Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
           // 古いファイルへの参照が他になければ削除
           if (oldAudio && repo && githubToken) {
@@ -415,7 +423,7 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
           }
         }
 
-        updateLog = { actualRow: actualRow, wordId: wordId };
+        updateLog = { actualRow: actualRow, wordId: wordId, ttsStatus: ttsStatus, audio: audioForReturn };
         found = true;
         break;
       }
@@ -426,7 +434,7 @@ function updateMasterWord(wordId, newEnglish, newPronunciation, newJapanese) {
     }
 
     Logger.log(`✅ 単語を更新しました: 行${updateLog.actualRow} (ID: ${updateLog.wordId})`);
-    return { success: true };
+    return { success: true, ttsStatus: updateLog.ttsStatus, audio: updateLog.audio, masterId: updateLog.wordId, rowIndex: updateLog.actualRow };
   } catch (e) {
     Logger.log('Error updateMasterWord: ' + e);
     return { success: false, error: e.toString() };
@@ -468,6 +476,8 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
         sentenceSheet.getRange(actualRow, 4).setValue(newJapanese);
 
         // 英語テキストが変わった場合のみ音声を更新
+        let ttsStatus = 'skipped'; // 'success' | 'skipped' | 'failed'
+        let audioForReturn = oldAudio;
         const newAudio = generateAudioFilename(newText, sentenceId, newJapanese || '');
         if (newAudio && newAudio !== oldAudio) {
           const githubToken = getScriptProperty('GITHUB_TOKEN');
@@ -480,11 +490,17 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
           };
           // 新しい音声ファイルを生成（既存なら流用）
           if (repo && githubToken && !checkAudioExistsOnGithub(newAudio, repo, headers)) {
-            generateAndUploadAudio(newText, sentenceId, newJapanese || '');
+            const generated = generateAndUploadAudio(newText, sentenceId, newJapanese || '');
+            ttsStatus = generated ? 'success' : 'failed';
+            if (!generated) {
+              Logger.log(`⚠️ TTS生成失敗（更新は完了）: ${newText}`);
+            }
           } else {
+            ttsStatus = 'skipped';
             Logger.log(`⏭️ 音声スキップ（既存）: ${newAudio}`);
           }
           sentenceSheet.getRange(actualRow, 5).setValue(newAudio);
+          audioForReturn = newAudio;
           Logger.log(`🔊 音声ファイル更新: ${oldAudio} → ${newAudio}`);
           // 古いファイルへの参照が他になければ削除
           if (oldAudio && repo && githubToken) {
@@ -497,7 +513,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
           }
         }
 
-        updateLog = { actualRow: actualRow, sentenceId: sentenceId };
+        updateLog = { actualRow: actualRow, sentenceId: sentenceId, ttsStatus: ttsStatus, audio: audioForReturn };
         found = true;
         break;
       }
@@ -512,7 +528,7 @@ function updateMasterSentence(sentenceId, newText, newPronunciation = '', newJap
     Logger.log(`   発音: ${newPronunciation || '（なし）'}`);
     Logger.log(`   日本語: ${newJapanese || '（なし）'}`);
 
-    return { success: true };
+    return { success: true, ttsStatus: updateLog.ttsStatus, audio: updateLog.audio, masterId: updateLog.sentenceId, rowIndex: updateLog.actualRow };
   } catch (e) {
     Logger.log('Error updateMasterSentence: ' + e);
     return { success: false, error: e.toString() };
@@ -658,6 +674,7 @@ function addMasterWord(english, pronunciation, japanese) {
 
     // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
     let finalAudio = audioFilename;
+    let ttsStatus = 'skipped'; // 'success' | 'skipped' | 'failed'
     try {
       // 同名ファイルが既に GitHub に存在する場合はTTS生成をスキップ
       // （例: "man"（男）登録済みの場合に "man"（男性）を登録しても man.mp3 は流用できる）
@@ -671,18 +688,26 @@ function addMasterWord(english, pronunciation, japanese) {
       };
       if (audioFilename && repo && githubToken && checkAudioExistsOnGithub(audioFilename, repo, headers)) {
         Logger.log(`⏭️ 音声スキップ（既存）: ${audioFilename}`);
+        ttsStatus = 'skipped';
       } else {
         const generated = generateAndUploadAudio(english, newWordId, japanese);
-        if (generated && generated !== audioFilename) {
-          wordSheet.getRange(insertRow, 5).setValue(generated);
-          finalAudio = generated;
+        if (generated) {
+          if (generated !== audioFilename) {
+            wordSheet.getRange(insertRow, 5).setValue(generated);
+            finalAudio = generated;
+          }
+          ttsStatus = 'success';
+        } else {
+          ttsStatus = 'failed';
+          Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${english}`);
         }
       }
     } catch (ttsErr) {
+      ttsStatus = 'failed';
       Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${ttsErr}`);
     }
 
-    return { success: true, wordId: newWordId, audio: finalAudio };
+    return { success: true, wordId: newWordId, audio: finalAudio, ttsStatus, rowIndex: insertRow };
   } catch (e) {
     Logger.log('Error addMasterWord: ' + e);
     return { success: false, error: e.toString() };
@@ -737,6 +762,7 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
 
     // TTS音声生成・アップロード（ベストエフォート: 失敗しても登録は成功とする）
     let finalAudio = audioFilename;
+    let ttsStatus = 'skipped'; // 'success' | 'skipped' | 'failed'
     try {
       // 同名ファイルが既に GitHub に存在する場合はTTS生成をスキップ
       const githubToken = getScriptProperty('GITHUB_TOKEN');
@@ -749,20 +775,48 @@ function addMasterSentence(text, pronunciation = '', japanese = '') {
       };
       if (audioFilename && repo && githubToken && checkAudioExistsOnGithub(audioFilename, repo, headers)) {
         Logger.log(`⏭️ 音声スキップ（既存）: ${audioFilename}`);
+        ttsStatus = 'skipped';
       } else {
         const generated = generateAndUploadAudio(text, newSentenceId, japanese || '');
-        if (generated && generated !== audioFilename) {
-          sentenceSheet.getRange(insertRow, 5).setValue(generated);
-          finalAudio = generated;
+        if (generated) {
+          if (generated !== audioFilename) {
+            sentenceSheet.getRange(insertRow, 5).setValue(generated);
+            finalAudio = generated;
+          }
+          ttsStatus = 'success';
+        } else {
+          ttsStatus = 'failed';
+          Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${text}`);
         }
       }
     } catch (ttsErr) {
+      ttsStatus = 'failed';
       Logger.log(`⚠️ TTS生成失敗（登録は完了）: ${ttsErr}`);
     }
 
-    return { success: true, sentenceId: newSentenceId, audio: finalAudio };
+    return { success: true, sentenceId: newSentenceId, audio: finalAudio, ttsStatus, rowIndex: insertRow };
   } catch (e) {
     Logger.log('Error addMasterSentence: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * TTS失敗時に登録をキャンセルするためにマスターシートから指定行を削除する。
+ * type: 'word' → 「英単語」シート、'sentence' → 「英文」シート
+ */
+function deleteMasterItemByRowIndex(rowIndex, type) {
+  try {
+    const sheetName = type === 'sentence' ? '英文' : '英単語';
+    const ss = SpreadsheetApp.openById(getScriptProperty('ENGLISHWORDS_SHEET_ID'));
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error(`「${sheetName}」シートが見つかりません`);
+    if (rowIndex < 2) throw new Error(`無効な行番号: ${rowIndex}`);
+    sheet.deleteRow(rowIndex);
+    Logger.log(`🗑️ 行${rowIndex}を削除しました（${sheetName}）`);
+    return { success: true };
+  } catch (e) {
+    Logger.log('Error deleteMasterItemByRowIndex: ' + e);
     return { success: false, error: e.toString() };
   }
 }
