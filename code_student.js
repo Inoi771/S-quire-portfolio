@@ -202,8 +202,13 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
 
     const githubBase = config.GITHUB_BASE_URL;
     const resultQuestions = questions.map(q => {
-      if (!q.audio || !githubBase) return { ...q, audio: null };
-      const fileName = q.audio.trim();
+      if (!githubBase) return { ...q, audio: null };
+      let fileName = q.audio ? q.audio.trim() : '';
+      // audio列が空の場合、英語テキストからファイル名を再構築
+      if (!fileName && q.english) {
+        fileName = generateAudioFilename(q.english.toString(), q.wordId ? q.wordId.toString() : '', q.japanese ? q.japanese.toString() : '');
+      }
+      if (!fileName) return { ...q, audio: null };
       const audioUrl = `${githubBase}/audio/${fileName.charAt(0).toLowerCase()}/${encodeURIComponent(fileName)}?v=${new Date().getTime()}`;
       return { ...q, audio: audioUrl };
     });
