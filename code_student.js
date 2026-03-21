@@ -211,7 +211,12 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
     if (lesson === '曜日・月・季節・代名詞') {
       let maxNum = 0;
       resultQuestions.forEach(q => { if (q.questionNumber > maxNum) maxNum = q.questionNumber; });
-      resultQuestions.push(...generatePronounQuestions(githubBase, maxNum));
+      // シートから取得済みの音声URLマップを構築（英語小文字→完全URL）
+      const audioUrlMap = {};
+      resultQuestions.forEach(q => {
+        if (q.english && q.audio) audioUrlMap[q.english.toLowerCase()] = q.audio;
+      });
+      resultQuestions.push(...generatePronounQuestions(githubBase, maxNum, audioUrlMap));
     }
 
     return resultQuestions;
@@ -221,7 +226,7 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
   }
 }
 
-function generatePronounQuestions(githubBase, startNumber) {
+function generatePronounQuestions(githubBase, startNumber, audioUrlMap) {
   const timestamp = new Date().getTime();
   const pronounData = [
     { japanese: '私', nominative: { english: 'I', audio: 'i.mp3' }, genitive: { english: 'my', audio: 'my.mp3' }, objective: { english: 'me', audio: 'me.mp3' }, possessive: { english: 'mine', audio: 'mine.mp3' } },
@@ -239,9 +244,13 @@ function generatePronounQuestions(githubBase, startNumber) {
   pronounData.forEach(row => {
     ['nominative', 'genitive', 'objective', 'possessive'].forEach(col => {
       const w = row[col];
+      // audioUrlMapにある場合は正しいURL（シートの音声ファイル名）を優先使用
+      const englishKey = w.english ? w.english.toLowerCase() : '';
+      const audioUrl = (audioUrlMap && audioUrlMap[englishKey]) ||
+                       (w.audio ? `${githubBase}/audio/${w.audio.charAt(0).toLowerCase()}/${w.audio}?v=${timestamp}` : null);
       questions.push({
         wordId: '', english: w.english, pronunciation: '', japanese: row.japanese,
-        audio: w.audio ? `${githubBase}/audio/${w.audio.charAt(0).toLowerCase()}/${w.audio}?v=${timestamp}` : null,
+        audio: audioUrl,
         lesson: '曜日・月・季節・代名詞', cellId: '', formType: 'present',
         questionNumber: num, isPronoun: true, pronounColumn: col
       });
