@@ -20,10 +20,12 @@ function renderTable() {
     state.lesson === '曜日・月・季節・代名詞';
 
   const isSpecialLayout_Fukisoku1 =
-    (state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson));
+    (state.textbook === '入試対策編' &&
+     (isFukisoku1Lesson(state.lesson) || isFukisoku1Lesson(state.grade)));
 
   const isSpecialLayout_Fukisoku2 =
-    (state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson));
+    (state.textbook === '入試対策編' &&
+     (isFukisoku2Lesson(state.lesson) || isFukisoku2Lesson(state.grade)));
 
   console.log('🔍 レイアウト判定:', {
     DayMonthSeason: isSpecialLayout_DayMonthSeason,
