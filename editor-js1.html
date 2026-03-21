@@ -518,7 +518,7 @@ function handleGradeChange(e) {
         // ✅ 修正：「その他」オプションを追加
         // 入試対策編の不規則動詞①②の場合は「その他」を追加しない
         const isFukisoku = state.textbook === '入試対策編' &&
-                          (state.grade === '不規則動詞①' || state.grade === '不規則動詞②');
+                          (isFukisoku1Lesson(state.grade) || isFukisoku2Lesson(state.grade));
 
         if (!isFukisoku) {
           const otherOption = document.createElement('option');
@@ -559,9 +559,9 @@ function handleLessonChange(e) {
 
   // ✅ 修正：入試対策編の場合、レッスン名からsheetを判定
   if (state.textbook === '入試対策編') {
-    if (isFukisoku1Lesson(state.lesson)) {
+    if (isFukisoku1Lesson(state.lesson) || isFukisoku1Lesson(state.grade)) {
       state.grade = '不規則動詞①';
-    } else if (isFukisoku2Lesson(state.lesson)) {
+    } else if (isFukisoku2Lesson(state.lesson) || isFukisoku2Lesson(state.grade)) {
       state.grade = '不規則動詞②';
     } else {
       state.grade = '通常';
@@ -880,8 +880,8 @@ function loadEditorData() {
   currentItemType = 'word';
   rightPanelFocusCell = { rowIdx: 0, colIdx: 0 };
   
-  const isFukisoku1 = isFukisoku1Lesson(state.lesson);
-  const isFukisoku2 = isFukisoku2Lesson(state.lesson);
+  const isFukisoku1 = isFukisoku1Lesson(state.lesson) || isFukisoku1Lesson(state.grade);
+  const isFukisoku2 = isFukisoku2Lesson(state.lesson) || isFukisoku2Lesson(state.grade);
 
   let maxRows = 16;
   if (isFukisoku1) {
