@@ -6,8 +6,8 @@ function handleSave() {
   console.log('=== handleSave called ===');
   console.log('state:', JSON.stringify(state, null, 2));
 
-  const isFukisoku1 = state.lesson && state.lesson.startsWith('不規則動詞①');
-  const isFukisoku2 = state.lesson && state.lesson.startsWith('不規則動詞②');
+  const isFukisoku1 = isFukisoku1Lesson(state.lesson);
+  const isFukisoku2 = isFukisoku2Lesson(state.lesson);
 
   isSaving = true;
   updateUIForSaving();
@@ -1943,7 +1943,7 @@ function isSpecialLayoutLesson(lessonName) {
   if (!lessonName) return false;
 
   // 不規則動詞①②
-  if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞②')) {
+  if (isFukisoku1Lesson(lessonName) || isFukisoku2Lesson(lessonName)) {
     return true;
   }
 

@@ -870,8 +870,8 @@ function addFocusedItemToTable(item) {
   clearSearchAfterDrop();
 
   // ✅ 修正版：不規則動詞の場合、過去形・過去分詞を自動検索して fukisokuDataMap に追加
-  const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-  const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+  const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+  const isFukisoku2Check = state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson);
 
   if (isFukisoku1Check || isFukisoku2Check) {
     const fukisokuDataMap = isFukisoku1Check 

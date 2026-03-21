@@ -1121,8 +1121,8 @@ function setupSentenceCellDragDrop(td, contentDiv, cell, rowIdx) {
  */
 function updateTableDisplayByMasterId(masterId) {
   // ✅ 不規則動詞①②の判定
-  const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-  const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+  const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+  const isFukisoku2Check = state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson);
 
   if (isFukisoku1Check || isFukisoku2Check) {
     // ════════════════════════════════════════
