@@ -27,13 +27,13 @@ function getAllLessonsDataForExamPrep(year, textbook, grade) {
       let source = null; // ✅ ソース情報
 
       // ✅ 不規則動詞①の場合
-      if (lessonName.startsWith('不規則動詞①')) {
+      if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞➀')) {
         console.log('  → 入試対策編「不規則動詞①」から取得');
         lessonData = getLessonDataFromExamPrep(year, lessonName, '不規則動詞①');
         source = 'examPrep'; // ✅ 入試対策編
       }
       // ✅ 不規則動詞②の場合
-      else if (lessonName.startsWith('不規則動詞②')) {
+      else if (lessonName.startsWith('不規則動詞②') || lessonName.startsWith('不規則動詞➁')) {
         console.log('  → 入試対策編「不規則動詞②」から取得');
         lessonData = getLessonDataFromExamPrep(year, lessonName, '不規則動詞②');
         source = 'examPrep'; // ✅ 入試対策編
@@ -313,7 +313,7 @@ function getLessonDataFromBoth(year, textbook, grade, lesson) {
     console.log(`  合計: ${items.length}件, ソース: ${sourceType}`);
 
     // ✅ デバッグ：不規則動詞②のデータ詳細を確認
-    if (lesson.startsWith('不規則動詞②')) {
+    if (lesson.startsWith('不規則動詞②') || lesson.startsWith('不規則動詞➁')) {
       Logger.log('📌 不規則動詞②のデータ詳細:');
       items.forEach((item, idx) => {
         Logger.log(`[${idx}] english: "${item.english}", pastEnglish: "${item.pastEnglish || '(空)'}", pastParticipleEnglish: "${item.pastParticipleEnglish || '(空)'}"`);
@@ -333,10 +333,10 @@ function getLessonDataFromBoth(year, textbook, grade, lesson) {
  * ✅ 新規関数：レッスン名からレイアウトタイプを判定
  */
 function determineLayoutType(lessonName) {
-  if (lessonName.startsWith('不規則動詞①')) {
+  if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞➀')) {
     return 'fukisoku1';
   }
-  if (lessonName.startsWith('不規則動詞②')) {
+  if (lessonName.startsWith('不規則動詞②') || lessonName.startsWith('不規則動詞➁')) {
     return 'fukisoku2';
   }
   if (lessonName === '曜日・月・季節・代名詞') {
@@ -349,7 +349,8 @@ function determineLayoutType(lessonName) {
  * ✅ 新規関数：不規則動詞かどうかを判定
  */
 function isFukisoku(lessonName) {
-  return lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞②');
+  return lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞➀') ||
+         lessonName.startsWith('不規則動詞②') || lessonName.startsWith('不規則動詞➁');
 }
 
 /**

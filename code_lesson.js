@@ -58,9 +58,9 @@ function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
     
     // 入試対策編の場合、grade がシート名
     if (textbook === '入試対策編') {
-      if (oldLessonName.startsWith('不規則動詞①')) {
+      if (oldLessonName.startsWith('不規則動詞①') || oldLessonName.startsWith('不規則動詞➀')) {
         targetSheetName = '不規則動詞①';
-      } else if (oldLessonName.startsWith('不規則動詞②')) {
+      } else if (oldLessonName.startsWith('不規則動詞②') || oldLessonName.startsWith('不規則動詞➁')) {
         targetSheetName = '不規則動詞②';
       } else {
         targetSheetName = '通常';
@@ -476,9 +476,9 @@ function saveFukisokuData(year, textbook, grade, lesson, fukisokuDataMap, allWor
     let sheetName = '';
 
     if (textbook === '入試対策編') {
-      if (lesson.startsWith('不規則動詞①')) {
+      if (lesson.startsWith('不規則動詞①') || lesson.startsWith('不規則動詞➀')) {
         sheetName = '不規則動詞①';
-      } else if (lesson.startsWith('不規則動詞②')) {
+      } else if (lesson.startsWith('不規則動詞②') || lesson.startsWith('不規則動詞➁')) {
         sheetName = '不規則動詞②';
       } else {
         throw new Error('不規則動詞のレッスン名が不正です');
