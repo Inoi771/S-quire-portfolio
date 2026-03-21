@@ -570,7 +570,24 @@ function setupSpecialLayoutEmptyCellDragDrop(cellDiv, colIdx, rowIdx) {
  * @param {Object} word - 現在形の単語オブジェクト
  * @returns {Object} { past: {word}, pastParticiple: {word} } または { past: null, pastParticiple: null }
  */
+// ワードID固定マッピング（Regex検索で見つからない単語のID直接指定）
+const IRREGULAR_VERB_ID_MAPPINGS = {
+  3540: { pastId: 3541, pastPartId: 271 }
+};
+
 function getIrregularVerbForms(word) {
+  // IDベースの固定マッピングを最優先でチェック
+  const wordId = word.id;
+  if (wordId && IRREGULAR_VERB_ID_MAPPINGS[wordId]) {
+    const mapping = IRREGULAR_VERB_ID_MAPPINGS[wordId];
+    const pastWord = mapping.pastId ? allWords.find(w => w.id === mapping.pastId) : null;
+    const pastPartWord = mapping.pastPartId ? allWords.find(w => w.id === mapping.pastPartId) : null;
+    return {
+      past: pastWord || null,
+      pastParticiple: pastPartWord || null
+    };
+  }
+
   const baseEnglish = word.english.trim().toLowerCase();
 
   // ✅ 過去形と過去分詞が同じ場合（ドット・カンマ・スペース柔軟対応、プレフィックスオプション）
