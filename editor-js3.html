@@ -20,10 +20,10 @@ function renderTable() {
     state.lesson === '曜日・月・季節・代名詞';
 
   const isSpecialLayout_Fukisoku1 =
-    (state.textbook === '入試対策編' && state.lesson && state.lesson.startsWith('不規則動詞①'));
+    (state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson));
 
   const isSpecialLayout_Fukisoku2 =
-    (state.textbook === '入試対策編' && state.lesson && state.lesson.startsWith('不規則動詞②'));
+    (state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson));
 
   console.log('🔍 レイアウト判定:', {
     DayMonthSeason: isSpecialLayout_DayMonthSeason,
@@ -216,9 +216,9 @@ function renderTableSpecialLayout() {
 
   if (state.lesson === '曜日・月・季節・代名詞') {
     renderSpecialLayout_DayMonthSeason();
-  } else if (state.lesson && state.lesson.includes('不規則動詞①')) {
+  } else if (isFukisoku1Lesson(state.lesson)) {
     renderSpecialLayout_Fukisoku1();
-  } else if (state.lesson && state.lesson.includes('不規則動詞②')) {
+  } else if (isFukisoku2Lesson(state.lesson)) {
     renderSpecialLayout_Fukisoku2();
   } else {
     renderTable();
@@ -1151,8 +1151,8 @@ tbody.addEventListener('dragenter', (e) => {
       console.log('✅ Word placed at row:', rowIdx);
 
       // ✅ 過去形・過去分詞を自動検索して fukisokuDataMap に追加
-      const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-      const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+      const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+      const isFukisoku2Check = state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson);
 
       if (isFukisoku1Check || isFukisoku2Check) {
         // 不規則動詞のとき【動】等の【...】タグを日本語から除去
@@ -1259,8 +1259,8 @@ tbody.addEventListener('dragenter', (e) => {
           tableData[i + 1] = temp;
 
           // fukisokuDataMap も入れ替え
-          const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-          const fukisokuDataMap = isFukisoku1Check 
+          const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+          const fukisokuDataMap = isFukisoku1Check
             ? (window.fukisoku1DataMap || {}) 
             : (window.fukisoku2DataMap || {});
 
@@ -1283,8 +1283,8 @@ tbody.addEventListener('dragenter', (e) => {
           tableData[i - 1] = temp;
 
           // fukisokuDataMap も入れ替え
-          const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-          const fukisokuDataMap = isFukisoku1Check 
+          const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+          const fukisokuDataMap = isFukisoku1Check
             ? (window.fukisoku1DataMap || {}) 
             : (window.fukisoku2DataMap || {});
 
@@ -1410,8 +1410,8 @@ function setupLeftPanelDragDropForFukisokuDelete() {
     }
 
     // ✅ fukisokuDataMap から削除
-    const isFukisoku1Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞①');
-    const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
+    const isFukisoku1Check = state.textbook === '入試対策編' && isFukisoku1Lesson(state.lesson);
+    const isFukisoku2Check = state.textbook === '入試対策編' && isFukisoku2Lesson(state.lesson);
 
     if (isFukisoku1Check || isFukisoku2Check) {
       const fukisokuDataMap = isFukisoku1Check 

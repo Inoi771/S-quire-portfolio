@@ -1,4 +1,15 @@
   // ════════════════════════════════════════
+  // 不規則動詞レッスン判定ヘルパー
+  // ① (U+2460) と ➀ (U+2780) の両方に対応
+  // ════════════════════════════════════════
+  function isFukisoku1Lesson(lesson) {
+    return !!(lesson && (lesson.startsWith('不規則動詞①') || lesson.startsWith('不規則動詞➀')));
+  }
+  function isFukisoku2Lesson(lesson) {
+    return !!(lesson && (lesson.startsWith('不規則動詞②') || lesson.startsWith('不規則動詞➁')));
+  }
+
+  // ════════════════════════════════════════
   // 🎯 グローバル変数（エディター用）
   // ════════════════════════════════════════
   let allWords = [];
@@ -548,9 +559,9 @@ function handleLessonChange(e) {
 
   // ✅ 修正：入試対策編の場合、レッスン名からsheetを判定
   if (state.textbook === '入試対策編') {
-    if (state.lesson.startsWith('不規則動詞①')) {
+    if (isFukisoku1Lesson(state.lesson)) {
       state.grade = '不規則動詞①';
-    } else if (state.lesson.startsWith('不規則動詞②')) {
+    } else if (isFukisoku2Lesson(state.lesson)) {
       state.grade = '不規則動詞②';
     } else {
       state.grade = '通常';
@@ -601,10 +612,10 @@ function handleUseCustom() {
 
   // ✅ 入試対策編の場合、レッスン名から grade を推測
   if (state.textbook === '入試対策編') {
-    if (customLesson.includes('不規則動詞①')) {
+    if (isFukisoku1Lesson(customLesson)) {
       state.grade = '不規則動詞①';
       console.log('📌 Detected 不規則動詞①, setting state.grade');
-    } else if (customLesson.includes('不規則動詞②')) {
+    } else if (isFukisoku2Lesson(customLesson)) {
       state.grade = '不規則動詞②';
       console.log('📌 Detected 不規則動詞②, setting state.grade');
     } else {
@@ -869,8 +880,8 @@ function loadEditorData() {
   currentItemType = 'word';
   rightPanelFocusCell = { rowIdx: 0, colIdx: 0 };
   
-  const isFukisoku1 = state.lesson && state.lesson.startsWith('不規則動詞①');
-  const isFukisoku2 = state.lesson && state.lesson.startsWith('不規則動詞②');
+  const isFukisoku1 = isFukisoku1Lesson(state.lesson);
+  const isFukisoku2 = isFukisoku2Lesson(state.lesson);
 
   let maxRows = 16;
   if (isFukisoku1) {
