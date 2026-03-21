@@ -1228,8 +1228,13 @@ tbody.addEventListener('dragenter', (e) => {
 
       draggedItem = null;
       draggedFromTable = null;
+
+      // 照準を次の空き行に移動（スクロール用）
+      const nextEmpty = tableData.findIndex((row, i) => i > rowIdx && row[0] === null);
+      rightPanelFocusCell = { rowIdx: nextEmpty !== -1 ? nextEmpty : rowIdx, colIdx: 0 };
+
       renderTable();
-      
+
       // ✅ ここに追加：検索欄をクリア
       clearSearchAfterDrop();
       
@@ -1319,6 +1324,14 @@ tbody.addEventListener('dragenter', (e) => {
   // 左パネルへのドラッグ&ドロップで削除
   setupLeftPanelDragDropForFukisokuDelete();
   blockTableDropOnlyForLeftPanel();
+
+  // 通常テーブルと同様に、照準行へ自動スクロール
+  const fukisokuScrollTarget = document.querySelector(
+    `#fukisokuTableBody tr[data-row-idx="${rightPanelFocusCell.rowIdx}"]`
+  );
+  if (fukisokuScrollTarget) {
+    fukisokuScrollTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 /**
