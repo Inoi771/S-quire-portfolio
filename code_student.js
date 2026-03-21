@@ -211,12 +211,15 @@ function getPracticeQuestions(year, textbook, grade, lesson) {
     if (lesson === '曜日・月・季節・代名詞') {
       let maxNum = 0;
       resultQuestions.forEach(q => { if (q.questionNumber > maxNum) maxNum = q.questionNumber; });
-      // シートから取得済みの音声URLマップを構築（英語小文字→完全URL）
-      const audioUrlMap = {};
-      resultQuestions.forEach(q => {
-        if (q.english && q.audio) audioUrlMap[q.english.toLowerCase()] = q.audio;
-      });
-      resultQuestions.push(...generatePronounQuestions(githubBase, maxNum, audioUrlMap));
+      // マスター単語リストから英語→音声ファイル名のマップを構築
+      const masterData = getAllWordsAndSentences();
+      const audioFileMap = {};
+      if (masterData && masterData.words) {
+        masterData.words.forEach(w => {
+          if (w.english && w.audio) audioFileMap[w.english.toLowerCase()] = w.audio;
+        });
+      }
+      resultQuestions.push(...generatePronounQuestions(githubBase, maxNum, audioFileMap));
     }
 
     return resultQuestions;
@@ -244,10 +247,12 @@ function generatePronounQuestions(githubBase, startNumber, audioUrlMap) {
   pronounData.forEach(row => {
     ['nominative', 'genitive', 'objective', 'possessive'].forEach(col => {
       const w = row[col];
-      // audioUrlMapにある場合は正しいURL（シートの音声ファイル名）を優先使用
+      // マスターリストにある場合は正しいファイル名を優先使用
       const englishKey = w.english ? w.english.toLowerCase() : '';
-      const audioUrl = (audioUrlMap && audioUrlMap[englishKey]) ||
-                       (w.audio ? `${githubBase}/audio/${w.audio.charAt(0).toLowerCase()}/${w.audio}?v=${timestamp}` : null);
+      const resolvedFile = (audioUrlMap && audioUrlMap[englishKey]) || w.audio;
+      const audioUrl = resolvedFile
+        ? `${githubBase}/audio/${resolvedFile.charAt(0).toLowerCase()}/${resolvedFile}?v=${timestamp}`
+        : null;
       questions.push({
         wordId: '', english: w.english, pronunciation: '', japanese: row.japanese,
         audio: audioUrl,
