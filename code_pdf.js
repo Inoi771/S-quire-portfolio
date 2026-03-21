@@ -125,6 +125,23 @@ function generateAndSavePdf(
  * ============================================================
  */
 /**
+ * 【...】タグ（【動】等）を除去するヘルパー（① U+2460 と ➀ U+2780 両対応）
+ */
+function stripBracketsPdf(text) {
+  return (text || '').replace(/【[^】]*】\s*/g, '').trim();
+}
+
+/**
+ * 不規則動詞①②レッスン判定（① U+2460 と ➀ U+2780 両対応）
+ */
+function isFukisoku1LessonPdf(lessonName) {
+  return !!(lessonName && (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞➀')));
+}
+function isFukisoku2LessonPdf(lessonName) {
+  return !!(lessonName && (lessonName.startsWith('不規則動詞②') || lessonName.startsWith('不規則動詞➁')));
+}
+
+/**
  * ✅ 新規関数：レッスン名から入試対策編かどうかを判定
  * @param {string} lessonName - レッスン名
  * @returns {boolean} 入試対策編のレッスンならtrue
@@ -134,8 +151,8 @@ function isExamPrepLessonName(lessonName) {
 
   // 入試対策編特有のレッスン名リスト
   // 以下の条件に当てはまれば入試対策編と判定
-  if (lessonName.startsWith('不規則動詞①') || 
-      lessonName.startsWith('不規則動詞②') ||
+  if (isFukisoku1LessonPdf(lessonName) ||
+      isFukisoku2LessonPdf(lessonName) ||
       lessonName === '曜日・月・季節・代名詞') {
     return true;
   }
@@ -405,12 +422,12 @@ ${cssStyles}
     const isSpecialLayoutForThisLesson = isSpecialLayoutLessonGAS(lessonName);
     
     if (isSpecialLayoutForThisLesson) {
-      if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞②')) {
+      if (isFukisoku1LessonPdf(lessonName) || isFukisoku2LessonPdf(lessonName)) {
         html += generatePdfPageFukisoku(
-          displayHeader, 
-          ld.tableData, 
-          displayItems, 
-          lessonName.startsWith('不規則動詞②'),
+          displayHeader,
+          ld.tableData,
+          displayItems,
+          isFukisoku2LessonPdf(lessonName),
           pageNum
         );
       } else if (lessonName === '曜日・月・季節・代名詞') {
@@ -443,7 +460,7 @@ ${cssStyles}
 
 function isSpecialLayoutLessonGAS(lessonName) {
   if (!lessonName) return false;
-  if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞②')) {
+  if (isFukisoku1LessonPdf(lessonName) || isFukisoku2LessonPdf(lessonName)) {
     return true;
   }
   if (lessonName === '曜日・月・季節・代名詞') {
@@ -541,7 +558,7 @@ function generatePdfPageFukisoku(displayHeader, tableData, displayItems, isFukis
             ${idx + 1}
           </td>
           <td style="border: 1pt solid #000; padding: 6px; background-color: #fffacd;">
-            ${displayItems.includes('japanese') ? `<div class="cell-japanese-fukisoku">${escapeHtml(presentCell.japanese || '')}</div>` : ''}
+            ${displayItems.includes('japanese') ? `<div class="cell-japanese-fukisoku">${escapeHtml(stripBracketsPdf(presentCell.japanese) || '')}</div>` : ''}
           </td>
           <td style="border: 1pt solid #000; padding: 6px;">
             ${displayItems.includes('english') ? `<div class="cell-english">${escapeHtml(presentCell.english || '')}</div>` : ''}
