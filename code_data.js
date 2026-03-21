@@ -20,20 +20,28 @@ function getAllLessonsDataForExamPrep(year, textbook, grade) {
     // ===== ② 各レッスンについてデータを取得 =====
     const allLessonsData = [];
 
+    // gradeが不規則動詞①②かどうかを事前に判定（lesson名に依存しない）
+    const isGradeFukisoku1 = isFukisoku1LessonPdf(grade);
+    const isGradeFukisoku2 = isFukisoku2LessonPdf(grade);
+
     for (const lessonName of lessonOrder) {
       console.log(`\n--- レッスン処理: ${lessonName} ---`);
 
       let lessonData = null;
       let source = null; // ✅ ソース情報
 
+      // gradeまたはlesson名で不規則動詞①を判定
+      const isItemFukisoku1 = isGradeFukisoku1 || isFukisoku1LessonPdf(lessonName);
+      const isItemFukisoku2 = isGradeFukisoku2 || isFukisoku2LessonPdf(lessonName);
+
       // ✅ 不規則動詞①の場合
-      if (lessonName.startsWith('不規則動詞①') || lessonName.startsWith('不規則動詞➀')) {
+      if (isItemFukisoku1) {
         console.log('  → 入試対策編「不規則動詞①」から取得');
         lessonData = getLessonDataFromExamPrep(year, lessonName, '不規則動詞①');
         source = 'examPrep'; // ✅ 入試対策編
       }
       // ✅ 不規則動詞②の場合
-      else if (lessonName.startsWith('不規則動詞②') || lessonName.startsWith('不規則動詞➁')) {
+      else if (isItemFukisoku2) {
         console.log('  → 入試対策編「不規則動詞②」から取得');
         lessonData = getLessonDataFromExamPrep(year, lessonName, '不規則動詞②');
         source = 'examPrep'; // ✅ 入試対策編
@@ -46,13 +54,19 @@ function getAllLessonsDataForExamPrep(year, textbook, grade) {
         source = lessonData.source || 'textbook';
       }
 
+      // layoutTypeをgrade優先で決定
+      const effectiveLayoutType = isItemFukisoku1 ? 'fukisoku1' :
+                                   isItemFukisoku2 ? 'fukisoku2' :
+                                   determineLayoutType(lessonName);
+      const effectiveIsFukisoku = isItemFukisoku1 || isItemFukisoku2;
+
       if (lessonData && lessonData.items.length > 0) {
         console.log(`  ✅ ${lessonData.items.length}件のデータを取得`);
 
         allLessonsData.push({
           lesson: lessonName,
-          layoutType: determineLayoutType(lessonName),
-          tableData: convertToTableData(lessonData.items, isFukisoku(lessonName)),
+          layoutType: effectiveLayoutType,
+          tableData: convertToTableData(lessonData.items, effectiveIsFukisoku),
           rawItems: lessonData.items,
           source: source // ✅ ソース情報を追加
         });

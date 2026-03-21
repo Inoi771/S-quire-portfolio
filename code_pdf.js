@@ -419,15 +419,17 @@ ${cssStyles}
       displayHeader = `${escapeHtml(formatGrade(grade))}　　　${escapeHtml(lessonName)}`;
     }
     
-    const isSpecialLayoutForThisLesson = isSpecialLayoutLessonGAS(lessonName);
-    
+    // layoutTypeをld.layoutTypeから取得（lesson名ではなくgrade優先で設定済み）
+    const layoutType = ld.layoutType || determineLayoutType(lessonName);
+    const isSpecialLayoutForThisLesson = (layoutType !== 'normal') || isSpecialLayoutLessonGAS(lessonName);
+
     if (isSpecialLayoutForThisLesson) {
-      if (isFukisoku1LessonPdf(lessonName) || isFukisoku2LessonPdf(lessonName)) {
+      if (layoutType === 'fukisoku1' || layoutType === 'fukisoku2') {
         html += generatePdfPageFukisoku(
           displayHeader,
           ld.tableData,
           displayItems,
-          isFukisoku2LessonPdf(lessonName),
+          layoutType === 'fukisoku2',
           pageNum
         );
       } else if (lessonName === '曜日・月・季節・代名詞') {
