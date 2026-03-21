@@ -112,8 +112,8 @@ function getStudentLessons(year, textbook, grade) {
 
     if (textbook === '入試対策編') {
       const allLessons = [];
-      ['不規則動詞①', '不規則動詞②', '通常'].forEach(sheetName => {
-        const sheet = ss.getSheetByName(sheetName);
+      [['不規則動詞①', '不規則動詞➀'], ['不規則動詞②', '不規則動詞➁'], ['通常']].forEach(names => {
+        const sheet = ss.getSheetByName(names[0]) || (names[1] ? ss.getSheetByName(names[1]) : null);
         if (!sheet) return;
         const lastRow = sheet.getLastRow();
         if (lastRow < 2) return;
@@ -164,8 +164,8 @@ function getStudentLessons(year, textbook, grade) {
     let examPrepLessons = [];
     if (examPrepFile) {
       const examPrepSs = SpreadsheetApp.open(examPrepFile);
-      ['不規則動詞①', '不規則動詞②', '通常'].forEach(sheetName => {
-        const sheet = examPrepSs.getSheetByName(sheetName);
+      [['不規則動詞①', '不規則動詞➀'], ['不規則動詞②', '不規則動詞➁'], ['通常']].forEach(names => {
+        const sheet = examPrepSs.getSheetByName(names[0]) || (names[1] ? examPrepSs.getSheetByName(names[1]) : null);
         if (!sheet) return;
         const lr = sheet.getLastRow();
         if (lr < 2) return;
@@ -255,10 +255,12 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   const sheetName = sheet.getName();
-  const isFukisokuSheet = (sheetName === '不規則動詞①' || sheetName === '不規則動詞②');
+  const isFukisoku1Sheet = (sheetName === '不規則動詞①' || sheetName === '不規則動詞➀');
+  const isFukisoku2Sheet = (sheetName === '不規則動詞②' || sheetName === '不規則動詞➁');
+  const isFukisokuSheet = isFukisoku1Sheet || isFukisoku2Sheet;
   let maxCol = 7;
-  if (sheetName === '不規則動詞①') maxCol = 11;
-  else if (sheetName === '不規則動詞②') maxCol = 18;
+  if (isFukisoku1Sheet) maxCol = 11;
+  else if (isFukisoku2Sheet) maxCol = 18;
 
   const allData = sheet.getRange(2, 1, lastRow - 1, maxCol).getValues();
   const questions = [];
@@ -273,7 +275,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
         japanese: row[3] || '', audio: row[4] || '', lesson: row[5] || '',
         cellId: row[6] || '', formType: isFukisokuSheet ? 'present' : null, questionNumber
       });
-      if (sheetName === '不規則動詞①' || sheetName === '不規則動詞②') {
+      if (isFukisoku1Sheet || isFukisoku2Sheet) {
         if (row[8] || row[9] || row[10]) {
           questions.push({
             wordId: row[7] || '', english: row[8] || '', pronunciation: row[9] || '',
@@ -282,7 +284,7 @@ function extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol) {
           });
         }
       }
-      if (sheetName === '不規則動詞②') {
+      if (isFukisoku2Sheet) {
         if (row[12] || row[13] || row[14]) {
           questions.push({
             wordId: row[11] || '', english: row[12] || '', pronunciation: row[13] || '',
