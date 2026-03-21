@@ -570,6 +570,11 @@ function setupSpecialLayoutEmptyCellDragDrop(cellDiv, colIdx, rowIdx) {
  * @param {Object} word - 現在形の単語オブジェクト
  * @returns {Object} { past: {word}, pastParticiple: {word} } または { past: null, pastParticiple: null }
  */
+// 【...】タグ（【動】等）を除去するヘルパー
+function stripBrackets(text) {
+  return (text || '').replace(/【[^】]*】\s*/g, '').trim();
+}
+
 // ワードID固定マッピング（Regex検索で見つからない単語のID直接指定）
 const IRREGULAR_VERB_ID_MAPPINGS = {
   3540: { pastId: 3541, pastPartId: 271 },
@@ -1150,6 +1155,8 @@ tbody.addEventListener('dragenter', (e) => {
       const isFukisoku2Check = state.textbook === '入試対策編' && state.lesson.startsWith('不規則動詞②');
 
       if (isFukisoku1Check || isFukisoku2Check) {
+        // 不規則動詞のとき【動】等の【...】タグを日本語から除去
+        tableData[rowIdx][0].japanese = stripBrackets(word.japanese);
         const fukisokuDataMap = isFukisoku1Check 
           ? (window.fukisoku1DataMap || {}) 
           : (window.fukisoku2DataMap || {});
@@ -1171,7 +1178,7 @@ tbody.addEventListener('dragenter', (e) => {
             presentPronunciation: word.pronunciation || '',
             presentAudio: '',
             presentMasterId: wordId,
-            meaning: word.japanese,
+            meaning: stripBrackets(word.japanese),
             cellId: calculateCellId(rowIdx, 0),
             past: past ? past.english : '',
             pastPronunciation: past ? (past.pronunciation || '') : '',
@@ -1191,7 +1198,7 @@ tbody.addEventListener('dragenter', (e) => {
           fukisokuDataMap[rowIdx].presentMasterId = wordId;
           fukisokuDataMap[rowIdx].present = word.english;
           fukisokuDataMap[rowIdx].presentPronunciation = word.pronunciation || '';
-          fukisokuDataMap[rowIdx].meaning = word.japanese;
+          fukisokuDataMap[rowIdx].meaning = stripBrackets(word.japanese);
           fukisokuDataMap[rowIdx].meaningMasterId = wordId;
           
           // 過去形がまだ入力されていなければ自動入力
