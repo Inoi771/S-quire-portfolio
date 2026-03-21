@@ -658,7 +658,7 @@ function convertFukisokuMapToTableData(fukisokuDataMap, isFukisoku1) {
     tableData[r][0] = {
       type: 'word',
       english: data.present || '',
-      japanese: data.meaning || '',
+      japanese: stripBrackets(data.meaning) || '',
       pronunciation: data.presentPronunciation || '',
       masterWordId: data.meaningMasterId,  // ✅ ワードID
       cellId: data.cellId || calculateCellId(r, 0)
@@ -862,7 +862,7 @@ function renderFukisokuTable(table, tableData, isFukisoku1, fukisokuDataFromShee
       const meaningDiv = document.createElement('div');
       meaningDiv.className = 'fukisoku-meaning';
       meaningDiv.draggable = true;
-      meaningDiv.textContent = cell.japanese || '';
+      meaningDiv.textContent = stripBrackets(cell.japanese) || '';
       meaningDiv.dataset.rowIdx = rowIdx;
       meaningDiv.style.cssText = `
         cursor: grab;
