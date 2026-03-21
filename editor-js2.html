@@ -895,7 +895,7 @@ function addFocusedItemToTable(item) {
         presentPronunciation: item.pronunciation || '',
         presentAudio: '',
         presentMasterId: item.id,
-        meaning: item.japanese,
+        meaning: stripBrackets(item.japanese),
         cellId: calculateCellId(foundRowIdx, 0),
         past: past ? past.english : '',
         pastPronunciation: past ? (past.pronunciation || '') : '',
@@ -915,7 +915,7 @@ function addFocusedItemToTable(item) {
       fukisokuDataMap[foundRowIdx].presentMasterId = item.id;
       fukisokuDataMap[foundRowIdx].present = item.english;
       fukisokuDataMap[foundRowIdx].presentPronunciation = item.pronunciation || '';
-      fukisokuDataMap[foundRowIdx].meaning = item.japanese;
+      fukisokuDataMap[foundRowIdx].meaning = stripBrackets(item.japanese);
       fukisokuDataMap[foundRowIdx].meaningMasterId = item.id;
       
       // 過去形がまだ入力されていなければ自動入力
