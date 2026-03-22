@@ -109,8 +109,8 @@ function createYearResources(year) {
     const yearFolder = rootFolder.createFolder(year);
 
     // 5. 新教科書版・旧教科書版スプレッドシートを作成
-    createTextbookSpreadsheet_('新教科書版', yearFolder);
-    createTextbookSpreadsheet_('旧教科書版', yearFolder);
+    createTextbookSpreadsheet_('NewHorizon', yearFolder);
+    createTextbookSpreadsheet_('Sunshine', yearFolder);
 
     // 6. 入試対策編：最新既存年度からコピー、なければ空作成
     const latestYearFolder = getLatestYearFolder_(rootFolder, year);
@@ -149,7 +149,7 @@ function createTextbookSpreadsheet_(name, yearFolder) {
 
   ss.insertSheet('中学2年').appendRow(header);
   ss.insertSheet('中学3年').appendRow(header);
-  ss.insertSheet('レッスン順序');
+  ss.insertSheet('レッスン順序').appendRow(['中学1年', '中学2年', '中学3年']);
 
   // 年度フォルダに移動
   const file = DriveApp.getFileById(ss.getId());
