@@ -270,7 +270,6 @@ function resetAfterSave() {
  */
 function updateUIForSaving() {
   const saveBtn = document.getElementById('saveBtn');
-  const resetBtn = document.getElementById('resetBtn');
   const yearSelect = document.getElementById('yearSelect');
   const textbookSelect = document.getElementById('textbookSelect');
   const gradeSelect = document.getElementById('gradeSelect');
@@ -282,7 +281,6 @@ function updateUIForSaving() {
     // ===== 保存中 =====
     saveBtn.textContent = '💾 保存中...';
     saveBtn.disabled = true;
-    resetBtn.disabled = true;
     newBtn.disabled = true;
     yearSelect.disabled = true;
     textbookSelect.disabled = true;
@@ -293,7 +291,6 @@ function updateUIForSaving() {
     // ===== 保存完了後 =====
     saveBtn.textContent = '💾 保存';
     saveBtn.disabled = !hasChanges;
-    resetBtn.disabled = false;
     
     // ✅ 修正：年度・教科書・学年は常に有効化
     yearSelect.disabled = false;
@@ -1755,7 +1752,6 @@ function setAllButtonsDisabled(disabled) {
 
   // エディタータブのボタン
   const newBtn = document.getElementById('newBtn');
-  const resetBtn = document.getElementById('resetBtn');
   const saveBtn = document.getElementById('saveBtn');
   const useCustomBtn = document.getElementById('useCustomBtn');
 
@@ -1780,7 +1776,6 @@ function setAllButtonsDisabled(disabled) {
   if (cancelOrderBtn) cancelOrderBtn.disabled = disabled;
   if (exportPdfBtn) exportPdfBtn.disabled = disabled;
   if (newBtn) newBtn.disabled = disabled;
-  if (resetBtn) resetBtn.disabled = disabled;
   if (saveBtn) saveBtn.disabled = disabled;
   if (useCustomBtn) useCustomBtn.disabled = disabled;
 
