@@ -1,3 +1,8 @@
+/**
+ * code_data.js — 入試対策データ / マスターCRUD / レッスン順序 / レイアウト変換
+ * 役割: 入試対策シート読込 / マスター単語・英文の追加・更新・削除 / レッスン順序保存 / tableData変換
+ * 主要関数: getAllLessonsDataForExamPrep, updateMasterWord, addMasterWord, saveLessonOrder, convertToTableData
+ */
 function getAllLessonsDataForExamPrep(year, textbook, grade) {
   try {
     console.log('=== getAllLessonsDataForExamPrep 開始 ===');

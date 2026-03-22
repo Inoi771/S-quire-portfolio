@@ -1,17 +1,7 @@
 /**
- * ✅ 完全修正版：レッスン名を変更（レッスン順序シートのみ更新）
- * 
- * ★ 重要な修正 ★
- * - データシートのレッスン名は更新しない（saveLessonData で処理）
- * - レッスン順序シートのみを更新する
- * - これにより単語データの重複を完全に防ぐ
- * 
- * @param {string} year - 年度（例：「2024年度版」）
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年（またはシート名）
- * @param {string} oldLessonName - 元のレッスン名
- * @param {string} newLessonName - 新しいレッスン名
- * @returns {Object} { success: boolean, updatedCount: number, error?: string }
+ * code_lesson.js — レッスン名変更・一覧取得・不規則動詞データ管理
+ * 役割: レッスン名更新 / レッスン一覧取得 / 不規則動詞（福速）保存・読込
+ * 主要関数: updateLessonName, getLessonList, getLessonListForSave, saveFukisokuData, loadFukisokuData
  */
 function updateLessonName(year, textbook, grade, oldLessonName, newLessonName) {
   try {

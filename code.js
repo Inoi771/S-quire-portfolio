@@ -1,7 +1,7 @@
 /**
- * GASアプリケーションのエントリーポイント
- * ?key=TEACHER_ACCESS_KEY → 教師用 editor.html
- * それ以外                → 生徒用 index.html
+ * code.js — メインバックエンド・エントリポイント
+ * 役割: doGet ルーティング / 階層データ取得 / レッスンデータ保存 / Script Properties 管理
+ * 主要関数: doGet, getEditorYears, getEditorLessons, saveLessonData, getAllWordsAndSentences
  */
 function doGet(e) {
   const accessKey = getScriptProperty('TEACHER_ACCESS_KEY');

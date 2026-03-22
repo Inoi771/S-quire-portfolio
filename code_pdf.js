@@ -1,5 +1,7 @@
 /**
- * PDF生成・保存
+ * code_pdf.js — PDF語彙リスト生成
+ * 役割: 通常・不規則動詞・特殊レイアウトの3種PDF生成 / Google Drive への保存
+ * 主要関数: generateAndSavePdf, generatePdfLayout, generatePdfPage, generatePdfPageFukisoku, generatePdfPageSpecialLayout
  */
 function generateAndSavePdf(
   year,

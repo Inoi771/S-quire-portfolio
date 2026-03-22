@@ -1,12 +1,7 @@
 /**
- * ============================================================
- * code_tts.js — Google Cloud TTS 音声生成・GitHub アップロード
- * ============================================================
- *
- * 必要な Script Properties:
- *   GOOGLE_CLOUD_TTS_API_KEY — Google Cloud TTS API キー
- *   GITHUB_TOKEN             — GitHub Personal Access Token（repo スコープ）
- *   GITHUB_BASE_URL          — 音声ファイルのベースURL（owner/repo の抽出に使用）
+ * code_tts.js — Google Cloud TTS 音声生成 / GitHub アップロード
+ * 役割: テキストから音声ファイル生成 / GitHub リポジトリへのアップロード / 既存音声の管理
+ * 主要関数: generateAndUploadAudio, regenerateAudio, uploadAudioToGithub, deleteAudioFromGithub
  */
 
 // ────────────────────────────────────────────

@@ -321,145 +321,6 @@ fukisokuDataMap[meaningMasterId] = {
 （例: `2024年度版_新教科書版_中学1年_単語.pdf`）
 
 ---
-
-## 全関数リファレンス
-
-### code.js（教師向け API・主要関数）
-
-**ルーティング・設定:**
-| 関数 | 役割 |
-|------|------|
-| `doGet(e)` | エントリポイント。`?page=student` → index.html、それ以外 → editor.html |
-| `getScriptProperty(key)` | Script Properties から値取得 |
-| `getAppConfig()` | `{ VOCABULARY_FOLDER_ID, GITHUB_BASE_URL, HOMEPAGE_URL }` を返す |
-| `clearCache()` | years/textbooks/grades のキャッシュ削除 |
-| `escapeHtml(s)` | HTML エスケープ（&<>"'） |
-
-**階層データ取得（教師用）:**
-| 関数 | 役割 |
-|------|------|
-| `getEditorYears()` | 年度フォルダ一覧（降順） |
-| `getEditorTextbooks(year)` | 教科書スプレッドシート一覧 |
-| `getEditorGrades(year, textbook)` | 学年シート名一覧（'レッスン順序'を除く） |
-| `getEditorLessons(year, textbook, grade)` | レッスン名一覧 |
-| `getEditorLogoUrl()` | logo.png を base64 Data URL で返す |
-
-**レッスンデータ操作:**
-| 関数 | 役割 |
-|------|------|
-| `getExistingData(year, textbook, grade, lesson)` | 既存レッスンデータ読み込み |
-| `saveLessonData(year, textbook, grade, lesson, tableData, allWords, allSentences)` | レッスンデータ保存（福速対応、7/14/18列） |
-| `updateLessonName(year, textbook, grade, oldName, newName)` | レッスン名変更（シート全体を更新） |
-| `getLessonList(year, textbook, grade)` | レッスン一覧（別形式） |
-| `getLessonListForSave(year, textbook, grade)` | 保存ダイアログ用レッスン一覧 |
-| `getMaxColumnsForSheet(textbook, grade)` | 7/14/18を返す（シート種別判定） |
-
-**不規則動詞（福速）:**
-| 関数 | 役割 |
-|------|------|
-| `isFukisoku(lessonName)` | 不規則動詞レッスン判定 |
-| `saveFukisokuData(...)` | 不規則動詞データ保存（①14列 or ②18列） |
-| `loadFukisokuData(...)` | 不規則動詞データ読み込み |
-| `updateFukisokuTableByMasterId(masterId)` | マスター変更時の全福速シート更新 |
-
-**マスターデータ CRUD:**
-| 関数 | 役割 |
-|------|------|
-| `getAllWordsAndSentences()` | 英単語・英文マスター全取得 |
-| `saveWords(words)` | 英単語シートへ書き込み |
-| `saveSentences(sentences)` | 英文シートへ書き込み |
-| `updateMasterWord(wordId, english, pronunciation, japanese)` | マスター単語更新 |
-| `updateMasterSentence(sentenceId, text, pronunciation, japanese)` | マスター英文更新 |
-| `addMasterWord(english, pronunciation, japanese)` | マスター単語追加 |
-| `addMasterSentence(text, pronunciation, japanese)` | マスター英文追加 |
-| `updateAllLessonDataInYear(year, masterId, ...)` | 年度内全レッスンの一括更新 |
-| `updateLessonWord(...)` | 特定レッスンの単語更新 |
-| `updateLessonSentence(...)` | 特定レッスンの英文更新 |
-
-**レイアウト・変換:**
-| 関数 | 役割 |
-|------|------|
-| `determineLayoutType(lessonName)` | 'normal' / 'fukisoku1' / 'fukisoku2' / 'special' を返す |
-| `convertToTableDataNormal(items)` | 通常レイアウトに変換（16×3） |
-| `convertToTableDataFukisoku(items)` | 福速レイアウトに変換（16×1） |
-| `convertToTableData(items, isFukisoku)` | ルーター関数 |
-| `validateCellId(cellId)` | cellId 1〜48 の範囲検証 |
-
-**入試対策:**
-| 関数 | 役割 |
-|------|------|
-| `getExamPrepLessons(year)` | 入試対策編のレッスン一覧 |
-| `getAllLessonsDataForExamPrep(year, textbook, grade)` | 入試対策データ全取得（レイアウトタイプ付き） |
-| `getLessonDataFromExamPrep(year, lesson, sheetName)` | 入試対策シートからデータ取得 |
-| `getLessonDataFromBoth(year, textbook, grade, lesson)` | テキスト + 入試対策のマージ取得 |
-| `isExamPrepLessonName(lessonName)` | 入試対策レッスン名判定 |
-
-**レッスン順序:**
-| 関数 | 役割 |
-|------|------|
-| `initializeLessonOrderSheet(year, textbook)` | 'レッスン順序' シート作成 |
-| `getSavedLessonOrder(year, textbook, grade)` | 保存済みレッスン順序取得 |
-| `saveLessonOrder(year, textbook, grade, lessonOrder)` | レッスン順序保存 |
-| `getAvailableLessons(year, textbook, grade)` | 未割り当てレッスン取得 |
-
-**PDF 生成:**
-| 関数 | 役割 |
-|------|------|
-| `generateAndSavePdf(...)` | PDF 生成・Drive 保存 |
-| `generatePdfLayout(...)` | PDF 全体の HTML 生成 |
-| `generatePdfPage(...)` | 通常レイアウトのページ HTML |
-| `generatePdfPageFukisoku(...)` | 不規則動詞ページ HTML |
-| `generatePdfPageSpecialLayout(...)` | 特殊レイアウトのページ HTML |
-| `generatePronounTableHtml(allWords, displayItems)` | 代名詞テーブル HTML |
-| `findPronounData(englishWord, allWords)` | 代名詞データ検索 |
-| `isSpecialLayoutLessonGAS(lessonName)` | 特殊レイアウト判定（福速含む） |
-| `formatGrade(grade)` | 学年の表示用フォーマット |
-
-**生徒向け API:**
-| 関数 | 役割 |
-|------|------|
-| `getStudentLogoUrls()` | 生徒用ロゴ URL 取得 |
-| `getStudentYears()` | 上位2年度（'新教科書版'/'旧教科書版'にリネーム） |
-| `getStudentTextbooks(year)` | 教科書一覧（キャッシュあり） |
-| `getStudentGrades(year, textbook)` | 学年一覧 |
-| `getStudentLessons(year, textbook, grade)` | レッスン一覧（入試対策除外） |
-| `getPracticeQuestions(year, textbook, grade, lesson)` | 練習問題取得（音声URL付き） |
-| `generatePronounQuestions(githubBase, startNumber)` | 代名詞問題を動的生成（9種×4形式） |
-| `extractQuestionsFromSheet(sheet, targetLesson, lessonCol)` | シートから問題行を抽出 |
-
----
-
-### code_init.js（初期セットアップ）
-
-| 関数 | 役割 |
-|------|------|
-| `validateScriptProperties()` | 必須 Script Properties の存在確認・マスターシートアクセスチェック |
-| `initializeYearResources(year)` | 年度リソース（フォルダ・スプレッドシート・シート）の自動作成（べき等） |
-| `initializeAllResources(year)` | メインエントリポイント：検証 + リソース作成 |
-
----
-
-### subcode.js（生徒向け別 GAS プロジェクト用）
-
-> ⚠️ `.claspignore` で除外済み。変更した場合は別途手動で GAS に反映が必要。
-
-| 関数 | 役割 |
-|------|------|
-| `doGet(e)` | 生徒用エントリポイント（index.html に yearsJson を埋め込み） |
-| `getScriptProperty(key)` | Script Properties 値取得 |
-| `getConfig()` | 3つの必須設定値取得（不足時はエラー） |
-| `getLogoUrl()` | GitHub URL からロゴ取得 |
-| `manualCacheClear()` | years/textbooks/grades キャッシュ削除 |
-| `getYears()` | 年度フォルダ2件取得（キャッシュ1時間） |
-| `getTextbooks(year)` | 教科書一覧取得 |
-| `getGrades(year, textbook)` | 学年シート名取得 |
-| `getLessons(year, textbook, grade)` | レッスン一覧（'レッスン順序' シートから取得） |
-| `getPracticeQuestions(year, textbook, grade, lesson)` | 練習問題取得（音声URL付き） |
-| `generatePronounQuestions(githubBase, startNumber)` | 代名詞36問を動的生成 |
-| `extractQuestionsFromSheetByColumn(sheet, targetLesson, lessonCol)` | シートから問題抽出（7列まで対応） |
-
----
-
 ## フロントエンド詳細
 
 ### 教師UI のJSファイルと主要関数の対応
@@ -524,25 +385,6 @@ years = JSON.parse(yearsJsonString);
 
 ---
 
-## よく使う関数（code.js）
-
-| 関数 | 役割 |
-|------|------|
-| `doGet(e)` | エントリポイント・ルーティング |
-| `getEditorYears()` | 年度一覧取得 |
-| `getEditorTextbooks(year)` | 教科書一覧取得 |
-| `getEditorGrades(year, textbook)` | 学年一覧取得 |
-| `getEditorLessons(year, textbook, grade)` | レッスン一覧取得 |
-| `getAllWordsAndSentences()` | 単語・英文マスターデータ取得 |
-| `saveLessonData()` | レッスンデータ保存 |
-| `generateAndSavePdf()` | PDF語彙リスト生成・保存 |
-| `determineLayoutType()` | レッスンのレイアウト種別判定 |
-| `isFukisoku()` | 不規則動詞レッスン判定 |
-| `getPracticeQuestions()` | 生徒用練習問題取得 |
-| `updateAllLessonDataInYear()` | 年度内全レッスン一括更新 |
-
----
-
 ## 作業時の注意事項
 
 1. **大きなファイルを Read する際はオフセットと行数を指定する**
@@ -574,6 +416,8 @@ years = JSON.parse(yearsJsonString);
      return { success: false, error: e.toString() };
    }
    ```
+
+6. **複数の修正を依頼された場合でも、必ず1つずつ順番に実行すること。次の作業は前の作業が完了してからユーザーに確認を取った上で進めること。**
 
 ---
 
@@ -666,7 +510,7 @@ code_init.js      — 初期化・セットアップ（validateScriptProperties,
    - どれにも合わない → `code.js`
 2. 対象ファイルを `wc -l` で行数確認
 3. ファイル末尾に追加（2000行を超えるなら新ファイルへ切り出し）
-4. `code.js` でのエラー処理パターンを踏襲すること（try/catch + `{ success, data/error }` 返却）
+4. エラー処理パターン（try/catch + `{ success, data/error }` 返却）は「作業時の注意事項 #5」を参照
 
 ---
 

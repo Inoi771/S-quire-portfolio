@@ -1,6 +1,8 @@
-// ============================================================
-// 生徒向け API（元 subcode.js）
-// ============================================================
+/**
+ * code_student.js — 生徒向けAPI
+ * 役割: 年度・教科書・学年・レッスン一覧提供 / 練習問題取得 / キャッシュ管理
+ * 主要関数: getStudentYears, getStudentLessons, getPracticeQuestions, generatePronounQuestions
+ */
 
 const scriptCache = CacheService.getScriptCache();
 
