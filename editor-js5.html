@@ -1623,6 +1623,16 @@ function updateLoadButton() {
         '<li><span class="help-step-num">3</span><span>登録した単語・英文は左パネルに即座に表示されます。グリッドにドラッグして使用してください。</span></li>',
         '</ol>',
         '<div class="help-note">💡 登録時に Google Cloud TTS が設定済みの場合、音声ファイルが自動生成されます。<br>⚠️ 音声生成に失敗した場合は、画面右下の通知から「🔄 再生成する」で再試行できます。</div>',
+        '</div>',
+        '<div class="help-section">',
+        '<h3>🔊 音声ファイルの自動生成（TTS）</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span>単語または英文を登録・編集すると、Google Cloud TTS で音声が自動生成されます。</span></li>',
+        '<li><span class="help-step-num">2</span><span>音声生成に失敗した場合は、画面右下に <strong>「⚠️ 音声生成に失敗しました」</strong> の通知が表示されます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>通知内の <strong>「🔄 再生成する」</strong> をクリックすると再試行します。</span></li>',
+        '<li><span class="help-step-num">4</span><span>登録自体を取り消す場合は <strong>「❌ 登録をキャンセル」</strong>、編集の取り消しは <strong>「↩️ 英語を元に戻す」</strong> です。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 TTS を使用するには <span class="help-badge">⚙️ 設定</span> タブで <strong>GOOGLE_CLOUD_TTS_API_KEY</strong>・<strong>GITHUB_TOKEN</strong>・<strong>GITHUB_BASE_URL</strong> の3つを設定してください。</div>',
         '</div>'
       ].join(''),
       wordbook: [
@@ -1650,15 +1660,6 @@ function updateLoadButton() {
         '<li><span class="help-step-num">7</span><span><strong>STUDENT_HOMEPAGE_URL</strong>（任意）：生徒用アプリの URL。</span></li>',
         '</ol>',
         '<div class="help-note">💡 新しい年度を追加するには、GAS エディタで <code>initializeYearResources(\'2027年度版\')</code> を実行してください。</div>',
-        '</div>',
-        '<div class="help-section">',
-        '<h3>🔊 音声ファイルの自動生成（TTS）</h3>',
-        '<ol class="help-steps">',
-        '<li><span class="help-step-num">1</span><span>単語または英文を登録・編集すると、Google Cloud TTS で音声が自動生成されます。</span></li>',
-        '<li><span class="help-step-num">2</span><span>音声生成に失敗した場合は、画面右下に <strong>「⚠️ 音声生成に失敗しました」</strong> の通知が表示されます。</span></li>',
-        '<li><span class="help-step-num">3</span><span>通知内の <strong>「🔄 再生成する」</strong> をクリックすると再試行します。</span></li>',
-        '</ol>',
-        '<div class="help-note">💡 TTS を使用するには <strong>GOOGLE_CLOUD_TTS_API_KEY</strong>・<strong>GITHUB_TOKEN</strong>・<strong>GITHUB_BASE_URL</strong> の3つを設定してください。</div>',
         '</div>'
       ].join('')
     };
