@@ -37,11 +37,15 @@ GAS エディタの「プロジェクトの設定」→「スクリプト プロ
 |---|:---:|---|
 | `ENGLISHWORDS_FOLDER_ID` | ✅ | Step 3 で作成したフォルダ ID |
 | `ENGLISHWORDS_SHEET_ID` | ✅ | Step 2 で作成したスプレッドシート ID |
+| `TEACHER_ACCESS_KEY` | ✅ | 教師用ページのアクセスキー（任意の文字列）※GASエディタから手動設定 |
 | `GITHUB_BASE_URL` | ✅ | 音声ファイルの GitHub ベース URL |
-| `VOCABULARY_FOLDER_ID` | | ENGLISHWORDS_FOLDER_ID と同じ値を設定 |
+| `VOCABULARY_FOLDER_ID` | | 手動設定不要（`ENGLISHWORDS_FOLDER_ID` 保存時に自動同期） |
 | `HOMEPAGE_URL` | | アプリのホームページ URL |
+| `STUDENT_HOMEPAGE_URL` | | 生徒向けホームページ URL |
 | `GOOGLE_CLOUD_TTS_API_KEY` | | Google Cloud TTS API キー（音声自動生成用） |
 | `GITHUB_TOKEN` | | GitHub PAT（音声ファイルアップロード用、repo スコープ） |
+
+> **補足:** 初回デプロイ後は教師用ページの「⚙️ 設定」タブからほとんどのプロパティを設定できます（`TEACHER_ACCESS_KEY` は設定タブ非対応のため GAS エディタから手動設定が必要）。
 
 ### Step 5: 年度リソースを初期化
 
@@ -79,11 +83,10 @@ https://script.google.com/macros/s/〈デプロイID〉/exec
 
 ### 教師用（エディター）
 ```
-https://script.google.com/macros/s/〈デプロイID〉/exec?page=editor&key=Tz8mX3kR7vQ2nP9w
+https://script.google.com/macros/s/〈デプロイID〉/exec?key=〈TEACHER_ACCESS_KEY の値〉
 ```
 
-> **注意:** 教師用 URL は生徒に教えないこと。
-> デフォルト URL（パラメータなし）は生徒用ページを表示するため、生徒が教師用ページの存在に気付くことはない。
+> **注意:** 教師用 URL は生徒に教えないこと。パラメータなしの URL は生徒用ページを表示する。
 
 ### デプロイ URL の確認方法
 
