@@ -22,15 +22,28 @@
 
 ```
 englishtest/
-├── code.js               # メインバックエンド（約4400行）教師向け API・データ管理
-├── code_tts.js           # TTS音声生成・GitHubアップロード（Google Cloud TTS連携）
-├── code_init.js          # 初期セットアップ・年度リソース自動作成
-├── subcode.js            # 生徒向けサブバックエンド（約485行）※ GAS 未デプロイ
-├── editor.html           # 教師用エディタ UI（約8500行）
-├── index.html            # 生徒用発音練習 UI（約976行）
+├── code.js               # メインバックエンド（~1007行）doGet・階層取得・保存処理
+├── code_lesson.js        # レッスン名変更・一覧・不規則動詞保存（~814行）
+├── code_data.js          # 入試対策・マスターCRUD・レッスン順序・変換（~1280行）
+├── code_pdf.js           # PDF生成全関数（~1020行）
+├── code_student.js       # 生徒向けAPI（~317行）
+├── code_tts.js           # TTS音声生成・GitHubアップロード（~719行）
+├── code_init.js          # 初期セットアップ・年度リソース自動作成（~81行）
+├── subcode.js            # 生徒向けサブバックエンド（~485行）※ GAS 未デプロイ
+├── editor-header.html    # HTML構造 + CSS全スタイル + script開始タグ（~1788行）
+├── editor-js1.html       # グローバル変数・状態・ダイアログ・初期化（~1025行）
+├── editor-js2.html       # エディタ描画・タブ・単語リスト（~972行）
+├── editor-js3.html       # テーブル描画・特殊レイアウト・キーボード（~1853行）
+├── editor-js4.html       # データ読込・インライン編集・D&D（~1408行）
+├── editor-js5.html       # 保存処理・単語登録・英文登録（~813行）
+├── editor-js5b.html      # 単語帳タブ・PDF出力・トースト通知（~1228行）
+├── editor-js6.html       # 設定タブ全関数（~325行）
+├── editor-footer.html    # script終了タグ + HTML終了タグ（5行）
+├── editor.html           # ビルド生成物（deploy.yml が8ファイルを結合して作成）
+├── index.html            # 生徒用発音練習 UI（~1163行）
 ├── appsscript.json       # GAS マニフェスト（OAuthスコープ・タイムゾーン等）
 ├── .clasp.json           # clasp 設定（scriptId）
-├── .claspignore          # GAS プッシュ除外ファイル一覧
+├── .claspignore          # GAS プッシュ除外ファイル一覧（subcode.js のみ）
 └── .github/workflows/
     ├── deploy.yml        # GAS デプロイ（.js/.html 変更時のみ起動）
     └── merge-to-master.yml  # claude/* → master 自動マージ
@@ -38,8 +51,10 @@ englishtest/
 
 ### 重要な注意点
 - `subcode.js` は `.claspignore` に含まれており **GAS にはデプロイされない**（意図的な分離）
-- `editor.html` / `index.html` の両ファイルは非常に大きい（8500行・976行）。編集時は対象箇所を絞って Read すること
+- `editor.html` は deploy.yml のビルドステップで生成される（直接編集しない）
+- 教師UI の編集対象: `editor-header.html`（CSS）または `editor-js1〜5b.html`（JS）
 - `code.js` の `doGet()` が唯一のエントリポイント。`subcode.js` の `doGet()` は別 GAS プロジェクト用
+- **ファイル検索の手順**: 対象関数を `Grep` で探す → ファイル名とオフセットを確認 → `Read` で該当箇所のみ読む
 
 ---
 
@@ -447,6 +462,18 @@ fukisokuDataMap[meaningMasterId] = {
 
 ## フロントエンド詳細
 
+### 教師UI のJSファイルと主要関数の対応
+
+| ファイル | 主要関数 |
+|---------|---------|
+| editor-js1.html | `loadYears()`, `handleYearChange()`, `handleLessonChange()`, `showLoadingIndicator()`, `hideLoadingIndicator()`, `loadEditorData()` |
+| editor-js2.html | `renderEditor()`, `renderTabs()`, `renderWordList()`, `closeEditor()`, `updateCounts()` |
+| editor-js3.html | `renderTable()`, `renderFukisokuTable()`, `renderSpecialLayout_DayMonthSeason()`, `renderPronounTable()`, `handleRightPanelKeyDown()`, `calculateCellId()`, `getCellIndices()` |
+| editor-js4.html | `loadExistingData()`, `editWordItem()`, `editSentenceItem()`, `setupRightPanelDragDrop()`, `setupWordCellDragDrop()` |
+| editor-js5.html | `handleSave()`, `startRegisterWord()`, `performNewRegistrationWord()`, `startRegisterSentence()`, `performNewRegistrationSentence()` |
+| editor-js5b.html | `initWordbook()`, `renderLessonPanels()`, `handleSaveOrderWB()`, `initPdfExport()`, `handleExportPdf()`, `showToast()`, `showSaveCompletedMessage()` |
+| editor-js6.html | `initSettingsTab()`, `loadSettingsValues()`, `saveSettings()`, `runAutoSetup()`, `showTtsRetryNotification()` |
+
 ### editor.html（教師用）主要状態管理
 
 ```js
@@ -519,9 +546,9 @@ years = JSON.parse(yearsJsonString);
 ## 作業時の注意事項
 
 1. **大きなファイルを Read する際はオフセットと行数を指定する**
-   - `editor.html` はスケルトン化済み。CSS は `editor-header.html`、JS は `editor-js1〜5.html` に分割済み
-   - `code.js` は ~700行に削減済み。残りは `code_lesson.js` / `code_data.js` / `code_pdf.js` / `code_student.js` に分割済み
-   - 各分割ファイルは ~1000〜1600行。対象関数を Grep で探してから Read する
+   - 教師UI: CSS は `editor-header.html`、JS は `editor-js1〜5b.html` に分割済み
+   - バックエンド: `code.js` は ~1007行。関連処理は `code_lesson.js` / `code_data.js` / `code_pdf.js` / `code_student.js` に分割済み
+   - **必ず Grep で関数名を探してファイル・行番号を特定してから Read すること**
 
 2. **GAS 固有の制限**
    - GAS の実行時間制限は6分（長い処理は分割が必要）
@@ -587,15 +614,22 @@ years = JSON.parse(yearsJsonString);
 
 **現在の分割済み構成（editor.html）:**
 ```
-editor-header.html — CSS + HTMLヘッダー + script開始タグ
-editor-footer.html — script終了タグ + HTML終了タグ
-editor-js1.html   — グローバル変数・状態 + ダイアログ + 初期化 + データ階層 + カスタムレッスン
-editor-js2.html   — エディタ読込 + renderEditor + renderTabs + renderWordList + テーブル操作
-editor-js3.html   — renderTable + 特殊レイアウト + 代名詞テーブル + キーボード + セルID計算
-editor-js4.html   — 既存データ読込 + インライン編集 + D&D全関数
-editor-js5.html   — 保存処理 + 単語登録 + 英文登録 + 単語帳タブ + タブ切り替え + PDF生成
-editor-js6.html   — 設定タブ全関数（initSettingsTab, loadSettingsValues, saveSettings, runAutoSetup, QRコード, TTS通知UI）
+editor-header.html — CSS + HTMLヘッダー + script開始タグ（~1788行）
+editor-footer.html — script終了タグ + HTML終了タグ（5行）
+editor-js1.html   — グローバル変数・状態 + ダイアログ + 初期化 + データ階層 + カスタムレッスン（~1025行）
+editor-js2.html   — エディタ読込 + renderEditor + renderTabs + renderWordList + テーブル操作（~972行）
+editor-js3.html   — renderTable + 特殊レイアウト + 代名詞テーブル + キーボード + セルID計算（~1853行）
+editor-js4.html   — 既存データ読込 + インライン編集 + D&D全関数（~1408行）
+editor-js5.html   — 保存処理（handleSave） + 単語登録 + 英文登録（~813行）
+editor-js5b.html  — 単語帳タブ（initWordbook〜） + PDF出力（initPdfExport〜） + トースト通知（~1228行）
+editor-js6.html   — 設定タブ全関数（initSettingsTab, loadSettingsValues, saveSettings, runAutoSetup, QRコード, TTS通知UI）（~325行）
 ```
+
+**deploy.yml ビルドコマンド（ファイル順序が重要）:**
+```bash
+cat editor-header.html editor-js1.html editor-js2.html editor-js3.html editor-js4.html editor-js5.html editor-js5b.html editor-js6.html editor-footer.html > editor.html
+```
+⚠️ 新しいファイルを追加する場合は deploy.yml のこのコマンドも更新すること。
 
 **現在の分割済み構成（code.js）:**
 ```
@@ -612,6 +646,142 @@ code_init.js      — 初期化・セットアップ（validateScriptProperties,
 1. 既存の分割ファイルのどのグループに属するか判断する
 2. そのファイルに追加後、2000行を超えるなら新ファイルに切り出す
 3. 切り出す場合は命名規則に従い、このセクションの構成表を更新する
+
+---
+
+## 自律作業ガイド（よくある修正パターン）
+
+このセクションは Claude が最小限のコンテキストで自律的に作業できるよう、典型的な修正タスクの手順を記録している。
+
+---
+
+### パターン1: バックエンドに新しい関数を追加する
+
+1. 追加する関数の役割が既存グループに合うファイルを選ぶ
+   - レッスン操作 → `code_lesson.js`
+   - データ変換・CRUD → `code_data.js`
+   - PDF関連 → `code_pdf.js`
+   - 生徒向けAPI → `code_student.js`
+   - TTS/音声 → `code_tts.js`
+   - どれにも合わない → `code.js`
+2. 対象ファイルを `wc -l` で行数確認
+3. ファイル末尾に追加（2000行を超えるなら新ファイルへ切り出し）
+4. `code.js` でのエラー処理パターンを踏襲すること（try/catch + `{ success, data/error }` 返却）
+
+---
+
+### パターン2: 教師UIに新しいUI要素を追加する
+
+1. **HTML構造** → `editor-header.html` の `<body>` 内の該当箇所に追加
+2. **CSS** → `editor-header.html` の `<style>` セクションに追加
+3. **JS（初期化・データ取得）** → `editor-js1.html`（グローバル状態に追加する場合はここ）
+4. **JS（描画ロジック）** → `editor-js2.html` または `editor-js3.html`
+5. **JS（保存・登録ロジック）** → `editor-js5.html`
+6. **JS（単語帳・PDF関連）** → `editor-js5b.html`
+7. **JS（設定タブ）** → `editor-js6.html`
+
+**GAS呼び出し:**
+```js
+google.script.run
+  .withSuccessHandler(data => { /* 成功時処理 */ })
+  .withFailureHandler(err => { showToast('エラー: ' + err.message, true); })
+  .backendFunctionName(param1, param2);
+```
+
+**ダイアログ表示パターン（editor-js1.html の既存ダイアログを参考に）:**
+```js
+// オーバーレイ表示
+document.getElementById('overlay').style.display = 'flex';
+document.getElementById('my-dialog').style.display = 'block';
+// 閉じる
+document.getElementById('overlay').style.display = 'none';
+document.getElementById('my-dialog').style.display = 'none';
+```
+
+**ローディング表示パターン:**
+```js
+showLoadingIndicator('処理中...');
+// 処理後
+hideLoadingIndicator();
+```
+
+**トースト通知パターン（editor-js5b.html の showToast を使用）:**
+```js
+showToast('保存しました');          // 通常
+showToast('エラーが発生しました', true); // エラー（赤）
+```
+
+---
+
+### パターン3: 生徒UI（index.html）を修正する
+
+- `index.html` は単一ファイル（~1163行）。CSS・HTML・JS がすべて含まれる
+- GAS呼び出しは `google.script.run` を使用（教師UIと同じパターン）
+- 初期データは `<?= yearsJson ?>` でサーバーサイドから注入される
+
+---
+
+### パターン4: 設定タブに新しいScript Propertyを追加する
+
+以下の4箇所を同時に変更する：
+1. `code.js` の `getScriptPropertiesForSettings()` — `keys` 配列にキー追加
+2. `code.js` の `saveScriptProperties()` — `keys` 配列にキー追加
+3. `editor-header.html` — 設定タブの `<div id="settings-tab">` 内にフィールド追加
+   ```html
+   <div class="setting-row">
+     <label>説明テキスト</label>
+     <input type="text" id="setting-PROPERTY_KEY" placeholder="値">
+   </div>
+   ```
+4. `editor-js6.html` の `loadSettingsValues()` と `saveSettings()` — キー配列に追加
+
+---
+
+### パターン5: 関数の場所を素早く特定する
+
+```bash
+# バックエンド関数
+Grep pattern="^function 関数名" path="/home/user/englishtest" type="js"
+
+# フロントエンドJS関数
+Grep pattern="^function 関数名" path="/home/user/englishtest" glob="*.html"
+
+# CSSクラス
+Grep pattern="\.クラス名" path="/home/user/englishtest/editor-header.html"
+```
+
+---
+
+### パターン6: 主要CSSクラス一覧（UI修正時の参照用）
+
+| クラス名 | 場所 | 役割 |
+|---------|------|------|
+| `.editor-container` | editor-header | メインコンテナ（flex、縦方向） |
+| `.top-bar` | editor-header | 上部バー（ドロップダウン類） |
+| `.left-panel` | editor-header | 左パネル（単語/英文リスト） |
+| `.right-panel` | editor-header | 右パネル（グリッド） |
+| `.word-table` | editor-header | 16×3グリッドテーブル |
+| `.word-item` | editor-header | 左パネルの単語1件 |
+| `.cell-word` | editor-header | グリッドセル（単語） |
+| `.cell-sentence` | editor-header | グリッドセル（英文） |
+| `.overlay` | editor-header | ダイアログオーバーレイ |
+| `.dialog-box` | editor-header | ダイアログ本体 |
+| `.tab-button` | editor-header | タブボタン |
+| `.tab-active` | editor-header | アクティブタブ |
+| `.toast` | editor-header | トースト通知 |
+| `.loading-overlay` | editor-header | ローディング画面 |
+| `.fukisoku-table` | editor-header | 不規則動詞テーブル |
+| `.pronoun-table` | editor-header | 代名詞テーブル |
+| `.settings-tab` | editor-header | 設定タブコンテナ |
+| `.wordbook-tab` | editor-header | 単語帳タブコンテナ |
+
+---
+
+### パターン7: 新しい年度リソースを追加する手順
+
+1. 教師用ページの「⚙️ 設定」タブで `ENGLISHWORDS_FOLDER_ID` を確認
+2. 設定タブの「自動セットアップ」ボタンで `initializeAllResources(year)` を実行
+3. または GAS エディタで `initializeAllResources('2025年度版')` を直接実行
 
 ---
 
