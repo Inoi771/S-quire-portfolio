@@ -28,7 +28,7 @@ englishtest/
 ├── code_pdf.js           # PDF生成全関数（~1020行）
 ├── code_student.js       # 生徒向けAPI（~317行）
 ├── code_tts.js           # TTS音声生成・GitHubアップロード（~719行）
-├── code_init.js          # 初期セットアップ・年度リソース自動作成（~81行）
+├── code_init.js          # 初期セットアップ・年度フォルダ作成（~200行）
 ├── subcode.js            # 生徒向けサブバックエンド（~485行）※ GAS 未デプロイ
 ├── editor-header.html    # HTML構造 + CSS全スタイル + script開始タグ（~1788行）
 ├── editor-js1.html       # グローバル変数・状態・ダイアログ・初期化（~1025行）
@@ -485,7 +485,7 @@ code_data.js      — 入試対策データ + マスターCRUD + レッスン順
 code_pdf.js       — PDF生成全関数（generateAndSavePdf〜generatePdfPage）
 code_student.js   — 生徒向け全API（getStudentYears〜extractQuestionsFromSheet）
 code_tts.js       — Google Cloud TTS音声生成 + GitHubアップロード + 一括生成
-code_init.js      — 初期化・セットアップ（validateScriptProperties, initializeYearResources, initializeAllResources）
+code_init.js      — 初期化・セットアップ・年度フォルダ作成（setupScriptProperties, validateScriptProperties, createYearResources）
 ```
 
 ### 新しいコードを追加するとき
@@ -625,9 +625,10 @@ Grep pattern="\.クラス名" path="/home/user/englishtest/editor-header.html"
 
 ### パターン7: 新しい年度リソースを追加する手順
 
-1. 教師用ページの「⚙️ 設定」タブで `ENGLISHWORDS_FOLDER_ID` を確認
-2. 設定タブの「自動セットアップ」ボタンで `initializeAllResources(year)` を実行
-3. または GAS エディタで `initializeAllResources('2025年度版')` を直接実行
+1. 教師用ページの「⚙️ 設定」タブ →「新年度の作成」セクションを開く
+2. 年度名（例: `2025年度版`）を入力して「📁 年度フォルダを作成」ボタンを押す
+3. 入試対策編は最新既存年度からデータごとコピーされる（既存年度なしの場合は空作成）
+4. バックエンド関数: `createYearResources(year)` in `code_init.js`
 
 ---
 
