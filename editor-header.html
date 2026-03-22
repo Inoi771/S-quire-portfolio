@@ -647,14 +647,13 @@
       top: 0;
       left: 0;
       right: 0;
-      min-height: 100px;
-      padding: 15px 20px;
+      min-height: 44px;
+      padding: 6px 16px;
       background-color: #f5f5f5;
-      border-bottom: 2px solid #ddd;
+      border-bottom: 1px solid #ddd;
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      font-size: 12px;
+      justify-content: flex-end;
+      align-items: center;
       z-index: 10;
     }
 
@@ -690,7 +689,7 @@
 
     .editor-left-panel {
       width: 30%;
-      margin-top: 100px;
+      margin-top: 44px;
       border-right: 2px solid #ddd;
       overflow-y: hidden;
       padding: 20px;
@@ -707,7 +706,7 @@
 
     .editor-right-panel {
       width: 70%;
-      margin-top: 100px;
+      margin-top: 44px;
       padding: 0;
       overflow-y: auto;
       display: flex;
@@ -1538,10 +1537,6 @@
               </div>
             </div>
 
-            <div class="button-group">
-              <button class="btn-reset" id="resetBtn">リセット</button>
-              <button class="btn-save" id="saveBtn" disabled>💾 保存</button>
-            </div>
           </div>
         </div>
         <!-- 既存の selection-panel ここまで -->
