@@ -807,7 +807,7 @@ function addFocusedItemToTable(item) {
     let nextRowIdx = insertedRowIdx + 1;
     
     // 次の空きの行（単語がない行）を探す
-    while (nextRowIdx < 16) {
+    while (nextRowIdx < tableData.length) {
       const nextRowHasWord = tableData[nextRowIdx].some(cell => cell && cell.type === 'word');
       if (!nextRowHasWord) {
         // この行に単語も文も配置されていない → 照準をここに移動
@@ -955,7 +955,7 @@ function moveRightPanelFocusToNextEmpty(lastRowIdx, lastColIdx) {
   let nextColIdx = -1;
 
   // 同じ列で下を探す
-  for (let r = lastRowIdx + 1; r < 16; r++) {
+  for (let r = lastRowIdx + 1; r < tableData.length; r++) {
     if (tableData[r][lastColIdx] === null) {
       nextRowIdx = r;
       nextColIdx = lastColIdx;
@@ -966,7 +966,7 @@ function moveRightPanelFocusToNextEmpty(lastRowIdx, lastColIdx) {
   // 同じ列で見つからなかった場合、次の列の一番上から探す
   if (nextRowIdx === -1) {
     for (let c = lastColIdx + 1; c < 3; c++) {
-      for (let r = 0; r < 16; r++) {
+      for (let r = 0; r < tableData.length; r++) {
         if (tableData[r][c] === null) {
           nextRowIdx = r;
           nextColIdx = c;

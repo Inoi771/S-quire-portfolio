@@ -1014,6 +1014,18 @@ tbody.addEventListener('dragenter', (e) => {
       console.log('🔥 dragover - draggedItem:', draggedItem ? draggedItem.type : 'null', ', draggedFromTable:', draggedFromTable ? 'set' : 'null');
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
+
+      // 右パネルの自動スクロール（上下60pxがスクロールゾーン）
+      const rightPanel = document.querySelector('.editor-right-panel');
+      if (rightPanel) {
+        const rect = rightPanel.getBoundingClientRect();
+        const scrollZone = 60;
+        if (e.clientY < rect.top + scrollZone) {
+          rightPanel.scrollTop -= 8;
+        } else if (e.clientY > rect.bottom - scrollZone) {
+          rightPanel.scrollTop += 8;
+        }
+      }
     }
   });
 
@@ -1025,14 +1037,14 @@ tbody.addEventListener('dragenter', (e) => {
     console.log('draggedItem:', draggedItem);
     console.log('draggedFromTable:', draggedFromTable);
 
-    let targetRow = e.target.closest('tr[data-rowIdx]');
+    let targetRow = e.target.closest('tr[data-row-idx]');
     
     console.log('targetRow from closest:', targetRow);
 
     if (!targetRow) {
       console.log('⚠️ targetRow not found by closest, searching all rows...');
       
-      const allRows = Array.from(tbody.querySelectorAll('tr[data-rowIdx]'));
+      const allRows = Array.from(tbody.querySelectorAll('tr[data-row-idx]'));
       console.log('Found rows:', allRows.length);
       
       if (allRows.length === 0) {
