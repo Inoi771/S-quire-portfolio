@@ -1580,6 +1580,118 @@ function updateLoadButton() {
 
 
   // ════════════════════════════════════════
+  // タブ別ヘルプモーダル
+  // ════════════════════════════════════════
+
+  function showTabHelp(tabName) {
+    var titles = {
+      editor: '✏️ エディタータブ — 操作ガイド',
+      wordbook: '📚 単語帳作成タブ — 操作ガイド',
+      settings: '⚙️ 設定タブ — 各項目の説明'
+    };
+    var contents = {
+      editor: [
+        '<div class="help-section">',
+        '<h3>✏️ 基本操作フロー</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span>画面上部のドロップダウンで <strong>年度 → 教科書 → 学年 → レッスン</strong> を順に選択してください。</span></li>',
+        '<li><span class="help-step-num">2</span><span><span class="help-badge">✏️ 編集</span> ボタンをクリックすると、左パネルに単語・英文リストが表示されます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>左パネルの <strong>単語（A タブ）</strong> または <strong>英文（B タブ）</strong> を選択します。</span></li>',
+        '<li><span class="help-step-num">4</span><span>リスト内の単語・英文を右側の <strong>グリッド（マス目）</strong> にドラッグ&amp;ドロップして配置します。</span></li>',
+        '<li><span class="help-step-num">5</span><span>配置が完了したら <span class="help-badge-green">💾 保存</span> ボタンをクリックします。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 新しいレッスンを作成するには、レッスン選択欄で <strong>「新規レッスン名を入力」</strong> を選び、レッスン名を入力して「編集」をクリックしてください。</div>',
+        '</div>',
+        '<div class="help-section">',
+        '<h3>🖱️ グリッドの操作</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span><strong>セルをダブルクリック</strong> すると、英語・発音・日本語を直接編集できます。</span></li>',
+        '<li><span class="help-step-num">2</span><span><strong>セルを右クリック</strong>（またはセル内の削除ボタン）で、そのセルの単語を削除できます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>グリッド内でセル同士を<strong>ドラッグ</strong>すると、位置を入れ替えられます。</span></li>',
+        '</ol>',
+        '<div class="help-note">⚠️ 変更後は必ず <span class="help-badge-green">💾 保存</span> をクリックしてください。保存前に別のレッスンを開くと変更が失われます。</div>',
+        '</div>',
+        '<div class="help-section">',
+        '<h3>📝 新しい単語・英文の登録</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span>左パネル下部の <span class="help-badge">＋ 単語を登録</span> または <span class="help-badge">＋ 英文を登録</span> ボタンをクリックします。</span></li>',
+        '<li><span class="help-step-num">2</span><span>英語・発音・日本語を入力して登録すると、マスターデータに追加されます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>登録した単語・英文は左パネルに即座に表示されます。グリッドにドラッグして使用してください。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 登録時に Google Cloud TTS が設定済みの場合、音声ファイルが自動生成されます。<br>⚠️ 音声生成に失敗した場合は、画面右下の通知から「🔄 再生成する」で再試行できます。</div>',
+        '</div>'
+      ].join(''),
+      wordbook: [
+        '<div class="help-section">',
+        '<h3>📚 PDF の生成手順</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span>年度・教科書・学年を選択して <span class="help-badge">📥 読込</span> ボタンをクリックします。</span></li>',
+        '<li><span class="help-step-num">2</span><span>左パネルから PDF に含めるレッスンを右パネルにドラッグして並べます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>右パネル内でドラッグして順番を調整できます。</span></li>',
+        '<li><span class="help-step-num">4</span><span><span class="help-badge-green">💾 保存</span> でレッスン順を保存、<span class="help-badge">📥 PDFエクスポート</span> で Google Drive の「生成PDF」フォルダに保存されます。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 PDFエクスポートパネルで「日本語」「英語」「発音」「得点」の表示を選択できます。</div>',
+        '</div>'
+      ].join(''),
+      settings: [
+        '<div class="help-section">',
+        '<h3>⚙️ 各設定項目の説明</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span><strong>ENGLISHWORDS_FOLDER_ID</strong>：年度フォルダや音声ファイルを格納する Google Drive フォルダの ID。「🔧 Drive リソースを自動作成」で生成できます。</span></li>',
+        '<li><span class="help-step-num">2</span><span><strong>ENGLISHWORDS_SHEET_ID</strong>：単語・英文のマスターデータが入ったスプレッドシートの ID。自動作成で生成できます。</span></li>',
+        '<li><span class="help-step-num">3</span><span><strong>GITHUB_BASE_URL</strong>：音声ファイルをホストする GitHub リポジトリの Raw コンテンツ URL（例：<code>https://raw.githubusercontent.com/ユーザー名/リポジトリ名/main</code>）。</span></li>',
+        '<li><span class="help-step-num">4</span><span><strong>GITHUB_TOKEN</strong>：音声ファイルを GitHub にアップロードするための Personal Access Token（<code>repo</code> スコープ必要）。</span></li>',
+        '<li><span class="help-step-num">5</span><span><strong>GOOGLE_CLOUD_TTS_API_KEY</strong>：音声自動生成に使う Google Cloud Text-to-Speech の API キー。</span></li>',
+        '<li><span class="help-step-num">6</span><span><strong>HOMEPAGE_URL</strong>（任意）：ロゴをクリックしたときのリンク先 URL。</span></li>',
+        '<li><span class="help-step-num">7</span><span><strong>STUDENT_HOMEPAGE_URL</strong>（任意）：生徒用アプリの URL。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 新しい年度を追加するには、GAS エディタで <code>initializeYearResources(\'2027年度版\')</code> を実行してください。</div>',
+        '</div>',
+        '<div class="help-section">',
+        '<h3>🔊 音声ファイルの自動生成（TTS）</h3>',
+        '<ol class="help-steps">',
+        '<li><span class="help-step-num">1</span><span>単語または英文を登録・編集すると、Google Cloud TTS で音声が自動生成されます。</span></li>',
+        '<li><span class="help-step-num">2</span><span>音声生成に失敗した場合は、画面右下に <strong>「⚠️ 音声生成に失敗しました」</strong> の通知が表示されます。</span></li>',
+        '<li><span class="help-step-num">3</span><span>通知内の <strong>「🔄 再生成する」</strong> をクリックすると再試行します。</span></li>',
+        '</ol>',
+        '<div class="help-note">💡 TTS を使用するには <strong>GOOGLE_CLOUD_TTS_API_KEY</strong>・<strong>GITHUB_TOKEN</strong>・<strong>GITHUB_BASE_URL</strong> の3つを設定してください。</div>',
+        '</div>'
+      ].join('')
+    };
+
+    var title = titles[tabName] || 'ヘルプ';
+    var body = contents[tabName] || '';
+
+    var overlayId = 'helpModalOverlay_' + Date.now();
+    var overlay = document.createElement('div');
+    overlay.id = overlayId;
+    overlay.className = 'help-modal-overlay';
+
+    overlay.innerHTML = [
+      '<div class="help-modal">',
+      '  <div class="help-modal-header">',
+      '    <p class="help-modal-title">' + title + '</p>',
+      '    <button class="help-modal-close" id="' + overlayId + '_close">✕</button>',
+      '  </div>',
+      '  <div class="help-modal-body">' + body + '</div>',
+      '</div>'
+    ].join('');
+
+    document.body.appendChild(overlay);
+
+    function closeModal() {
+      if (document.body.contains(overlay)) {
+        document.body.removeChild(overlay);
+      }
+    }
+
+    document.getElementById(overlayId + '_close').addEventListener('click', closeModal);
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) closeModal();
+    });
+  }
+
+  // ════════════════════════════════════════
   // タブ切り替え機能
   // ════════════════════════════════════════
 
