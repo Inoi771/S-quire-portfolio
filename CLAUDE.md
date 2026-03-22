@@ -157,7 +157,7 @@ id | english | pronunciation | japanese | audio
 | `ENGLISHWORDS_SHEET_ID` | ✅ 自動作成可（設定タブ） | マスターデータスプレッドシートID（英単語・英文シート） |
 | `VOCABULARY_FOLDER_ID` | 自動（UI 非表示） | `ENGLISHWORDS_FOLDER_ID` の別名（保存時に自動同期） |
 | `GITHUB_BASE_URL` | ❌ 手動（設定タブ） | 音声ファイルの GitHub ベース URL |
-| `HOMEPAGE_URL` | ❌ 手動（設定タブ） | アプリのホームページ URL（設定タブでQRコード生成可） |
+| `HOMEPAGE_URL` | ❌ 手動（設定タブ） | ロゴクリック時のリンク先 URL（例: 塾のホームページ URL） |
 | `GOOGLE_CLOUD_TTS_API_KEY` | ❌ 手動（設定タブ） | Google Cloud TTS API キー（音声自動生成用） |
 | `GITHUB_TOKEN` | ❌ 手動（設定タブ） | GitHub Personal Access Token（音声ファイルアップロード用、repoスコープ） |
 | `TEACHER_ACCESS_KEY` | ❌ 手動（GASエディタ直接） | 教師用ページのアクセスキー（設定タブ非対応・`doGet` のルーティングに使用） |

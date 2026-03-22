@@ -40,7 +40,7 @@ GAS エディタの「プロジェクトの設定」→「スクリプト プロ
 | `TEACHER_ACCESS_KEY` | ✅ | 教師用ページのアクセスキー（任意の文字列）※GASエディタから手動設定 |
 | `GITHUB_BASE_URL` | ✅ | 音声ファイルの GitHub ベース URL |
 | `VOCABULARY_FOLDER_ID` | | 手動設定不要（`ENGLISHWORDS_FOLDER_ID` 保存時に自動同期） |
-| `HOMEPAGE_URL` | | アプリのホームページ URL |
+| `HOMEPAGE_URL` | | ロゴクリック時のリンク先 URL（例: 塾のホームページ URL） |
 | `STUDENT_HOMEPAGE_URL` | | 生徒向けホームページ URL |
 | `GOOGLE_CLOUD_TTS_API_KEY` | | Google Cloud TTS API キー（音声自動生成用） |
 | `GITHUB_TOKEN` | | GitHub PAT（音声ファイルアップロード用、repo スコープ） |
