@@ -149,7 +149,7 @@ function createTextbookSpreadsheet_(name, yearFolder) {
 
   ss.insertSheet('中学2年').appendRow(header);
   ss.insertSheet('中学3年').appendRow(header);
-  ss.insertSheet('レッスン順序').appendRow(['中学1年', '中学2年', '中学3年']);
+  ss.insertSheet('レッスン順序').appendRow(['1年', '2年', '3年']);
 
   // 年度フォルダに移動
   const file = DriveApp.getFileById(ss.getId());
