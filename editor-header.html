@@ -762,6 +762,7 @@
       display: none;
       flex: 1;
       overflow: hidden;
+      position: relative;
     }
 
     .tab-content.active {
@@ -780,12 +781,6 @@
 
     /* 設定タブ用 */
     #settings-tab {
-      flex-direction: column;
-      overflow-y: auto;
-    }
-
-    /* ヘルプタブ用 */
-    #help-tab {
       flex-direction: column;
       overflow-y: auto;
     }
@@ -1398,6 +1393,85 @@
       font-weight: bold;
     }
 
+    /* ── ? ヘルプアイコンボタン ── */
+    .help-icon-btn {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #2196F3;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+      z-index: 100;
+      line-height: 28px;
+      text-align: center;
+      padding: 0;
+      transition: background 0.2s;
+    }
+    .help-icon-btn:hover {
+      background: #1565C0;
+    }
+
+    /* ── ヘルプモーダル ── */
+    .help-modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .help-modal {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      width: 90%;
+      max-width: 620px;
+      max-height: 82vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .help-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .help-modal-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #333;
+      margin: 0;
+    }
+    .help-modal-close {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: none;
+      background: #eee;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 30px;
+      text-align: center;
+      color: #555;
+      padding: 0;
+    }
+    .help-modal-close:hover {
+      background: #ddd;
+    }
+    .help-modal-body {
+      overflow-y: auto;
+      padding: 16px 20px 24px;
+    }
+
   </style>
 </head>
 <body>
@@ -1409,11 +1483,11 @@
       <button class="tab-btn active" data-tab="editor">✏️ エディター</button>
       <button class="tab-btn" data-tab="wordbook">📚 単語帳作成</button>
       <button class="tab-btn" data-tab="settings">⚙️ 設定</button>
-      <button class="tab-btn" data-tab="help">❓ ヘルプ</button>
     </div>
 
     <!-- タブ1：エディター（既存コンテンツ） -->
     <div class="tab-content active" id="editor-tab">
+      <button class="help-icon-btn" onclick="showTabHelp('editor')" title="ヘルプ">？</button>
       <div class="editor-container">
         <!-- 既存の top-bar （削除した場合は以下をそのまま使用） -->
         <!-- 既存の selection-panel ここから -->
@@ -1482,6 +1556,7 @@
 
     <!-- タブ2：単語帳作成（修正版） -->
     <div class="tab-content" id="wordbook-tab">
+      <button class="help-icon-btn" onclick="showTabHelp('wordbook')" title="ヘルプ">？</button>
       <div class="wordbook-container">
         <!-- ✅ 修正：エディターページと同じヘッダースタイル -->
         <div class="selection-panel expanded" id="wordbookSelectionPanel">
@@ -1640,6 +1715,7 @@
 
     <!-- タブ3：設定 -->
     <div class="tab-content" id="settings-tab">
+      <button class="help-icon-btn" onclick="showTabHelp('settings')" title="ヘルプ">？</button>
     <div class="settings-container">
       <h2 class="settings-title">⚙️ アプリ設定</h2>
 
@@ -1720,97 +1796,6 @@
     </div>
   </div>
 
-  <!-- タブ4：ヘルプ -->
-  <div class="tab-content" id="help-tab">
-    <div class="help-container">
-      <h2 class="help-title">❓ 操作ガイド</h2>
-
-      <!-- 基本操作フロー -->
-      <div class="help-section">
-        <h3>✏️ エディタータブ — 基本操作フロー</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span>画面上部のドロップダウンで <strong>年度 → 教科書 → 学年 → レッスン</strong> を順に選択してください。</span></li>
-          <li><span class="help-step-num">2</span><span><span class="help-badge">✏️ 編集</span> ボタンをクリックすると、左パネルに単語・英文リストが表示されます。</span></li>
-          <li><span class="help-step-num">3</span><span>左パネルの <strong>単語（A タブ）</strong> または <strong>英文（B タブ）</strong> を選択します。</span></li>
-          <li><span class="help-step-num">4</span><span>リスト内の単語・英文を右側の <strong>グリッド（マス目）</strong> にドラッグ&amp;ドロップして配置します。</span></li>
-          <li><span class="help-step-num">5</span><span>配置が完了したら <span class="help-badge-green">💾 保存</span> ボタンをクリックします。</span></li>
-        </ol>
-        <div class="help-note">
-          💡 新しいレッスンを作成するには、レッスン選択欄で <strong>「新規レッスン名を入力」</strong> を選び、レッスン名を入力して「編集」をクリックしてください。
-        </div>
-      </div>
-
-      <!-- グリッド操作 -->
-      <div class="help-section">
-        <h3>🖱️ グリッドの操作</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span><strong>セルをダブルクリック</strong> すると、英語・発音・日本語を直接編集できます。</span></li>
-          <li><span class="help-step-num">2</span><span><strong>セルを右クリック</strong>（またはセル内の削除ボタン）で、そのセルの単語を削除できます。</span></li>
-          <li><span class="help-step-num">3</span><span>グリッド内でセル同士を<strong>ドラッグ</strong>すると、位置を入れ替えられます。</span></li>
-        </ol>
-        <div class="help-note">
-          ⚠️ 変更後は必ず <span class="help-badge-green">💾 保存</span> をクリックしてください。保存前に別のレッスンを開くと変更が失われます。
-        </div>
-      </div>
-
-      <!-- 単語・英文の登録 -->
-      <div class="help-section">
-        <h3>📝 新しい単語・英文の登録</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span>エディターを開いた状態で、左パネル下部の <span class="help-badge">＋ 単語を登録</span> または <span class="help-badge">＋ 英文を登録</span> ボタンをクリックします。</span></li>
-          <li><span class="help-step-num">2</span><span>英語・発音・日本語を入力して登録すると、マスターデータに追加されます。</span></li>
-          <li><span class="help-step-num">3</span><span>登録した単語・英文は左パネルに即座に表示されます。グリッドにドラッグして使用してください。</span></li>
-        </ol>
-        <div class="help-note">
-          💡 登録時に Google Cloud TTS 設定済みの場合、音声ファイルが自動生成されます。<br>
-          ⚠️ 音声生成に失敗した場合は、画面右下に通知が表示されます。「🔄 再生成する」で再試行できます。
-        </div>
-      </div>
-
-      <!-- PDF生成 -->
-      <div class="help-section">
-        <h3>📚 単語帳作成タブ — PDF の生成</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span>上部の <span class="help-badge">📚 単語帳作成</span> タブをクリックします。</span></li>
-          <li><span class="help-step-num">2</span><span>年度・教科書・学年を選択して <span class="help-badge">📥 読込</span> ボタンをクリックします。</span></li>
-          <li><span class="help-step-num">3</span><span>左パネルから PDF に含めるレッスンを右パネルにドラッグして並べます。</span></li>
-          <li><span class="help-step-num">4</span><span><span class="help-badge-green">📄 PDF を生成</span> ボタンをクリックすると、Google Drive の「生成PDF」フォルダに保存されます。</span></li>
-        </ol>
-      </div>
-
-      <!-- TTS音声生成 -->
-      <div class="help-section">
-        <h3>🔊 音声ファイルの自動生成（TTS）</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span>単語または英文を登録・編集すると、Google Cloud TTS で音声が自動生成されます。</span></li>
-          <li><span class="help-step-num">2</span><span>音声生成に失敗した場合は、画面右下に <strong>「⚠️ 音声生成に失敗しました」</strong> の通知が表示されます。</span></li>
-          <li><span class="help-step-num">3</span><span>通知内の <strong>「🔄 再生成する」</strong> をクリックすると再試行します。</span></li>
-          <li><span class="help-step-num">4</span><span>登録自体を取り消す場合は <strong>「❌ 登録をキャンセル」</strong> をクリックします。編集の取り消しは <strong>「↩️ 英語を元に戻す」</strong> です。</span></li>
-        </ol>
-        <div class="help-note">
-          💡 TTS を使用するには <span class="help-badge">⚙️ 設定</span> タブで <strong>GOOGLE_CLOUD_TTS_API_KEY</strong> と <strong>GITHUB_TOKEN</strong>、<strong>GITHUB_BASE_URL</strong> を設定してください。
-        </div>
-      </div>
-
-      <!-- 設定タブの説明 -->
-      <div class="help-section">
-        <h3>⚙️ 設定タブ — 各項目の説明</h3>
-        <ol class="help-steps">
-          <li><span class="help-step-num">1</span><span><strong>ENGLISHWORDS_FOLDER_ID</strong>：音声ファイルや年度フォルダを格納する Google Drive フォルダの ID。未設定の場合は「🔧 Drive リソースを自動作成」で生成できます。</span></li>
-          <li><span class="help-step-num">2</span><span><strong>ENGLISHWORDS_SHEET_ID</strong>：単語・英文のマスターデータが入ったスプレッドシートの ID。自動作成で生成できます。</span></li>
-          <li><span class="help-step-num">3</span><span><strong>GITHUB_BASE_URL</strong>：音声ファイルをホストする GitHub リポジトリの Raw コンテンツ URL（例：<code>https://raw.githubusercontent.com/ユーザー名/リポジトリ名/main</code>）。</span></li>
-          <li><span class="help-step-num">4</span><span><strong>GITHUB_TOKEN</strong>：音声ファイルを GitHub にアップロードするための Personal Access Token（<code>repo</code> スコープ必要）。</span></li>
-          <li><span class="help-step-num">5</span><span><strong>GOOGLE_CLOUD_TTS_API_KEY</strong>：音声自動生成に使う Google Cloud Text-to-Speech の API キー。</span></li>
-          <li><span class="help-step-num">6</span><span><strong>HOMEPAGE_URL</strong>（任意）：ロゴをクリックしたときのリンク先 URL。</span></li>
-          <li><span class="help-step-num">7</span><span><strong>STUDENT_HOMEPAGE_URL</strong>（任意）：生徒用アプリの URL。</span></li>
-        </ol>
-        <div class="help-note">
-          💡 新しい年度を追加するには、GAS エディタで <code>initializeYearResources('2027年度版')</code> を実行してください。
-        </div>
-      </div>
-
-    </div>
-  </div>
   </div>
 
   <div class="saving-indicator" id="savingIndicator">💾 保存中...</div>
