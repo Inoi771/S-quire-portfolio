@@ -9,6 +9,40 @@ function initSettingsTab() {
 
   const autoSetupBtn = document.getElementById('auto-setup-btn');
   if (autoSetupBtn) autoSetupBtn.addEventListener('click', runAutoSetup);
+
+  const createYearBtn = document.getElementById('create-year-btn');
+  if (createYearBtn) createYearBtn.addEventListener('click', runCreateYear);
+}
+
+function runCreateYear() {
+  const year = document.getElementById('new-year-input').value.trim();
+  if (!year) {
+    alert('年度名を入力してください（例: 2027年度版）');
+    return;
+  }
+  if (!/^\d{4}年度版$/.test(year)) {
+    alert('年度名は「2027年度版」の形式で入力してください。');
+    return;
+  }
+  if (!confirm('「' + year + '」のフォルダとスプレッドシートを作成しますか？\n\n入試対策編は既存の最新年度からデータごとコピーされます。')) {
+    return;
+  }
+  showLoadingIndicator('年度フォルダを作成中...');
+  google.script.run
+    .withSuccessHandler(data => {
+      hideLoadingIndicator();
+      if (data.success) {
+        alert('✅ 「' + data.year + '」の作成が完了しました。');
+        document.getElementById('new-year-input').value = '';
+      } else {
+        alert('❌ 作成に失敗しました: ' + (data.error || '不明なエラー'));
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoadingIndicator();
+      alert('❌ エラーが発生しました: ' + err.message);
+    })
+    .createYearResources(year);
 }
 
 function loadSettingsValues() {
