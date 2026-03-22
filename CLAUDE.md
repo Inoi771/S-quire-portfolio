@@ -160,6 +160,8 @@ id | english | pronunciation | japanese | audio
 | `HOMEPAGE_URL` | ❌ 手動（設定タブ） | アプリのホームページ URL（設定タブでQRコード生成可） |
 | `GOOGLE_CLOUD_TTS_API_KEY` | ❌ 手動（設定タブ） | Google Cloud TTS API キー（音声自動生成用） |
 | `GITHUB_TOKEN` | ❌ 手動（設定タブ） | GitHub Personal Access Token（音声ファイルアップロード用、repoスコープ） |
+| `TEACHER_ACCESS_KEY` | ❌ 手動（GASエディタ直接） | 教師用ページのアクセスキー（設定タブ非対応・`doGet` のルーティングに使用） |
+| `STUDENT_HOMEPAGE_URL` | ❌ 手動（設定タブ） | 生徒向けホームページ URL |
 
 #### 新規プロパティを設定タブに追加するとき
 1. `code.js` の `getScriptPropertiesForSettings()` と `saveScriptProperties()` の `keys` 配列に追加
