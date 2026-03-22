@@ -291,18 +291,6 @@ function showDuplicateDialog(title, message, onOverwrite, onNewRegister) {
         document.getElementById('textbookSelect').addEventListener('change', handleTextbookChange);
         document.getElementById('gradeSelect').addEventListener('change', handleGradeChange);
         document.getElementById('lessonSelect').addEventListener('change', handleLessonChange);
-        document.getElementById('customLessonInput').addEventListener('input', updateNewButton);
-  
-        document.getElementById('newBtn').addEventListener('click', () => {
-          if (!state.year || !state.textbook || !state.grade || !state.lesson) {
-            alert('全ての項目を選択してください');
-            return;
-          }
-
-          state.isEditorOpen = true;
-          loadEditorData();
-        });
-
         document.getElementById('useCustomBtn').addEventListener('click', handleUseCustom);
         document.getElementById('resetBtn').addEventListener('click', handleReset);
       }
@@ -579,9 +567,13 @@ function handleLessonChange(e) {
     console.log('Selected existing lesson:', state.lesson);
     customGroup.classList.add('hidden');
     state.isCustomLesson = false;
-  }
 
-  updateNewButton();
+    // 全選択が揃ったら自動でエディタを開く
+    if (state.year && state.textbook && state.grade && state.lesson) {
+      state.isEditorOpen = true;
+      loadEditorData();
+    }
+  }
 }
 
 /**
@@ -992,22 +984,10 @@ function loadEditorData() {
 }
 
 /**
- * 「編集」ボタンの有効・無効を更新
+ * 「編集」ボタンは廃止（レッスン選択時に自動起動）。互換性のため空関数を残す。
  */
       function updateNewButton() {
-        const btn = document.getElementById('newBtn');
-
-        // 「その他」を選んで、カスタムレッスン名を入力した場合のみ有効化
-        const hasCustomLesson = state.lesson === 'other' &&
-                               document.getElementById('customLessonInput').value.trim().length > 0;
-
-        // または既存レッスンが選ばれた場合
-        const hasExistingLesson = state.lesson && state.lesson !== 'other';
-
-        const hasAllRequired = state.year && state.textbook && state.grade &&
-                              (hasCustomLesson || hasExistingLesson);
-
-        btn.disabled = !hasAllRequired;
+        // no-op
       }
 
 /**
