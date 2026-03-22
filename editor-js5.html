@@ -880,8 +880,6 @@ function setupEventListenersWB() {
   document.getElementById('yearSelectWB').addEventListener('change', handleYearChangeWB);
   document.getElementById('textbookSelectWB').addEventListener('change', handleTextbookChangeWB);
   document.getElementById('gradeSelectWB').addEventListener('change', handleGradeChangeWB);
-  document.getElementById('loadLessonsBtn').addEventListener('click', handleLoadLessons);
-  document.getElementById('resetOrderBtn').addEventListener('click', handleResetOrder);
   document.getElementById('saveOrderBtn').addEventListener('click', handleSaveOrder);
   document.getElementById('cancelOrderBtn').addEventListener('click', handleCancel);
 }
@@ -955,7 +953,6 @@ function handleYearChangeWB(e) {
     document.getElementById('textbookSelectWB').disabled = true;
   }
 
-  updateLoadButton();
 }
 
 /**
@@ -992,7 +989,6 @@ function handleTextbookChangeWB(e) {
     document.getElementById('gradeSelectWB').disabled = true;
   }
 
-  updateLoadButton();
 }
 
 /**
@@ -1003,7 +999,9 @@ function handleGradeChangeWB(e) {
   availableLessons = [];
   selectedLessons = [];
   clearLessonPanels();
-  updateLoadButton();
+  if (currentGrade) {
+    handleLoadLessons();
+  }
 }
 
 /**
@@ -1392,50 +1390,16 @@ function handleSaveOrderWB() {
 }
 
 /**
- * ✅ 修正版：リセットボタン
- */
-function handleResetOrderWB() {
-  currentYear = '';
-  currentTextbook = '';
-  currentGrade = '';
-  availableLessons = [];
-  selectedLessons = [];
-
-  document.getElementById('yearSelectWB').value = '';
-  document.getElementById('textbookSelectWB').value = '';
-  document.getElementById('textbookSelectWB').disabled = true;
-  document.getElementById('gradeSelectWB').value = '';
-  document.getElementById('gradeSelectWB').disabled = true;
-
-  clearLessonPanelsWB();
-  updateLoadButtonWB();
-}
-
-/**
- * ✅ 修正版：パネルをクリア
+ * パネルをクリア
  */
 function clearLessonPanelsWB() {
   document.getElementById('availableLessonPanel').innerHTML =
-    '<div class="no-data-message">上部で年度・教科書・学年を選択して「読込」をクリックしてください</div>';
+    '<div class="no-data-message">上部で年度・教科書・学年を選択してください</div>';
   document.getElementById('selectedLessonPanel').innerHTML =
     '<div class="no-data-message">左パネルからレッスンをドラッグして追加してください</div>';
   document.getElementById('availableLessonCount').textContent = '(0)';
   document.getElementById('selectedLessonCount').textContent = '(0)';
   document.getElementById('saveOrderBtn').disabled = true;
-}
-
-/**
- * ✅ 修正版：読込ボタンの有効・無効を更新
- */
-function updateLoadButtonWB() {
-  const btn = document.getElementById('loadLessonsBtn');
-
-  // ✅ 修正：入試対策編の場合は教科書選択のみで OK
-  const isReady = currentTextbook === '入試対策編' ?
-    (currentYear && currentTextbook) :
-    (currentYear && currentTextbook && currentGrade);
-
-  btn.disabled = !isReady;
 }
 
 /**
@@ -1490,7 +1454,6 @@ function handleResetOrder() {
   document.getElementById('gradeSelectWB').disabled = true;
 
   clearLessonPanels();
-  updateLoadButton();
 }
 
 function handleCancel() {
@@ -1502,7 +1465,7 @@ function handleCancel() {
  */
 function clearLessonPanels() {
   document.getElementById('availableLessonPanel').innerHTML = 
-    '<div class="no-data-message">上部で年度・教科書・学年を選択して「読込」をクリックしてください</div>';
+    '<div class="no-data-message">上部で年度・教科書・学年を選択してください</div>';
   document.getElementById('selectedLessonPanel').innerHTML = 
     '<div class="no-data-message">左パネルからレッスンをドラッグして追加してください</div>';
   document.getElementById('availableLessonCount').textContent = '(0)';
@@ -1510,13 +1473,6 @@ function clearLessonPanels() {
   document.getElementById('saveOrderBtn').disabled = true;
 }
 
-/**
- * 読込ボタンの有効・無効を更新
- */
-function updateLoadButton() {
-  const btn = document.getElementById('loadLessonsBtn');
-  btn.disabled = !(currentYear && currentTextbook && currentGrade);
-}
 
 
   // ════════════════════════════════════════
@@ -1579,7 +1535,7 @@ function updateLoadButton() {
         '<div class="help-section">',
         '<h3>📚 PDF の生成手順</h3>',
         '<ol class="help-steps">',
-        '<li><span class="help-step-num">1</span><span>年度・教科書・学年を選択して <span class="help-badge">📥 読込</span> ボタンをクリックします。</span></li>',
+        '<li><span class="help-step-num">1</span><span>年度・教科書・学年を選択するとレッスン一覧が自動で読み込まれます。</span></li>',
         '<li><span class="help-step-num">2</span><span>左パネルから PDF に含めるレッスンを右パネルにドラッグして並べます。</span></li>',
         '<li><span class="help-step-num">3</span><span>右パネル内でドラッグして順番を調整できます。</span></li>',
         '<li><span class="help-step-num">4</span><span><span class="help-badge-green">💾 保存</span> でレッスン順を保存、<span class="help-badge">📥 PDFエクスポート</span> で Google Drive の「生成PDF」フォルダに保存されます。</span></li>',
@@ -1744,8 +1700,6 @@ function setupPdfPanelVisibility() {
  */
 function setAllButtonsDisabled(disabled) {
   // 単語帳作成タブのボタン
-  const loadLessonsBtn = document.getElementById('loadLessonsBtn');
-  const resetOrderBtn = document.getElementById('resetOrderBtn');
   const saveOrderBtn = document.getElementById('saveOrderBtn');
   const cancelOrderBtn = document.getElementById('cancelOrderBtn');
   const exportPdfBtn = document.getElementById('exportPdfBtn');
@@ -1770,8 +1724,6 @@ function setAllButtonsDisabled(disabled) {
   const customLessonInput = document.getElementById('customLessonInput');
 
   // 各要素を無効化/有効化
-  if (loadLessonsBtn) loadLessonsBtn.disabled = disabled;
-  if (resetOrderBtn) resetOrderBtn.disabled = disabled;
   if (saveOrderBtn) saveOrderBtn.disabled = disabled;
   if (cancelOrderBtn) cancelOrderBtn.disabled = disabled;
   if (exportPdfBtn) exportPdfBtn.disabled = disabled;
