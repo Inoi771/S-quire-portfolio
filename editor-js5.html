@@ -1583,7 +1583,11 @@ function updateLoadButton() {
   // タブ別ヘルプモーダル
   // ════════════════════════════════════════
 
-  function showTabHelp(tabName) {
+  window.showTabHelp = function showTabHelp(tabName) {
+    if (!tabName) {
+      var activeBtn = document.querySelector('.tab-btn.active');
+      tabName = activeBtn ? activeBtn.getAttribute('data-tab') : 'editor';
+    }
     var titles = {
       editor: '✏️ エディタータブ — 操作ガイド',
       wordbook: '📚 単語帳作成タブ — 操作ガイド',
