@@ -829,63 +829,6 @@ function initWordbook() {
   setupEventListenersWB();
   loadLogoWB();
   
-  renderWordbookUsageGuide();
-}
-
-/**
- * ✅ 修正版：単語帳作成ページの使い方ガイドを表示
- * 縦幅を半分にしてスクロールバー対応
- */
-function renderWordbookUsageGuide() {
-  const wordbookSelectionPanel = document.getElementById('wordbookSelectionPanel');
-  if (!wordbookSelectionPanel) return;
-
-  // 既存のガイドがあれば削除
-  const existingGuide = document.getElementById('wordbookUsageGuide');
-  if (existingGuide) {
-    existingGuide.remove();
-  }
-
-  // ガイドコンテナを作成
-  const guideContainer = document.createElement('div');
-  guideContainer.id = 'wordbookUsageGuide';
-  guideContainer.style.cssText = `
-    padding: 15px 20px;
-    background-color: #e8f4f8;
-    border-left: 4px solid #2196F3;
-    margin-top: 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    line-height: 1.6;
-    color: #333;
-    max-height: 120px;
-    overflow-y: auto;
-  `;
-
-  guideContainer.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 8px; color: #1976D2; font-size: 13px;">
-      📚 単語帳作成ページの使い方
-    </div>
-    <div style="margin-bottom: 6px;">
-      <strong>1. 上部で年度・教科書・学年を選択</strong><br>
-      &nbsp;&nbsp;年度 → 教科書 → 学年の順に選択してください
-    </div>
-    <div style="margin-bottom: 6px;">
-      <strong>2. 「読込」をクリック</strong><br>
-      &nbsp;&nbsp;左パネルに利用可能なレッスンが表示されます
-    </div>
-    <div style="margin-bottom: 6px;">
-      <strong>3. レッスンをドラッグで右パネルへ追加</strong><br>
-      &nbsp;&nbsp;↑↓ボタンで順序変更、左へドラッグで削除可能
-    </div>
-    <div>
-      <strong>4. 「保存」をクリック</strong><br>
-      &nbsp;&nbsp;レッスンの順序を保存します
-    </div>
-  `;
-
-  // wordbookSelectionPanel の直後に挿入
-  wordbookSelectionPanel.insertAdjacentElement('afterend', guideContainer);
 }
 
 /**
