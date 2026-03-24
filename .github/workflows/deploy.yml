@@ -42,5 +42,7 @@ jobs:
         run: clasp push --force
 
       - name: Deploy
-        run: clasp deploy --deploymentId ${{ secrets.GAS_DEPLOYMENT_ID }} -d "Auto deploy from GitHub Actions"
+        run: |
+          DEPLOYMENT_ID=$(echo "${{ secrets.GAS_DEPLOYMENT_ID }}" | tr -d '[:space:]')
+          clasp deploy --deploymentId "$DEPLOYMENT_ID" -d "Auto deploy from GitHub Actions"
 
