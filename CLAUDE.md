@@ -29,7 +29,6 @@ englishtest/
 ├── code_student.js       # 生徒向けAPI（~317行）
 ├── code_tts.js           # TTS音声生成・GitHubアップロード（~719行）
 ├── code_init.js          # 初期セットアップ・年度フォルダ作成（~200行）
-├── subcode.js            # 生徒向けサブバックエンド（~485行）※ GAS 未デプロイ
 ├── editor-header.html    # HTML構造 + CSS全スタイル + script開始タグ（~1788行）
 ├── editor-js1.html       # グローバル変数・状態・ダイアログ・初期化（~1025行）
 ├── editor-js2.html       # エディタ描画・タブ・単語リスト（~972行）
@@ -43,17 +42,16 @@ englishtest/
 ├── index.html            # 生徒用発音練習 UI（~1163行）
 ├── appsscript.json       # GAS マニフェスト（OAuthスコープ・タイムゾーン等）
 ├── .clasp.json           # clasp 設定（scriptId）
-├── .claspignore          # GAS プッシュ除外ファイル一覧（subcode.js のみ）
+├── .claspignore          # GAS プッシュ除外ファイル一覧
 └── .github/workflows/
     ├── deploy.yml        # GAS デプロイ（.js/.html 変更時のみ起動）
     └── merge-to-master.yml  # claude/* → master 自動マージ
 ```
 
 ### 重要な注意点
-- `subcode.js` は `.claspignore` に含まれており **GAS にはデプロイされない**（意図的な分離）
 - `editor.html` は deploy.yml のビルドステップで生成される（直接編集しない）
 - 教師UI の編集対象: `editor-header.html`（CSS）または `editor-js1〜5b.html`（JS）
-- `code.js` の `doGet()` が唯一のエントリポイント。`subcode.js` の `doGet()` は別 GAS プロジェクト用
+- `code.js` の `doGet()` が唯一のエントリポイント
 - **ファイル検索の手順**: 対象関数を `Grep` で探す → ファイル名とオフセットを確認 → `Read` で該当箇所のみ読む
 
 ---
@@ -221,8 +219,7 @@ ${GITHUB_BASE_URL}/audio/${fileName[0].toLowerCase()}/${fileName}?v=${Date.now()
 ### キャッシュ戦略
 
 - `CacheService.getScriptCache()` を使用、TTL 3600秒（1時間）
-- **code.js** : `getStudentYears()` / `getStudentTextbooks()` / `getStudentGrades()` がキャッシュを使用
-- **subcode.js** : `getYears()` のみキャッシュ
+- **code_student.js** : `getStudentYears()` / `getStudentTextbooks()` / `getStudentGrades()` がキャッシュを使用
 - `clearCache()` / `manualCacheClear()` で手動クリア可能
 
 ### 生徒向け年度エイリアス
@@ -402,7 +399,6 @@ years = JSON.parse(yearsJsonString);
 
 3. **デプロイ対象の確認**
    - `.claspignore` で除外されているファイルを変更した場合、GAS には反映されない
-   - `subcode.js` の変更は手動で別途 GAS プロジェクトに反映が必要（または `.claspignore` から削除）
 
 4. **日本語コンテンツ**
    - シート名・学年名・教科書名はすべて日本語
