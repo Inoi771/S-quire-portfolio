@@ -37,10 +37,6 @@ function getLogoUrl() {
     const appLogoUrl = githubBase + '/images/applogo.png';
     const logoUrl = githubBase + '/images/logo.png';
     
-    Logger.log('appLogoUrl: ' + appLogoUrl);
-    Logger.log('logoUrl: ' + logoUrl);
-    Logger.log('homepageUrl: ' + (config.HOMEPAGE_URL || ''));
-    
     return {
       appLogoUrl: appLogoUrl,
       logoUrl: logoUrl,
@@ -57,7 +53,6 @@ function getLogoUrl() {
  */
 function manualCacheClear() {
   scriptCache.removeAll(['years', 'textbooks', 'grades']);
-  Logger.log('キャッシュをリセットしました。');
 }
 
 // ============================================
@@ -72,7 +67,7 @@ function doGet(e) {
 
     return template.evaluate()
       .setTitle('スクエア英単語音声アプリ')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN);
   } catch (err) {
     Logger.log('doGet エラー: ' + err.toString());
     return HtmlService.createHtmlOutput('エラーが発生しました。管理者に連絡してください。');
