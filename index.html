@@ -543,6 +543,16 @@
         }
     </style>
     <script>
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // スマートフォン用ズーム: GASの仮想ビューポートが実画面より大きい場合に拡大表示
         function fitToScreen() {
             const vw = window.innerWidth;
@@ -578,10 +588,11 @@
         let audioPlaybackRate = 1.0;
 
         function createAudioControlsHtml(audioSrc) {
+            const safeAudioSrc = escHtml(audioSrc);
             return '<div class="custom-audio-controls">' +
-                '<button class="audio-btn play-btn" data-src="' + audioSrc.replace(/'/g, '&#39;') + '">▶</button>' +
+                '<button class="audio-btn play-btn" data-src="' + safeAudioSrc + '">▶</button>' +
                 '<button class="audio-btn speed-btn">' + audioPlaybackRate + 'x</button>' +
-                '<a class="audio-btn download-btn" href="' + audioSrc.replace(/'/g, '&#39;') + '" download>⬇</a>' +
+                '<a class="audio-btn download-btn" href="' + safeAudioSrc + '" download>⬇</a>' +
                 '</div>';
         }
 
@@ -875,7 +886,7 @@
             }
 
             const lesson = document.getElementById('lesson').value;
-            let html = '<div class="questions-header">📢 ' + lesson + '</div>';
+            let html = '<div class="questions-header">📢 ' + escHtml(lesson) + '</div>';
             
             const normalQuestions = currentQuestions.filter(q => !q.isPronoun);
             const pronounQuestions = currentQuestions.filter(q => q.isPronoun);
@@ -939,10 +950,10 @@
                             : '';
 
                         const japaneseDisplay = (!q.formType || q.formType === 'present')
-                            ? '<div class="japanese">' + (q.japanese || '（記載なし）') + '</div>'
+                            ? '<div class="japanese">' + escHtml(q.japanese || '（記載なし）') + '</div>'
                             : '';
 
-                        cardHtml += '<div class="form-section">' + formLabelHtml + '<div class="question-text">' + japaneseDisplay + '<div class="english">' + (q.english || '（記載なし）') + '</div></div><div class="audio-container">' + audioHtml + '</div></div>';
+                        cardHtml += '<div class="form-section">' + formLabelHtml + '<div class="question-text">' + japaneseDisplay + '<div class="english">' + escHtml(q.english || '（記載なし）') + '</div></div><div class="audio-container">' + audioHtml + '</div></div>';
                     });
 
                     cardHtml += '</div></div>';
@@ -1011,7 +1022,7 @@
                 });
 
                 const japaneseText = group[0].japanese || '';
-                tableHtml += '<tr><td class="pronoun-label">' + japaneseText + '</td><td>' + createPronounCell(columns.nominative) + '</td><td>' + createPronounCell(columns.genitive) + '</td><td>' + createPronounCell(columns.objective) + '</td><td>' + createPronounCell(columns.possessive) + '</td></tr>';
+                tableHtml += '<tr><td class="pronoun-label">' + escHtml(japaneseText) + '</td><td>' + createPronounCell(columns.nominative) + '</td><td>' + createPronounCell(columns.genitive) + '</td><td>' + createPronounCell(columns.objective) + '</td><td>' + createPronounCell(columns.possessive) + '</td></tr>';
             });
 
             tableHtml += '</tbody></table></div>';
@@ -1030,7 +1041,7 @@
                 audioHtml = createAudioControlsHtml(questionData.audio);
             }
 
-            return '<div style="text-align: center;"><div style="font-size: 14px; font-weight: 600; color: #2196f3; margin-bottom: 6px;">' + questionData.english + '</div>' + audioHtml + '</div>';
+            return '<div style="text-align: center;"><div style="font-size: 14px; font-weight: 600; color: #2196f3; margin-bottom: 6px;">' + escHtml(questionData.english) + '</div>' + audioHtml + '</div>';
         }
 
         function clearQuestions() {

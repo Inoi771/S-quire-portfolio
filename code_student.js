@@ -39,7 +39,6 @@ function getStudentLogoUrl() {
 
 function manualCacheClear() {
   scriptCache.removeAll(['years', 'textbooks', 'grades']);
-  Logger.log('キャッシュをリセットしました。');
 }
 
 function getStudentYears() {
