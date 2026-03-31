@@ -877,33 +877,21 @@ function getDefaultDept(schoolName, schoolLookup) {
  */
 function recordOperationLog(action, details, status) {
   try {
-    var ss = getOrCreateOperationLogSheet();
-    if (!ss) {
-      Logger.log('⚠ 操作ログの記録に失敗');
-      return;
-    }
-    
-    var sheet = ss.getSheetByName('操作ログ');
-    if (!sheet) {
-      Logger.log('⚠ 操作ログシートが見つかりません');
-      return;
-    }
-    
+    var now = new Date();
     var userEmail = getCurrentUserEmail();
     var teacherId = '';
     try { teacherId = getCurrentTeacherId_(); } catch(e) {}
     var userRole = isAdmin() ? '🔐 Admin' : '👤 User';
-    var detailsStr = JSON.stringify(details);
-
-    sheet.appendRow([
-      new Date().toISOString(),
-      teacherId || userEmail,
-      userRole,
-      action,
-      detailsStr,
-      status || '成功'
-    ]);
-    
+    // タイムスタンプ＋ランダム文字列でユニークなDocID生成
+    var docId = 'log_' + now.getTime() + '_' + Math.random().toString(36).substring(2, 7);
+    firestoreSet_('operationLogs', docId, {
+      timestamp: now.toISOString(),
+      userId: teacherId || userEmail,
+      userRole: userRole,
+      action: action || '',
+      details: JSON.stringify(details),
+      status: status || '成功'
+    });
   } catch (error) {
     Logger.log('❌ recordOperationLogエラー: ' + error);
   }
@@ -964,27 +952,16 @@ function getOrCreateOperationLogSheet() {
  */
 function recordInitializationLog(status, details) {
   try {
-    var ss = getOrCreateOperationLogSheet();
-    if (!ss) {
-      Logger.log('⚠ 初期化ログの記録に失敗');
-      return;
-    }
-    
-    var sheet = ss.getSheetByName('操作ログ');
-    if (!sheet) {
-      Logger.log('⚠ 操作ログシートが見つかりません');
-      return;
-    }
-    
-    sheet.appendRow([
-      new Date().toISOString(),
-      'system',
-      'システム',
-      '初期化',
-      details,
-      status
-    ]);
-    
+    var now = new Date();
+    var docId = 'log_' + now.getTime() + '_' + Math.random().toString(36).substring(2, 7);
+    firestoreSet_('operationLogs', docId, {
+      timestamp: now.toISOString(),
+      userId: 'system',
+      userRole: 'システム',
+      action: '初期化',
+      details: String(details || ''),
+      status: status || '成功'
+    });
   } catch (error) {
     Logger.log('❌ recordInitializationLogエラー: ' + error);
   }

@@ -825,6 +825,7 @@ function getFormEmailTriggerStatus() {
  * @return {Sheet|null} スプレッドシートのシートオブジェクト
  */
 function getLineSchedulerSheet_() {
+  // Firestore移行済み。このヘルパーはマイグレーション用に残す（通常処理では使用しない）
   var settingsFolder = getSettingsFolder();
   if (!settingsFolder) return null;
   var sheetName = 'システム設定';
@@ -833,7 +834,7 @@ function getLineSchedulerSheet_() {
   if (file) {
     ss = SpreadsheetApp.openById(file.getId());
   } else {
-    return null; // システム設定シートがなければスキップ
+    return null;
   }
   var sheet = ss.getSheetByName('LINEスケジューラー');
   if (!sheet) {
@@ -852,18 +853,19 @@ function getLineSchedulerSheet_() {
  * @return {Array<string>} teacherId の配列（重複排除済み）
  */
 function getShitsuchoRecipientsFromSheet_() {
-  var sheet = getLineSchedulerSheet_();
-  if (!sheet) return [];
-  var data = sheet.getDataRange().getValues();
-  var recipients = [];
-  for (var i = 1; i < data.length; i++) {
-    var type = String(data[i][1] || '');
-    if (type !== 'shitsucho' && type !== 'shimurocho') continue;
-    var arr = [];
-    try { arr = JSON.parse(data[i][3] || '[]'); } catch(e) {}
-    arr.forEach(function(r) { if (r && recipients.indexOf(r) < 0) recipients.push(r); });
+  // Firestoreからshitsuchoエントリの宛先を取得
+  try {
+    var docs = firestoreQuery_('lineSchedules', [fsFilter_('type', 'EQUAL', 'shitsucho')]);
+    var recipients = [];
+    docs.forEach(function(doc) {
+      var arr = doc.recipients || [];
+      arr.forEach(function(r) { if (r && recipients.indexOf(r) < 0) recipients.push(r); });
+    });
+    return recipients;
+  } catch(e) {
+    Logger.log('⚠ getShitsuchoRecipientsFromSheet_: Firestore失敗、空配列を返す: ' + e);
+    return [];
   }
-  return recipients;
 }
 
 /**
@@ -1186,20 +1188,16 @@ function getAllLineRegisteredTeacherIds_() {
  */
 function generateMonthlySchedule_(year, month) {
   try {
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) { Logger.log('⚠ generateMonthlySchedule_: スケジューラーシートなし'); return 0; }
     var mm = month < 10 ? '0' + month : '' + month;
     var yearMonth = '' + year + mm;
 
-    // 既存エントリの種別を確認
-    var data = sheet.getDataRange().getValues();
+    // 既存エントリの種別をFirestoreで確認
+    var existingDocs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
     var existingTypes = {};
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][2]) === yearMonth) existingTypes[data[i][1]] = true;
-    }
+    existingDocs.forEach(function(doc) { existingTypes[doc.type] = true; });
 
     var settingsJson = getProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS);
-    var settings = settingsJson ? JSON.parse(settingsJson) : {};
+    var settings = safeJsonParse_(settingsJson, {});
     var closedDays = computeClosedDaysForMonth_(year, month);
     var now = new Date();
     var nowIso = now.toISOString();
@@ -1217,13 +1215,13 @@ function generateMonthlySchedule_(year, month) {
         if (new Date(mScheduledAt) <= now) {
           Logger.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (meeting ' + mScheduledAt + ')');
         } else {
-          sheet.appendRow([
-            'sch_' + yearMonth + '_meeting', 'meeting', yearMonth,
-            JSON.stringify(['__ALL__']),
-            mScheduledAt,
-            buildMeetingMessage_(year, month, meetingResult.meetingDay),
-            false, '', nowIso
-          ]);
+          var mId = 'sch_' + yearMonth + '_meeting';
+          firestoreSet_('lineSchedules', mId, {
+            id: mId, type: 'meeting', yearMonth: yearMonth,
+            recipients: ['__ALL__'], scheduledAt: mScheduledAt,
+            message: buildMeetingMessage_(year, month, meetingResult.meetingDay),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
           created++;
         }
       }
@@ -1241,13 +1239,13 @@ function generateMonthlySchedule_(year, month) {
         if (new Date(rScheduledAt) <= now) {
           Logger.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (report ' + rScheduledAt + ')');
         } else {
-          sheet.appendRow([
-            'sch_' + yearMonth + '_report', 'report', yearMonth,
-            JSON.stringify(['__ALL__']),
-            rScheduledAt,
-            buildReportMessage_(year, month, reportResult.reportDay, month),
-            false, '', nowIso
-          ]);
+          var rId = 'sch_' + yearMonth + '_report';
+          firestoreSet_('lineSchedules', rId, {
+            id: rId, type: 'report', yearMonth: yearMonth,
+            recipients: ['__ALL__'], scheduledAt: rScheduledAt,
+            message: buildReportMessage_(year, month, reportResult.reportDay, month),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
           created++;
         }
       }
@@ -1265,13 +1263,13 @@ function generateMonthlySchedule_(year, month) {
         if (new Date(sScheduledAt) <= now) {
           Logger.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (shitsucho ' + sScheduledAt + ')');
         } else {
-          sheet.appendRow([
-            'sch_' + yearMonth + '_shitsucho', 'shitsucho', yearMonth,
-            JSON.stringify(sSettings.recipients || []),
-            sScheduledAt,
-            buildShimurochoMessage_(year, month, sDay, closedDays),
-            false, '', nowIso
-          ]);
+          var sId = 'sch_' + yearMonth + '_shitsucho';
+          firestoreSet_('lineSchedules', sId, {
+            id: sId, type: 'shitsucho', yearMonth: yearMonth,
+            recipients: sSettings.recipients || [], scheduledAt: sScheduledAt,
+            message: buildShimurochoMessage_(year, month, sDay, closedDays),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
           created++;
         }
       }
@@ -1354,45 +1352,34 @@ function saveLineSchedulerSettings(type, newSettings) {
 function getScheduledLineMessages(year, month) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
     var mm = month < 10 ? '0' + month : '' + month;
     var yearMonth = '' + year + mm;
 
-    // 既存エントリを確認し、なければ自動生成
-    var data = sheet.getDataRange().getValues();
-    var existing = data.slice(1).filter(function(r) { return String(r[2]) === yearMonth; });
-    if (existing.length === 0) {
+    // Firestoreから取得し、なければ自動生成
+    var docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
+    if (docs.length === 0) {
       generateMonthlySchedule_(year, month);
-      data = sheet.getDataRange().getValues();
-      existing = data.slice(1).filter(function(r) { return String(r[2]) === yearMonth; });
+      docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
     }
 
     // 種別ごとに重複がある場合は最初の1件のみ採用（重複防止）
     var seenTypes = {};
     var messages = [];
-    existing.forEach(function(r) {
-      var type = r[1];
+    docs.forEach(function(doc) {
+      var type = doc.type || '';
       if (type === 'shimurocho') type = 'shitsucho'; // 旧名称の後方互換
       if (seenTypes[type]) return;
       seenTypes[type] = true;
-      var recipientsArr = [];
-      try { recipientsArr = JSON.parse(r[3] || '[]'); } catch(e) {}
-      // scheduledAt: Sheets が ISO文字列を日付型として読み込む場合があるため Date オブジェクトにも対応
-      var rawSat = r[4];
-      var scheduledAt;
-      if (rawSat instanceof Date) {
-        scheduledAt = Utilities.formatDate(rawSat, 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss");
-      } else {
-        scheduledAt = rawSat ? String(rawSat) : '';
-      }
       messages.push({
-        id: r[0], type: type, yearMonth: r[2],
-        recipients: recipientsArr,
-        scheduledAt: scheduledAt,
-        message: r[5], sent: r[6] === true || r[6] === 'TRUE',
-        sentAt: r[7] ? String(r[7]) : '',
-        createdAt: r[8] ? String(r[8]) : ''
+        id: doc.id || doc._id,
+        type: type,
+        yearMonth: doc.yearMonth || yearMonth,
+        recipients: doc.recipients || [],
+        scheduledAt: doc.scheduledAt || '',
+        message: doc.message || '',
+        sent: doc.sent === true,
+        sentAt: doc.sentAt || '',
+        createdAt: doc.createdAt || ''
       });
     });
     return { success: true, messages: messages };
@@ -1411,17 +1398,14 @@ function getScheduledLineMessages(year, month) {
 function resetAndRegenerateSchedule(year, month) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
     var mm = month < 10 ? '0' + month : '' + month;
     var yearMonth = '' + year + mm;
-    // 該当年月の行を後ろから削除
-    var data = sheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      if (String(data[i][2]) === yearMonth) {
-        sheet.deleteRow(i + 1);
-      }
-    }
+    // 該当年月のFirestoreドキュメントを全削除
+    var docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
+    var delWrites = docs.map(function(doc) {
+      return { collection: 'lineSchedules', docId: doc._id, delete: true };
+    });
+    if (delWrites.length > 0) firestoreBatchWrite_(delWrites);
     // 再生成
     var created = generateMonthlySchedule_(year, month);
     return { success: true, created: created, message: created + '件のスケジュールを再生成しました' };
@@ -1439,34 +1423,46 @@ function resetAndRegenerateSchedule(year, month) {
 function saveScheduledLineMessage(data) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
-    var sheetData = sheet.getDataRange().getValues();
-    var foundRow = -1;
-    for (var i = 1; i < sheetData.length; i++) {
-      if (sheetData[i][0] === data.id) { foundRow = i + 1; break; }
-    }
-    var recipientsJson = JSON.stringify(data.recipients || []);
-    if (foundRow > 0) {
+    var docId = data.id;
+    // 既存ドキュメントを取得（送信済みフラグ・作成日時は維持するため）
+    var existing = firestoreGet_('lineSchedules', docId);
+    var now = new Date().toISOString();
+    var saveData;
+    if (existing) {
       // 更新（送信済みフラグは維持）
-      sheet.getRange(foundRow, 4).setValue(recipientsJson);
-      // scheduledAt が指定されている場合のみ上書き（空の場合は既存値を維持）
-      if (data.scheduledAt) sheet.getRange(foundRow, 5).setValue(data.scheduledAt);
-      sheet.getRange(foundRow, 6).setValue(data.message);
+      saveData = {
+        id: docId,
+        type: existing.type || data.type || '',
+        yearMonth: existing.yearMonth || data.yearMonth || '',
+        recipients: data.recipients || existing.recipients || [],
+        scheduledAt: data.scheduledAt || existing.scheduledAt || '',
+        message: data.message !== undefined ? data.message : (existing.message || ''),
+        sent: existing.sent === true,
+        sentAt: existing.sentAt || '',
+        createdAt: existing.createdAt || now
+      };
     } else {
       // 新規追加
-      var now = new Date().toISOString();
-      var mm = data.yearMonth ? String(data.yearMonth).slice(4) : '01';
-      sheet.appendRow([data.id, data.type, data.yearMonth, recipientsJson, data.scheduledAt, data.message, false, '', now]);
+      saveData = {
+        id: docId,
+        type: data.type || '',
+        yearMonth: data.yearMonth || '',
+        recipients: data.recipients || [],
+        scheduledAt: data.scheduledAt || '',
+        message: data.message || '',
+        sent: false,
+        sentAt: '',
+        createdAt: now
+      };
     }
+    firestoreSet_('lineSchedules', docId, saveData);
     // shitsucho 保存時は LINE_SCHEDULER_SETTINGS の recipients も同期
-    // （generateMonthlySchedule_() が新月生成時に参照するため）
     if (data.type === 'shitsucho') {
       var sSettingsRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS);
-      var sSettings = sSettingsRaw ? JSON.parse(sSettingsRaw) : {};
+      var sSettings = safeJsonParse_(sSettingsRaw, {});
       if (!sSettings.shitsucho) sSettings.shitsucho = {};
       sSettings.shitsucho.recipients = data.recipients || [];
-      if (sSettings.shimurocho) delete sSettings.shimurocho; // 旧キーも削除
+      if (sSettings.shimurocho) delete sSettings.shimurocho;
       setProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS, JSON.stringify(sSettings));
     }
     return { success: true, message: '保存しました' };
@@ -1484,13 +1480,10 @@ function saveScheduledLineMessage(data) {
 function deleteScheduledLineMessage(id) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === id) { sheet.deleteRow(i + 1); return { success: true, message: '削除しました' }; }
-    }
-    return { success: false, error: '対象IDが見つかりません: ' + id };
+    var existing = firestoreGet_('lineSchedules', id);
+    if (!existing) return { success: false, error: '対象IDが見つかりません: ' + id };
+    firestoreDelete_('lineSchedules', id);
+    return { success: true, message: '削除しました' };
   } catch(e) {
     Logger.log('❌ deleteScheduledLineMessage エラー: ' + e);
     return { success: false, error: e.toString() };
@@ -1505,26 +1498,17 @@ function deleteScheduledLineMessage(id) {
 function sendScheduledLineMessageNow(id) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
-    var data = sheet.getDataRange().getValues();
-    var foundRow = -1;
-    var rowData;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === id) { foundRow = i + 1; rowData = data[i]; break; }
-    }
-    if (foundRow < 0) return { success: false, error: '対象IDが見つかりません' };
+    var doc = firestoreGet_('lineSchedules', id);
+    if (!doc) return { success: false, error: '対象IDが見つかりません' };
 
-    var recipientsArr = [];
-    try { recipientsArr = JSON.parse(rowData[3] || '[]'); } catch(e) {}
-    var msgType = rowData[1];
+    var recipientsArr = doc.recipients || [];
+    var msgType = doc.type || '';
     if (msgType === 'shimurocho') msgType = 'shitsucho'; // 旧名称の後方互換
-    var lineMapping = {};
-    try { lineMapping = JSON.parse(getProperty(PROP_KEYS.LINE_USER_MAPPING) || '{}'); } catch(e) {}
+    var lineMapping = safeJsonParse_(getProperty(PROP_KEYS.LINE_USER_MAPPING), {});
     if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
       recipientsArr = getAllLineRegisteredTeacherIds_();
     }
-    // LINE User ID で重複排除（同じ人に複数回届かないように）
+    // LINE User ID で重複排除
     var seenLineIds = {};
     var deduped = [];
     recipientsArr.forEach(function(tid) {
@@ -1532,13 +1516,12 @@ function sendScheduledLineMessageNow(id) {
       if (lid) {
         if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
       } else {
-        deduped.push(tid); // LINE未登録はGmail送信のために残す
+        deduped.push(tid);
       }
     });
     recipientsArr = deduped;
-    var message = rowData[5];
-    var notifPrefsRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS);
-    var notifPrefs = notifPrefsRaw ? JSON.parse(notifPrefsRaw) : {};
+    var message = doc.message || '';
+    var notifPrefs = safeJsonParse_(getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS), {});
     var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
 
     var sentCount = 0;
@@ -1567,8 +1550,9 @@ function sendScheduledLineMessageNow(id) {
     });
 
     // 送信済みフラグを更新
-    sheet.getRange(foundRow, 7).setValue(true);
-    sheet.getRange(foundRow, 8).setValue(new Date().toISOString());
+    doc.sent = true;
+    doc.sentAt = new Date().toISOString();
+    firestoreSet_('lineSchedules', id, doc);
     return { success: true, sentCount: sentCount, failedRecipients: failedRecipients };
   } catch(e) {
     Logger.log('❌ sendScheduledLineMessageNow エラー: ' + e);
@@ -1582,9 +1566,6 @@ function sendScheduledLineMessageNow(id) {
  */
 function checkAndSendDueLineMessages() {
   try {
-    var sheet = getLineSchedulerSheet_();
-    if (!sheet) return { success: false, error: 'スケジューラーシートを取得できません' };
-
     // 今月・来月のスケジュールを自動生成（未生成の場合のみ）
     var now = new Date();
     var cy = now.getFullYear();
@@ -1594,37 +1575,27 @@ function checkAndSendDueLineMessages() {
     var nm = cm === 12 ? 1 : cm + 1;
     generateMonthlySchedule_(ny, nm);
 
-    var data = sheet.getDataRange().getValues();
-    var lineMapping = {};
-    try { lineMapping = JSON.parse(getProperty(PROP_KEYS.LINE_USER_MAPPING) || '{}'); } catch(e) {}
-    var notifPrefsRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS);
-    var notifPrefs = notifPrefsRaw ? JSON.parse(notifPrefsRaw) : {};
+    // 未送信のドキュメントを全件取得し、送信予定日時が過ぎたものをクライアント側でフィルタ
+    var docs = firestoreQuery_('lineSchedules', [fsFilter_('sent', 'EQUAL', false)]);
+    var lineMapping = safeJsonParse_(getProperty(PROP_KEYS.LINE_USER_MAPPING), {});
+    var notifPrefs = safeJsonParse_(getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS), {});
     var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
 
     var sentCount = 0;
     var errors = [];
-    for (var i = 1; i < data.length; i++) {
-      var sent = data[i][6];
-      if (sent === true || sent === 'TRUE') continue;
-      var rawSat = data[i][4];
-      if (!rawSat) continue;
-      var scheduledAtStr;
-      if (rawSat instanceof Date) {
-        scheduledAtStr = Utilities.formatDate(rawSat, 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss+09:00");
-      } else {
-        scheduledAtStr = String(rawSat);
-      }
+    docs.forEach(function(doc) {
+      var scheduledAtStr = doc.scheduledAt || '';
+      if (!scheduledAtStr) return;
       var scheduledDate = new Date(scheduledAtStr);
-      if (isNaN(scheduledDate.getTime()) || scheduledDate > now) continue;
+      if (isNaN(scheduledDate.getTime()) || scheduledDate > now) return;
 
-      var recipientsArr = [];
-      try { recipientsArr = JSON.parse(data[i][3] || '[]'); } catch(e) {}
-      var msgType = data[i][1];
-      if (msgType === 'shimurocho') msgType = 'shitsucho'; // 旧名称の後方互換
+      var recipientsArr = doc.recipients || [];
+      var msgType = doc.type || '';
+      if (msgType === 'shimurocho') msgType = 'shitsucho';
       if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
         recipientsArr = getAllLineRegisteredTeacherIds_();
       }
-      // LINE User ID で重複排除（同じ人に複数回届かないように）
+      // LINE User ID で重複排除
       var seenLineIds = {};
       var deduped = [];
       recipientsArr.forEach(function(tid) {
@@ -1632,11 +1603,11 @@ function checkAndSendDueLineMessages() {
         if (lid) {
           if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
         } else {
-          deduped.push(tid); // LINE未登録はGmail送信のために残す
+          deduped.push(tid);
         }
       });
       recipientsArr = deduped;
-      var message = data[i][5];
+      var message = doc.message || '';
       var rowSent = 0;
       recipientsArr.forEach(function(tid) {
         var pref = (notifPrefs[tid] && notifPrefs[tid][msgType]) || 'line';
@@ -1657,10 +1628,12 @@ function checkAndSendDueLineMessages() {
           }
         }
       });
-      sheet.getRange(i + 1, 7).setValue(true);
-      sheet.getRange(i + 1, 8).setValue(new Date().toISOString());
+      // 送信済みフラグを更新
+      doc.sent = true;
+      doc.sentAt = new Date().toISOString();
+      firestoreSet_('lineSchedules', doc._id, doc);
       sentCount += rowSent;
-    }
+    });
     return { success: true, sentCount: sentCount, errors: errors };
   } catch(e) {
     Logger.log('❌ checkAndSendDueLineMessages エラー: ' + e);

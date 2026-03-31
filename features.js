@@ -2304,6 +2304,7 @@ function deleteFlyerImage(fileId) {
  * @return {Sheet|null} シートオブジェクト
  */
 function getFlyerImageTagSheet_() {
+  // Firestore移行済み。このヘルパーはマイグレーション用に残す（通常処理では使用しない）
   var settingsFolder = getSettingsFolder();
   if (!settingsFolder) return null;
   var sheetName = 'システム設定';
@@ -2331,21 +2332,15 @@ function getFlyerImageTagSheet_() {
 function saveFlyerImageTags(fileId, tags) {
   try {
     if (!fileId) return { success: false, error: 'fileId が空です' };
-    var sheet = getFlyerImageTagSheet_();
-    if (!sheet) return { success: false, error: 'タグシートを取得できませんでした' };
     var tagsStr = (tags || '').trim();
-    var rows = sheet.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === fileId) {
-        sheet.getRange(i + 1, 3).setValue(tagsStr);
-        sheet.getRange(i + 1, 4).setValue(new Date().toISOString());
-        return { success: true, message: 'タグを保存しました' };
-      }
-    }
-    // 新規行を追加（ファイル名をDriveから取得）
     var fileName = '';
     try { fileName = DriveApp.getFileById(fileId).getName(); } catch (e) {}
-    sheet.appendRow([fileId, fileName, tagsStr, new Date().toISOString()]);
+    firestoreSet_('imageTags', fileId, {
+      fileId: fileId,
+      fileName: fileName,
+      tags: tagsStr,
+      updatedAt: new Date().toISOString()
+    });
     return { success: true, message: 'タグを保存しました' };
   } catch (error) {
     Logger.log('❌ saveFlyerImageTagsエラー: ' + error);
@@ -2360,13 +2355,10 @@ function saveFlyerImageTags(fileId, tags) {
 function getAllFlyerImageTags_() {
   var map = {};
   try {
-    var sheet = getFlyerImageTagSheet_();
-    if (!sheet) return map;
-    var rows = sheet.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      var fid = String(rows[i][0] || '').trim();
-      if (fid) map[fid] = String(rows[i][2] || '').trim();
-    }
+    var docs = firestoreQuery_('imageTags', []);
+    docs.forEach(function(doc) {
+      if (doc.fileId) map[doc.fileId] = doc.tags || '';
+    });
   } catch (e) {
     Logger.log('⚠ getAllFlyerImageTags_: ' + e);
   }
@@ -2379,15 +2371,7 @@ function getAllFlyerImageTags_() {
  */
 function deleteFlyerImageTags_(fileId) {
   try {
-    var sheet = getFlyerImageTagSheet_();
-    if (!sheet) return;
-    var rows = sheet.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === fileId) {
-        sheet.deleteRow(i + 1);
-        return;
-      }
-    }
+    firestoreDelete_('imageTags', fileId);
   } catch (e) {
     Logger.log('⚠ deleteFlyerImageTags_: ' + e);
   }
@@ -2444,16 +2428,13 @@ function saveFlyerConfig(lectureId, campusCode, configJson) {
  * @return {Sheet|null} シートオブジェクト
  */
 function getFlyerAiSheet_() {
+  // Firestore移行済み。このヘルパーはマイグレーション用に残す（通常処理では使用しない）
   var settingsFolder = getSettingsFolder();
   if (!settingsFolder) return null;
   var sheetName = 'システム設定';
   var file = getFileByName(settingsFolder, sheetName);
-  var ss;
-  if (file) {
-    ss = SpreadsheetApp.openById(file.getId());
-  } else {
-    return null;
-  }
+  if (!file) return null;
+  var ss = SpreadsheetApp.openById(file.getId());
   var sheet = ss.getSheetByName('チラシAI');
   if (!sheet) {
     sheet = ss.insertSheet('チラシAI');
@@ -2699,28 +2680,19 @@ function generateFlyerWithAI(params) {
 function saveFlyerAiData(lectureId, campusCode, html, chatHistoryJson) {
   try {
     if (!lectureId || !campusCode) return { success: false, error: 'lectureId と campusCode は必須です' };
-    var sheet = getFlyerAiSheet_();
-    if (!sheet) return { success: false, error: 'システム設定シートが見つかりません' };
-
     var id = lectureId + '_' + campusCode;
-    var rows = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === id) { rowIndex = i + 1; break; }
-    }
-
     var now = new Date().toISOString();
     var email = Session.getActiveUser().getEmail();
-
-    if (rowIndex > 0) {
-      sheet.getRange(rowIndex, 4).setValue(html);
-      sheet.getRange(rowIndex, 5).setValue(chatHistoryJson);
-      sheet.getRange(rowIndex, 6).setValue(now);
-      sheet.getRange(rowIndex, 7).setValue(email);
-    } else {
-      sheet.appendRow([id, lectureId, campusCode, html, chatHistoryJson, now, email]);
-    }
-
+    var chatHistory = safeJsonParse_(chatHistoryJson, []);
+    firestoreSet_('flyerAi', id, {
+      id: id,
+      lectureId: lectureId,
+      campusCode: campusCode,
+      html: html || '',
+      chatHistory: chatHistory,
+      updatedAt: now,
+      updatedBy: email
+    });
     return { success: true, message: 'チラシデータを保存しました' };
   } catch (error) {
     Logger.log('❌ saveFlyerAiDataエラー: ' + error);
@@ -2738,24 +2710,15 @@ function saveFlyerAiData(lectureId, campusCode, html, chatHistoryJson) {
 function loadFlyerAiData(lectureId, campusCode) {
   try {
     if (!lectureId || !campusCode) return { success: false, error: 'lectureId と campusCode は必須です' };
-    var sheet = getFlyerAiSheet_();
-    if (!sheet) return { success: false, html: null, chatHistory: [] };
-
     var id = lectureId + '_' + campusCode;
-    var rows = sheet.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === id) {
-        var chatHistory = [];
-        try { chatHistory = JSON.parse(rows[i][4] || '[]'); } catch (e) {}
-        return {
-          success: true,
-          html: rows[i][3] || '',
-          chatHistory: chatHistory,
-          updatedAt: rows[i][5] || ''
-        };
-      }
-    }
-    return { success: false, html: null, chatHistory: [] };
+    var doc = firestoreGet_('flyerAi', id);
+    if (!doc) return { success: false, html: null, chatHistory: [] };
+    return {
+      success: true,
+      html: doc.html || '',
+      chatHistory: doc.chatHistory || [],
+      updatedAt: doc.updatedAt || ''
+    };
   } catch (error) {
     Logger.log('❌ loadFlyerAiDataエラー: ' + error);
     return { success: false, error: error.toString() };
