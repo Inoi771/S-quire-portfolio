@@ -2682,7 +2682,7 @@ function saveFlyerAiData(lectureId, campusCode, html, chatHistoryJson) {
     if (!lectureId || !campusCode) return { success: false, error: 'lectureId と campusCode は必須です' };
     var id = lectureId + '_' + campusCode;
     var now = new Date().toISOString();
-    var email = Session.getActiveUser().getEmail();
+    var email = getCurrentUserEmail();
     var chatHistory = safeJsonParse_(chatHistoryJson, []);
     firestoreSet_('flyerAi', id, {
       id: id,

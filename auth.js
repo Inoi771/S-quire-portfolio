@@ -360,7 +360,7 @@ function removeUserAccess(email) {
   try {
     email = email.trim().toLowerCase();
 
-    var currentUser = Session.getActiveUser().getEmail().toLowerCase();
+    var currentUser = getCurrentUserEmail().toLowerCase();
     if (email === currentUser) {
       return { success: false, error: '自分自身のアクセスは削除できません' };
     }
@@ -480,8 +480,8 @@ function linkUserById(inputId) {
     if (entry.emails.length > 0) setUserProperty('REGISTERED_EMAIL', entry.emails[0]);
 
     // 現在のGoogleアカウントのメールをemailsリストに追加（未登録の場合のみ）
-    var currentEmail = Session.getActiveUser().getEmail();
-    if (currentEmail) {
+    var currentEmail = getCurrentUserEmail();
+    if (currentEmail && currentEmail !== 'unknown@example.com') {
       var emailLower = currentEmail.toLowerCase();
       var lock = LockService.getScriptLock();
       try {
@@ -530,7 +530,7 @@ function getTeacherEmails() {
     if (!teacherMap[teacherId]) return { success: false, error: '講師情報が見つかりません' };
 
     var entry = normalizeTeacherEntry_(teacherMap[teacherId]);
-    var currentEmail = (Session.getActiveUser().getEmail() || '').toLowerCase();
+    var currentEmail = getCurrentUserEmail().toLowerCase();
     return { success: true, emails: entry.emails, teacherId: teacherId, currentEmail: currentEmail };
   } catch (error) {
     Logger.log('❌ getTeacherEmailsエラー: ' + error);
@@ -610,7 +610,7 @@ function removeEmailFromTeacher(emailToRemove) {
     if (!emailToRemove) return { success: false, error: 'メールアドレスを指定してください' };
 
     // 現在のGoogleアカウントのメールは削除不可（ロックアウト防止）
-    var currentEmail = (Session.getActiveUser().getEmail() || '').toLowerCase();
+    var currentEmail = getCurrentUserEmail().toLowerCase();
     if (emailToRemove === currentEmail) {
       return { success: false, error: '現在ログイン中のメールアドレスは削除できません' };
     }
@@ -704,7 +704,7 @@ function getSetupStatus() {
   try {
     return {
       isFirstSetup: !getProperty(PROP_KEYS.ADMIN_EMAILS),
-      currentUserEmail: Session.getActiveUser().getEmail(),
+      currentUserEmail: getCurrentUserEmail(),
       hasAppFolder: !!getProperty(PROP_KEYS.APP_FOLDER_ID)
     };
   } catch (error) {
@@ -723,8 +723,8 @@ function initializeFirstAdmin() {
     if (getProperty(PROP_KEYS.ADMIN_EMAILS)) {
       return { success: false, error: '管理者は既に登録されています' };
     }
-    var email = Session.getActiveUser().getEmail();
-    if (!email) {
+    var email = getCurrentUserEmail();
+    if (!email || email === 'unknown@example.com') {
       return { success: false, error: 'Googleアカウントにログインしてください' };
     }
     setProperty(PROP_KEYS.ADMIN_EMAILS, email);
