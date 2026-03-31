@@ -218,10 +218,10 @@ function migrateGradesForYear_(year) {
       return { totalRows: 0, savedCount: 0, skippedCount: 0, errors: [] };
     }
 
-    // 列構成:
+    // 列構成（旧コード実装に基づく実際の順序）:
     //   [0] 生徒ID  [1] テスト名  [2] 国語  [3] 社会  [4] 数学  [5] 理科  [6] 英語
-    //   [7] 合計点  [8] 平均点  [9] 第1志望校  [10] 第2志望校  [11] 記録日時
-    //   [12] 志望1学科  [13] 志望2学科  [14] 氏名
+    //   [7] 合計点  [8] 平均点  [9] 第1志望校  [10] 志望1学科  [11] 第2志望校
+    //   [12] 志望2学科  [13] 記録日時  [14] 氏名
     var lastRow = sheet.getLastRow();
     var numCols = Math.min(sheet.getLastColumn(), 15);
     var rows = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
@@ -249,7 +249,7 @@ function migrateGradesForYear_(year) {
 
         var recordedAt;
         try {
-          recordedAt = row[11] ? new Date(row[11]).toISOString() : new Date().toISOString();
+          recordedAt = row[13] ? new Date(row[13]).toISOString() : new Date().toISOString();
         } catch (e) {
           recordedAt = new Date().toISOString();
         }
@@ -266,10 +266,10 @@ function migrateGradesForYear_(year) {
           total:       (row[7] !== '' && row[7] !== null && row[7] !== undefined) ? Number(row[7]) : null,
           average:     (row[8] !== '' && row[8] !== null && row[8] !== undefined) ? Number(row[8]) : null,
           shogaku1:       String(row[9]  || '').trim(),
-          shogaku2:       String(row[10] || '').trim(),
+          shogaku1_gakka: String(row[10] || '').trim(),
+          shogaku2:       String(row[11] || '').trim(),
+          shogaku2_gakka: String(row[12] || '').trim(),
           recordedAt:     recordedAt,
-          shogaku1_gakka: numCols >= 13 ? String(row[12] || '').trim() : '',
-          shogaku2_gakka: numCols >= 14 ? String(row[13] || '').trim() : '',
           studentName:    numCols >= 15 ? String(row[14] || '').trim() : ''
         };
 
