@@ -119,6 +119,7 @@ function getCurrentFiscalYear() {
 
 /**
  * 生徒一覧シートから生徒IDで行番号を検索する内部ヘルパー。
+ * 【レガシー】migrate.js でのみ使用。Firestore 移行後は不要。
  * Google Sheetsの数値自動変換で先頭ゼロが消えた場合にも正しくマッチするよう padStart で正規化する。
  * @param {Sheet} sheet 生徒一覧シート
  * @param {string} studentId 検索対象の生徒ID（10桁）
@@ -140,8 +141,8 @@ function findStudentRowIndex_(sheet, studentId) {
 
 /**
  * 生徒マスタスプレッドシートを取得（なければ自動作成）
- * 「生徒マスタ/」サブフォルダ内の「生徒マスタ」ファイルを使用
- * IDをスクリプトプロパティにキャッシュして次回から確実に取得する
+ * 【レガシー】migrate.js の migrateStudentsToFirestore() からのみ使用する。
+ * 通常の生徒マスタ操作は Firestore 経由の関数を使用すること。
  * @return {Spreadsheet|null} スプレッドシート（必ず「生徒一覧」シートあり）
  */
 function getStudentMasterSpreadsheet() {
@@ -217,25 +218,19 @@ function getStudentMasterSpreadsheet() {
 }
 
 /**
- * 生徒IDから氏名を取得する
+ * 生徒IDから氏名を取得する（Firestore）
  * @param {string} studentId 生徒ID
  * @return {string} 氏名（見つからない場合は空文字）
  */
 function getStudentNameById(studentId) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return '';
-    var sheet = ss.getSheetByName('生徒一覧');
-    if (!sheet || sheet.getLastRow() < 2) return '';
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
-    var sid = String(studentId).trim();
+    var sid = String(studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-    for (var i = 0; i < data.length; i++) {
-      var rowId = String(data[i][0] || '').trim();
-      if (/^\d+$/.test(rowId) && rowId.length < 10) rowId = rowId.padStart(10, '0');
-      if (rowId === sid) return String(data[i][2] || '') + String(data[i][3] || '');
-    }
-    return '';
+    if (!sid) return '';
+
+    var doc = firestoreGet_('students', sid);
+    if (!doc) return '';
+    return String(doc.sei || '') + String(doc.mei || '');
   } catch (e) {
     Logger.log('⚠ getStudentNameByIdエラー: ' + e);
     return '';
@@ -319,60 +314,39 @@ function getGradeDataSheet(year) {
 }
 
 /**
- * 生徒マスタデータを取得
+ * 生徒マスタデータを取得（Firestore）
  * 指定年度でアクティブな生徒のみ返す（削除済み除外・学年を動的計算）
  * @param {number} year 対象年度
  * @return {Array} 生徒データ配列
  */
 function getMasterData(year) {
   try {
+    var docs = firestoreQuery_('students', [
+      fsFilter_('isDeleted', 'EQUAL', false)
+    ]);
 
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) {
-      Logger.log('❌ 生徒マスタが取得できません');
-      return [];
-    }
-
-    var sheet = ss.getSheetByName('生徒一覧');
-    if (!sheet || sheet.getLastRow() < 2) {
-      Logger.log('⚠ データが0件');
-      return [];
-    }
-
-    // 列構成: studentId(1), campusCode(2), sei(3), mei(4), seiFurigana(5), meiFurigana(6), schoolName(7), isDeleted(8), createdAt(9)
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
     var results = [];
-
-    data.forEach(function(row) {
+    docs.forEach(function(doc) {
       try {
-        var studentId = String(row[0] || '');
-        // Google Sheetsが数値変換で先頭ゼロを除いた場合、10桁に補完する（例: 120251301 → 0120251301）
-        if (studentId && /^\d+$/.test(studentId) && studentId.length < 10) {
-          studentId = studentId.padStart(10, '0');
-        }
+        var studentId = String(doc.studentId || doc._id || '').trim();
         if (!studentId || studentId.length < 10) return;
 
-        // 削除済みは除外
-        if (row[7] === true || row[7] === 'TRUE') return;
-
         // IDから登録年度・登録学年を抽出
-        var registrationYear  = parseInt(studentId.substring(2, 6));
-        var registrationGrade = parseInt(studentId.substring(6, 8));
+        var registrationYear  = parseInt(studentId.substring(2, 6), 10);
+        var registrationGrade = parseInt(studentId.substring(6, 8), 10);
+        if (isNaN(registrationYear) || isNaN(registrationGrade)) return;
 
         // 指定年度での学年を計算
-        var currentGrade = registrationGrade + (parseInt(year) - registrationYear);
+        var currentGrade = registrationGrade + (parseInt(year, 10) - registrationYear);
 
         // 有効学年範囲（07〜18）外は除外
         if (currentGrade < 7 || currentGrade > 18) return;
 
-        var sei         = String(row[2] || '');
-        var mei         = String(row[3] || '');
-        var seiFurigana = String(row[4] || '');
-        var meiFurigana = String(row[5] || '');
-
-        // 校舎CDも数値変換で先頭ゼロが消えた場合に補完する（例: 1 → '01'）
-        var campusRaw = String(row[1] || '');
-        var campus = campusRaw ? campusRaw.padStart(2, '0') : '';
+        var sei         = String(doc.sei         || '');
+        var mei         = String(doc.mei         || '');
+        var seiFurigana = String(doc.seiFurigana || '');
+        var meiFurigana = String(doc.meiFurigana || '');
+        var campus      = String(doc.campus      || '').padStart(2, '0');
 
         results.push({
           studentId:      studentId,
@@ -384,11 +358,10 @@ function getMasterData(year) {
           seiFurigana:    seiFurigana,
           meiFurigana:    meiFurigana,
           furigana:       seiFurigana + meiFurigana,
-          schoolName:     String(row[6] || ''),
-          registeredDate: row[8] ? new Date(row[8]).toISOString() : new Date().toISOString()
+          schoolName:     String(doc.schoolName  || ''),
+          registeredDate: doc.createdAt || new Date().toISOString()
         });
-      } catch (rowError) {
-      }
+      } catch (rowError) {}
     });
 
     return results;
@@ -595,7 +568,7 @@ function getStudentsForDropdown(campusCode, gradeCode, selectedYear) {
 }
 
 /**
- * 生徒情報を登録（新規）
+ * 生徒情報を登録（新規）（Firestore）
  * @aiCallable
  * @param {number} year 学年年度
  * @param {string} campusCode 校舎コード
@@ -609,74 +582,78 @@ function getStudentsForDropdown(campusCode, gradeCode, selectedYear) {
  */
 function submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName) {
   try {
-
     if (!sei || !seiFurigana || !campusCode || !gradeCode) {
       return { success: false, error: '必須項目（校舎、学年、姓、姓ふりがな）を入力してください' };
     }
 
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) {
-      return { success: false, error: '生徒マスタが見つかりません' };
-    }
-
-    var sheet = ss.getSheetByName('生徒一覧');
-    var prefix = String(campusCode).padStart(2, '0') + String(year) + String(gradeCode).padStart(2, '0');
-    var maxSeq = 0;
-    var lastRow = sheet.getLastRow();
+    var campus    = String(campusCode).padStart(2, '0');
+    var grade     = String(gradeCode).padStart(2, '0');
+    var prefix    = campus + String(year) + grade;
     var fullName     = sei.trim() + (mei ? mei.trim() : '');
     var fullFurigana = seiFurigana.trim() + (meiFurigana ? meiFurigana.trim() : '');
 
-    if (lastRow >= 2) {
-      // 8列まとめて読み込み（重複チェックと連番取得を兼ねる）
-      var existingData = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+    // LockService で同時登録による ID 重複を防ぐ
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(15000);
+    } catch (lockErr) {
+      return { success: false, error: '同時操作による競合が発生しました。時間をおいて再試行してください。' };
+    }
 
-      // ① 重複チェック（削除済みを除く同一氏名・ふりがな）
-      for (var i = 0; i < existingData.length; i++) {
-        var r = existingData[i];
-        var existName     = String(r[2]).trim() + String(r[3]).trim();
-        var existFurigana = String(r[4]).trim() + String(r[5]).trim();
-        if (r[7] !== true && r[7] !== 'TRUE'
-            && existName === fullName
-            && existFurigana === fullFurigana) {
-          return { success: false, error: '同じ氏名・ふりがなの生徒がすでに登録されています（ID: ' + String(r[0]) + '）' };
+    try {
+      // 同じプレフィックスを持つ生徒を Firestore から取得して maxSeq を計算
+      var existing = firestoreQuery_('students', [
+        fsFilter_('studentId', 'GREATER_THAN_OR_EQUAL', prefix + '00'),
+        fsFilter_('studentId', 'LESS_THAN_OR_EQUAL',    prefix + '99')
+      ]);
+
+      // 重複チェック（削除済みを除く同一氏名・ふりがな）
+      // 全生徒から同一氏名を検索（プレフィックス絞り込みでは不十分）
+      var allActive = firestoreQuery_('students', [
+        fsFilter_('isDeleted', 'EQUAL', false)
+      ]);
+      for (var i = 0; i < allActive.length; i++) {
+        var s = allActive[i];
+        var existName     = String(s.sei || '').trim() + String(s.mei || '').trim();
+        var existFurigana = String(s.seiFurigana || '').trim() + String(s.meiFurigana || '').trim();
+        if (existName === fullName && existFurigana === fullFurigana) {
+          return { success: false, error: '同じ氏名・ふりがなの生徒がすでに登録されています（ID: ' + (s.studentId || s._id) + '）' };
         }
       }
 
-      // 連番の最大値を取得
-      // ※ Google Sheetsが数値変換で先頭ゼロを消す場合があるため、10桁に補完してからprefixと照合する
-      existingData.forEach(function(r) {
-        var id = String(r[0] || '');
-        if (id && /^\d+$/.test(id) && id.length < 10) {
-          id = id.padStart(10, '0');
-        }
+      var maxSeq = 0;
+      existing.forEach(function(doc) {
+        var id = String(doc.studentId || doc._id || '');
         if (id.indexOf(prefix) === 0) {
           var seq = parseInt(id.slice(prefix.length), 10);
           if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
         }
       });
+
+      var studentId  = prefix + String(maxSeq + 1).padStart(2, '0');
+      var registrationYear  = parseInt(String(year), 10);
+      var registrationGrade = parseInt(grade, 10);
+      var now = new Date().toISOString();
+
+      firestoreSet_('students', studentId, {
+        studentId:         studentId,
+        campus:            campus,
+        sei:               sei.trim(),
+        mei:               mei.trim() || '',
+        seiFurigana:       seiFurigana.trim(),
+        meiFurigana:       meiFurigana.trim() || '',
+        schoolName:        schoolName.trim() || '',
+        isDeleted:         false,
+        createdAt:         now,
+        registrationYear:  registrationYear,
+        registrationGrade: registrationGrade
+      });
+
+      Logger.log('✓ submitStudentInfo: 登録完了 ' + studentId);
+      return { success: true, message: '生徒情報を登録しました', studentId: studentId };
+    } finally {
+      lock.releaseLock();
     }
-
-    var studentId = prefix + String(maxSeq + 1).padStart(2, '0');
-
-    // 列構成: studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName, isDeleted, createdAt
-    // appendRowだとSheetsが数値変換して先頭ゼロを消す場合があるため、setValuesで書き込み後にIDをテキスト形式に設定
-    var newRow = lastRow + 1;
-    sheet.getRange(newRow, 1, 1, 9).setValues([[
-      studentId,
-      String(campusCode),
-      sei.trim(),
-      mei.trim() || '',
-      seiFurigana.trim(),
-      meiFurigana.trim() || '',
-      schoolName.trim() || '',
-      false,
-      new Date().toISOString()
-    ]]);
-    // IDと校舎CDの列をテキスト形式に明示的に設定（先頭ゼロの保持）
-    sheet.getRange(newRow, 1).setNumberFormat('@');
-    sheet.getRange(newRow, 2).setNumberFormat('@');
-
-    return { success: true, message: '生徒情報を登録しました', studentId: studentId };
   } catch (error) {
     Logger.log('❌ submitStudentInfoエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -684,7 +661,7 @@ function submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, m
 }
 
 /**
- * 生徒情報を更新
+ * 生徒情報を更新（Firestore）
  * @aiCallable
  * @param {string} studentId 生徒ID
  * @param {string} campusCode 校舎コード（転校舎対応）
@@ -697,21 +674,22 @@ function submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, m
  */
 function updateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return { success: false, error: '生徒マスタが見つかりません' };
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var sheet = ss.getSheetByName('生徒一覧');
-    var rowIndex = findStudentRowIndex_(sheet, studentId);
-    if (rowIndex === -1) return { success: false, error: '生徒が見つかりません' };
+    var doc = firestoreGet_('students', sid);
+    if (!doc) return { success: false, error: '生徒が見つかりません' };
 
-    // 列2〜7（校舎CD, 姓, 名, 姓ふりがな, 名ふりがな, 学校名）を更新
-    var normalizedCampus = String(campusCode).padStart(2, '0');
-    sheet.getRange(rowIndex, 2, 1, 6).setValues([[
-      normalizedCampus, sei.trim(), mei.trim() || '', seiFurigana.trim(), meiFurigana.trim() || '', schoolName.trim() || ''
-    ]]);
-    // 校舎CDがシートで数値化されないようテキスト書式を設定
-    sheet.getRange(rowIndex, 2).setNumberFormat('@');
+    doc.campus      = String(campusCode).padStart(2, '0');
+    doc.sei         = sei.trim();
+    doc.mei         = mei.trim() || '';
+    doc.seiFurigana = seiFurigana.trim();
+    doc.meiFurigana = meiFurigana.trim() || '';
+    doc.schoolName  = schoolName.trim() || '';
 
+    firestoreSet_('students', sid, doc);
+
+    Logger.log('✓ updateStudentInfo: 更新完了 ' + sid);
     return { success: true, message: '生徒情報を更新しました' };
   } catch (error) {
     Logger.log('❌ updateStudentInfoエラー: ' + error);
@@ -720,23 +698,23 @@ function updateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFuri
 }
 
 /**
- * 生徒を削除（ソフトデリート）
+ * 生徒を削除（ソフトデリート）（Firestore）
  * @aiCallable
  * @param {string} studentId 生徒ID
  * @return {Object} { success, message, error }
  */
 function deleteStudent(studentId) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return { success: false, error: '生徒マスタが見つかりません' };
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var sheet = ss.getSheetByName('生徒一覧');
-    var rowIndex = findStudentRowIndex_(sheet, studentId);
-    if (rowIndex === -1) return { success: false, error: '生徒が見つかりません' };
+    var doc = firestoreGet_('students', sid);
+    if (!doc) return { success: false, error: '生徒が見つかりません' };
 
-    // 列8（削除済み）を TRUE に設定
-    sheet.getRange(rowIndex, 8).setValue(true);
+    doc.isDeleted = true;
+    firestoreSet_('students', sid, doc);
 
+    Logger.log('✓ deleteStudent: 削除完了 ' + sid);
     return { success: true, message: '生徒を削除しました' };
   } catch (error) {
     Logger.log('❌ deleteStudentエラー: ' + error);
@@ -745,7 +723,7 @@ function deleteStudent(studentId) {
 }
 
 /**
- * 削除済み生徒を取得（復元UI用）
+ * 削除済み生徒を取得（復元UI用）（Firestore）
  * @aiCallable
  * @param {string} campusCode 校舎コード（空=全校舎）
  * @param {string|null} gradeCode 学年コード（null=全学年）
@@ -754,38 +732,28 @@ function deleteStudent(studentId) {
  */
 function getDeletedStudents(campusCode, gradeCode, selectedYear) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return { success: false, error: '生徒マスタが見つかりません', students: [] };
+    var docs = firestoreQuery_('students', [
+      fsFilter_('isDeleted', 'EQUAL', true)
+    ]);
 
-    var sheet = ss.getSheetByName('生徒一覧');
-    if (!sheet || sheet.getLastRow() < 2) return { success: true, students: [] };
-
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
     var students = [];
-
-    data.forEach(function(row) {
-      var studentId = String(row[0] || '');
-      // 先頭ゼロが消えた場合に補完
-      if (studentId && /^\d+$/.test(studentId) && studentId.length < 10) {
-        studentId = studentId.padStart(10, '0');
-      }
+    docs.forEach(function(doc) {
+      var studentId = String(doc.studentId || doc._id || '').trim();
       if (!studentId || studentId.length < 10) return;
 
-      // 削除済みのみ対象
-      if (row[7] !== true && row[7] !== 'TRUE') return;
+      var regYear  = parseInt(studentId.substring(2, 6), 10);
+      var regGrade = parseInt(studentId.substring(6, 8), 10);
 
-      // 校舎フィルタ（先頭ゼロ補完で比較）
-      var rowCampus = String(row[1] || '').padStart(2, '0');
+      // 校舎フィルタ
+      var rowCampus = String(doc.campus || '').padStart(2, '0');
       if (campusCode && rowCampus !== String(campusCode).padStart(2, '0')) return;
 
-      // 年度フィルタ（IDから登録年度を抽出）
-      var regYear  = parseInt(studentId.substring(2, 6));
-      var regGrade = parseInt(studentId.substring(6, 8));
-      if (selectedYear && regYear !== parseInt(selectedYear)) return;
+      // 年度フィルタ
+      if (selectedYear && regYear !== parseInt(selectedYear, 10)) return;
 
-      // 学年フィルタ（指定年度での計算学年で比較）
+      // 学年フィルタ
       if (gradeCode && selectedYear) {
-        var calcGrade = regGrade + (parseInt(selectedYear) - regYear);
+        var calcGrade = regGrade + (parseInt(selectedYear, 10) - regYear);
         if (String(calcGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
       } else if (gradeCode && !selectedYear) {
         if (String(regGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
@@ -793,10 +761,10 @@ function getDeletedStudents(campusCode, gradeCode, selectedYear) {
 
       students.push({
         studentId:         studentId,
-        campus:            String(row[1] || ''),
-        name:              String(row[2] || '') + String(row[3] || ''),
-        furigana:          String(row[4] || '') + String(row[5] || ''),
-        schoolName:        String(row[6] || ''),
+        campus:            rowCampus,
+        name:              String(doc.sei || '') + String(doc.mei || ''),
+        furigana:          String(doc.seiFurigana || '') + String(doc.meiFurigana || ''),
+        schoolName:        String(doc.schoolName || ''),
         registrationYear:  regYear,
         registrationGrade: regGrade
       });
@@ -814,22 +782,23 @@ function getDeletedStudents(campusCode, gradeCode, selectedYear) {
 }
 
 /**
- * 削除済み生徒を復元
+ * 削除済み生徒を復元（Firestore）
  * @aiCallable
  * @param {string} studentId 生徒ID
  * @return {Object} { success, message, error }
  */
 function restoreStudent(studentId) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return { success: false, error: '生徒マスタが見つかりません' };
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var sheet = ss.getSheetByName('生徒一覧');
-    var rowIndex = findStudentRowIndex_(sheet, studentId);
-    if (rowIndex === -1) return { success: false, error: '生徒が見つかりません' };
+    var doc = firestoreGet_('students', sid);
+    if (!doc) return { success: false, error: '生徒が見つかりません' };
 
-    sheet.getRange(rowIndex, 8).setValue(false);
+    doc.isDeleted = false;
+    firestoreSet_('students', sid, doc);
 
+    Logger.log('✓ restoreStudent: 復元完了 ' + sid);
     return { success: true, message: '生徒情報を復元しました' };
   } catch (error) {
     Logger.log('❌ restoreStudentエラー: ' + error);
@@ -1736,7 +1705,7 @@ function ocrAndExtractAverages(base64Image, mimeType, year, testName) {
 
 
 /**
- * 生徒を一括インポートする（ふりがな省略可・Admin のみ）
+ * 生徒を一括インポートする（ふりがな省略可・Admin のみ）（Firestore）
  * @param {string} studentsJson JSON文字列 [{campusCode, gradeCode, sei, mei}]
  * @param {number} [importYear] 登録年度（省略時は現在の学年年度）
  * @return {Object} { success, total, savedCount, skippedCount, errors[] }
@@ -1747,28 +1716,22 @@ function bulkImportStudents(studentsJson, importYear) {
       return { success: false, error: 'Admin のみアクセス可能' };
     }
 
-    var students = JSON.parse(studentsJson);
+    var students = safeJsonParse_(studentsJson, null);
     if (!Array.isArray(students) || students.length === 0) {
       return { success: false, error: 'インポートデータが空です' };
     }
 
     var year = importYear ? parseInt(importYear, 10) : getCurrentFiscalYear();
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) {
-      return { success: false, error: '生徒マスタが見つかりません' };
-    }
-
-    var sheet = ss.getSheetByName('生徒一覧');
-    var savedCount = 0;
+    var savedCount   = 0;
     var skippedCount = 0;
     var errors = [];
 
     for (var i = 0; i < students.length; i++) {
       var s = students[i];
-      var sei = (s.sei || '').trim();
-      var mei = (s.mei || '').trim();
+      var sei        = (s.sei        || '').trim();
+      var mei        = (s.mei        || '').trim();
       var campusCode = (s.campusCode || '').trim();
-      var gradeCode = (s.gradeCode || '').trim();
+      var gradeCode  = (s.gradeCode  || '').trim();
 
       if (!sei || !campusCode || !gradeCode) {
         errors.push({ row: i + 1, name: sei || '（空）', reason: '必須項目が不足しています' });
@@ -1776,70 +1739,22 @@ function bulkImportStudents(studentsJson, importYear) {
         continue;
       }
 
-      // 重複チェックと連番取得
-      var prefix = String(campusCode).padStart(2, '0') + String(year) + String(gradeCode).padStart(2, '0');
-      var maxSeq = 0;
-      var lastRow = sheet.getLastRow();
-      var fullName = sei + mei;
-      var isDuplicate = false;
-
-      if (lastRow >= 2) {
-        var existingData = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-
-        for (var j = 0; j < existingData.length; j++) {
-          var r = existingData[j];
-          // 同名チェック（ふりがななしで登録する場合、氏名のみで重複判定）
-          var existName = String(r[2]).trim() + String(r[3]).trim();
-          if (r[7] !== true && r[7] !== 'TRUE' && existName === fullName) {
-            isDuplicate = true;
-            break;
-          }
-        }
-
-        if (isDuplicate) {
-          errors.push({ row: i + 1, name: sei + ' ' + mei, reason: '同名の生徒が既に登録されています（スキップ）' });
-          skippedCount++;
-          continue;
-        }
-
-        // 連番の最大値を取得
-        existingData.forEach(function(r) {
-          var id = String(r[0] || '');
-          if (id && /^\d+$/.test(id) && id.length < 10) {
-            id = id.padStart(10, '0');
-          }
-          if (id.indexOf(prefix) === 0) {
-            var seq = parseInt(id.slice(prefix.length), 10);
-            if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
-          }
-        });
+      // submitStudentInfo を呼ぶ（重複チェック・連番採番・Firestore書込みを一括処理）
+      var result = submitStudentInfo(year, campusCode, gradeCode, sei, mei, '', '', '');
+      if (result && result.success) {
+        savedCount++;
+      } else {
+        errors.push({ row: i + 1, name: sei + ' ' + mei, reason: (result && result.error) || '登録に失敗しました' });
+        skippedCount++;
       }
-
-      var studentId = prefix + String(maxSeq + 1).padStart(2, '0');
-      var newRow = sheet.getLastRow() + 1;
-      sheet.getRange(newRow, 1, 1, 9).setValues([[
-        studentId,
-        String(campusCode).padStart(2, '0'),
-        sei,
-        mei,
-        '',   // 姓ふりがな（空欄）
-        '',   // 名ふりがな（空欄）
-        '',   // 学校名（空欄）
-        false,
-        new Date().toISOString()
-      ]]);
-      sheet.getRange(newRow, 1).setNumberFormat('@');
-      sheet.getRange(newRow, 2).setNumberFormat('@');
-
-      savedCount++;
     }
 
     return {
       success: true,
-      total: students.length,
-      savedCount: savedCount,
+      total:        students.length,
+      savedCount:   savedCount,
       skippedCount: skippedCount,
-      errors: errors
+      errors:       errors
     };
   } catch (error) {
     Logger.log('❌ bulkImportStudentsエラー: ' + error);
@@ -1956,8 +1871,7 @@ function bulkImportGrades(gradesJson, importYear) {
 // ========================================
 
 /**
- * 生徒の受験情報を生徒マスタに保存する（中3専用）
- * 生徒マスタシートの列10〜16に書き込む
+ * 生徒の受験情報を Firestore の生徒ドキュメントに保存する（中3専用）
  * @aiCallable
  * @param {string} studentId 生徒ID（10桁）
  * @param {string} examDataJson JSON文字列 {jukoukou1, jukoukou1_gakka, jukoukou1_gokaku, ikusei, jukoukou2, jukoukou2_gakka, jukoukou2_gokaku}
@@ -1965,25 +1879,23 @@ function bulkImportGrades(gradesJson, importYear) {
  */
 function saveExamResult(studentId, examDataJson) {
   try {
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
     var examData = safeJsonParse_(examDataJson, {});
-    var ss = getStudentMasterSpreadsheet();
-    var sheet = ss.getSheetByName('生徒一覧');
-    if (!sheet) return { success: false, error: '生徒一覧シートが見つかりません' };
+    var doc = firestoreGet_('students', sid);
+    if (!doc) return { success: false, error: '生徒が見つかりません: ' + sid };
 
-    var rowIndex = findStudentRowIndex_(sheet, studentId);
-    if (rowIndex < 0) return { success: false, error: '生徒が見つかりません: ' + studentId };
+    doc.jukoukou1        = examData.jukoukou1        || '';
+    doc.jukoukou1_gakka  = examData.jukoukou1_gakka  || '';
+    doc.jukoukou1_gokaku = examData.jukoukou1_gokaku || '';
+    doc.ikusei           = examData.ikusei            || '';
+    doc.jukoukou2        = examData.jukoukou2        || '';
+    doc.jukoukou2_gakka  = examData.jukoukou2_gakka  || '';
+    doc.jukoukou2_gokaku = examData.jukoukou2_gokaku || '';
 
-    // 列10〜16に受験情報を書き込む
-    sheet.getRange(rowIndex, 10, 1, 7).setValues([[
-      examData.jukoukou1      || '',
-      examData.jukoukou1_gakka || '',
-      examData.jukoukou1_gokaku || '',
-      examData.ikusei         || '',
-      examData.jukoukou2      || '',
-      examData.jukoukou2_gakka || '',
-      examData.jukoukou2_gokaku || ''
-    ]]);
-
+    firestoreSet_('students', sid, doc);
+    Logger.log('✓ saveExamResult: 保存完了 ' + sid);
     return { success: true, message: '受験情報を保存しました' };
   } catch (error) {
     Logger.log('❌ saveExamResultエラー: ' + error);
@@ -1992,7 +1904,7 @@ function saveExamResult(studentId, examDataJson) {
 }
 
 /**
- * 生徒の受験情報と最新テストの第1志望校を取得する（中3専用）
+ * 生徒の受験情報と最新テストの第1志望校を取得する（中3専用）（Firestore）
  * @aiCallable
  * @param {string} studentId 生徒ID（10桁）
  * @param {number} fiscalYear 年度（例: 2025）
@@ -2000,43 +1912,36 @@ function saveExamResult(studentId, examDataJson) {
  */
 function getStudentExamData(studentId, fiscalYear) {
   try {
-    // 生徒マスタから受験情報（列10〜16）を取得
-    var ss = getStudentMasterSpreadsheet();
-    var sheet = ss.getSheetByName('生徒一覧');
-    var examData = { jukoukou1: '', jukoukou1_gakka: '', jukoukou1_gokaku: '', ikusei: '', jukoukou2: '', jukoukou2_gakka: '', jukoukou2_gokaku: '' };
-    if (sheet) {
-      var rowIndex = findStudentRowIndex_(sheet, studentId);
-      if (rowIndex >= 0) {
-        var row = sheet.getRange(rowIndex, 10, 1, 7).getValues()[0];
-        examData = {
-          jukoukou1:       String(row[0] || ''),
-          jukoukou1_gakka: String(row[1] || ''),
-          jukoukou1_gokaku: String(row[2] || ''),
-          ikusei:          String(row[3] || ''),
-          jukoukou2:       String(row[4] || ''),
-          jukoukou2_gakka: String(row[5] || ''),
-          jukoukou2_gokaku: String(row[6] || '')
-        };
-      }
-    }
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    // Firestore から受験情報を取得
+    var doc = firestoreGet_('students', sid);
+    var emptyExam = { jukoukou1: '', jukoukou1_gakka: '', jukoukou1_gokaku: '', ikusei: '', jukoukou2: '', jukoukou2_gakka: '', jukoukou2_gokaku: '' };
+    var examData = doc ? {
+      jukoukou1:        String(doc.jukoukou1        || ''),
+      jukoukou1_gakka:  String(doc.jukoukou1_gakka  || ''),
+      jukoukou1_gokaku: String(doc.jukoukou1_gokaku || ''),
+      ikusei:           String(doc.ikusei            || ''),
+      jukoukou2:        String(doc.jukoukou2        || ''),
+      jukoukou2_gakka:  String(doc.jukoukou2_gakka  || ''),
+      jukoukou2_gokaku: String(doc.jukoukou2_gokaku || '')
+    } : emptyExam;
 
     // 成績データから最新テストの第1志望校を取得
     var latestGrade = { shogaku1: '', shogaku1_gakka: '' };
     var gradeRows = getDataSheetData(fiscalYear);
     var studentRows = gradeRows.filter(function(r) {
-      var sid = String(r.studentId || '').trim();
-      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-      var target = String(studentId || '').trim();
-      if (/^\d+$/.test(target) && target.length < 10) target = target.padStart(10, '0');
-      return sid === target;
+      var rowSid = String(r.studentId || '').trim();
+      if (/^\d+$/.test(rowSid) && rowSid.length < 10) rowSid = rowSid.padStart(10, '0');
+      return rowSid === sid;
     });
     if (studentRows.length > 0) {
-      // recordedDateで降順ソートして最新を取得
       studentRows.sort(function(a, b) {
         return new Date(b.recordedDate) - new Date(a.recordedDate);
       });
       latestGrade = {
-        shogaku1:       String(studentRows[0].shogaku1 || ''),
+        shogaku1:       String(studentRows[0].shogaku1       || ''),
         shogaku1_gakka: String(studentRows[0].shogaku1_gakka || '')
       };
     }
@@ -2084,33 +1989,26 @@ function getStudentPlacementData(year) {
       gradeMap[sid][testName] = total;
     });
 
-    // 3. 生徒マスタから受験情報（列10〜16）を一括取得
-    // ※ getDataRange() は実データがある列までしか返さないため、常に16列以上を読む
-    var masterSS = getStudentMasterSpreadsheet();
-    var masterSheet = masterSS.getSheetByName('生徒一覧');
-    var masterLastRow = masterSheet.getLastRow();
-    var masterReadCols = Math.max(masterSheet.getLastColumn(), 16);
-    var masterRows = masterLastRow >= 1
-      ? masterSheet.getRange(1, 1, masterLastRow, masterReadCols).getValues()
-      : [];
-
+    // 3. 生徒マスタから受験情報を Firestore で一括取得（中3生のみ）
     var examMap = {};
-    for (var j = 1; j < masterRows.length; j++) {
-      var mRow = masterRows[j];
-      var mSid = String(mRow[0] || '').trim();
-      if (/^\d+$/.test(mSid) && mSid.length < 10) mSid = mSid.padStart(10, '0');
-      if (!mSid) continue;
-
-      examMap[mSid] = {
-        jukoukou1:        String(mRow[9]  || '').trim(),
-        jukoukou1_gakka:  String(mRow[10] || '').trim(),
-        jukoukou1_gokaku: String(mRow[11] || '').trim(),
-        ikusei:           String(mRow[12] || '').trim(),
-        jukoukou2:        String(mRow[13] || '').trim(),
-        jukoukou2_gakka:  String(mRow[14] || '').trim(),
-        jukoukou2_gokaku: String(mRow[15] || '').trim()
-      };
-    }
+    var allDocs = firestoreQuery_('students', [
+      fsFilter_('isDeleted', 'EQUAL', false)
+    ]);
+    allDocs.forEach(function(doc) {
+      var mSid = String(doc.studentId || doc._id || '').trim();
+      if (!mSid) return;
+      if (doc.jukoukou1 || doc.jukoukou1_gokaku || doc.jukoukou2) {
+        examMap[mSid] = {
+          jukoukou1:        String(doc.jukoukou1        || '').trim(),
+          jukoukou1_gakka:  String(doc.jukoukou1_gakka  || '').trim(),
+          jukoukou1_gokaku: String(doc.jukoukou1_gokaku || '').trim(),
+          ikusei:           String(doc.ikusei            || '').trim(),
+          jukoukou2:        String(doc.jukoukou2        || '').trim(),
+          jukoukou2_gakka:  String(doc.jukoukou2_gakka  || '').trim(),
+          jukoukou2_gokaku: String(doc.jukoukou2_gokaku || '').trim()
+        };
+      }
+    });
 
     // 4. 合格可能性計算の準備（志望校設定・塾全体平均・sigmaを使ってon-the-flyで計算）
     //    AI分析シートに頼らないため、進学先が志望校と異なる場合でも計算可能
