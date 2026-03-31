@@ -2433,13 +2433,17 @@ const firebaseConfig = {
 
 ### フェーズ2: Firebase Hosting への完全移行（フェーズ1完了後に着手）
 
-- [ ] **2-1. ビルドスクリプト作成**
-  - GAS HTML テンプレート（`<?!= include(...) ?>`）を展開して静的 HTML に変換する Node.js スクリプト（`build.js`）を作成
-  - `public/` ディレクトリに出力
+- [x] **2-1. ビルドスクリプト作成** ✅ 完了
+  - `scripts/build.js` を作成（Node.js。`<?!= include('filename') ?>` を正規表現で解決し、全21ファイルをインライン展開）
+  - `npm run build` で `public/index.html`（約24,000行）を生成
+  - `package.json` に `"build": "node scripts/build.js"` を追加
+  - `public/` を `.gitignore` に追加（ビルド成果物のため）
+  - `firebase.json` の `"public": "public"` は設定済みのため変更不要
 
-- [ ] **2-2. Firebase Hosting デプロイ設定**
-  - `firebase.json` に Hosting 設定を追加
-  - `deploy-firebase.yml` に Firebase Hosting デプロイステップを追加
+- [x] **2-2. Firebase Hosting デプロイ設定** ✅ 完了
+  - `firebase.json` の `"public": "public"` / `rewrites` は設定済み・変更不要
+  - `deploy-firebase.yml` を更新: `npm run build`（HTMLをインライン展開）→ `firebase deploy --only hosting` を追加
+  - トリガーパスに `*.html` / `scripts/build.js` / `package.json` を追加（ソースHTMLの変更でHostingが自動デプロイ）
 
 - [ ] **2-3. `google.script.run` の fetch() シム実装**
   - `public/js/gas-bridge.js` を作成（既存の全 `google.script.run` 呼び出しをそのまま動かすプロキシ）
