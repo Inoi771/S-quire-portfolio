@@ -118,16 +118,15 @@
         resizeMatPreview();
       }
 
-      google.script.run
-        .withSuccessHandler(function(entries) {
+      fbGetLectureScheduleEntries(lectureId, campusCode)
+        .then(function(entries) {
           matEntriesCache[cacheKey] = entries || [];
           updateMatPreview();
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           console.error('配布物プレビュー エントリ取得失敗:', err);
           updateMatPreview();
-        })
-        .getLectureScheduleEntries(lectureId, campusCode);
+        });
     }
 
     /**
@@ -282,18 +281,17 @@
       if (matEntriesCache[cacheKey]) {
         proceed(matEntriesCache[cacheKey]);
       } else {
-        google.script.run
-          .withSuccessHandler(function(entries) {
+        fbGetLectureScheduleEntries(lectureId, campusCode)
+          .then(function(entries) {
             matEntriesCache[cacheKey] = entries || [];
             proceed(entries || []);
           })
-          .withFailureHandler(function(err) {
+          .catch(function(err) {
             restoreBtn();
             if (printWindow) printWindow.close();
             console.error('エントリ取得失敗:', err);
             appAlert('日程データの取得に失敗しました。');
-          })
-          .getLectureScheduleEntries(lectureId, campusCode);
+          });
       }
     }
 
@@ -881,17 +879,16 @@
       if (matEntriesCache[cacheKey]) {
         proceed(matEntriesCache[cacheKey]);
       } else {
-        google.script.run
-          .withSuccessHandler(function(entries) {
+        fbGetLectureScheduleEntries(lectureId, campusCode)
+          .then(function(entries) {
             matEntriesCache[cacheKey] = entries || [];
             proceed(entries || []);
           })
-          .withFailureHandler(function(err) {
+          .catch(function(err) {
             restoreBtn();
             console.error('エントリ取得失敗:', err);
             appAlert('日程データの取得に失敗しました。');
-          })
-          .getLectureScheduleEntries(lectureId, campusCode);
+          });
       }
     }
 

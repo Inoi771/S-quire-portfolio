@@ -283,8 +283,8 @@
       // 日程データ（マークダウンテーブル形式）
       if (includeSchedule && currentLectureId && campusCode !== 'common') {
         remaining++;
-        google.script.run
-          .withSuccessHandler(function(entries) {
+        fbGetLectureScheduleEntries(currentLectureId, campusCode)
+          .then(function(entries) {
             if (entries && entries.length > 0) {
               scheduleText = '\n\n【講習日程データ】\n';
               scheduleText += '以下のデータを見やすいテーブルでチラシに組み込んでください。\n';
@@ -307,8 +307,7 @@
             remaining--;
             finish();
           })
-          .withFailureHandler(function() { remaining--; finish(); })
-          .getLectureScheduleEntries(currentLectureId, campusCode);
+          .catch(function() { remaining--; finish(); });
       }
 
       // 料金データ（マークダウンテーブル形式）
