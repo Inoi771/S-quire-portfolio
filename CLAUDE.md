@@ -2389,11 +2389,7 @@ const firebaseConfig = {
 
 ### フェーズ1: Firebase Auth + Firestore直接アクセス（GAS配信のまま）
 
-- [ ] **1-1. Firestoreセキュリティルールの更新**
-  - `firestore.rules` ファイルを作成（Firebase Auth で認証済みユーザーのみ読み書き可能）
-  - `firebase.json` を作成
-  - GitHub Actions ワークフロー（`deploy-firebase.yml`）を作成してルールを自動デプロイ
-  - 完了条件: GitHub Actions が成功し Firebase console でルールが反映されていること
+- [x] **1-1. Firestoreセキュリティルールの更新** ✅ 完了
 
 - [ ] **1-2. Firebase SDK を GAS の HTML に追加**
   - `index.html` に Firebase App・Auth・Firestore の CDN script タグを追加
