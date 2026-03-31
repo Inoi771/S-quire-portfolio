@@ -1,0 +1,255 @@
+<script>
+// ===== Firebase 生徒データ クライアントサイド関数 =====
+// firebase-init.html で初期化された fbDb を使用
+
+/**
+ * 内部ヘルパー: Firestoreドキュメントから年度に合わせた生徒データを計算して返す
+ * @param {Object} doc Firestoreドキュメントデータ
+ * @param {string} docId ドキュメントID（studentId）
+ * @param {number} year 対象年度
+ * @return {Object|null} 生徒データ or null（年度範囲外）
+ */
+function fbComputeStudentForYear_(doc, docId, year) {
+  var studentId = String(doc.studentId || docId || '').trim();
+  if (!studentId || studentId.length < 10) return null;
+
+  var registrationYear  = parseInt(studentId.substring(2, 6), 10);
+  var registrationGrade = parseInt(studentId.substring(6, 8), 10);
+  if (isNaN(registrationYear) || isNaN(registrationGrade)) return null;
+
+  var currentGrade = registrationGrade + (parseInt(year, 10) - registrationYear);
+  if (currentGrade < 7 || currentGrade > 18) return null;
+
+  var sei         = String(doc.sei         || '');
+  var mei         = String(doc.mei         || '');
+  var seiFurigana = String(doc.seiFurigana || '');
+  var meiFurigana = String(doc.meiFurigana || '');
+  var campus      = String(doc.campus      || '').padStart(2, '0');
+
+  return {
+    studentId:        studentId,
+    campus:           campus,
+    grade:            String(currentGrade).padStart(2, '0'),
+    sei:              sei,
+    mei:              mei,
+    name:             sei + mei,
+    seiFurigana:      seiFurigana,
+    meiFurigana:      meiFurigana,
+    furigana:         seiFurigana + meiFurigana,
+    schoolName:       String(doc.schoolName  || ''),
+    registrationYear: registrationYear
+  };
+}
+
+/**
+ * アクティブ生徒一覧を取得（Firebase SDK）
+ * @param {number} year 対象年度
+ * @return {Promise<Array>} 生徒データ配列
+ */
+function fbGetMasterData(year) {
+  return fbDb.collection('students')
+    .where('isDeleted', '==', false)
+    .get()
+    .then(function(snapshot) {
+      var results = [];
+      snapshot.forEach(function(docSnap) {
+        var student = fbComputeStudentForYear_(docSnap.data(), docSnap.id, year);
+        if (student) results.push(student);
+      });
+      return results;
+    });
+}
+
+/**
+ * ドロップダウン用の生徒一覧を取得（Firebase SDK）
+ * google.script.run.getStudentsForDropdown の代替
+ * @param {string} campusCode 校舎コード
+ * @param {string|null} gradeCode 学年コード（null/空の場合は全学年）
+ * @param {number} selectedYear 選択年度
+ * @return {Promise<Object>} { success, students, error }
+ */
+function fbGetStudentsForDropdown(campusCode, gradeCode, selectedYear) {
+  return fbGetMasterData(selectedYear)
+    .then(function(masterData) {
+      var targetCampus = String(campusCode).padStart(2, '0');
+      var targetGrade  = gradeCode ? String(gradeCode).padStart(2, '0') : null;
+
+      var students = masterData.filter(function(student) {
+        var campusMatch = student.campus === targetCampus;
+        var gradeMatch  = !targetGrade || student.grade === targetGrade;
+        return campusMatch && gradeMatch;
+      }).map(function(student) {
+        return {
+          studentId:   student.studentId,
+          sei:         student.sei,
+          mei:         student.mei,
+          name:        student.name,
+          seiFurigana: student.seiFurigana,
+          meiFurigana: student.meiFurigana,
+          furigana:    student.furigana,
+          schoolName:  student.schoolName
+        };
+      });
+
+      students.sort(function(a, b) {
+        return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
+      });
+
+      return { success: true, students: students };
+    })
+    .catch(function(err) {
+      console.error('fbGetStudentsForDropdownエラー:', err);
+      return { success: false, error: err.message || String(err), students: [] };
+    });
+}
+
+/**
+ * 削除済み生徒を取得（Firebase SDK）
+ * google.script.run.getDeletedStudents の代替
+ * @param {string} campusCode 校舎コード（空=全校舎）
+ * @param {string|null} gradeCode 学年コード
+ * @param {number|null} selectedYear 年度
+ * @return {Promise<Object>} { success, students, error }
+ */
+function fbGetDeletedStudents(campusCode, gradeCode, selectedYear) {
+  return fbDb.collection('students')
+    .where('isDeleted', '==', true)
+    .get()
+    .then(function(snapshot) {
+      var students = [];
+      snapshot.forEach(function(docSnap) {
+        var doc = docSnap.data();
+        var studentId = String(doc.studentId || docSnap.id || '').trim();
+        if (!studentId || studentId.length < 10) return;
+
+        var regYear  = parseInt(studentId.substring(2, 6), 10);
+        var regGrade = parseInt(studentId.substring(6, 8), 10);
+        var rowCampus = String(doc.campus || '').padStart(2, '0');
+
+        if (campusCode && rowCampus !== String(campusCode).padStart(2, '0')) return;
+        if (selectedYear && regYear !== parseInt(selectedYear, 10)) return;
+
+        if (gradeCode && selectedYear) {
+          var calcGrade = regGrade + (parseInt(selectedYear, 10) - regYear);
+          if (String(calcGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
+        } else if (gradeCode && !selectedYear) {
+          if (String(regGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
+        }
+
+        students.push({
+          studentId:         studentId,
+          campus:            rowCampus,
+          name:              String(doc.sei || '') + String(doc.mei || ''),
+          furigana:          String(doc.seiFurigana || '') + String(doc.meiFurigana || ''),
+          schoolName:        String(doc.schoolName || ''),
+          registrationYear:  regYear,
+          registrationGrade: regGrade
+        });
+      });
+
+      students.sort(function(a, b) {
+        return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
+      });
+
+      return { success: true, students: students };
+    })
+    .catch(function(err) {
+      console.error('fbGetDeletedStudentsエラー:', err);
+      return { success: false, error: err.message || String(err), students: [] };
+    });
+}
+
+/**
+ * 一覧表用：生徒マスタと成績データを結合して返す（Firebase SDK）
+ * google.script.run.getStudentListWithGrades の代替
+ * @param {number} year 年度
+ * @param {string} testName テスト名
+ * @return {Promise<Object>} { success, students, error }
+ */
+function fbGetStudentListWithGrades(year, testName) {
+  var targetTest = String(testName || '').trim();
+  var yearInt    = parseInt(year, 10);
+
+  return Promise.all([
+    fbGetMasterData(year),
+    fbDb.collection('grades')
+      .where('fiscalYear', '==', yearInt)
+      .where('testName', '==', targetTest)
+      .get(),
+    fbDb.collection('studentAnalysis')
+      .where('testName', '==', targetTest)
+      .where('year', '==', yearInt)
+      .get()
+  ]).then(function(results) {
+    var masterData   = results[0];
+    var gradesSnap   = results[1];
+    var analysisSnap = results[2];
+
+    // 成績データのマップ作成（studentId → 成績ドキュメント）
+    var gradeMap = {};
+    gradesSnap.forEach(function(docSnap) {
+      var doc = docSnap.data();
+      var sid = String(doc.studentId || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      if (sid && !gradeMap[sid]) gradeMap[sid] = doc;
+    });
+
+    // AI分析データのマップ作成（studentId|testName → {schoolName: percent}）
+    var analysisPassMap = {};
+    analysisSnap.forEach(function(docSnap) {
+      var doc = docSnap.data();
+      var sid = String(doc.studentId || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      var tname = String(doc.testName || '').trim();
+      if (!sid || !tname) return;
+      var data = null;
+      try {
+        data = typeof doc.analysisJson === 'string' ? JSON.parse(doc.analysisJson) : doc.analysisJson;
+      } catch (e) {}
+      if (!data || !Array.isArray(data.passAssessment)) return;
+      var m = {};
+      data.passAssessment.forEach(function(pa) {
+        if (pa.schoolName && pa.probability && pa.probability.percent != null) {
+          m[pa.schoolName] = pa.probability.percent;
+        }
+      });
+      analysisPassMap[sid + '|' + tname] = m;
+    });
+
+    var students = masterData.map(function(student) {
+      var g = gradeMap[String(student.studentId)] || null;
+      var aKey = String(student.studentId) + '|' + targetTest;
+      var aEntry = analysisPassMap[aKey] || {};
+      return {
+        studentId:      student.studentId,
+        name:           student.name,
+        furigana:       student.furigana,
+        seiFurigana:    student.seiFurigana,
+        meiFurigana:    student.meiFurigana,
+        campus:         student.campus,
+        grade:          student.grade,
+        schoolName:     student.schoolName,
+        kokugo:         g ? (g.kokugo  != null ? g.kokugo  : '') : '',
+        shakai:         g ? (g.shakai  != null ? g.shakai  : '') : '',
+        sugaku:         g ? (g.sugaku  != null ? g.sugaku  : '') : '',
+        rika:           g ? (g.rika    != null ? g.rika    : '') : '',
+        eigo:           g ? (g.eigo    != null ? g.eigo    : '') : '',
+        total:          g ? (g.total   != null ? g.total   : '') : '',
+        average:        g ? (g.average != null ? g.average : '') : '',
+        shogaku1:       g ? (g.shogaku1       || '') : '',
+        shogaku1_gakka: g ? (g.shogaku1_gakka || '') : '',
+        shogaku2:       g ? (g.shogaku2       || '') : '',
+        shogaku2_gakka: g ? (g.shogaku2_gakka || '') : '',
+        hasGrade:       g !== null,
+        passPercent1:   (g && g.shogaku1 && aEntry[g.shogaku1] != null) ? aEntry[g.shogaku1] : null,
+        passPercent2:   (g && g.shogaku2 && aEntry[g.shogaku2] != null) ? aEntry[g.shogaku2] : null
+      };
+    });
+
+    return { success: true, students: students };
+  }).catch(function(err) {
+    console.error('fbGetStudentListWithGradesエラー:', err);
+    return { success: false, error: err.message || String(err), students: [] };
+  });
+}
+</script>

@@ -199,8 +199,8 @@ function loadDropdownData(onComplete) {
       document.getElementById('student-candidates').innerHTML =
         '<p style="padding:12px; color:#999; font-size:13px;">読み込み中...</p>';
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetStudentsForDropdown(campusCode, gradeCode, currentFiscalYear)
+        .then(function(result) {
           currentStudentList = result.success ? result.students : [];
           // 選択状態をリセットしてカードを表示
           document.getElementById('selected-student-badge').style.display = 'none';
@@ -209,11 +209,10 @@ function loadDropdownData(onComplete) {
           document.getElementById('input-details-section').style.display = 'none';
           renderCandidates(currentStudentList);
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           document.getElementById('student-candidates').innerHTML =
             '<p style="padding:12px; color:#e53935; font-size:13px;">取得エラー: ' + err + '</p>';
-        })
-        .getStudentsForDropdown(campusCode, gradeCode, currentFiscalYear);
+        });
     }
 
     function renderCandidates(students) {
@@ -725,8 +724,8 @@ function loadDropdownData(onComplete) {
       list.innerHTML = '<p style="color:#999; font-size:13px;">読み込み中...</p>';
       msg.innerHTML  = '';
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetDeletedStudents(campusCode || null, gradeCode || null, currentFiscalYear)
+        .then(function(result) {
           if (!result.success) {
             msg.innerHTML = '<p style="color:#e53935; font-size:13px;">エラー: ' + result.error + '</p>';
             list.innerHTML = '';
@@ -758,12 +757,11 @@ function loadDropdownData(onComplete) {
           html += '</tbody></table>';
           list.innerHTML = html;
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           document.getElementById('deleted-message').innerHTML =
             '<p style="color:#e53935; font-size:13px;">エラー: ' + err + '</p>';
           list.innerHTML = '';
-        })
-        .getDeletedStudents(campusCode || null, gradeCode || null, currentFiscalYear);
+        });
     }
 
     function doRestoreStudent(studentId, name) {
@@ -828,8 +826,8 @@ function onScoreGradeChanged() {
 
   document.getElementById('score-student').innerHTML = '<option value="">読み込み中...</option>';
 
-  google.script.run
-    .withSuccessHandler(function(result) {
+  fbGetStudentsForDropdown(campusCode, gradeCode, currentFiscalYear)
+    .then(function(result) {
       if (result.success) {
         populateStudentDropdown(result.students);
       } else {
@@ -838,12 +836,11 @@ function onScoreGradeChanged() {
       }
       updateGradeTemplateBtnState();
     })
-    .withFailureHandler(function(err) {
+    .catch(function(err) {
       showMessage('score-message', 'エラー: ' + err, 'error');
       document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
       updateGradeTemplateBtnState();
-    })
-    .getStudentsForDropdown(campusCode, gradeCode, currentFiscalYear);
+    });
 }
 
 function getCampusNameFromCode(code) {
@@ -1440,8 +1437,8 @@ function generateGradeTemplate(mode) {
     updateGradeTemplateBtnState();
   }
 
-  google.script.run
-    .withSuccessHandler(function(result) {
+  fbGetStudentsForDropdown(campusCode, gradeCode, year)
+    .then(function(result) {
       if (!result.success) {
         restoreBtn();
         if (printWindow) printWindow.close();
@@ -1450,12 +1447,11 @@ function generateGradeTemplate(mode) {
       }
       renderGradeTemplatePDF(result.students, year, testName, campusName, gradeName, mode, printWindow, restoreBtn);
     })
-    .withFailureHandler(function(err) {
+    .catch(function(err) {
       restoreBtn();
       if (printWindow) printWindow.close();
       appAlert('エラー: ' + err);
-    })
-    .getStudentsForDropdown(campusCode, gradeCode, year);
+    });
 }
 
 /**
@@ -1849,18 +1845,17 @@ document.addEventListener('DOMContentLoaded', function() {
             updateScoreSubmitBtn(false);
             var _campusCode = document.getElementById('score-campus').value;
             var _gradeCode  = document.getElementById('score-grade').value;
-            google.script.run
-              .withSuccessHandler(function(r) {
+            fbGetStudentsForDropdown(_campusCode, _gradeCode, currentFiscalYear)
+              .then(function(r) {
                 if (r.success) {
                   populateStudentDropdown(r.students);
                 } else {
                   document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
                 }
               })
-              .withFailureHandler(function() {
+              .catch(function() {
                 document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
-              })
-              .getStudentsForDropdown(_campusCode, _gradeCode, currentFiscalYear);
+              });
           } else {
             showMessage('score-message', 'エラー: ' + result.error, 'error');
           }

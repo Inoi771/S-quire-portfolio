@@ -171,8 +171,8 @@
       container.innerHTML = '<p style="padding:16px;color:#999;font-size:14px;">読み込み中...</p>';
       document.getElementById('list-count-label').style.display = 'none';
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetStudentListWithGrades(year, testName)
+        .then(function(result) {
           if (!result.success) {
             container.innerHTML = '<p style="padding:16px;color:#e53935;">エラー: ' + result.error + '</p>';
             return;
@@ -187,10 +187,9 @@
           if (rb) { rb.disabled = false; rb.style.opacity = '1'; rb.style.cursor = 'pointer'; }
           if (ra) { ra.disabled = false; ra.style.opacity = '1'; ra.style.cursor = 'pointer'; }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           container.innerHTML = '<p style="padding:16px;color:#e53935;">通信エラー: ' + err + '</p>';
-        })
-        .getStudentListWithGrades(year, testName);
+        });
     }
 
     /**
