@@ -1,0 +1,100 @@
+<script>
+// ===== Google Apps Script Bridge（Firebase Hosting 用シム） =====
+// Firebase Hosting で動作するとき、google.script.run を fetch() に置き換える。
+// GAS 環境（doGet() で配信）では何もしない。
+
+(function() {
+  // GAS 環境ではネイティブ実装がすでに存在するためスキップ
+  if (typeof google !== 'undefined' && google.script && google.script.run) return;
+
+  // GAS メインアプリのデプロイ URL（doPost() で API 呼び出しを受け付ける）
+  var GAS_EXEC_URL = 'https://script.google.com/macros/s/' +
+    'AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ/exec';
+
+  /**
+   * Firebase ID トークンを取得する（firebase-auth.html の fbGetIdToken を使用）
+   * @return {Promise<string>}
+   */
+  function getToken_() {
+    if (typeof window.fbGetIdToken === 'function') {
+      return window.fbGetIdToken(false).catch(function() { return ''; });
+    }
+    return Promise.resolve('');
+  }
+
+  /**
+   * GAS 関数を fetch で呼び出す
+   * text/plain を使い CORS プリフライトを回避（GAS exec URL の制約）
+   * @param {string} funcName  呼び出す GAS 関数名
+   * @param {Array}  args      引数の配列
+   * @param {Function|null} successFn
+   * @param {Function|null} failureFn
+   */
+  function callGas_(funcName, args, successFn, failureFn) {
+    getToken_().then(function(idToken) {
+      return fetch(GAS_EXEC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          type: 'gasApi',
+          function: funcName,
+          args: args,
+          idToken: idToken || ''
+        }),
+        redirect: 'follow'
+      });
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(result) {
+      if (result && result.__gasError) {
+        if (failureFn) failureFn(new Error(result.__gasError));
+      } else {
+        if (successFn) successFn(result);
+      }
+    })
+    .catch(function(err) {
+      console.error('[gas-bridge] fetch エラー:', funcName, err);
+      if (failureFn) failureFn(err);
+    });
+  }
+
+  /**
+   * ランナーオブジェクトを生成する。
+   * withSuccessHandler() / withFailureHandler() で新しいランナーを返し、
+   * それ以外のプロパティアクセスを GAS 関数呼び出しとして扱う（Proxy）。
+   * @param {Function|null} sFn  成功ハンドラ
+   * @param {Function|null} fFn  失敗ハンドラ
+   */
+  function makeRunner_(sFn, fFn) {
+    return new Proxy({}, {
+      get: function(_, prop) {
+        if (prop === 'withSuccessHandler') {
+          return function(fn) { return makeRunner_(fn, fFn); };
+        }
+        if (prop === 'withFailureHandler') {
+          return function(fn) { return makeRunner_(sFn, fn); };
+        }
+        // それ以外は GAS 関数名として扱う
+        return function() {
+          var args = Array.prototype.slice.call(arguments);
+          callGas_(prop, args, sFn, fFn);
+        };
+      }
+    });
+  }
+
+  // google.script.run をインストール
+  window.google = window.google || {};
+  window.google.script = window.google.script || {};
+  window.google.script.run = makeRunner_(null, null);
+
+  // google.script.host スタブ（アプリの一部が close() などを呼ぶ場合に備えて）
+  window.google.script.host = {
+    close:     function() {},
+    setHeight: function() {},
+    setWidth:  function() {}
+  };
+
+  console.log('[gas-bridge] google.script.run シムをインストールしました');
+})();
+</script>
