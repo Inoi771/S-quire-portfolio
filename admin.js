@@ -877,33 +877,21 @@ function getDefaultDept(schoolName, schoolLookup) {
  */
 function recordOperationLog(action, details, status) {
   try {
-    var ss = getOrCreateOperationLogSheet();
-    if (!ss) {
-      Logger.log('⚠ 操作ログの記録に失敗');
-      return;
-    }
-    
-    var sheet = ss.getSheetByName('操作ログ');
-    if (!sheet) {
-      Logger.log('⚠ 操作ログシートが見つかりません');
-      return;
-    }
-    
+    var now = new Date();
     var userEmail = getCurrentUserEmail();
     var teacherId = '';
     try { teacherId = getCurrentTeacherId_(); } catch(e) {}
     var userRole = isAdmin() ? '🔐 Admin' : '👤 User';
-    var detailsStr = JSON.stringify(details);
-
-    sheet.appendRow([
-      new Date().toISOString(),
-      teacherId || userEmail,
-      userRole,
-      action,
-      detailsStr,
-      status || '成功'
-    ]);
-    
+    // タイムスタンプ＋ランダム文字列でユニークなDocID生成
+    var docId = 'log_' + now.getTime() + '_' + Math.random().toString(36).substring(2, 7);
+    firestoreSet_('operationLogs', docId, {
+      timestamp: now.toISOString(),
+      userId: teacherId || userEmail,
+      userRole: userRole,
+      action: action || '',
+      details: JSON.stringify(details),
+      status: status || '成功'
+    });
   } catch (error) {
     Logger.log('❌ recordOperationLogエラー: ' + error);
   }
@@ -964,27 +952,16 @@ function getOrCreateOperationLogSheet() {
  */
 function recordInitializationLog(status, details) {
   try {
-    var ss = getOrCreateOperationLogSheet();
-    if (!ss) {
-      Logger.log('⚠ 初期化ログの記録に失敗');
-      return;
-    }
-    
-    var sheet = ss.getSheetByName('操作ログ');
-    if (!sheet) {
-      Logger.log('⚠ 操作ログシートが見つかりません');
-      return;
-    }
-    
-    sheet.appendRow([
-      new Date().toISOString(),
-      'system',
-      'システム',
-      '初期化',
-      details,
-      status
-    ]);
-    
+    var now = new Date();
+    var docId = 'log_' + now.getTime() + '_' + Math.random().toString(36).substring(2, 7);
+    firestoreSet_('operationLogs', docId, {
+      timestamp: now.toISOString(),
+      userId: 'system',
+      userRole: 'システム',
+      action: '初期化',
+      details: String(details || ''),
+      status: status || '成功'
+    });
   } catch (error) {
     Logger.log('❌ recordInitializationLogエラー: ' + error);
   }
@@ -1407,23 +1384,14 @@ function importScheduleFromGoogleSheetsWithAI(sheetId, schoolInfo, year) {
       return { success: false, error: '予定が抽出されませんでした' };
     }
 
-    // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'Google Sheets import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'Google Sheets import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
 
@@ -1458,22 +1426,14 @@ function importScheduleFromCSVWithAI(file, schoolInfo, year) {
     }
 
     // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'CSV import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'CSV import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
 
@@ -1504,26 +1464,17 @@ function importScheduleFromPDFWithAI(file, schoolInfo, year) {
       return { success: false, error: '予定が抽出されませんでした' };
     }
 
-    // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'PDF import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'PDF import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
-    
+
   } catch (error) {
     Logger.log('❌ importScheduleFromPDFWithAI: ' + error);
     return { success: false, error: error.toString() };

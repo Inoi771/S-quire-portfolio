@@ -1,4 +1,5 @@
 
+
 // ========================================
 // 【migrate.js】Firestore 移行スクリプト
 // ========================================
@@ -13,6 +14,14 @@
 //       migrateSchoolAveragesToFirestore() 学校別平均点 → schoolAverages
 //       migrateTestAnalysisToFirestore()   AI分析 → testAnalysis
 //       migrateStudentAnalysisToFirestore() 生徒別AI分析 → studentAnalysis
+//   Phase 4: migrateSchedulesToFirestore()     ← 予定データを schedules コレクションへ移行
+//            migrateLectureEntriesToFirestore() ← 講習スケジュールを lectureEntries コレクションへ移行
+//   Phase 5: migrateLineSchedulesToFirestore() ← LINEスケジューラーを lineSchedules コレクションへ移行
+//            migrateFlyerAiToFirestore()        ← チラシAIデータを flyerAi コレクションへ移行
+//            migrateImageTagsToFirestore()      ← 画像タグを imageTags コレクションへ移行
+//            migrateTransferCodesToFirestore()  ← 引き継ぎデータを transferCodes コレクションへ移行
+//            migrateBlockedAccountsToFirestore() ← ブロックアカウントを blockedAccounts コレクションへ移行
+//            migrateOperationLogsToFirestore()  ← 操作ログを operationLogs コレクションへ移行
 // ========================================
 
 // ========================================
@@ -684,4 +693,501 @@ function migrateAllGradeDataToFirestore() {
     testAnalysis:   testAnalysis,
     studentAnalysis: studentAnalysis
   };
+}
+
+// ========================================
+// Phase 4: 予定データ移行
+// ========================================
+
+/**
+ * スプレッドシートの予定データを Firestore の schedules コレクションへ一括移行する
+ * 全年度フォルダの「{年度}年度_予定データ」シートを読み込む（べき等・再実行可能）
+ * Admin のみ実行可能
+ * @return {Object} { success, totalYears, savedDocs, errors }
+ */
+function migrateSchedulesToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  Logger.log('=== migrateSchedulesToFirestore 開始 ===');
+
+  try {
+    var scheduleFolder = getScheduleFolder();
+    if (!scheduleFolder) return { success: false, error: '月間スケジュールフォルダが見つかりません' };
+
+    var yearFolders = scheduleFolder.getFolders();
+    var years = [];
+    while (yearFolders.hasNext()) {
+      var yf = yearFolders.next();
+      var fn = yf.getName();
+      if (/^\d{4}$/.test(fn)) years.push({ name: fn, folder: yf });
+    }
+
+    if (years.length === 0) {
+      Logger.log('⚠ 年度フォルダが見つかりません');
+      return { success: true, totalYears: 0, savedDocs: 0, errors: [] };
+    }
+
+    var totalSaved = 0;
+    var errors = [];
+
+    years.forEach(function(y) {
+      var baseYear = parseInt(y.name);
+      try {
+        var file = getFileByName(y.folder, baseYear + '年度_予定データ');
+        if (!file) {
+          Logger.log('⚠ ' + baseYear + '年度: スプレッドシートが見つかりません（スキップ）');
+          return;
+        }
+
+        var ss = SpreadsheetApp.openById(file.getId());
+        var sheet = ss.getSheetByName('予定一覧');
+        if (!sheet || sheet.getLastRow() < 2) {
+          Logger.log('⚠ ' + baseYear + '年度: データが0件（スキップ）');
+          return;
+        }
+
+        // 列構成: [0] 更新日時 [1] 学校名 [2] イベント名 [3] 月日 [4] 詳細 [5] 情報源
+        var numCols = Math.min(sheet.getLastColumn(), 6);
+        var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+
+        var writes = [];
+        rows.forEach(function(row) {
+          try {
+            var monthDay  = String(row[3] || '').trim().replace(/\d{4}年/g, '');
+            if (!monthDay) return; // 日付なしはスキップ
+            var schoolName = String(row[1] || '');
+            var eventType  = String(row[2] || '');
+            var details    = String(row[4] || '');
+            var source     = String(row[5] || '');
+            // 更新日時（スプレッドシートの Cell A列）を timestamp に使う
+            var ts = row[0] ? new Date(row[0]).toISOString() : new Date().toISOString();
+
+            // DocId 計算（saveScheduleEntryToFirestore_ と同じロジック）
+            var cleanDateStr = monthDay;
+            var monthMatch = cleanDateStr.match(/(\d{1,2})月/);
+            var month = monthMatch ? parseInt(monthMatch[1]) : 0;
+            var actualYear = (month >= 1 && month <= 3) ? baseYear + 1 : baseYear;
+            var scheduleDisplay = actualYear + '年' + cleanDateStr;
+
+            var docId;
+            if (source === 'Admin 直接入力') {
+              // 旧スプレッドシートの admin エントリ: timestamp ms を DocId に使用
+              var tMs = row[0] ? new Date(row[0]).getTime() : Date.now();
+              docId = makeScheduleSafeId_(baseYear) + '_admin_' + tMs;
+            } else {
+              docId = makeScheduleSafeId_(baseYear) + '_' + makeScheduleSafeId_(schoolName) + '_' +
+                      makeScheduleSafeId_(eventType) + '_' + makeScheduleSafeId_(cleanDateStr);
+            }
+
+            writes.push({
+              collection: 'schedules',
+              docId: docId,
+              data: {
+                fiscalYear:      baseYear,
+                schoolName:      schoolName,
+                eventType:       eventType,
+                dateStr:         cleanDateStr,
+                details:         details,
+                source:          source,
+                timestamp:       ts,
+                scheduleDisplay: scheduleDisplay
+              }
+            });
+          } catch (rowErr) {
+            Logger.log('⚠ ' + baseYear + '年度 行エラー: ' + rowErr);
+          }
+        });
+
+        if (writes.length === 0) {
+          Logger.log('⚠ ' + baseYear + '年度: 有効な行が0件');
+          return;
+        }
+
+        // バッチサイズ 400 で分割
+        var BATCH = 400;
+        for (var i = 0; i < writes.length; i += BATCH) {
+          var chunk = writes.slice(i, i + BATCH);
+          var result = firestoreBatchWrite_(chunk);
+          totalSaved += chunk.length;
+          if (result.errors && result.errors.length > 0) {
+            errors = errors.concat(result.errors.map(function(e) { return baseYear + '年度: ' + e; }));
+          }
+          if (i + BATCH < writes.length) Utilities.sleep(500);
+        }
+        Logger.log('✓ ' + baseYear + '年度: ' + writes.length + '件保存');
+
+      } catch (yearErr) {
+        Logger.log('❌ ' + baseYear + '年度エラー: ' + yearErr);
+        errors.push(baseYear + '年度: ' + yearErr.toString());
+      }
+    });
+
+    Logger.log('=== migrateSchedulesToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, totalYears: years.length, savedDocs: totalSaved, errors: errors };
+
+  } catch (error) {
+    Logger.log('❌ migrateSchedulesToFirestoreエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ========================================
+// Phase 4-B: 講習スケジュールエントリ移行
+// ========================================
+
+/**
+ * スプレッドシートの講習スケジュールエントリを Firestore の lectureEntries コレクションへ一括移行する
+ * 「講習管理/スケジュールデータ」スプレッドシートの「スケジュール一覧」シートを読み込む（べき等・再実行可能）
+ * Admin のみ実行可能
+ * @return {Object} { success, savedDocs, errors }
+ */
+function migrateLectureEntriesToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  Logger.log('=== migrateLectureEntriesToFirestore 開始 ===');
+
+  try {
+    var ss = getLectureScheduleSpreadsheet_();
+    if (!ss) return { success: false, error: '講習スケジュールスプレッドシートが見つかりません' };
+
+    var sheet = ss.getSheetByName('スケジュール一覧');
+    if (!sheet || sheet.getLastRow() < 2) {
+      Logger.log('⚠ スケジュール一覧にデータがありません');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    // 列構成: entryId[0] lectureId[1] campusCode[2] date[3] startTime[4]
+    //         durationSlots[5] subject[6] grade[7] teacherName[8] teacherEmail[9]
+    //         classLabel[10] teacherId[11]
+    var numCols = Math.min(sheet.getLastColumn(), 12);
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+
+    var writes = [];
+    var errors = [];
+
+    rows.forEach(function(row, idx) {
+      try {
+        var entryId = String(row[0] || '').trim();
+        if (!entryId) return; // entryId 空はスキップ
+        var lectureId = String(row[1] || '').trim();
+        if (!lectureId) return;
+
+        var campusRaw = String(row[2] || '').trim();
+        var normalizedCampus = campusRaw;
+        if (/^\d+$/.test(campusRaw) && campusRaw.length < 2) {
+          normalizedCampus = campusRaw.padStart(2, '0');
+        }
+
+        var docId = lectureId + '_' + normalizedCampus + '_' + entryId;
+
+        writes.push({
+          collection: 'lectureEntries',
+          docId: docId,
+          data: {
+            entryId:       entryId,
+            lectureId:     lectureId,
+            campusCode:    normalizedCampus,
+            date:          normalizeLecDate_(row[3]),
+            startTime:     normalizeLecTime_(row[4]),
+            durationSlots: Number(row[5]) || 9,
+            subject:       String(row[6] || ''),
+            grade:         String(row[7] || ''),
+            teacherName:   String(row[8] || ''),
+            teacherEmail:  String(row[9] || ''),
+            classLabel:    row[10] ? String(row[10]) : null,
+            teacherId:     numCols >= 12 ? String(row[11] || '') : ''
+          }
+        });
+      } catch (rowErr) {
+        errors.push('行' + (idx + 2) + ': ' + rowErr.toString());
+        Logger.log('⚠ 行' + (idx + 2) + ' エラー: ' + rowErr);
+      }
+    });
+
+    if (writes.length === 0) {
+      Logger.log('⚠ 有効な行が0件');
+      return { success: true, savedDocs: 0, errors: errors };
+    }
+
+    var BATCH = 400;
+    var totalSaved = 0;
+    for (var i = 0; i < writes.length; i += BATCH) {
+      var chunk = writes.slice(i, i + BATCH);
+      var result = firestoreBatchWrite_(chunk);
+      totalSaved += chunk.length;
+      if (result.errors && result.errors.length > 0) {
+        errors = errors.concat(result.errors);
+      }
+      if (i + BATCH < writes.length) Utilities.sleep(500);
+    }
+
+    Logger.log('=== migrateLectureEntriesToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, savedDocs: totalSaved, errors: errors };
+
+  } catch (error) {
+    Logger.log('❌ migrateLectureEntriesToFirestoreエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ========================================
+// Phase 5: LINEスケジューラー移行
+// ========================================
+
+/**
+ * スプレッドシートの LINEスケジューラー データを Firestore lineSchedules コレクションへ一括移行
+ * Admin のみ実行可能
+ * @return {Object} { success, savedDocs, errors }
+ */
+function migrateLineSchedulesToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  Logger.log('=== migrateLineSchedulesToFirestore 開始 ===');
+
+  try {
+    var sheet = getLineSchedulerSheet_();
+    if (!sheet) {
+      Logger.log('⚠ LINEスケジューラーシートが存在しません。スキップします。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log('⚠ LINEスケジューラーシートにデータがありません。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var writes = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var id = String(row[0] || '').trim();
+      if (!id) continue;
+
+      var recipientsArr = [];
+      try { recipientsArr = JSON.parse(row[3] || '[]'); } catch(e) {}
+
+      // scheduledAt: Sheetsが日付型として読み込む場合があるため対応
+      var rawSat = row[4];
+      var scheduledAt;
+      if (rawSat instanceof Date) {
+        scheduledAt = Utilities.formatDate(rawSat, 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss+09:00");
+      } else {
+        scheduledAt = rawSat ? String(rawSat) : '';
+      }
+
+      var msgType = String(row[1] || '');
+      if (msgType === 'shimurocho') msgType = 'shitsucho'; // 旧名称を正規化
+
+      writes.push({
+        collection: 'lineSchedules',
+        docId: id,
+        data: {
+          id: id,
+          type: msgType,
+          yearMonth: String(row[2] || ''),
+          recipients: recipientsArr,
+          scheduledAt: scheduledAt,
+          message: String(row[5] || ''),
+          sent: (row[6] === true || row[6] === 'TRUE'),
+          sentAt: row[7] ? String(row[7]) : '',
+          createdAt: row[8] ? String(row[8]) : ''
+        }
+      });
+    }
+
+    if (writes.length === 0) {
+      Logger.log('⚠ 移行対象データなし');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var errors = [];
+    var BATCH = 400;
+    var totalSaved = 0;
+    for (var j = 0; j < writes.length; j += BATCH) {
+      var chunk = writes.slice(j, j + BATCH);
+      var result = firestoreBatchWrite_(chunk);
+      totalSaved += chunk.length;
+      if (result.errors && result.errors.length > 0) errors = errors.concat(result.errors);
+      if (j + BATCH < writes.length) Utilities.sleep(500);
+    }
+
+    Logger.log('=== migrateLineSchedulesToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, savedDocs: totalSaved, errors: errors };
+
+  } catch(e) {
+    Logger.log('❌ migrateLineSchedulesToFirestoreエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ========================================
+// Phase 5: チラシAIデータ移行
+// ========================================
+
+/**
+ * スプレッドシートのチラシAIデータを Firestore flyerAi コレクションへ一括移行
+ * Admin のみ実行可能
+ * @return {Object} { success, savedDocs, errors }
+ */
+function migrateFlyerAiToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  Logger.log('=== migrateFlyerAiToFirestore 開始 ===');
+
+  try {
+    var sheet = getFlyerAiSheet_();
+    if (!sheet) {
+      Logger.log('⚠ チラシAIシートが存在しません。スキップします。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log('⚠ チラシAIシートにデータがありません。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var writes = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var id = String(row[0] || '').trim();
+      if (!id) continue;
+
+      var chatHistory = [];
+      try { chatHistory = JSON.parse(row[4] || '[]'); } catch(e) {}
+
+      writes.push({
+        collection: 'flyerAi',
+        docId: id,
+        data: {
+          id: id,
+          lectureId: String(row[1] || ''),
+          campusCode: String(row[2] || ''),
+          html: String(row[3] || ''),
+          chatHistory: chatHistory,
+          updatedAt: row[5] ? String(row[5]) : '',
+          updatedBy: row[6] ? String(row[6]) : ''
+        }
+      });
+    }
+
+    if (writes.length === 0) {
+      Logger.log('⚠ 移行対象データなし');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var errors = [];
+    var BATCH = 400;
+    var totalSaved = 0;
+    for (var j = 0; j < writes.length; j += BATCH) {
+      var chunk = writes.slice(j, j + BATCH);
+      var result = firestoreBatchWrite_(chunk);
+      totalSaved += chunk.length;
+      if (result.errors && result.errors.length > 0) errors = errors.concat(result.errors);
+      if (j + BATCH < writes.length) Utilities.sleep(500);
+    }
+
+    Logger.log('=== migrateFlyerAiToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, savedDocs: totalSaved, errors: errors };
+
+  } catch(e) {
+    Logger.log('❌ migrateFlyerAiToFirestoreエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ========================================
+// Phase 5: 画像タグデータ移行
+// ========================================
+
+/**
+ * スプレッドシートの画像タグデータを Firestore imageTags コレクションへ一括移行
+ * Admin のみ実行可能
+ * @return {Object} { success, savedDocs, errors }
+ */
+function migrateImageTagsToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  Logger.log('=== migrateImageTagsToFirestore 開始 ===');
+
+  try {
+    var sheet = getFlyerImageTagSheet_();
+    if (!sheet) {
+      Logger.log('⚠ 画像タグシートが存在しません。スキップします。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log('⚠ 画像タグシートにデータがありません。');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var writes = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var fileId = String(row[0] || '').trim();
+      if (!fileId) continue;
+
+      writes.push({
+        collection: 'imageTags',
+        docId: fileId,
+        data: {
+          fileId: fileId,
+          fileName: String(row[1] || ''),
+          tags: String(row[2] || ''),
+          updatedAt: row[3] ? String(row[3]) : ''
+        }
+      });
+    }
+
+    if (writes.length === 0) {
+      Logger.log('⚠ 移行対象データなし');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    var errors = [];
+    var BATCH = 400;
+    var totalSaved = 0;
+    for (var j = 0; j < writes.length; j += BATCH) {
+      var chunk = writes.slice(j, j + BATCH);
+      var result = firestoreBatchWrite_(chunk);
+      totalSaved += chunk.length;
+      if (result.errors && result.errors.length > 0) errors = errors.concat(result.errors);
+      if (j + BATCH < writes.length) Utilities.sleep(500);
+    }
+
+    Logger.log('=== migrateImageTagsToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, savedDocs: totalSaved, errors: errors };
+
+  } catch(e) {
+    Logger.log('❌ migrateImageTagsToFirestoreエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ========================================
+// Phase 5: 一括実行ヘルパー
+// ========================================
+
+/**
+ * Phase 5 の全移行を一括実行する
+ * Admin のみ実行可能
+ * @return {Object} { success, results }
+ */
+function migrateAllPhase5ToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  Logger.log('=== migrateAllPhase5ToFirestore 開始 ===');
+
+  var results = {};
+
+  results.lineSchedules = migrateLineSchedulesToFirestore();
+  Logger.log('lineSchedules: ' + JSON.stringify(results.lineSchedules));
+
+  results.flyerAi = migrateFlyerAiToFirestore();
+  Logger.log('flyerAi: ' + JSON.stringify(results.flyerAi));
+
+  results.imageTags = migrateImageTagsToFirestore();
+  Logger.log('imageTags: ' + JSON.stringify(results.imageTags));
+
+  var allSuccess = Object.keys(results).every(function(k) { return results[k].success; });
+  Logger.log('=== migrateAllPhase5ToFirestore 完了: ' + (allSuccess ? '全成功' : '一部失敗') + ' ===');
+  return { success: allSuccess, results: results };
 }
