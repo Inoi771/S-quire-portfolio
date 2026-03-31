@@ -362,7 +362,7 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 16**
+**現在のデプロイ回数: 17**
 
 > GASプロジェクト履歴の上限は200件。180回に達したら下記の警告が表示される。
 
@@ -692,7 +692,6 @@ MyProject/
 |-----------|--------|------|
 | `admin-users` | 👥 ユーザー管理 | Admin メール管理 |
 | `admin-properties` | ⚙️ 設定 | スクリプトプロパティ管理・成績マスタ設定・基礎学力テスト日程管理 |
-| `admin-sheets` | 📊 Sheets | シート一覧・データ閲覧 |
 | `admin-drive` | 📁 Drive | Driveフォルダ探索・PDFアップロード |
 | `admin-logs` | 📋 ログ | 実行ログ案内・手動初期化・自動インポート |
 | `admin-fixed-events` | 📅 固定イベント | 予定タブ固定イベント管理（塾○□★△・休校日・基礎学力テスト詳細） |
@@ -1114,7 +1113,6 @@ parseInt(rows[i][2], 10) === parseInt(campusCode, 10)
 **修正済み箇所：**
 - `features.js`: `saveLectureScheduleEntries`・`getLectureScheduleEntries`（commit 86ff820）
 - `students.js`: `submitStudentInfo`・`getMasterData`（padStart で正規化済み）
-- `students.js`: `deleteStudent`・`restoreStudent`・`updateStudentInfo` → 共通ヘルパー `findStudentRowIndex_()` で padStart 正規化
 - `students.js`: `getDeletedStudents` → studentId と校舎コードの padStart 正規化
 - `analysis.js`: `getStudentAnalysis`・`generateStudentAnalyses`・`saveStudentAnalyses_` の existingMap 構築 → padStart で正規化
 - `students.js`: `getStudentNameById` → studentId の padStart 正規化（シート値・入力値の両方）
@@ -1314,11 +1312,7 @@ function getScheduleData() { ... }
 - `getGradesYearFolders()` — `@aiCallable` 年度フォルダ一覧
 - `getSettingsFolder()` — 設定フォルダ取得
 - `getCurrentFiscalYear()` — 現在の学年年度（4月始まり）
-- `findStudentRowIndex_(sheet, studentId)` — 生徒一覧シートから生徒IDで行番号を検索する内部ヘルパー（先頭ゼロ消失対策済み）
-- `getStudentMasterSpreadsheet()` — 生徒マスタ取得（なければ自動作成）
-- `createStudentMasterSpreadsheet(rootFolder)` — 生徒マスタ新規作成
 - `getStudentNameById(studentId)` — 生徒IDから氏名取得
-- `getGradeDataSheet(year)` — 年度別成績シート取得
 - `getMasterData(year)` — アクティブ生徒一覧（削除済み除外・学年動的計算）
 - `getDataSheetData(year)` — 成績データ配列取得
 - `getStudentListWithGrades(year, testName)` — `@aiCallable` 生徒マスタと成績を結合して返す（一覧表タブ用）
@@ -1427,8 +1421,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `logAdminAction(action, details)` — Admin 操作ログ記録
 - `updateScriptPropertyFromGUI(key, newValue)` — プロパティ更新（Admin のみ）
 - `deleteScriptPropertyFromGUI(key)` — プロパティ削除（Admin のみ）
-- `getSheetsList()` — シート一覧（Admin のみ）
-- `getSheetData(sheetName, startRow, endRow, startCol, endCol)` — セルデータ取得（Admin のみ）
 - `getDriveContents(folderId)` — Drive フォルダ探索（Admin のみ）
 - `uploadPDFToFolder(pdfBase64, fileName, targetFolderId)` — PDF アップロード（Admin のみ）
 - `deleteFileFromDrive(fileId)` — ファイル削除（Admin のみ）
@@ -1652,7 +1644,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 |---|---|---|
 | 月間スケジュール/ + 年度フォルダ + 予定データ.gs | 予定タブで使用 | `initializeScheduleFolder()` |
 | 成績管理/ + 年度フォルダ + 成績データ.gs | 成績管理タブで使用 | `initializeGradesFolder()` |
-| 生徒マスタ/ + 生徒マスタ.gs | 生徒一覧の管理 | `getStudentMasterSpreadsheet()` |
 | 設定/ + システム設定.gs | 操作ログの保存 | `initializeSettingsFolder()` |
 
 ### 現在作成していないもの（未実装機能）

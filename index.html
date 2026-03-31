@@ -1656,8 +1656,7 @@
             <button class="admin-tab-btn" data-subtab="admin-scheduler" onclick="switchAdminTab(this, 'scheduler'); initLineScheduler();">📩 LINE通知</button>
             <button class="admin-tab-btn" data-subtab="admin-chatbot" onclick="switchAdminTab(this, 'chatbot'); initChatbotAdmin();">🤖 チャットボット</button>
             <button class="admin-tab-btn" data-subtab="admin-properties" onclick="switchAdminTab(this, 'properties')">⚙️ 設定</button>
-            <button class="admin-tab-btn" data-subtab="admin-sheets" onclick="switchAdminTab(this, 'sheets')">📊 Sheets</button>
-            <button class="admin-tab-btn" data-subtab="admin-drive" onclick="switchAdminTab(this, 'drive')">📁 Drive</button>
+<button class="admin-tab-btn" data-subtab="admin-drive" onclick="switchAdminTab(this, 'drive')">📁 Drive</button>
             <button class="admin-tab-btn" data-subtab="admin-logs" onclick="switchAdminTab(this, 'logs')">📋 ログ</button>
           </div>
         </div>
@@ -1988,35 +1987,6 @@
             </div>
           </div>
 
-        </div>
-
-        <!-- ===== 📊 Sheets タブ ===== -->
-        <div id="admin-sheets" class="admin-tab-content" style="display: none;">
-          <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <h3>📊 Google Sheets 管理</h3>
-            
-            <div style="margin-bottom: 30px;">
-              <h4>利用可能なシート一覧</h4>
-              <div id="sheetsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px;">
-                <p style="grid-column: 1/-1; text-align: center; color: #999;">読み込み中...</p>
-              </div>
-            </div>
-
-            <div style="padding: 20px; background: #f8f9fa; border-radius: 8px;">
-              <h4>データを読み込み・編集</h4>
-              <div style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px;">
-                <select id="sheetSelector" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
-                  <option value="">シートを選択...</option>
-                </select>
-                <input type="number" id="sheetRowStart" placeholder="開始行" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;" value="1">
-                <button onclick="loadSheetData()" style="padding: 12px; background: #4facfe; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; min-height: 44px;">読み込み</button>
-              </div>
-              
-              <div id="sheetDataDisplay" style="max-height: 300px; overflow: auto; margin-top: 15px; border: 1px solid #ddd; border-radius: 5px; background: white;">
-                <!-- テーブルが表示される -->
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- ===== 📁 Drive タブ ===== -->

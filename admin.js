@@ -122,31 +122,6 @@ function deleteScriptPropertyFromGUI(key) {
 }
 
 /**
- * Sheets リスト取得（Admin のみ）
- * @return {Object} { success, sheets, error }
- */
-function getSheetsList() {
-  // Firestore移行済み。スプレッドシートは削除済みのため空リストを返す。
-  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-  return { success: true, sheets: [], message: 'データはFirestoreに移行済みです。スプレッドシートは削除されています。' };
-}
-
-/**
- * Sheets のセルデータを取得（Admin のみ）
- * @param {string} sheetName シート名
- * @param {number} startRow 開始行
- * @param {number} endRow 終了行
- * @param {number} startCol 開始列
- * @param {number} endCol 終了列
- * @return {Object} { success, data, sheetName, error }
- */
-function getSheetData(sheetName, startRow, endRow, startCol, endCol) {
-  // Firestore移行済み。スプレッドシートは削除済みのため空データを返す。
-  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-  return { success: false, error: 'データはFirestoreに移行済みです。スプレッドシートは削除されています。' };
-}
-
-/**
  * Google Drive フォルダ内を探索（Admin のみ）
  * @param {string} folderId フォルダID（未指定ならルート）
  * @return {Object} { success, folders, files, folderName, folderId, error }
