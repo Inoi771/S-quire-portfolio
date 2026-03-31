@@ -1781,48 +1781,6 @@ function parseGeminiErrorMessage_(response) {
 }
 
 // ========================================
-// 【一時関数】フォルダ内容の一括コピー（使用後に削除すること）
-// ========================================
-
-/**
- * ソースフォルダの中身をすべて宛先フォルダにコピーする（1回限り実行用）
- * GASエディタから直接実行すること
- */
-function copyFolderContents() {
-  var SOURCE_FOLDER_ID = '1Zf_qg0fufJNlOlFVhlF7tYwHEJ51WY0W';
-  var DEST_FOLDER_ID   = '1P9QFZxJrblN9Jz4AlYibmVTpwPZXPH3R';
-
-  var sourceFolder = DriveApp.getFolderById(SOURCE_FOLDER_ID);
-  var destFolder   = DriveApp.getFolderById(DEST_FOLDER_ID);
-
-  copyFolderRecursive_(sourceFolder, destFolder);
-  Logger.log('✓ コピー完了');
-}
-
-/**
- * フォルダを再帰的にコピーする内部ヘルパー
- * @param {Folder} src コピー元フォルダ
- * @param {Folder} dest コピー先フォルダ
- */
-function copyFolderRecursive_(src, dest) {
-  // ファイルをコピー
-  var files = src.getFiles();
-  while (files.hasNext()) {
-    var file = files.next();
-    file.makeCopy(file.getName(), dest);
-    Logger.log('コピー: ' + file.getName());
-  }
-
-  // サブフォルダを再帰的にコピー
-  var subFolders = src.getFolders();
-  while (subFolders.hasNext()) {
-    var subSrc  = subFolders.next();
-    var subDest = dest.createFolder(subSrc.getName());
-    copyFolderRecursive_(subSrc, subDest);
-  }
-}
-
-// ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
 if (typeof module !== 'undefined') {
