@@ -30,7 +30,11 @@ var PROP_KEYS = {
   TEACHER_ID_MAP: 'TEACHER_ID_MAP',                                        // JSON: { teacherId: { emails:[], name } } 講師ID→情報マッピング（全ユーザー共有）
   NOTIFICATION_EMAILS: 'NOTIFICATION_EMAILS',                               // JSON: { "teacherId": "email@..." } Gmail通知先の個別メール設定
   AI_KNOWLEDGE_BASE: 'AI_KNOWLEDGE_BASE',                                   // JSON: [{id, category, content, updatedAt}] AIナレッジベース
-  LECTURE_DEADLINE_OVERRIDES: 'LECTURE_DEADLINE_OVERRIDES'                  // JSON: { "lectureId": "YYYY-MM-DD" } 講習日程締切の手動上書き設定
+  LECTURE_DEADLINE_OVERRIDES: 'LECTURE_DEADLINE_OVERRIDES',                 // JSON: { "lectureId": "YYYY-MM-DD" } 講習日程締切の手動上書き設定
+  // Firebase / Firestore 設定
+  FIREBASE_PROJECT_ID: 'FIREBASE_PROJECT_ID',       // Firebase プロジェクトID（例: fir-quire）
+  FIREBASE_CLIENT_EMAIL: 'FIREBASE_CLIENT_EMAIL',   // サービスアカウントのメールアドレス
+  FIREBASE_PRIVATE_KEY: 'FIREBASE_PRIVATE_KEY'      // サービスアカウントの秘密鍵（PEM形式・GASエディタから直接入力）
 };
 
 /**
