@@ -4,6 +4,54 @@
 // ========================================
 // ユーザー認証、Admin 判定、メール管理、ユーザー情報取得
 
+// Firebase Auth メールコンテキスト（同一GAS実行内でのみ有効）
+// Session.getActiveUser() が空のときのフォールバックとして使用する
+// Phase2では doPost() でトークン検証後にセットする
+var _firebaseEmailContext_ = null;
+
+/**
+ * Firebase Auth から得たメールアドレスをこの実行コンテキストに設定する
+ * google.script.run 経由でクライアントから渡されたメールをセットする
+ * Session.getActiveUser() が空の場合のフォールバックとして使用する
+ * @param {string} email Firebase Auth で確認済みのメールアドレス
+ */
+function setFirebaseEmailContext_(email) {
+  _firebaseEmailContext_ = email ? email.toLowerCase() : null;
+}
+
+/**
+ * Firebase IDトークンをFirebase REST APIで検証し、メールアドレスを返す（Phase2認証準備）
+ * Phase2（Firebase Hosting移行後）の doPost() API認証に使用する
+ * @param {string} idToken Firebase IDトークン（JWTフォーマット）
+ * @return {string|null} 検証済みメールアドレス（失敗時はnull）
+ */
+function verifyFirebaseIdToken_(idToken) {
+  try {
+    if (!idToken) return null;
+    // FIREBASE_WEB_API_KEY がスクリプトプロパティに設定されていない場合はデフォルト値を使用
+    // Firebase Web API Key はクライアント側にも公開済みの値のため非秘密情報
+    var firebaseApiKey = getProperty('FIREBASE_WEB_API_KEY') || 'AIzaSyDGxhgsCbpgJuXm6PzY1WcR8a4QOtfJBiU';
+    var response = UrlFetchApp.fetch(
+      'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + firebaseApiKey,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ idToken: idToken }),
+        muteHttpExceptions: true
+      }
+    );
+    var result = safeJsonParse_(response.getContentText(), null);
+    if (!result || result.error || !Array.isArray(result.users) || !result.users.length) {
+      Logger.log('⚠ verifyFirebaseIdToken_: 検証失敗 ' + JSON.stringify(result && result.error));
+      return null;
+    }
+    return result.users[0].email || null;
+  } catch (e) {
+    Logger.log('❌ verifyFirebaseIdToken_エラー: ' + e);
+    return null;
+  }
+}
+
 /**
  * スクリプトプロパティから値を取得
  * @param {string} key プロパティキー
@@ -53,12 +101,13 @@ function normalizeTeacherEntry_(entry) {
  */
 function isAdmin() {
   try {
-    var userEmail = Session.getActiveUser().getEmail().toLowerCase();
+    var userEmail = getCurrentUserEmail().toLowerCase();
+    if (!userEmail || userEmail === 'unknown@example.com') return false;
     var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '')
       .split(',')
       .map(function(email) { return email.trim().toLowerCase(); })
       .filter(function(email) { return email.length > 0; });
-    
+
     return adminEmails.includes(userEmail);
   } catch (error) {
     Logger.log('❌ isAdminエラー: ' + error);
@@ -68,13 +117,19 @@ function isAdmin() {
 
 /**
  * 現在のユーザーのメールアドレスを取得
+ * Session.getActiveUser() を優先。空の場合は Firebase Auth コンテキストにフォールバック。
+ * Phase2では doPost() で verifyFirebaseIdToken_() 検証後に setFirebaseEmailContext_() を呼ぶ。
  * @return {string} メールアドレス（取得失敗時は 'unknown@example.com'）
  */
 function getCurrentUserEmail() {
   try {
-    return Session.getActiveUser().getEmail();
-  } catch (error) {
+    var sessionEmail = Session.getActiveUser().getEmail();
+    if (sessionEmail) return sessionEmail;
+    // セッションが空の場合（executeAs の設定変更・権限エラー等）は Firebase Auth コンテキストにフォールバック
+    if (_firebaseEmailContext_) return _firebaseEmailContext_;
     return 'unknown@example.com';
+  } catch (error) {
+    return _firebaseEmailContext_ || 'unknown@example.com';
   }
 }
 
@@ -164,8 +219,8 @@ function addAdminEmail(newEmail) {
  */
 function isAllowedUser() {
   try {
-    var email = Session.getActiveUser().getEmail();
-    if (!email) return false;
+    var email = getCurrentUserEmail();
+    if (!email || email === 'unknown@example.com') return false;
     email = email.toLowerCase();
 
     // 1. Adminメールチェック（常に優先許可）

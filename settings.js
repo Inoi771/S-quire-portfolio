@@ -15,7 +15,9 @@ var _safeUserKey_ = null;
 function getSafeUserKey_() {
   if (_safeUserKey_) return _safeUserKey_;
   try {
-    var email = Session.getActiveUser().getEmail() || 'anonymous';
+    // getCurrentUserEmail() を使用することで Firebase Auth フォールバックが適用される
+    var email = getCurrentUserEmail() || 'anonymous';
+    if (email === 'unknown@example.com') email = 'anonymous';
     _safeUserKey_ = '_UP_' + email.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
   } catch(e) {
     _safeUserKey_ = '_UP_anonymous_';
@@ -752,8 +754,10 @@ function getMyGeminiUsage() {
  * Drive API（ロゴ・ファビコン）は含まない。
  * @return {Object} 起動に必要なデータ一式
  */
-function getAppStartupData() {
+function getAppStartupData(firebaseEmail) {
   try {
+    // Firebase Auth から渡されたメールをコンテキストにセット（Session が空の場合のフォールバック）
+    if (firebaseEmail) setFirebaseEmailContext_(firebaseEmail);
     var email = getCurrentUserEmail();
 
     // 管理者かどうかを素早く判定（ScriptProperties の文字列比較のみ・Drive API不要）
