@@ -41,23 +41,14 @@ function getGradesFolder() {
  */
 function getGradesYearFolders() {
   try {
-    var gradesFolder = getGradesFolder();
-    if (!gradesFolder) {
-      return { success: false, error: '成績管理フォルダが見つかりません' };
-    }
-
-    var years = [];
-    var folders = gradesFolder.getFolders();
-    while (folders.hasNext()) {
-      var folder = folders.next();
-      var name = folder.getName();
-      if (/^\d{4}$/.test(name)) {
-        years.push(name);
-      }
-    }
-
-    years.sort(function(a, b) { return parseInt(b) - parseInt(a); });
-
+    // Firestore移行済み。grades コレクションから fiscalYear の一覧を返す。
+    var docs = firestoreQuery_('grades', []);
+    var yearSet = {};
+    docs.forEach(function(doc) {
+      if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
+    });
+    var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
+    years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
     return { success: true, years: years };
   } catch (error) {
     Logger.log('❌ getGradesYearFoldersエラー: ' + error);
@@ -2085,8 +2076,12 @@ function getStudentPlacementData(year) {
  */
 function saveGradeReportPdf(year, campusName, studentName, pdfBase64) {
   try {
-    var gradesFolder = getGradesFolder();
-    var yearFolder   = getOrCreateYearFolder(gradesFolder, year);
+    // Firestore移行済み。成績管理フォルダは廃止。ルートフォルダ配下の grade-reports に保存する。
+    var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
+    if (!rootFolderId) return { success: false, error: 'APP_FOLDER_IDが未設定' };
+    var rootFolder = DriveApp.getFolderById(rootFolderId);
+    var reportsFolder = getOrCreateTabFolder(rootFolder, 'grade-reports');
+    var yearFolder = getOrCreateYearFolder(reportsFolder, year);
 
     // 校舎名サブフォルダを取得または作成
     var campusFolder;
