@@ -1,0 +1,19 @@
+<script>
+// ===== Firebase 初期化 =====
+(function() {
+  var firebaseConfig = {
+    apiKey: "AIzaSyDGxhgsCbpgJuXm6PzY1WcR8a4QOtfJBiU",
+    authDomain: "fir-quire.firebaseapp.com",
+    projectId: "fir-quire",
+    storageBucket: "fir-quire.firebasestorage.app",
+    messagingSenderId: "132033293964",
+    appId: "1:132033293964:web:13ec63fbda39e82e5995a9"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+
+  // グローバルに公開（他のスクリプトから使用）
+  window.fbAuth = firebase.auth();
+  window.fbDb  = firebase.firestore();
+})();
+</script>
