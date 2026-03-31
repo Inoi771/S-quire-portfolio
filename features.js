@@ -1900,50 +1900,35 @@ function normalizeLecTime_(val) {
 
 /**
  * 指定の講習・校舎のスケジュールエントリを取得する
+ * Firestore の lectureEntries コレクションから読み込む
  * @aiCallable
  * @param {string} lectureId 講習ID
  * @param {string} campusCode 校舎コード
- * @return {Array} エントリ配列 [{id,lectureId,campusCode,date,startTime,durationSlots,subject,grade,teacherName,teacherEmail}]
+ * @return {Array} エントリ配列 [{id,lectureId,campusCode,date,startTime,durationSlots,subject,grade,teacherName,teacherEmail,classLabel,teacherId}]
  */
 function getLectureScheduleEntries(lectureId, campusCode) {
   try {
-    var ss = getLectureScheduleSpreadsheet_();
-    if (!ss) { Logger.log('⚠ getLectureScheduleEntries: ss が null'); return []; }
-    var sheet = ss.getSheetByName('スケジュール一覧');
-    if (!sheet) { Logger.log('⚠ getLectureScheduleEntries: シートが見つからない'); return []; }
-    var rows = sheet.getDataRange().getValues();
-    // Google Sheets が "04" などの数字文字列を数値(4)に自動変換するため、
-    // campusCode の比較は parseInt で正規化して行う（"04" と 4 を同一視）
-    var campusInt = parseInt(campusCode, 10);
-    if (rows.length <= 1) return [];
-    var results = [];
-    for (var i = 1; i < rows.length; i++) {
-      var r = rows[i];
-      if (String(r[1]) === String(lectureId) && parseInt(r[2], 10) === campusInt) {
-        results.push({
-          id:            String(r[0]),
-          lectureId:     String(r[1]),
-          campusCode:    String(r[2]),
-          date:          normalizeLecDate_(r[3]),
-          startTime:     normalizeLecTime_(r[4]),
-          durationSlots: Number(r[5]) || 9,
-          subject:       String(r[6]),
-          grade:         String(r[7]),
-          teacherName:   String(r[8]),
-          teacherEmail:  String(r[9]),
-          classLabel:    r[10] ? String(r[10]) : null,
-          teacherId:     r[11] ? String(r[11]) : ''
-        });
-      }
-    }
-    // entryId で重複排除（旧バグで同じ ID が複数行保存された場合に対応）
-    var seenIds = {};
-    results = results.filter(function(entry) {
-      if (seenIds[entry.id]) return false;
-      seenIds[entry.id] = true;
-      return true;
+    var normalizedCampus = String(campusCode || '').padStart(2, '0');
+    var docs = firestoreQuery_('lectureEntries', [
+      fsFilter_('lectureId',  'EQUAL', String(lectureId)),
+      fsFilter_('campusCode', 'EQUAL', normalizedCampus)
+    ]);
+    return docs.map(function(doc) {
+      return {
+        id:            doc.entryId || doc._id || '',
+        lectureId:     doc.lectureId     || '',
+        campusCode:    doc.campusCode    || '',
+        date:          doc.date          || '',
+        startTime:     doc.startTime     || '',
+        durationSlots: Number(doc.durationSlots) || 9,
+        subject:       doc.subject       || '',
+        grade:         doc.grade         || '',
+        teacherName:   doc.teacherName   || '',
+        teacherEmail:  doc.teacherEmail  || '',
+        classLabel:    doc.classLabel    || null,
+        teacherId:     doc.teacherId     || ''
+      };
     });
-    return results;
   } catch (error) {
     Logger.log('❌ getLectureScheduleEntriesエラー: ' + error);
     return [];
@@ -1952,140 +1937,101 @@ function getLectureScheduleEntries(lectureId, campusCode) {
 
 /**
  * 指定の講習・校舎のスケジュールエントリを一括保存する（全置換・LockService使用）
+ * Firestore の lectureEntries コレクションに書き込む
  * @param {string} lectureId 講習ID
  * @param {string} campusCode 校舎コード
  * @param {string} entriesJson エントリ配列のJSON文字列
- * @return {Object} {success, message}
+ * @return {Object} {success, message, entries}
  */
 function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
   try {
     var lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
-      var entries = JSON.parse(entriesJson);
-      var ss = getLectureScheduleSpreadsheet_();
-      if (!ss) return { success: false, error: 'スプレッドシートが取得できませんでした' };
-      var sheet = ss.getSheetByName('スケジュール一覧');
-      if (!sheet) return { success: false, error: 'シートが見つかりません' };
+      var entries = safeJsonParse_(entriesJson, []);
+      var normalizedCampus = String(campusCode || '').padStart(2, '0');
 
-      // 常に正しいヘッダー行を使用（シートが破損していても復旧できるよう rows[0] は使わない）
-      var HEADER = ['entryId','lectureId','campusCode','date','startTime','durationSlots','subject','grade','teacherName','teacherEmail','classLabel','teacherId'];
-      var rows = sheet.getDataRange().getValues();
-      var rowsToKeep = [HEADER];
-      // Google Sheets が "04" などの数字文字列を数値(4)に自動変換するため
-      // campusCode の比較は parseInt で正規化して行う（"04" と 4 を同一視）
-      var campusInt = parseInt(campusCode, 10);
+      // 既存エントリを Firestore から取得（権限チェックに使用）
+      var existingDocs = firestoreQuery_('lectureEntries', [
+        fsFilter_('lectureId',  'EQUAL', String(lectureId)),
+        fsFilter_('campusCode', 'EQUAL', normalizedCampus)
+      ]);
 
       // 権限チェック: Admin以外は他人のエントリを改ざんできない
       if (!isAdmin()) {
         var myTid = getOrCreateTeacherId();
-        // 既存データから対象lecture+campusの他人エントリを抽出
         var existingOtherEntries = {};
-        for (var k = 1; k < rows.length; k++) {
-          if (rows[k].length >= 11 &&
-              String(rows[k][1]) === String(lectureId) && parseInt(rows[k][2], 10) === campusInt) {
-            var tid = rows[k].length >= 12 ? String(rows[k][11]) : '';
-            if (tid && tid !== myTid) {
-              var dur = Number(rows[k][5]);
-              existingOtherEntries[String(rows[k][0])] = [
-                normalizeLecDate_(rows[k][3]),
-                normalizeLecTime_(rows[k][4]),
-                String(isNaN(dur) ? 9 : dur),
-                String(rows[k][6]), String(rows[k][7]), tid
-              ];
-            }
+        existingDocs.forEach(function(doc) {
+          var tid = doc.teacherId || '';
+          if (tid && tid !== myTid) {
+            existingOtherEntries[doc.entryId || doc._id] = {
+              date: String(doc.date || ''), startTime: String(doc.startTime || ''),
+              durationSlots: String(Number(doc.durationSlots) || 9),
+              subject: String(doc.subject || ''), grade: String(doc.grade || ''), teacherId: tid
+            };
           }
-        }
-        // 送信データに他人エントリが全て含まれ、内容が同一であることを検証
+        });
         var incomingOtherIds = {};
         entries.forEach(function(e) {
           var eTid = e.teacherId || '';
           if (eTid && eTid !== myTid) {
-            var eDur = Number(e.durationSlots);
-            incomingOtherIds[e.id] = [
-              String(e.date), String(e.startTime), String(isNaN(eDur) ? 9 : eDur),
-              String(e.subject), String(e.grade), eTid
-            ];
+            incomingOtherIds[e.id] = {
+              date: String(e.date || ''), startTime: String(e.startTime || ''),
+              durationSlots: String(Number(e.durationSlots) || 9),
+              subject: String(e.subject || ''), grade: String(e.grade || ''), teacherId: eTid
+            };
           }
         });
-        // 他人の既存エントリが削除・変更されていないか確認
         var otherKeys = Object.keys(existingOtherEntries);
         for (var m = 0; m < otherKeys.length; m++) {
           var eid = otherKeys[m];
-          if (!incomingOtherIds[eid]) {
-            return { success: false, error: '他のユーザーのエントリは削除できません' };
-          }
+          if (!incomingOtherIds[eid]) return { success: false, error: '他のユーザーのエントリは削除できません' };
           var orig = existingOtherEntries[eid];
-          var inc = incomingOtherIds[eid];
-          for (var n = 0; n < orig.length; n++) {
-            if (orig[n] !== inc[n]) {
-              return { success: false, error: '他のユーザーのエントリは変更できません' };
-            }
+          var inc  = incomingOtherIds[eid];
+          if (orig.date !== inc.date || orig.startTime !== inc.startTime ||
+              orig.durationSlots !== inc.durationSlots || orig.subject !== inc.subject ||
+              orig.grade !== inc.grade) {
+            return { success: false, error: '他のユーザーのエントリは変更できません' };
           }
         }
       }
 
-      // 既存データのうち対象外の行のみ保持（列数は旧データ11列/新データ12列どちらでも受け入れ）
-      for (var i = 1; i < rows.length; i++) {
-        if (rows[i].length >= 11 &&
-            !(String(rows[i][1]) === String(lectureId) && parseInt(rows[i][2], 10) === campusInt)) {
-          // 旧データ（11列）の場合は teacherId 列を空文字で補完して12列に揃える
-          var row = rows[i].slice(0, 12);
-          while (row.length < 12) row.push('');
-          rowsToKeep.push(row);
-        }
-      }
-
-      // 新しいエントリ行を追加
-      entries.forEach(function(e) {
-        rowsToKeep.push([
-          e.id || ('ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000)),
-          lectureId,
-          campusCode,
-          e.date,
-          e.startTime,
-          Number(e.durationSlots) || 9,
-          e.subject,
-          e.grade,
-          e.teacherName,
-          e.teacherEmail,
-          e.classLabel || '',
-          e.teacherId || ''
-        ]);
+      // 全置換: 古いドキュメントを削除 + 新しいエントリを書き込み（バッチ）
+      var writes = [];
+      existingDocs.forEach(function(doc) {
+        writes.push({ collection: 'lectureEntries', docId: doc._id, delete: true });
       });
 
-      // シートを全置換
-      sheet.clearContents();
-      if (rowsToKeep.length > 0) {
-        var numRows = rowsToKeep.length;
-        // 日付列（4列目）と開始時刻列（5列目）をテキスト形式に設定
-        // → Sheetsが "2026-07-14" や "08:10" を日付値・時刻値に自動変換するのを防ぐ
-        sheet.getRange(1, 4, numRows, 1).setNumberFormat('@');
-        sheet.getRange(1, 5, numRows, 1).setNumberFormat('@');
-        sheet.getRange(1, 1, numRows, 12).setValues(rowsToKeep);
-      }
-
-      // 保存後のデータを抽出してレスポンスに含める（再取得の代わり）
       var savedEntries = [];
-      for (var j = 1; j < rowsToKeep.length; j++) {
-        var r = rowsToKeep[j];
-        if (String(r[1]) === String(lectureId) && parseInt(r[2], 10) === campusInt) {
-          savedEntries.push({
-            id:            String(r[0]),
-            lectureId:     String(r[1]),
-            campusCode:    String(r[2]),
-            date:          String(r[3]),
-            startTime:     String(r[4]),
-            durationSlots: Number(r[5]) || 9,
-            subject:       String(r[6]),
-            grade:         String(r[7]),
-            teacherName:   String(r[8]),
-            teacherEmail:  String(r[9]),
-            classLabel:    r[10] ? String(r[10]) : null,
-            teacherId:     r[11] ? String(r[11]) : ''
-          });
-        }
-      }
+      entries.forEach(function(e) {
+        var entryId = e.id || ('ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000));
+        var docId = String(lectureId) + '_' + normalizedCampus + '_' + entryId;
+        var data = {
+          entryId:       entryId,
+          lectureId:     String(lectureId),
+          campusCode:    normalizedCampus,
+          date:          String(e.date      || ''),
+          startTime:     String(e.startTime || ''),
+          durationSlots: Number(e.durationSlots) || 9,
+          subject:       String(e.subject   || ''),
+          grade:         String(e.grade     || ''),
+          teacherName:   String(e.teacherName  || ''),
+          teacherEmail:  String(e.teacherEmail || ''),
+          classLabel:    e.classLabel || null,
+          teacherId:     String(e.teacherId || '')
+        };
+        writes.push({ collection: 'lectureEntries', docId: docId, data: data });
+        savedEntries.push({
+          id: entryId, lectureId: String(lectureId), campusCode: normalizedCampus,
+          date: data.date, startTime: data.startTime, durationSlots: data.durationSlots,
+          subject: data.subject, grade: data.grade, teacherName: data.teacherName,
+          teacherEmail: data.teacherEmail, classLabel: data.classLabel, teacherId: data.teacherId
+        });
+      });
+
+      if (writes.length > 0) firestoreBatchWrite_(writes);
+
+      Logger.log('✓ saveLectureScheduleEntries: ' + entries.length + '件保存 (' + lectureId + '/' + normalizedCampus + ')');
       return { success: true, message: entries.length + '件を保存しました', entries: savedEntries };
     } finally {
       lock.releaseLock();

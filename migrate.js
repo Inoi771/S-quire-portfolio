@@ -1,4 +1,5 @@
 
+
 // ========================================
 // 【migrate.js】Firestore 移行スクリプト
 // ========================================
@@ -13,6 +14,8 @@
 //       migrateSchoolAveragesToFirestore() 学校別平均点 → schoolAverages
 //       migrateTestAnalysisToFirestore()   AI分析 → testAnalysis
 //       migrateStudentAnalysisToFirestore() 生徒別AI分析 → studentAnalysis
+//   Phase 4: migrateSchedulesToFirestore()     ← 予定データを schedules コレクションへ移行
+//            migrateLectureEntriesToFirestore() ← 講習スケジュールを lectureEntries コレクションへ移行
 // ========================================
 
 // ========================================
@@ -684,4 +687,239 @@ function migrateAllGradeDataToFirestore() {
     testAnalysis:   testAnalysis,
     studentAnalysis: studentAnalysis
   };
+}
+
+// ========================================
+// Phase 4: 予定データ移行
+// ========================================
+
+/**
+ * スプレッドシートの予定データを Firestore の schedules コレクションへ一括移行する
+ * 全年度フォルダの「{年度}年度_予定データ」シートを読み込む（べき等・再実行可能）
+ * Admin のみ実行可能
+ * @return {Object} { success, totalYears, savedDocs, errors }
+ */
+function migrateSchedulesToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  Logger.log('=== migrateSchedulesToFirestore 開始 ===');
+
+  try {
+    var scheduleFolder = getScheduleFolder();
+    if (!scheduleFolder) return { success: false, error: '月間スケジュールフォルダが見つかりません' };
+
+    var yearFolders = scheduleFolder.getFolders();
+    var years = [];
+    while (yearFolders.hasNext()) {
+      var yf = yearFolders.next();
+      var fn = yf.getName();
+      if (/^\d{4}$/.test(fn)) years.push({ name: fn, folder: yf });
+    }
+
+    if (years.length === 0) {
+      Logger.log('⚠ 年度フォルダが見つかりません');
+      return { success: true, totalYears: 0, savedDocs: 0, errors: [] };
+    }
+
+    var totalSaved = 0;
+    var errors = [];
+
+    years.forEach(function(y) {
+      var baseYear = parseInt(y.name);
+      try {
+        var file = getFileByName(y.folder, baseYear + '年度_予定データ');
+        if (!file) {
+          Logger.log('⚠ ' + baseYear + '年度: スプレッドシートが見つかりません（スキップ）');
+          return;
+        }
+
+        var ss = SpreadsheetApp.openById(file.getId());
+        var sheet = ss.getSheetByName('予定一覧');
+        if (!sheet || sheet.getLastRow() < 2) {
+          Logger.log('⚠ ' + baseYear + '年度: データが0件（スキップ）');
+          return;
+        }
+
+        // 列構成: [0] 更新日時 [1] 学校名 [2] イベント名 [3] 月日 [4] 詳細 [5] 情報源
+        var numCols = Math.min(sheet.getLastColumn(), 6);
+        var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+
+        var writes = [];
+        rows.forEach(function(row) {
+          try {
+            var monthDay  = String(row[3] || '').trim().replace(/\d{4}年/g, '');
+            if (!monthDay) return; // 日付なしはスキップ
+            var schoolName = String(row[1] || '');
+            var eventType  = String(row[2] || '');
+            var details    = String(row[4] || '');
+            var source     = String(row[5] || '');
+            // 更新日時（スプレッドシートの Cell A列）を timestamp に使う
+            var ts = row[0] ? new Date(row[0]).toISOString() : new Date().toISOString();
+
+            // DocId 計算（saveScheduleEntryToFirestore_ と同じロジック）
+            var cleanDateStr = monthDay;
+            var monthMatch = cleanDateStr.match(/(\d{1,2})月/);
+            var month = monthMatch ? parseInt(monthMatch[1]) : 0;
+            var actualYear = (month >= 1 && month <= 3) ? baseYear + 1 : baseYear;
+            var scheduleDisplay = actualYear + '年' + cleanDateStr;
+
+            var docId;
+            if (source === 'Admin 直接入力') {
+              // 旧スプレッドシートの admin エントリ: timestamp ms を DocId に使用
+              var tMs = row[0] ? new Date(row[0]).getTime() : Date.now();
+              docId = makeScheduleSafeId_(baseYear) + '_admin_' + tMs;
+            } else {
+              docId = makeScheduleSafeId_(baseYear) + '_' + makeScheduleSafeId_(schoolName) + '_' +
+                      makeScheduleSafeId_(eventType) + '_' + makeScheduleSafeId_(cleanDateStr);
+            }
+
+            writes.push({
+              collection: 'schedules',
+              docId: docId,
+              data: {
+                fiscalYear:      baseYear,
+                schoolName:      schoolName,
+                eventType:       eventType,
+                dateStr:         cleanDateStr,
+                details:         details,
+                source:          source,
+                timestamp:       ts,
+                scheduleDisplay: scheduleDisplay
+              }
+            });
+          } catch (rowErr) {
+            Logger.log('⚠ ' + baseYear + '年度 行エラー: ' + rowErr);
+          }
+        });
+
+        if (writes.length === 0) {
+          Logger.log('⚠ ' + baseYear + '年度: 有効な行が0件');
+          return;
+        }
+
+        // バッチサイズ 400 で分割
+        var BATCH = 400;
+        for (var i = 0; i < writes.length; i += BATCH) {
+          var chunk = writes.slice(i, i + BATCH);
+          var result = firestoreBatchWrite_(chunk);
+          totalSaved += chunk.length;
+          if (result.errors && result.errors.length > 0) {
+            errors = errors.concat(result.errors.map(function(e) { return baseYear + '年度: ' + e; }));
+          }
+          if (i + BATCH < writes.length) Utilities.sleep(500);
+        }
+        Logger.log('✓ ' + baseYear + '年度: ' + writes.length + '件保存');
+
+      } catch (yearErr) {
+        Logger.log('❌ ' + baseYear + '年度エラー: ' + yearErr);
+        errors.push(baseYear + '年度: ' + yearErr.toString());
+      }
+    });
+
+    Logger.log('=== migrateSchedulesToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, totalYears: years.length, savedDocs: totalSaved, errors: errors };
+
+  } catch (error) {
+    Logger.log('❌ migrateSchedulesToFirestoreエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ========================================
+// Phase 4-B: 講習スケジュールエントリ移行
+// ========================================
+
+/**
+ * スプレッドシートの講習スケジュールエントリを Firestore の lectureEntries コレクションへ一括移行する
+ * 「講習管理/スケジュールデータ」スプレッドシートの「スケジュール一覧」シートを読み込む（べき等・再実行可能）
+ * Admin のみ実行可能
+ * @return {Object} { success, savedDocs, errors }
+ */
+function migrateLectureEntriesToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  Logger.log('=== migrateLectureEntriesToFirestore 開始 ===');
+
+  try {
+    var ss = getLectureScheduleSpreadsheet_();
+    if (!ss) return { success: false, error: '講習スケジュールスプレッドシートが見つかりません' };
+
+    var sheet = ss.getSheetByName('スケジュール一覧');
+    if (!sheet || sheet.getLastRow() < 2) {
+      Logger.log('⚠ スケジュール一覧にデータがありません');
+      return { success: true, savedDocs: 0, errors: [] };
+    }
+
+    // 列構成: entryId[0] lectureId[1] campusCode[2] date[3] startTime[4]
+    //         durationSlots[5] subject[6] grade[7] teacherName[8] teacherEmail[9]
+    //         classLabel[10] teacherId[11]
+    var numCols = Math.min(sheet.getLastColumn(), 12);
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+
+    var writes = [];
+    var errors = [];
+
+    rows.forEach(function(row, idx) {
+      try {
+        var entryId = String(row[0] || '').trim();
+        if (!entryId) return; // entryId 空はスキップ
+        var lectureId = String(row[1] || '').trim();
+        if (!lectureId) return;
+
+        var campusRaw = String(row[2] || '').trim();
+        var normalizedCampus = campusRaw;
+        if (/^\d+$/.test(campusRaw) && campusRaw.length < 2) {
+          normalizedCampus = campusRaw.padStart(2, '0');
+        }
+
+        var docId = lectureId + '_' + normalizedCampus + '_' + entryId;
+
+        writes.push({
+          collection: 'lectureEntries',
+          docId: docId,
+          data: {
+            entryId:       entryId,
+            lectureId:     lectureId,
+            campusCode:    normalizedCampus,
+            date:          normalizeLecDate_(row[3]),
+            startTime:     normalizeLecTime_(row[4]),
+            durationSlots: Number(row[5]) || 9,
+            subject:       String(row[6] || ''),
+            grade:         String(row[7] || ''),
+            teacherName:   String(row[8] || ''),
+            teacherEmail:  String(row[9] || ''),
+            classLabel:    row[10] ? String(row[10]) : null,
+            teacherId:     numCols >= 12 ? String(row[11] || '') : ''
+          }
+        });
+      } catch (rowErr) {
+        errors.push('行' + (idx + 2) + ': ' + rowErr.toString());
+        Logger.log('⚠ 行' + (idx + 2) + ' エラー: ' + rowErr);
+      }
+    });
+
+    if (writes.length === 0) {
+      Logger.log('⚠ 有効な行が0件');
+      return { success: true, savedDocs: 0, errors: errors };
+    }
+
+    var BATCH = 400;
+    var totalSaved = 0;
+    for (var i = 0; i < writes.length; i += BATCH) {
+      var chunk = writes.slice(i, i + BATCH);
+      var result = firestoreBatchWrite_(chunk);
+      totalSaved += chunk.length;
+      if (result.errors && result.errors.length > 0) {
+        errors = errors.concat(result.errors);
+      }
+      if (i + BATCH < writes.length) Utilities.sleep(500);
+    }
+
+    Logger.log('=== migrateLectureEntriesToFirestore 完了: ' + totalSaved + '件 ===');
+    return { success: errors.length === 0, savedDocs: totalSaved, errors: errors };
+
+  } catch (error) {
+    Logger.log('❌ migrateLectureEntriesToFirestoreエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
 }

@@ -1407,23 +1407,14 @@ function importScheduleFromGoogleSheetsWithAI(sheetId, schoolInfo, year) {
       return { success: false, error: '予定が抽出されませんでした' };
     }
 
-    // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'Google Sheets import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'Google Sheets import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
 
@@ -1458,22 +1449,14 @@ function importScheduleFromCSVWithAI(file, schoolInfo, year) {
     }
 
     // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'CSV import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'CSV import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
 
@@ -1504,26 +1487,17 @@ function importScheduleFromPDFWithAI(file, schoolInfo, year) {
       return { success: false, error: '予定が抽出されませんでした' };
     }
 
-    // シートに書き込み（フォルダの年度に合わせて書き込み先を決定）
-    var targetSheet = getOrCreateSpreadsheet(
-      getOrCreateYearFolder(getScheduleFolder(), String(year)),
-      year
-    ).getSheetByName('予定一覧');
-
+    // Firestore にバッチ書き込み（コンテンツ由来 DocId で重複除去）
+    var writes = [];
     events.forEach(function(event) {
       var normalized = normalizeScheduleEvent(event);
-      targetSheet.appendRow([
-        new Date(),
-        schoolInfo.school,
-        normalized.eventName,
-        normalized.schedule,
-        normalized.details,
-        'PDF import'
-      ]);
+      saveScheduleEntryToFirestore_(year, schoolInfo.school, normalized.eventName,
+        normalized.schedule, normalized.details, 'PDF import', writes);
     });
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: events.length };
-    
+
   } catch (error) {
     Logger.log('❌ importScheduleFromPDFWithAI: ' + error);
     return { success: false, error: error.toString() };

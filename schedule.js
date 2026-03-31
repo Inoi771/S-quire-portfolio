@@ -66,101 +66,88 @@ function getScheduleFolder() {
 }
 
 /**
+ * Firestore DocId 用に文字列を安全なコンポーネントに変換する内部ヘルパー
+ * @param {string} s 入力文字列
+ * @return {string} 安全な文字列（最大40文字）
+ */
+function makeScheduleSafeId_(s) {
+  return String(s || '').replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_').substring(0, 40);
+}
+
+/**
+ * スケジュールエントリを Firestore に保存する内部ヘルパー
+ * source が 'Admin 直接入力' の場合はタイムスタンプを DocId に含め削除を可能にする
+ * source が他の値（import系）の場合はコンテンツ由来の DocId で重複除去する
+ * @param {number} fiscalYear 年度
+ * @param {string} schoolName 学校名
+ * @param {string} eventType イベント種類
+ * @param {string} dateStr 日付文字列（M月D日 形式）
+ * @param {string} details 詳細
+ * @param {string} source 情報源
+ * @param {Array|null} batchArr バッチ書き込み用配列（null の場合は即時保存）
+ * @return {Object} { docId, timestamp }
+ */
+function saveScheduleEntryToFirestore_(fiscalYear, schoolName, eventType, dateStr, details, source, batchArr) {
+  var cleanDateStr = String(dateStr || '').replace(/\d{4}年/g, '').trim();
+  var monthMatch = cleanDateStr.match(/(\d{1,2})月/);
+  var month = monthMatch ? parseInt(monthMatch[1]) : 0;
+  var actualYear = (month >= 1 && month <= 3) ? parseInt(fiscalYear) + 1 : parseInt(fiscalYear);
+  var scheduleDisplay = actualYear + '年' + cleanDateStr;
+
+  var now = new Date();
+  var timestampMs = now.getTime();
+
+  var docId;
+  if (source === 'Admin 直接入力') {
+    docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
+  } else {
+    docId = makeScheduleSafeId_(fiscalYear) + '_' + makeScheduleSafeId_(schoolName) + '_' +
+            makeScheduleSafeId_(eventType) + '_' + makeScheduleSafeId_(cleanDateStr);
+  }
+
+  var data = {
+    fiscalYear:      parseInt(fiscalYear, 10),
+    schoolName:      schoolName || '',
+    eventType:       eventType || '',
+    dateStr:         cleanDateStr,
+    details:         details || '',
+    source:          source || '',
+    timestamp:       now.toISOString(),
+    scheduleDisplay: scheduleDisplay
+  };
+
+  if (batchArr) {
+    batchArr.push({ collection: 'schedules', docId: docId, data: data });
+  } else {
+    firestoreSet_('schedules', docId, data);
+  }
+
+  return { docId: docId, timestamp: now.toISOString() };
+}
+
+/**
  * スケジュールデータを取得
- * 月間スケジュールタブ表示用にすべての予定データを返す
- * 各年度フォルダの「××年度_予定データ」シートを読み込む
+ * Firestore の schedules コレクションから全件読み込む
  * @aiCallable
  * @return {Array} スケジュール配列
  *   各要素: { timestamp, school, eventType, schedule, details, source }
  */
 function getScheduleData() {
   try {
-    
-    var scheduleFolder = getScheduleFolder();
-    
-    if (!scheduleFolder) {
-      Logger.log('❌ スケジュールフォルダが取得できません');
-      return [];
-    }
-    
+    var docs = firestoreQuery_('schedules', []);
     var allResults = [];
-    var yearFolders = scheduleFolder.getFolders();
-    
-    while (yearFolders.hasNext()) {
-      var yearFolder = yearFolders.next();
-      var folderName = yearFolder.getName();
-      
-      // 4桁の年度フォルダのみ処理
-      if (!/^\d{4}$/.test(folderName)) {
-        Logger.log('⚠ スキップ（非年度フォルダ）: ' + folderName);
-        continue;
-      }
-      
-      var baseYear = parseInt(folderName);
-      
-      try {
-        var sheetName = baseYear + '年度_予定データ';
-        var file = getFileByName(yearFolder, sheetName);
-        
-        if (!file) {
-          Logger.log('⚠ ' + baseYear + '年度のスプレッドシートが見つかりません');
-          continue;
-        }
-        
-        var ss = SpreadsheetApp.openById(file.getId());
-        var sheet = ss.getSheetByName('予定一覧');
-        
-        if (!sheet || sheet.getLastRow() < 2) {
-          Logger.log('⚠ ' + baseYear + '年度のデータが0件');
-          continue;
-        }
-        
-        var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-        
-        data.forEach(function(row) {
-          try {
-            var timestamp = row[0] ? new Date(row[0]).toISOString() : new Date().toISOString();
-            var school = String(row[1] || '');
-            var eventType = String(row[2] || '');
-            var monthDay = String(row[3] || '').trim();
-            var details = String(row[4] || '');
-            var source = String(row[5] || '');
-
-            // Gemini が年を含めて返した場合の重複を防ぐため、4桁年を除去
-            monthDay = monthDay.replace(/\d{4}年/g, '');
-
-            // 月を抽出
-            var monthMatch = monthDay.match(/(\d{1,2})月/);
-            if (!monthMatch) {
-              Logger.log('⚠ 月の抽出失敗: ' + monthDay);
-              return;
-            }
-            
-            var month = parseInt(monthMatch[1]);
-            // 1-3月は次年度、4-12月は該当年度
-            var actualYear = (month >= 1 && month <= 3) ? baseYear + 1 : baseYear;
-            var schedule = actualYear + '年' + monthDay;
-            
-            allResults.push({
-              timestamp: timestamp,
-              school: school,
-              eventType: eventType,
-              schedule: schedule,
-              details: details,
-              source: source
-            });
-          } catch (rowError) {
-          }
-        });
-        
-        
-      } catch (yearError) {
-        Logger.log('❌ ' + baseYear + '年度の処理エラー: ' + yearError);
-      }
-    }
-    
+    docs.forEach(function(doc) {
+      allResults.push({
+        timestamp: doc.timestamp || new Date().toISOString(),
+        school:    doc.schoolName || '',
+        eventType: doc.eventType || '',
+        schedule:  doc.scheduleDisplay || '',
+        details:   doc.details || '',
+        source:    doc.source || ''
+      });
+    });
+    Logger.log('✓ getScheduleData: ' + allResults.length + '件取得');
     return allResults;
-    
   } catch (error) {
     Logger.log('❌ getScheduleData エラー: ' + error);
     return [];
@@ -169,67 +156,45 @@ function getScheduleData() {
 
 /**
  * 予定入力フォーム用：ドロップダウンの選択肢を取得
- * 「予定データ」シートから動的に読み込み、頻度でソート
+ * Firestore の schedules コレクションから現年度のデータを読み込み、頻度でソート
  * @aiCallable
  * @return {Object} { schools: [...], eventNames: [...], details: [...] }
  */
 function getScheduleDropdownData() {
   try {
     var year = getCurrentFiscalYear();
-    var yearFolder = getOrCreateYearFolder(getScheduleFolder(), String(year));
-    var spreadsheet = getOrCreateSpreadsheet(yearFolder, year);
-    var sheet = spreadsheet.getSheetByName('予定一覧');
-    
-    if (!sheet || sheet.getLastRow() < 2) {
-      // データがない場合は空配列を返す
+    var docs = firestoreQuery_('schedules', [fsFilter_('fiscalYear', 'EQUAL', year)]);
+
+    if (!docs || docs.length === 0) {
       return {
         schools: ['塾', 'その他'],
         eventNames: ['その他'],
         details: ['その他']
       };
     }
-    
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-    
-    // 各列のユニーク値を取得して集計
+
     var schoolCount = {};
     var eventCount = {};
     var detailCount = {};
-    
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      
-      // 列2：学校名
-      if (row[1]) {
-        schoolCount[row[1]] = (schoolCount[row[1]] || 0) + 1;
-      }
-      
-      // 列3：イベント名
-      if (row[2]) {
-        eventCount[row[2]] = (eventCount[row[2]] || 0) + 1;
-      }
-      
-      // 列5：詳細
-      if (row[4]) {
-        detailCount[row[4]] = (detailCount[row[4]] || 0) + 1;
-      }
-    }
-    
-    // 頻度でソート（多い順）
+
+    docs.forEach(function(doc) {
+      if (doc.schoolName) schoolCount[doc.schoolName] = (schoolCount[doc.schoolName] || 0) + 1;
+      if (doc.eventType)  eventCount[doc.eventType]   = (eventCount[doc.eventType]   || 0) + 1;
+      if (doc.details)    detailCount[doc.details]     = (detailCount[doc.details]    || 0) + 1;
+    });
+
     var sortByFrequency = function(countObj) {
-      var sorted = Object.keys(countObj).sort(function(a, b) {
-        return countObj[b] - countObj[a];
-      });
-      sorted.push('その他');  // 最後に「その他」を追加
+      var sorted = Object.keys(countObj).sort(function(a, b) { return countObj[b] - countObj[a]; });
+      sorted.push('その他');
       return sorted;
     };
-    
+
     return {
-      schools: sortByFrequency(schoolCount),
+      schools:    sortByFrequency(schoolCount),
       eventNames: sortByFrequency(eventCount),
-      details: sortByFrequency(detailCount)
+      details:    sortByFrequency(detailCount)
     };
-    
+
   } catch (error) {
     Logger.log('❌ getScheduleDropdownData エラー: ' + error);
     return {
@@ -241,7 +206,7 @@ function getScheduleDropdownData() {
 }
 
 /**
- * 新しい予定をシートに追加
+ * 新しい予定を Firestore に追加
  * Admin フォームから呼び出される
  * @aiCallable
  * @param {string} schoolName 学校名
@@ -253,45 +218,21 @@ function getScheduleDropdownData() {
 function addScheduleEntry(schoolName, eventName, dateStr, details) {
   try {
     if (!schoolName || !eventName || !dateStr) {
-      return {
-        success: false,
-        error: '学校名、イベント名、日付は必須です'
-      };
+      return { success: false, error: '学校名、イベント名、日付は必須です' };
     }
-    
     var year = getCurrentFiscalYear();
-    var yearFolder = getOrCreateYearFolder(getScheduleFolder(), String(year));
-    var spreadsheet = getOrCreateSpreadsheet(yearFolder, year);
-    var sheet = spreadsheet.getSheetByName('予定一覧');
-    
-    // 新しい行を追加
-    sheet.appendRow([
-      new Date(),           // 更新日時
-      schoolName,           // 学校名
-      eventName,            // イベント名
-      dateStr,              // 日付
-      details || '',        // 詳細
-      'Admin 直接入力'      // 情報源
-    ]);
-    
-    
-    return {
-      success: true,
-      message: '予定を追加しました'
-    };
-    
+    saveScheduleEntryToFirestore_(year, schoolName, eventName, dateStr, details, 'Admin 直接入力', null);
+    Logger.log('✓ addScheduleEntry: ' + schoolName + ' ' + dateStr);
+    return { success: true, message: '予定を追加しました' };
   } catch (error) {
     Logger.log('❌ addScheduleEntry エラー: ' + error);
-    return {
-      success: false,
-      error: error.toString()
-    };
+    return { success: false, error: error.toString() };
   }
 }
 
 /**
- * 管理者が自由に追加したカスタムイベントを保存する（Admin のみ）
- * 日付から年度フォルダを自動判定して「予定一覧」シートに書き込む
+ * 管理者が自由に追加したカスタムイベントを Firestore に保存する（Admin のみ）
+ * 日付から年度を自動判定して schedules コレクションに書き込む
  * @aiCallable
  * @param {string} schoolName 学校・施設名（塾/中学校名/高校名）
  * @param {string} eventName イベント名
@@ -307,22 +248,11 @@ function addCustomScheduleEntry(schoolName, eventName, dateYear, dateMonth, date
     if (!schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
       return { success: false, error: '学校名・イベント名・日付は必須です' };
     }
-    // 月から年度を計算（4月始まり）
     var fiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
-    var yearFolder = getOrCreateYearFolder(getScheduleFolder(), String(fiscalYear));
-    var spreadsheet = getOrCreateSpreadsheet(yearFolder, fiscalYear);
-    var sheet = spreadsheet.getSheetByName('予定一覧');
     var dateStr = dateMonth + '月' + dateDay + '日';
-    var now = new Date();
-    sheet.appendRow([
-      now,                    // 更新日時
-      schoolName,             // 学校名
-      eventName,              // イベント名
-      dateStr,                // 日付（M月D日形式）
-      details || '',          // 詳細
-      'Admin 直接入力'        // 情報源
-    ]);
-    return { success: true, message: '追加しました', timestamp: now.toISOString(), fiscalYear: fiscalYear };
+    var saved = saveScheduleEntryToFirestore_(fiscalYear, schoolName, eventName, dateStr, details, 'Admin 直接入力', null);
+    Logger.log('✓ addCustomScheduleEntry: ' + schoolName + ' ' + dateStr);
+    return { success: true, message: '追加しました', timestamp: saved.timestamp, fiscalYear: fiscalYear };
   } catch (error) {
     Logger.log('❌ addCustomScheduleEntryエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -331,50 +261,24 @@ function addCustomScheduleEntry(schoolName, eventName, dateYear, dateMonth, date
 
 /**
  * Admin が手動で追加したカスタムイベントを全年度分取得する（Admin のみ）
- * source が「Admin 直接入力」の行のみを返す
- * @return {Array} カスタムイベントの配列 [{ fiscalYear, timestamp, school, eventType, schedule, details }]
+ * Firestore の schedules コレクションから source が「Admin 直接入力」のドキュメントのみ返す
+ * @return {Array} カスタムイベントの配列 [{ fiscalYear, docId, timestamp, school, eventType, schedule, details }]
  */
 function getAdminScheduleEntries() {
   if (!isAdmin()) return [];
   try {
-    var scheduleFolder = getScheduleFolder();
-    if (!scheduleFolder) return [];
-    var results = [];
-    var yearFolders = scheduleFolder.getFolders();
-    while (yearFolders.hasNext()) {
-      var yearFolder = yearFolders.next();
-      var folderName = yearFolder.getName();
-      if (!/^\d{4}$/.test(folderName)) continue;
-      var baseYear = parseInt(folderName);
-      try {
-        var file = getFileByName(yearFolder, baseYear + '年度_予定データ');
-        if (!file) continue;
-        var ss = SpreadsheetApp.openById(file.getId());
-        var sheet = ss.getSheetByName('予定一覧');
-        if (!sheet || sheet.getLastRow() < 2) continue;
-        var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-        data.forEach(function(row, idx) {
-          if (String(row[5] || '') !== 'Admin 直接入力') return;
-          var monthDay = String(row[3] || '').trim();
-          var monthMatch = monthDay.match(/(\d{1,2})月/);
-          if (!monthMatch) return;
-          var month = parseInt(monthMatch[1]);
-          var actualYear = (month >= 1 && month <= 3) ? baseYear + 1 : baseYear;
-          results.push({
-            fiscalYear: baseYear,
-            rowIndex: idx + 2, // 1-indexed、ヘッダー1行分オフセット
-            timestamp: row[0] ? new Date(row[0]).toISOString() : '',
-            school: String(row[1] || ''),
-            eventType: String(row[2] || ''),
-            schedule: actualYear + '年' + monthDay,
-            details: String(row[4] || '')
-          });
-        });
-      } catch (e) {
-        Logger.log('⚠ getAdminScheduleEntries: ' + baseYear + '年度エラー: ' + e);
-      }
-    }
-    return results;
+    var docs = firestoreQuery_('schedules', [fsFilter_('source', 'EQUAL', 'Admin 直接入力')]);
+    return docs.map(function(doc) {
+      return {
+        fiscalYear: doc.fiscalYear || 0,
+        docId:      doc._id || '',
+        timestamp:  doc.timestamp || '',
+        school:     doc.schoolName || '',
+        eventType:  doc.eventType || '',
+        schedule:   doc.scheduleDisplay || '',
+        details:    doc.details || ''
+      };
+    });
   } catch (error) {
     Logger.log('❌ getAdminScheduleEntriesエラー: ' + error);
     return [];
@@ -383,7 +287,8 @@ function getAdminScheduleEntries() {
 
 /**
  * Admin が手動で追加したカスタムイベントを1件削除する（Admin のみ）
- * タイムスタンプと年度で一致する行を削除する
+ * タイムスタンプから DocId を再構築して Firestore から削除する
+ * DocId パターン: {fiscalYear}_admin_{timestampMs}
  * @param {number} fiscalYear 年度
  * @param {string} timestampStr ISO形式のタイムスタンプ文字列
  * @return {Object} 処理結果
@@ -391,25 +296,11 @@ function getAdminScheduleEntries() {
 function deleteCustomScheduleEntry(fiscalYear, timestampStr) {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var yearFolder = getOrCreateYearFolder(getScheduleFolder(), String(fiscalYear));
-    var file = getFileByName(yearFolder, fiscalYear + '年度_予定データ');
-    if (!file) return { success: false, error: 'スプレッドシートが見つかりません' };
-    var ss = SpreadsheetApp.openById(file.getId());
-    var sheet = ss.getSheetByName('予定一覧');
-    if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'データが見つかりません' };
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-    var targetRow = -1;
-    var targetTs = new Date(timestampStr).getTime();
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][5] || '') !== 'Admin 直接入力') continue;
-      var rowTs = data[i][0] ? new Date(data[i][0]).getTime() : -1;
-      if (Math.abs(rowTs - targetTs) < 1000) { // 1秒以内の誤差を許容
-        targetRow = i + 2; // 1-indexed + ヘッダー1行
-        break;
-      }
-    }
-    if (targetRow === -1) return { success: false, error: '対象のイベントが見つかりません' };
-    sheet.deleteRow(targetRow);
+    var timestampMs = new Date(timestampStr).getTime();
+    if (isNaN(timestampMs)) return { success: false, error: 'タイムスタンプが不正です' };
+    var docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
+    firestoreDelete_('schedules', docId);
+    Logger.log('✓ deleteCustomScheduleEntry: ' + docId);
     return { success: true, message: '削除しました' };
   } catch (error) {
     Logger.log('❌ deleteCustomScheduleEntryエラー: ' + error);
