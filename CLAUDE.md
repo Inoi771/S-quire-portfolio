@@ -2454,10 +2454,11 @@ const firebaseConfig = {
   - 末尾 `_` の内部関数は呼び出し禁止（セキュリティ）
   - `index.html` の `firebase-auth` 直後に `gas-bridge` include を追加
 
-- [ ] **2-4. GAS 認証モデルの更新**
-  - `doPost()` で Firebase ID トークンを検証する `verifyFirebaseToken_()` 関数を追加
-  - `isAdmin()` / `getCurrentUserEmail()` をトークンベースに完全移行
-  - `Session.getActiveUser()` への依存を全廃
+- [x] **2-4. GAS 認証モデルの更新** ✅ 完了
+  - `doPost()` で Firebase ID トークンを検証する `verifyFirebaseToken_()` 関数を追加（Step 1-8 完了済み）
+  - `isAdmin()` / `getCurrentUserEmail()` をトークンベースに完全移行（Step 1-8 完了済み）
+  - `Session.getActiveUser()` への依存を全廃（今回: auth.js 6か所・features.js 1か所を `getCurrentUserEmail()` に置換）
+  - `getCurrentUserEmail()` 内部の `Session.getActiveUser()` 呼び出しのみ残す（正常フォールバック実装のため）
 
 - [ ] **2-5. 全機能の動作確認・本番切り替え**
   - Firebase Hosting URL（`fir-quire.web.app`）で全タブ・全機能をテスト
