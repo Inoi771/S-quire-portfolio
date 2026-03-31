@@ -908,18 +908,17 @@
       reportStudentListData  = [];
       reportDataCache        = {}; // キャッシュをリセット
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetStudentsWithGradesByTest(currentFiscalYear, campusCode, testName)
+        .then(function(result) {
           if (!result.success) {
             if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#e53935;">エラー: ' + result.error + '</p>';
             return;
           }
           buildReportStudentTabs(result.students || []);
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#e53935;">通信エラー: ' + err + '</p>';
-        })
-        .getStudentsWithGradesByTest(currentFiscalYear, campusCode, testName);
+        });
     }
 
     /**
@@ -1077,10 +1076,9 @@
       }
 
       // 成績データとAI分析を並列で取得
-      google.script.run
-        .withSuccessHandler(function(result) { gradeResult = result; tryRender(); })
-        .withFailureHandler(function(err) { gradeResult = { success: false, error: err }; tryRender(); })
-        .getStudentGradeReport(currentFiscalYear, studentId);
+      fbGetStudentGradeReport(currentFiscalYear, studentId)
+        .then(function(result) { gradeResult = result; tryRender(); })
+        .catch(function(err) { gradeResult = { success: false, error: err }; tryRender(); });
 
       google.script.run
         .withSuccessHandler(function(result) { analysisResult = result; tryRender(); })
@@ -1122,10 +1120,9 @@
         prefetchReportStudents_(students, nextIdx);
       }
 
-      google.script.run
-        .withSuccessHandler(function(r) { gradeResult = r; onDone(); })
-        .withFailureHandler(function()  { gradeResult = { success: false }; onDone(); })
-        .getStudentGradeReport(currentFiscalYear, studentId);
+      fbGetStudentGradeReport(currentFiscalYear, studentId)
+        .then(function(r) { gradeResult = r; onDone(); })
+        .catch(function()  { gradeResult = { success: false }; onDone(); });
 
       google.script.run
         .withSuccessHandler(function(r) { analysisResult = r; onDone(); })
