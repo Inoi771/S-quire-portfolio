@@ -126,35 +126,9 @@ function deleteScriptPropertyFromGUI(key) {
  * @return {Object} { success, sheets, error }
  */
 function getSheetsList() {
-  try {
-    if (!isAdmin()) {
-      return { success: false, error: 'Admin のみアクセス可能' };
-    }
-
-    var year = getCurrentFiscalYear();
-    var scheduleFolder = getScheduleFolder();
-    if (!scheduleFolder) {
-      return { success: false, error: 'スケジュールフォルダが見つかりません' };
-    }
-
-    var yearFolder = getOrCreateYearFolder(scheduleFolder, String(year));
-    var ss = getOrCreateSpreadsheet(yearFolder, year);
-    var sheets = ss.getSheets();
-    var sheetList = sheets.map(function(sheet) {
-      return {
-        name: sheet.getName(),
-        sheetId: sheet.getSheetId(),
-        rowCount: sheet.getLastRow(),
-        columnCount: sheet.getLastColumn()
-      };
-    });
-
-    return { success: true, sheets: sheetList };
-
-  } catch (error) {
-    Logger.log('❌ getSheetListエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
+  // Firestore移行済み。スプレッドシートは削除済みのため空リストを返す。
+  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+  return { success: true, sheets: [], message: 'データはFirestoreに移行済みです。スプレッドシートは削除されています。' };
 }
 
 /**
@@ -167,33 +141,9 @@ function getSheetsList() {
  * @return {Object} { success, data, sheetName, error }
  */
 function getSheetData(sheetName, startRow, endRow, startCol, endCol) {
-  try {
-    if (!isAdmin()) {
-      return { success: false, error: 'Admin のみアクセス可能' };
-    }
-
-    var year = getCurrentFiscalYear();
-    var scheduleFolder = getScheduleFolder();
-    if (!scheduleFolder) {
-      return { success: false, error: 'スケジュールフォルダが見つかりません' };
-    }
-
-    var yearFolder = getOrCreateYearFolder(scheduleFolder, String(year));
-    var ss = getOrCreateSpreadsheet(yearFolder, year);
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) {
-      return { success: false, error: 'シートが見つかりません: ' + sheetName };
-    }
-    
-    var range = sheet.getRange(startRow, startCol, endRow - startRow + 1, endCol - startCol + 1);
-    var values = range.getValues();
-    
-    return { success: true, data: values, sheetName: sheetName };
-    
-  } catch (error) {
-    Logger.log('❌ getSheetDataエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
+  // Firestore移行済み。スプレッドシートは削除済みのため空データを返す。
+  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+  return { success: false, error: 'データはFirestoreに移行済みです。スプレッドシートは削除されています。' };
 }
 
 /**
@@ -353,27 +303,11 @@ function initializeAllSheets() {
     var rootFolder = DriveApp.getFolderById(appFolderId);
     
     
-    // 1. 実装済み機能のタブフォルダを作成（未実装機能のフォルダはここに追加しない）
-    var tabFolders = {
-      schedule: getOrCreateTabFolder(rootFolder, '月間スケジュール'),
-      grades: getOrCreateTabFolder(rootFolder, '成績管理'),
-      settings: getOrCreateTabFolder(rootFolder, '設定')
-    };
+    // Firestore移行済み。スプレッドシートフォルダの作成は不要。
+    // assets フォルダのみ確保（ロゴ・ファビコン・プロフィール写真・チラシ用画像に使用）
+    getOrCreateTabFolder(rootFolder, 'assets');
 
-    // 2. 月間スケジュール - 年度フォルダ作成
-    initializeScheduleFolder(tabFolders.schedule);
-
-    // 3. 成績管理 - 年度フォルダ作成 + 生徒マスタ（「生徒マスタ/」サブフォルダ内）
-    initializeGradesFolder(tabFolders.grades);
-    getStudentMasterSpreadsheet(); // 「生徒マスタ/」フォルダとスプレッドシートを自動作成
-
-    // 4. 設定 - システム設定シート（操作ログ用）
-    initializeSettingsFolder(tabFolders.settings);
-
-    // 注意: 講習管理・高校別進学先はUIが未実装のためフォルダを作らない
-    // 実装時は initializeLecturesFolder / initializeUniversitiesFolder を追加すること
-    
-    return { success: true, message: '初期化が完了しました' };
+    return { success: true, message: '初期化が完了しました（Firestore移行済み）' };
     
   } catch (error) {
     Logger.log('❌ initializeAllSheetsエラー: ' + error);
@@ -991,23 +925,17 @@ function checkInitializationStatus() {
     
     try {
       var rootFolder = DriveApp.getFolderById(appFolderId);
-      
-      // 実装済み機能のフォルダのみ確認（未実装機能のフォルダはチェックしない）
-      var folders = {
-        schedule: getFolderByName(rootFolder, '月間スケジュール') !== null,
-        grades: getFolderByName(rootFolder, '成績管理') !== null,
-        studentMaster: getFolderByName(rootFolder, '生徒マスタ') !== null,
-        settings: getFolderByName(rootFolder, '設定') !== null
-      };
 
-      var allExists = folders.schedule && folders.grades && folders.studentMaster && folders.settings;
-      
+      // Firestore移行済み。スプレッドシートフォルダの存在チェックは不要。
+      // assets フォルダのみ確認（ロゴ・ファビコン・チラシ画像に使用）
+      var assetsExists = getFolderByName(rootFolder, 'assets') !== null;
+
       return {
         success: true,
-        status: allExists ? '初期化完了' : '一部初期化',
-        folders: folders,
-        message: allExists ? 'すべてのフォルダが存在します' : '一部のフォルダが見つかりません',
-        requiredAction: allExists ? null : '手動初期化を実行してください'
+        status: '初期化完了（Firestore移行済み）',
+        folders: { assets: assetsExists },
+        message: 'データはFirestoreで管理されています' + (assetsExists ? '。assetsフォルダあり。' : '。assetsフォルダなし（手動初期化で作成されます）。'),
+        requiredAction: assetsExists ? null : '手動初期化を実行してassetsフォルダを作成してください'
       };
     } catch (error) {
       return {
@@ -1560,25 +1488,14 @@ function manualInitializeSheets() {
     }
     
     var rootFolder = DriveApp.getFolderById(appFolderId);
-    
-    // 実装済み機能のタブフォルダのみ作成（未実装機能のフォルダはここに追加しない）
-    var tabFolders = {
-      schedule: getOrCreateTabFolder(rootFolder, '月間スケジュール'),
-      grades: getOrCreateTabFolder(rootFolder, '成績管理'),
-      settings: getOrCreateTabFolder(rootFolder, '設定')
-    };
 
-    initializeScheduleFolder(tabFolders.schedule);
-    initializeGradesFolder(tabFolders.grades);
-    getStudentMasterSpreadsheet(); // 「生徒マスタ/」フォルダとスプレッドシートを自動作成
-    initializeSettingsFolder(tabFolders.settings);
-
-    // 注意: 講習管理・高校別進学先はUIが未実装のためフォルダを作らない
-    // 実装時は initializeLecturesFolder / initializeUniversitiesFolder を追加すること
+    // Firestore移行済み。スプレッドシートフォルダの作成は不要。
+    // assets フォルダのみ確保（ロゴ・ファビコン・プロフィール写真・チラシ用画像に使用）
+    getOrCreateTabFolder(rootFolder, 'assets');
 
     recordInitializationLog('成功', '手動初期化処理（manualInitializeSheets）');
-    
-    return { success: true, message: '初期化が完了しました' };
+
+    return { success: true, message: '初期化が完了しました（Firestore移行済み）' };
     
   } catch (error) {
     Logger.log('❌ manualInitializeSheets エラー: ' + error);

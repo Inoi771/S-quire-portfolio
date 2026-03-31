@@ -584,19 +584,12 @@ function resetGradeAnalysisSigmaConfig() {
  */
 function countStudentsByCampus_(campusCode) {
   try {
-    var ss = getStudentMasterSpreadsheet();
-    if (!ss) return 0;
-    var sheet = ss.getSheetByName('生徒一覧');
-    if (!sheet || sheet.getLastRow() < 2) return 0;
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues();
     var targetCode = String(campusCode).padStart(2, '0');
-    var count = 0;
-    data.forEach(function(row) {
-      if (row[7] === true || row[7] === 'TRUE') return;
-      var rowCampus = String(row[1] || '').padStart(2, '0');
-      if (rowCampus === targetCode) count++;
-    });
-    return count;
+    var docs = firestoreQuery_('students', [
+      fsFilter_('campusCode', 'EQUAL', targetCode),
+      fsFilter_('isDeleted', 'EQUAL', false)
+    ]);
+    return docs.length;
   } catch (e) {
     Logger.log('⚠ countStudentsByCampus_エラー: ' + e);
     return 0;
@@ -610,25 +603,8 @@ function countStudentsByCampus_(campusCode) {
  */
 function countGradesByTestName_(testName) {
   try {
-    var gradesFolder = getGradesFolder();
-    if (!gradesFolder) return 0;
-    var count = 0;
-    var yearFolders = gradesFolder.getFolders();
-    while (yearFolders.hasNext()) {
-      var yf = yearFolders.next();
-      var files = yf.getFilesByType(MimeType.GOOGLE_SHEETS);
-      while (files.hasNext()) {
-        var file = files.next();
-        var ss = SpreadsheetApp.openById(file.getId());
-        var sheet = ss.getSheetByName('成績一覧');
-        if (!sheet || sheet.getLastRow() < 2) continue;
-        var testNames = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues();
-        testNames.forEach(function(row) {
-          if (String(row[0]).trim() === testName) count++;
-        });
-      }
-    }
-    return count;
+    var docs = firestoreQuery_('grades', [fsFilter_('testName', 'EQUAL', testName)]);
+    return docs.length;
   } catch (e) {
     Logger.log('⚠ countGradesByTestName_エラー: ' + e);
     return 0;
@@ -642,25 +618,14 @@ function countGradesByTestName_(testName) {
  */
 function countGradesBySchool_(schoolName) {
   try {
-    var gradesFolder = getGradesFolder();
-    if (!gradesFolder) return 0;
-    var count = 0;
-    var yearFolders = gradesFolder.getFolders();
-    while (yearFolders.hasNext()) {
-      var yf = yearFolders.next();
-      var files = yf.getFilesByType(MimeType.GOOGLE_SHEETS);
-      while (files.hasNext()) {
-        var file = files.next();
-        var ss = SpreadsheetApp.openById(file.getId());
-        var sheet = ss.getSheetByName('成績一覧');
-        if (!sheet || sheet.getLastRow() < 2) continue;
-        var schools = sheet.getRange(2, 10, sheet.getLastRow() - 1, 2).getValues();
-        schools.forEach(function(row) {
-          if (String(row[0]).trim() === schoolName || String(row[1]).trim() === schoolName) count++;
-        });
-      }
-    }
-    return count;
+    // 第1志望校・第2志望校の両方を検索してユニーク件数を返す
+    var docs1 = firestoreQuery_('grades', [fsFilter_('school1', 'EQUAL', schoolName)]);
+    var docs2 = firestoreQuery_('grades', [fsFilter_('school2', 'EQUAL', schoolName)]);
+    // 重複を排除（同じドキュメントが両方に含まれる場合）
+    var seen = {};
+    docs1.forEach(function(d) { seen[d._id] = true; });
+    docs2.forEach(function(d) { seen[d._id] = true; });
+    return Object.keys(seen).length;
   } catch (e) {
     Logger.log('⚠ countGradesBySchool_エラー: ' + e);
     return 0;
