@@ -2393,12 +2393,7 @@ const firebaseConfig = {
 
 - [x] **1-2. Firebase SDK を GAS の HTML に追加** ✅ 完了
 
-- [ ] **1-3. Firebase Auth（Googleログイン・アカウント切り替え）の実装**
-  - アプリ起動時に Firebase Auth の状態を確認
-  - 未ログイン → Googleログインボタンを表示
-  - ログイン済み → 現在の GAS 認証フローの代わりに Firebase Auth のメールアドレスを使用
-  - ヘッダーのプロフィールアイコンにアカウント切り替え機能を追加（signInWithPopup + prompt: select_account）
-  - ログアウトボタンを追加
+- [x] **1-3. Firebase Auth（Googleログイン・アカウント切り替え）の実装** ✅ 完了
 
 - [ ] **1-4. Firestore直接READ: 生徒データ**
   - `getStudentListWithGrades` → Firebase SDK に移行
