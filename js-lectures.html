@@ -602,8 +602,8 @@
       // 未保存の変更がある場合はスキップ（ユーザーの作業を上書きしない）
       if (dirtyCampuses[campusCode]) return;
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetLectureScheduleEntries(currentLectureId, campusCode)
+        .then(function(result) {
           // コールバック時点でまだ変更がなく、同じ校舎を表示中の場合のみ更新
           if (dirtyCampuses[campusCode]) return;
           var newEntries = Array.isArray(result) ? result : [];
@@ -615,11 +615,10 @@
             renderLecEntries(campusCode);
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           // サイレント更新なのでエラーも表示しない
           console.error('[AutoRefresh] getLectureScheduleEntries エラー:', err);
-        })
-        .getLectureScheduleEntries(currentLectureId, campusCode);
+        });
     }
 
     /**
@@ -1598,8 +1597,8 @@
       var statusEl = document.getElementById('lec-status-msg');
       if (statusEl) { statusEl.textContent = '読み込み中...'; statusEl.style.color = '#555'; }
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbGetLectureScheduleEntries(currentLectureId, campusCode)
+        .then(function(result) {
           // ユーザーが変更中（未保存）の場合は上書きしない（レース条件対策）
           // refreshLecEntries が遅延して返ってきてもユーザーの作業内容を消さないための安全弁
           if (dirtyCampuses[campusCode]) return;
@@ -1613,13 +1612,12 @@
             showLecStatusMsg('');
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           console.error('getLectureScheduleEntries エラー:', err);
           if (campusCode === currentLectureCampus) {
             showLecStatusMsg('❌ 取得失敗', '#e57373');
           }
-        })
-        .getLectureScheduleEntries(currentLectureId, campusCode);
+        });
     }
 
     /**

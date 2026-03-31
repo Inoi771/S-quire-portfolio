@@ -591,17 +591,16 @@
     // getAppStartupData・getScheduleData・アニメーション の3つが揃ったらスプラッシュを閉じる
 
     // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
-    google.script.run
-      .withSuccessHandler(function(schedules) {
+    fbGetScheduleData()
+      .then(function(schedules) {
         onScheduleDataLoaded(schedules); // カレンダーデータをセット
         splashScheduleDone_ = true;
         checkStartupComplete_();
       })
-      .withFailureHandler(function() {
+      .catch(function() {
         splashScheduleDone_ = true; // 失敗しても続行
         checkStartupComplete_();
-      })
-      .getScheduleData();
+      });
     scheduleLoadStarted_ = true;
 
     // 起動データを取得
@@ -781,10 +780,7 @@
       
       // スケジュールデータを取得（DOMContentLoaded で既に開始済みの場合はスキップ）
       if (!scheduleLoadStarted_) {
-        google.script.run
-          .withSuccessHandler(onScheduleDataLoaded)
-          .withFailureHandler(onError)
-          .getScheduleData();
+        fbGetScheduleData().then(onScheduleDataLoaded).catch(onError);
       }
 
       // オーバーライド系データの読み込み完了時にカレンダー再描画（スケジュールより後に到着した場合の補正）
@@ -1826,9 +1822,7 @@
             if (result.success) {
               showMessage('scheduleLoading', '✓ ' + result.count + '件のスケジュールを更新しました', 'success');
               // データを再取得
-              google.script.run
-                .withSuccessHandler(onScheduleDataLoaded)
-                .getScheduleData();
+              fbGetScheduleData().then(onScheduleDataLoaded);
             } else {
               showMessage('scheduleLoading', '❌ 更新に失敗しました: ' + result.error, 'error');
             }

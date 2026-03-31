@@ -1,0 +1,73 @@
+<script>
+// ===== Firebase スケジュール・講習データ クライアントサイド関数 =====
+// firebase-init.html で初期化された fbDb を使用
+
+/**
+ * 全スケジュールデータを取得（Firebase SDK）
+ * google.script.run.getScheduleData の代替
+ * @return {Promise<Array>} スケジュールデータ配列
+ */
+function fbGetScheduleData() {
+  return fbDb.collection('schedules').get()
+    .then(function(snapshot) {
+      var results = [];
+      snapshot.forEach(function(docSnap) {
+        var doc = docSnap.data();
+        results.push({
+          timestamp: doc.timestamp || new Date().toISOString(),
+          school:    doc.schoolName || '',
+          eventType: doc.eventType  || '',
+          schedule:  doc.scheduleDisplay || '',
+          details:   doc.details    || '',
+          source:    doc.source     || ''
+        });
+      });
+      return results;
+    })
+    .catch(function(err) {
+      console.error('fbGetScheduleDataエラー:', err);
+      return [];
+    });
+}
+
+/**
+ * 講習スケジュールエントリを取得（Firebase SDK）
+ * google.script.run.getLectureScheduleEntries の代替
+ * @param {string} lectureId 講習ID
+ * @param {string} campusCode 校舎コード
+ * @return {Promise<Array>} エントリ配列
+ */
+function fbGetLectureScheduleEntries(lectureId, campusCode) {
+  var normalizedCampus = String(campusCode || '').padStart(2, '0');
+
+  return fbDb.collection('lectureEntries')
+    .where('lectureId',  '==', String(lectureId))
+    .where('campusCode', '==', normalizedCampus)
+    .get()
+    .then(function(snapshot) {
+      var entries = [];
+      snapshot.forEach(function(docSnap) {
+        var doc = docSnap.data();
+        entries.push({
+          id:            doc.entryId || docSnap.id || '',
+          lectureId:     doc.lectureId     || '',
+          campusCode:    doc.campusCode    || '',
+          date:          doc.date          || '',
+          startTime:     doc.startTime     || '',
+          durationSlots: Number(doc.durationSlots) || 9,
+          subject:       doc.subject       || '',
+          grade:         doc.grade         || '',
+          teacherName:   doc.teacherName   || '',
+          teacherEmail:  doc.teacherEmail  || '',
+          classLabel:    doc.classLabel    || null,
+          teacherId:     doc.teacherId     || ''
+        });
+      });
+      return entries;
+    })
+    .catch(function(err) {
+      console.error('fbGetLectureScheduleEntriesエラー:', err);
+      return [];
+    });
+}
+</script>
