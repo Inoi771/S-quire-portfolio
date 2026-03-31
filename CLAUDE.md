@@ -362,7 +362,7 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 17**
+**現在のデプロイ回数: 18**
 
 > GASプロジェクト履歴の上限は200件。180回に達したら下記の警告が表示される。
 
@@ -2418,10 +2418,16 @@ const firebaseConfig = {
   - `updateStudentInfo` → Firebase SDK に移行
   - `deleteStudent` / `restoreStudent` → Firebase SDK に移行
 
-- [ ] **1-8. GAS関数の認証モデル更新（フェーズ1最終）**
-  - `Session.getActiveUser().getEmail()` を使っている関数を Firebase Auth のメールに対応させる
-  - `isAdmin()` / `getCurrentUserEmail()` をトークン検証ベースに更新
-  - フェーズ1完了確認
+- [x] **1-8. GAS関数の認証モデル更新（フェーズ1最終）** ✅ 完了
+  - `getCurrentUserEmail()` に Firebase Auth フォールバック追加（`_firebaseEmailContext_` 変数）
+  - `isAdmin()` / `isAllowedUser()` が `getCurrentUserEmail()` を経由するよう更新
+  - `setFirebaseEmailContext_(email)` 追加（doPost API認証用。Phase2で使用）
+  - `verifyFirebaseIdToken_(idToken)` 追加（Firebase REST API でトークン検証。Phase2用）
+  - `getSafeUserKey_()` が `getCurrentUserEmail()` を使うよう更新
+  - `getAppStartupData(firebaseEmail)` に Firebase email パラメータ追加
+  - `firebase-auth.html` に `window.fbGetIdToken()` 追加（Phase2でトークン取得に使用）
+  - 起動時に `window.fbUserEmail` を `getAppStartupData()` に渡すよう `js-core.html` を更新
+  - フェーズ1完了確認 ✅
 
 ---
 

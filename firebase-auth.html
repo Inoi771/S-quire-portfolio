@@ -99,4 +99,15 @@ window.switchGoogleAccount = function() {
 window.fbSignOut = function() {
   fbAuth.signOut();
 };
+
+/**
+ * 現在ログイン中の Firebase IDトークンを取得する（Phase2準備）
+ * GAS の doPost() API認証で使用するための IDトークン取得ユーティリティ
+ * @param {boolean} [forceRefresh=false] 強制リフレッシュするか（通常はキャッシュ済みを使用）
+ * @return {Promise<string>} IDトークン文字列（未ログイン時は空文字列）
+ */
+window.fbGetIdToken = function(forceRefresh) {
+  if (!window.fbCurrentUser) return Promise.resolve('');
+  return window.fbCurrentUser.getIdToken(forceRefresh === true);
+};
 </script>
