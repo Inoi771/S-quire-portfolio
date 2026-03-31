@@ -160,8 +160,9 @@ function doGet() {
 }
 
 /**
- * LINE Messaging API の Webhook を受け取る（POST リクエスト）
- * ユーザーがLINE公式アカウントにメールアドレスを送ると、LINE User IDを自動登録する
+ * LINE Messaging API の Webhook または Firebase Hosting からの API コールを受け取る
+ * - body.type === 'gasApi': Firebase Hosting からの google.script.run 代替API呼び出し
+ * - body.events が配列: LINE Webhook（メール自己登録フロー）
  * @param {Object} e GAS のイベントオブジェクト（e.postData.contents に JSON が入る）
  * @return {TextOutput} JSON レスポンス
  */
@@ -170,7 +171,18 @@ function doPost(e) {
     Logger.log('=== doPost 開始 ===');
     Logger.log('postData あり: ' + !!(e && e.postData));
 
-    var body = JSON.parse(e.postData.contents);
+    var body = safeJsonParse_(e.postData.contents, null);
+    if (!body) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: '不正なリクエスト' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Firebase Hosting からの API コール
+    if (body.type === 'gasApi') {
+      return handleApiCall_(body);
+    }
+
     var events = body.events || [];
     Logger.log('受信イベント数: ' + events.length);
 
@@ -316,6 +328,62 @@ function doPost(e) {
     Logger.log('❌ doPostエラー: ' + error);
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Firebase Hosting からの API コールを処理する（doPost 内部ヘルパー）
+ * body: { type:'gasApi', function:string, args:Array, idToken:string }
+ * @param {Object} body  パース済みリクエストボディ
+ * @return {TextOutput}  JSON レスポンス
+ */
+function handleApiCall_(body) {
+  try {
+    var funcName = String(body.function || '');
+    var args     = Array.isArray(body.args) ? body.args : [];
+    var idToken  = String(body.idToken || '');
+    Logger.log('=== API コール: ' + funcName + ' ===');
+
+    // 末尾 _ の内部ヘルパーは呼び出し禁止
+    if (!funcName || funcName.charAt(funcName.length - 1) === '_') {
+      return ContentService
+        .createTextOutput(JSON.stringify({ __gasError: '許可されていない関数です: ' + funcName }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Firebase ID トークンを検証してユーザーコンテキストを設定
+    if (idToken) {
+      var email = verifyFirebaseIdToken_(idToken);
+      if (email) {
+        setFirebaseEmailContext_(email);
+        Logger.log('✓ Firebase Auth 確認: ' + email);
+      } else {
+        Logger.log('⚠ Firebase トークン検証失敗 - 匿名として処理');
+      }
+    }
+
+    // グローバルスコープから関数を取得して実行
+    var fn = globalThis[funcName];
+    if (typeof fn !== 'function') {
+      return ContentService
+        .createTextOutput(JSON.stringify({ __gasError: '関数が見つかりません: ' + funcName }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var result = fn.apply(null, args);
+    Logger.log('✓ API コール完了: ' + funcName);
+
+    // undefined は null に変換（JSON.stringify の安全対策）
+    var jsonResult = result !== undefined ? result : null;
+    return ContentService
+      .createTextOutput(JSON.stringify(jsonResult))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    Logger.log('❌ handleApiCall_エラー (' + (body.function || '') + '): ' + error);
+    return ContentService
+      .createTextOutput(JSON.stringify({ __gasError: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }

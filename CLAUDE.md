@@ -429,6 +429,7 @@ MyProject/
 ├── js-admin-lec-deadline.html JS: 管理タブ 講習日程締切管理（initLectureDeadlineDatesAdmin 等、約190行）
 ├── js-ai-actions.html   JS: AIアシスタント アクション実行・ナビゲーション・確認フロー（約280行）
 ├── js-admin-chatbot.html JS: チャットボット管理（AIナレッジベースCRUD、約200行）
+├── gas-bridge.html      JS: google.script.run → fetch() 変換シム（Firebase Hosting用。GAS環境では何もしない）
 ├── firebase.js          Firestore REST APIクライアント（認証・CRUD・クエリ・バッチ書き込み）
 ├── migrate.js           スプレッドシート→Firestore 一括移行スクリプト（移行完了済み・削除不要）
 └── CLAUDE.md            この設計書
@@ -1591,7 +1592,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `deleteLectureDeadlineOverride(lectureId)` — 指定講習の締切日上書き設定を削除して自動計算に戻す（Admin のみ）
 
 ### セクション15: LINE通知・お問い合わせ通知機能
-- `doPost(e)` — LINE Webhook ハンドラー。ユーザーがメールアドレスを送ると LINE User ID 自動登録・Drive フォルダに Editor 権限付与・管理者へ通知メール送信（自己登録方式）。セクション3（Web App エントリーポイント）内に配置
+- `doPost(e)` — POST ハンドラー。`body.type === 'gasApi'` なら Firebase Hosting からの API コールとして `handleApiCall_()` に委譲。それ以外は LINE Webhook として処理（メール自己登録・Drive Editor 付与・管理者通知）。セクション3内に配置
+- `handleApiCall_(body)` — Firebase Hosting からの `google.script.run` 代替 API コールを処理（doPost 内部ヘルパー）。Firebase ID トークンを検証しユーザーコンテキストを設定後、`globalThis[funcName]` で関数を動的ディスパッチ。末尾 `_` の内部関数は呼び出し禁止
 - `sendLineReply_(replyToken, message)` — LINE 返信送信（内部ヘルパー・doPost 内のみ使用）
 - `sendLineMessage(lineUserId, message)` — LINE プッシュ通知送信
 - `sendNotification(teacherId, subject, body)` — `@aiCallable` 通知送信（teacherId からメールを解決し Gmail/LINE/両方を自動判定）
@@ -2445,10 +2447,12 @@ const firebaseConfig = {
   - `deploy-firebase.yml` を更新: `npm run build`（HTMLをインライン展開）→ `firebase deploy --only hosting` を追加
   - トリガーパスに `*.html` / `scripts/build.js` / `package.json` を追加（ソースHTMLの変更でHostingが自動デプロイ）
 
-- [ ] **2-3. `google.script.run` の fetch() シム実装**
-  - `public/js/gas-bridge.js` を作成（既存の全 `google.script.run` 呼び出しをそのまま動かすプロキシ）
-  - GAS `doPost()` に外部からの API コール受付ロジックを追加（LINE Webhook と共存）
-  - Firebase ID トークンをリクエストに含めて GAS 側で検証
+- [x] **2-3. `google.script.run` の fetch() シム実装** ✅ 完了
+  - `gas-bridge.html` を作成（Proxy ベースシム。`google.script.run.*` を `fetch(GAS_EXEC_URL)` に透過変換）
+  - GAS `doPost()` に `body.type === 'gasApi'` の分岐を追加（LINE Webhook と共存）
+  - `handleApiCall_()` を `code.js` に追加（トークン検証→`globalThis[funcName]` で動的ディスパッチ）
+  - 末尾 `_` の内部関数は呼び出し禁止（セキュリティ）
+  - `index.html` の `firebase-auth` 直後に `gas-bridge` include を追加
 
 - [ ] **2-4. GAS 認証モデルの更新**
   - `doPost()` で Firebase ID トークンを検証する `verifyFirebaseToken_()` 関数を追加
