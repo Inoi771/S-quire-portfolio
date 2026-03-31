@@ -362,7 +362,7 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 13**
+**現在のデプロイ回数: 15**
 
 > GASプロジェクト履歴の上限は200件。180回に達したら下記の警告が表示される。
 
@@ -429,6 +429,8 @@ MyProject/
 ├── js-admin-lec-deadline.html JS: 管理タブ 講習日程締切管理（initLectureDeadlineDatesAdmin 等、約190行）
 ├── js-ai-actions.html   JS: AIアシスタント アクション実行・ナビゲーション・確認フロー（約280行）
 ├── js-admin-chatbot.html JS: チャットボット管理（AIナレッジベースCRUD、約200行）
+├── firebase.js          Firestore REST APIクライアント（認証・CRUD・クエリ・バッチ書き込み）
+├── migrate.js           スプレッドシート→Firestore 一括移行スクリプト（移行完了済み・削除不要）
 └── CLAUDE.md            この設計書
 ```
 
@@ -624,6 +626,33 @@ MyProject/
 | 4 | 月日（例: 7月19日） |
 | 5 | 詳細 |
 | 6 | 情報源 |
+
+---
+
+## 6-B. Firestore コレクション構成（移行完了済み）
+
+> スプレッドシートから Firestore への移行は完了済み。新規データはすべて Firestore に書き込まれる。
+> `firebase.js` の CRUD ヘルパー（`firestoreSet_` / `firestoreGet_` / `firestoreQuery_` / `firestoreDelete_` / `firestoreBatchWrite_`）を使うこと。
+
+| コレクション名 | 旧保存先 | 主な DocId形式 | 用途 |
+|--------------|---------|--------------|------|
+| `students` | 生徒マスタ.gs `生徒一覧` | `{campusCode2}{year4}{gradeCode2}{seq2}` | 生徒情報 |
+| `grades` | 成績データ.gs `成績一覧` | `{studentId}_{safe(testName)}` | 成績データ |
+| `schoolAverages` | 成績データ.gs `学校別平均点` | `{year}_{safe(school)}_{safe(testName)}` | 学校別平均点 |
+| `testAnalysis` | 成績データ.gs `AI分析` | `{year}_{safe(testName)}` | テスト全体AI分析 |
+| `studentAnalysis` | 成績データ.gs `生徒別AI分析` | `{studentId}_{safe(testName)}` | 生徒別AI分析 |
+| `schedules` | 予定データ.gs `予定一覧` | Admin: `{year}_admin_{ms}` / import: `{year}_{school}_{type}_{date}` | 月間スケジュール |
+| `lectureEntries` | 講習管理SS `スケジュール一覧` | `{lectureId}_{campusCode}_{entryId}` | 講習日程エントリ |
+| `lineSchedules` | システム設定.gs `LINEスケジューラー` | `sch_{YYYYMM}_{type}` | LINEスケジューラー |
+| `flyerAi` | システム設定.gs `チラシAI` | `{lectureId}_{campusCode}` | AIチラシHTML・会話履歴 |
+| `imageTags` | システム設定.gs `画像タグ` | `{driveFileId}` | チラシ用画像タグ |
+| `operationLogs` | システム設定.gs `操作ログ` | `log_{ms}_{random5}` | 操作ログ（追記のみ） |
+
+### Firestore 利用上の注意
+- `firestoreQuery_(collection, [])` で空フィルターを渡すと全件取得
+- `sent == false` のような boolean フィルターは `fsFilter_('sent', 'EQUAL', false)` で可能
+- 複数フィールドへの複合クエリ（AND）は `Firestore` コンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること
+- `firestoreQuery_` の結果には `_id` フィールドが自動付加される（`r.document.name.split('/').pop()`）
 
 ---
 
