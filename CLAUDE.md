@@ -2440,9 +2440,10 @@ const firebaseConfig = {
   - `public/` を `.gitignore` に追加（ビルド成果物のため）
   - `firebase.json` の `"public": "public"` は設定済みのため変更不要
 
-- [ ] **2-2. Firebase Hosting デプロイ設定**
-  - `firebase.json` に Hosting 設定を追加
-  - `deploy-firebase.yml` に Firebase Hosting デプロイステップを追加
+- [x] **2-2. Firebase Hosting デプロイ設定** ✅ 完了
+  - `firebase.json` の `"public": "public"` / `rewrites` は設定済み・変更不要
+  - `deploy-firebase.yml` を更新: `npm run build`（HTMLをインライン展開）→ `firebase deploy --only hosting` を追加
+  - トリガーパスに `*.html` / `scripts/build.js` / `package.json` を追加（ソースHTMLの変更でHostingが自動デプロイ）
 
 - [ ] **2-3. `google.script.run` の fetch() シム実装**
   - `public/js/gas-bridge.js` を作成（既存の全 `google.script.run` 呼び出しをそのまま動かすプロキシ）
