@@ -343,3 +343,4 @@ if (typeof module !== 'undefined') {
     EVENT_TYPES: EVENT_TYPES
   };
 }
+// 更新 2026-03-31
