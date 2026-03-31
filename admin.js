@@ -1443,7 +1443,11 @@ function scheduledInitializeSheets() {
       generateMonthlySchedule_(_ny, _nm);
     } catch(e) { Logger.log('⚠ LINEスケジュール自動生成: ' + e); }
 
-    
+    // Firestoreバックアップ（backup.js）
+    try {
+      runFirestoreBackup();
+    } catch(e) { Logger.log('⚠ Firestoreバックアップ: ' + e); }
+
     recordInitializationLog('成功', '定時初期化処理（scheduledInitializeSheets）');
     
     return {
@@ -1465,10 +1469,72 @@ function scheduledInitializeSheets() {
 }
 
 /**
+ * 毎日メンテナンストリガー（scheduledInitializeSheets）を設定する
+ * 毎日午前2時に実行：祝日キャッシュ更新 + LINEスケジュール自動生成 + Firestoreバックアップ
+ * @return {Object} { success, message, error }
+ */
+function setupDailyMaintenanceTrigger() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(function(t) {
+      if (t.getHandlerFunction() === 'scheduledInitializeSheets') ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger('scheduledInitializeSheets').timeBased().everyDays(1).atHour(2).create();
+    return { success: true, message: '毎日メンテナンストリガーを設定しました（毎日午前2時）' };
+  } catch (e) {
+    Logger.log('❌ setupDailyMaintenanceTriggerエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 毎日メンテナンストリガーを削除する
+ * @return {Object} { success, message, error }
+ */
+function deleteDailyMaintenanceTrigger() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var triggers = ScriptApp.getProjectTriggers();
+    var deleted = 0;
+    triggers.forEach(function(t) {
+      if (t.getHandlerFunction() === 'scheduledInitializeSheets') { ScriptApp.deleteTrigger(t); deleted++; }
+    });
+    return { success: true, message: deleted > 0 ? 'トリガーを削除しました' : 'トリガーは設定されていません' };
+  } catch (e) {
+    Logger.log('❌ deleteDailyMaintenanceTriggerエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 全トリガーの稼働状態を一括取得する（Admin のみ）
+ * @return {Object} { success, triggers: { daily, lineScheduler, formEmail, backup } }
+ */
+function getAllTriggerStatuses() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var all = ScriptApp.getProjectTriggers();
+    var status = { daily: false, lineScheduler: false, formEmail: false, backup: false };
+    all.forEach(function(t) {
+      var fn = t.getHandlerFunction();
+      if (fn === 'scheduledInitializeSheets')  status.daily         = true;
+      if (fn === 'checkAndSendDueLineMessages') status.lineScheduler = true;
+      if (fn === 'checkAndForwardFormEmails')   status.formEmail     = true;
+      if (fn === 'runFirestoreBackup')           status.backup        = true;
+    });
+    return { success: true, triggers: status };
+  } catch (e) {
+    Logger.log('❌ getAllTriggerStatusesエラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * 手動初期化用関数（Admin のみ）
  * 必要に応じて手動で実行可能
  * Admin タブから「手動初期化」ボタンなどで呼び出す
- * 
+ *
  * @return {Object} { success, message, error }
  */
 function manualInitializeSheets() {

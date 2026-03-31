@@ -840,34 +840,102 @@
 
   // ===== 基礎学力テスト日程管理（Admin）=====
 
-    // ===== Firestoreバックアップ =====
+    // ===== トリガー一括管理 =====
 
-    /** バックアップトリガーの状態を確認してボタンを更新する */
-    function loadBackupTriggerStatus() {
-      var btn = document.getElementById('backupTriggerBtn');
-      var statusEl = document.getElementById('backupTriggerStatus');
-      if (btn) btn.textContent = '⏳ 確認中...';
+    var TRIGGER_DEFS_ = [
+      {
+        key: 'daily',
+        label: '毎日メンテナンス',
+        desc: '祝日キャッシュ更新・LINEスケジュール自動生成・Firestoreバックアップ（毎日 午前2時）',
+        setupFn: 'setupDailyMaintenanceTrigger',
+        deleteFn: 'deleteDailyMaintenanceTrigger'
+      },
+      {
+        key: 'lineScheduler',
+        label: 'LINE自動送信',
+        desc: '送信時刻になったLINEメッセージを自動送信（毎時）',
+        setupFn: 'setupScheduledLineTrigger',
+        deleteFn: 'deleteScheduledLineTrigger'
+      },
+      {
+        key: 'formEmail',
+        label: 'フォームメール転送',
+        desc: 'お問い合わせメールを自動転送（5分ごと）',
+        setupFn: 'setupFormEmailTrigger',
+        deleteFn: 'deleteFormEmailTrigger'
+      }
+    ];
+
+    /** 全トリガーの状態を取得してリストを描画する */
+    function loadBackupTriggerStatus() { loadAllTriggerStatuses(); } // 旧名互換
+
+    function loadAllTriggerStatuses() {
+      var listEl = document.getElementById('triggerList');
+      if (!listEl) return;
+      listEl.innerHTML = '<div style="color:#999;font-size:13px;">⏳ 読み込み中...</div>';
       google.script.run
         .withSuccessHandler(function(r) {
-          if (!btn) return;
-          if (r.active) {
-            btn.textContent = '🔴 自動バックアップを停止';
-            btn.style.background = '#ffebee';
-            btn.style.color = '#c62828';
-            btn.style.borderColor = '#ef9a9a';
-          } else {
-            btn.textContent = '🟢 毎日自動バックアップを開始';
-            btn.style.background = '#e8f5e9';
-            btn.style.color = '#2e7d32';
-            btn.style.borderColor = '#a5d6a7';
+          if (!r.success) {
+            listEl.innerHTML = '<div style="color:#c62828;">❌ ' + (r.error || '取得失敗') + '</div>';
+            return;
           }
-          if (statusEl) statusEl.textContent = r.message || '';
+          var html = '';
+          TRIGGER_DEFS_.forEach(function(def) {
+            var active = r.triggers[def.key];
+            var btnLabel  = active ? '🔴 停止' : '🟢 開始';
+            var btnStyle  = active
+              ? 'background:#ffebee;color:#c62828;border:1px solid #ef9a9a;'
+              : 'background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;';
+            var statusBadge = active
+              ? '<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">✅ 稼働中</span>'
+              : '<span style="background:#f5f5f5;color:#999;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">⏸ 停止中</span>';
+            html += '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fa;border-radius:8px;flex-wrap:wrap;">'
+              + '<div style="flex:1;min-width:180px;">'
+              +   '<div style="font-weight:700;font-size:13px;margin-bottom:2px;">' + def.label + ' ' + statusBadge + '</div>'
+              +   '<div style="font-size:11px;color:#777;">' + def.desc + '</div>'
+              + '</div>'
+              + '<button onclick="toggleTrigger_(\'' + def.key + '\',' + active + ')" '
+              +   'style="padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap;' + btnStyle + '">'
+              +   btnLabel
+              + '</button>'
+              + '</div>';
+          });
+          listEl.innerHTML = html;
         })
         .withFailureHandler(function(e) {
-          if (btn) btn.textContent = '⚙️ 状態確認エラー';
+          if (listEl) listEl.innerHTML = '<div style="color:#c62828;">❌ エラー: ' + e.message + '</div>';
           console.error(e);
         })
-        .getBackupTriggerStatus();
+        .getAllTriggerStatuses();
+    }
+
+    /** トリガーのON/OFFを切り替える */
+    function toggleTrigger_(key, currentlyActive) {
+      var def = TRIGGER_DEFS_.filter(function(d) { return d.key === key; })[0];
+      if (!def) return;
+      var msg = currentlyActive
+        ? '「' + def.label + '」を停止しますか？'
+        : '「' + def.label + '」を開始しますか？';
+      appConfirm(msg).then(function(ok) {
+        if (!ok) return;
+        var msgEl = document.getElementById('triggerMessage');
+        if (msgEl) msgEl.innerHTML = '⏳ 処理中...';
+        var fn = currentlyActive ? def.deleteFn : def.setupFn;
+        google.script.run
+          .withSuccessHandler(function(r) {
+            if (msgEl) {
+              msgEl.innerHTML = r.success
+                ? '<span style="color:#2e7d32;">✅ ' + r.message + '</span>'
+                : '<span style="color:#c62828;">❌ ' + (r.error || '') + '</span>';
+            }
+            loadAllTriggerStatuses();
+          })
+          .withFailureHandler(function(e) {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#c62828;">❌ ' + e.message + '</span>';
+            loadAllTriggerStatuses();
+          })
+          [fn]();
+      });
     }
 
     /** 今すぐバックアップを実行する */
@@ -875,18 +943,13 @@
       var btn = document.getElementById('backupRunBtn');
       var msgEl = document.getElementById('backupStatusMsg');
       if (btn) { btn.disabled = true; btn.textContent = '⏳ バックアップ中...'; }
-      if (msgEl) msgEl.textContent = '⏳ Firestoreからデータを取得してスプレッドシートに書き込んでいます...';
+      if (msgEl) { msgEl.textContent = '⏳ Firestoreからデータを取得してスプレッドシートに書き込んでいます...'; msgEl.style.color = '#555'; }
       google.script.run
         .withSuccessHandler(function(r) {
           if (btn) { btn.disabled = false; btn.textContent = '💾 今すぐバックアップ'; }
           if (msgEl) {
-            if (r.success) {
-              msgEl.textContent = '✅ ' + r.message;
-              msgEl.style.color = '#2e7d32';
-            } else {
-              msgEl.textContent = '❌ ' + (r.error || '不明なエラー');
-              msgEl.style.color = '#c62828';
-            }
+            msgEl.textContent = r.success ? '✅ ' + r.message : '❌ ' + (r.error || '不明なエラー');
+            msgEl.style.color = r.success ? '#2e7d32' : '#c62828';
           }
         })
         .withFailureHandler(function(e) {
@@ -895,33 +958,6 @@
           console.error(e);
         })
         .runFirestoreBackup();
-    }
-
-    /** 自動バックアップトリガーのON/OFFを切り替える */
-    function toggleBackupTrigger() {
-      var statusEl = document.getElementById('backupTriggerStatus');
-      var btn = document.getElementById('backupTriggerBtn');
-      var isActive = btn && btn.textContent.indexOf('停止') !== -1;
-      var action = isActive ? 'deleteBackupTrigger' : 'setupBackupTrigger';
-      var msg = isActive ? '自動バックアップを停止しますか？' : '毎日午前3時に自動バックアップを開始しますか？';
-      appConfirm(msg).then(function(ok) {
-        if (!ok) return;
-        if (btn) { btn.disabled = true; btn.textContent = '⏳ 処理中...'; }
-        google.script.run
-          .withSuccessHandler(function(r) {
-            if (btn) btn.disabled = false;
-            if (statusEl) {
-              statusEl.textContent = r.success ? '✅ ' + r.message : '❌ ' + (r.error || '');
-            }
-            loadBackupTriggerStatus();
-          })
-          .withFailureHandler(function(e) {
-            if (btn) btn.disabled = false;
-            if (statusEl) statusEl.textContent = '❌ エラー: ' + e.message;
-            console.error(e);
-          })
-          [action]();
-      });
     }
 
     /**
