@@ -2391,10 +2391,7 @@ const firebaseConfig = {
 
 - [x] **1-1. Firestoreセキュリティルールの更新** ✅ 完了
 
-- [ ] **1-2. Firebase SDK を GAS の HTML に追加**
-  - `index.html` に Firebase App・Auth・Firestore の CDN script タグを追加
-  - `firebase-init.html` を新規作成（初期化コード）
-  - `index.html` に `<?!= include('firebase-init') ?>` を追加
+- [x] **1-2. Firebase SDK を GAS の HTML に追加** ✅ 完了
 
 - [ ] **1-3. Firebase Auth（Googleログイン・アカウント切り替え）の実装**
   - アプリ起動時に Firebase Auth の状態を確認
