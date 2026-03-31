@@ -243,8 +243,9 @@ function runFirestoreBackup() {
 }
 
 /**
- * バックアップ用の毎日トリガーを設定する（Admin のみ）
- * 毎日午前3時に runFirestoreBackup を実行する
+ * バックアップ用の独立トリガーを設定する（非推奨）
+ * scheduledInitializeSheets に統合済みのため通常は不要。
+ * getAllTriggerStatuses() が存在チェックするため関数は残す。
  * @return {Object} { success, message, error }
  */
 function setupBackupTrigger() {
