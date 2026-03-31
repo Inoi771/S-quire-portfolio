@@ -372,60 +372,50 @@ function getMasterData(year) {
 }
 
 /**
- * 成績データを取得
+ * 成績ドキュメントIDを生成する内部ヘルパー
+ * docId: {studentId}_{safeTestName}_{fiscalYear}
+ * @param {string} studentId 生徒ID（10桁）
+ * @param {string} testName  テスト名
+ * @param {number} year      学年年度
+ * @return {string} ドキュメントID
+ */
+function makeGradeDocId_(studentId, testName, year) {
+  var safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(studentId) + '_' + safe + '_' + String(year);
+}
+
+/**
+ * 成績データを取得（Firestore）
  * @param {number} year 学年年度
  * @return {Array} 成績データ配列
  */
 function getDataSheetData(year) {
   try {
+    var docs = firestoreQuery_('grades', [
+      fsFilter_('fiscalYear', 'EQUAL', parseInt(year, 10))
+    ]);
 
-    var ss = getGradeDataSheet(year);
-    if (!ss) {
-      Logger.log('❌ スプレッドシートが取得できません');
-      return [];
-    }
-
-    var sheet = ss.getSheetByName('成績一覧');
-    if (!sheet || sheet.getLastRow() < 2) {
-      Logger.log('⚠ データが0件');
-      return [];
-    }
-
-    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
-    var results = [];
-
-    data.forEach(function(row) {
-      try {
-        // Sheetsの数値変換で先頭ゼロが消えた場合、10桁に補完する
-        var studentIdRaw = String(row[0] || '');
-        if (studentIdRaw && /^\d+$/.test(studentIdRaw) && studentIdRaw.length < 10) {
-          studentIdRaw = studentIdRaw.padStart(10, '0');
-        }
-
-        // getValues()の生の値をそのまま使用（数値はNumber、空セルは''）
-        // ※ nullを返すとGASシリアライゼーションで削除されるため、生の値を保持する
-        results.push({
-          studentId: studentIdRaw,
-          testName: String(row[1] || '').trim(),
-          kokugo:  row[2],
-          shakai:  row[3],
-          sugaku:  row[4],
-          rika:    row[5],
-          eigo:    row[6],
-          total:   row[7],
-          average: row[8],
-          shogaku1:       row[9]  || '',
-          shogaku1_gakka: row[10] || '',
-          shogaku2:       row[11] || '',
-          shogaku2_gakka: row[12] || '',
-          recordedDate:   row[13] ? new Date(row[13]).toISOString() : new Date().toISOString(),
-          studentName:    String(row[14] || '')
-        });
-      } catch (rowError) {
-      }
+    return docs.map(function(doc) {
+      var sid = String(doc.studentId || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      return {
+        studentId:      sid,
+        testName:       String(doc.testName    || '').trim(),
+        kokugo:         doc.kokugo  !== null && doc.kokugo  !== undefined ? doc.kokugo  : '',
+        shakai:         doc.shakai  !== null && doc.shakai  !== undefined ? doc.shakai  : '',
+        sugaku:         doc.sugaku  !== null && doc.sugaku  !== undefined ? doc.sugaku  : '',
+        rika:           doc.rika    !== null && doc.rika    !== undefined ? doc.rika    : '',
+        eigo:           doc.eigo    !== null && doc.eigo    !== undefined ? doc.eigo    : '',
+        total:          doc.total   !== null && doc.total   !== undefined ? doc.total   : '',
+        average:        doc.average !== null && doc.average !== undefined ? doc.average : '',
+        shogaku1:       String(doc.shogaku1       || ''),
+        shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+        shogaku2:       String(doc.shogaku2       || ''),
+        shogaku2_gakka: String(doc.shogaku2_gakka || ''),
+        recordedDate:   doc.recordedAt || new Date().toISOString(),
+        studentName:    String(doc.studentName    || '')
+      };
     });
-
-    return results;
   } catch (error) {
     Logger.log('❌ getDataSheetDataエラー: ' + error);
     return [];
@@ -1023,7 +1013,7 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
 }
 
 /**
- * 生徒IDとテスト名で既存の成績データを1件取得
+ * 生徒IDとテスト名で既存の成績データを1件取得（Firestore）
  * @aiCallable
  * @param {number} year 対象年度
  * @param {string} studentId 生徒ID
@@ -1032,43 +1022,30 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
  */
 function getGradeDataByStudentAndTest(year, studentId, testName) {
   try {
-    var ss = getGradeDataSheet(year);
-    if (!ss) return { success: true, found: false };
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var sheet = ss.getSheetByName('成績一覧');
-    if (!sheet || sheet.getLastRow() < 2) return { success: true, found: false };
+    var docId = makeGradeDocId_(sid, testName, year);
+    var doc = firestoreGet_('grades', docId);
 
-    var numRows = sheet.getLastRow() - 1;
-    var rows = sheet.getRange(2, 1, numRows, 15).getValues();
+    if (!doc) return { success: true, found: false };
 
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      // Sheetsの数値変換で先頭ゼロが消えた場合に10桁へ補完して比較
-      var rowStudentId = String(row[0] || '').trim();
-      if (rowStudentId && /^\d+$/.test(rowStudentId) && rowStudentId.length < 10) {
-        rowStudentId = rowStudentId.padStart(10, '0');
+    return {
+      success: true,
+      found: true,
+      data: {
+        kokugo:         doc.kokugo  !== null && doc.kokugo  !== undefined ? doc.kokugo  : '',
+        shakai:         doc.shakai  !== null && doc.shakai  !== undefined ? doc.shakai  : '',
+        sugaku:         doc.sugaku  !== null && doc.sugaku  !== undefined ? doc.sugaku  : '',
+        rika:           doc.rika    !== null && doc.rika    !== undefined ? doc.rika    : '',
+        eigo:           doc.eigo    !== null && doc.eigo    !== undefined ? doc.eigo    : '',
+        gokei:          doc.total   !== null && doc.total   !== undefined ? doc.total   : '',
+        shogaku1:       String(doc.shogaku1       || ''),
+        shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+        shogaku2:       String(doc.shogaku2       || ''),
+        shogaku2_gakka: String(doc.shogaku2_gakka || '')
       }
-      if (rowStudentId === String(studentId).trim() &&
-          String(row[1]).trim() === String(testName).trim()) {
-        return {
-          success: true,
-          found: true,
-          data: {
-            kokugo:         row[2],
-            shakai:         row[3],
-            sugaku:         row[4],
-            rika:           row[5],
-            eigo:           row[6],
-            gokei:          row[7],
-            shogaku1:       row[9]  || '',
-            shogaku1_gakka: row[10] || '',
-            shogaku2:       row[11] || '',
-            shogaku2_gakka: row[12] || ''
-          }
-        };
-      }
-    }
-    return { success: true, found: false };
+    };
   } catch (error) {
     Logger.log('❌ getGradeDataByStudentAndTestエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -1076,7 +1053,7 @@ function getGradeDataByStudentAndTest(year, studentId, testName) {
 }
 
 /**
- * 成績データを登録（既存行があれば上書き更新、なければ新規追加）
+ * 成績データを登録（Firestore upsert）
  * @aiCallable
  * @param {number} year 学年年度
  * @param {string} studentId 生徒ID
@@ -1086,86 +1063,53 @@ function getGradeDataByStudentAndTest(year, studentId, testName) {
  */
 function submitGradeData(year, studentId, testName, scores) {
   try {
-    
-    // バリデーション
     if (!studentId || !testName) {
-      return {
-        success: false,
-        error: '生徒IDとテスト名は必須です'
-      };
+      return { success: false, error: '生徒IDとテスト名は必須です' };
     }
-    
-    // スプレッドシートを取得
-    var ss = getGradeDataSheet(year);
-    if (!ss) {
-      return {
-        success: false,
-        error: 'スプレッドシートが見つかりません'
-      };
-    }
-    
-    var sheet = ss.getSheetByName('成績一覧');
 
-    // スコア値を数値に変換
-    var kokugo = parseInt(scores.kokugo) || 0;
-    var shakai = parseInt(scores.shakai) || 0;
-    var sugaku = parseInt(scores.sugaku) || 0;
-    var rika   = parseInt(scores.rika)   || 0;
-    var eigo   = parseInt(scores.eigo)   || 0;
+    var sid = String(studentId).trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    // スコア値を数値に変換（0 が有効値なので isNaN チェックを使う）
+    var kokugo = parseInt(scores.kokugo, 10); if (isNaN(kokugo)) kokugo = 0;
+    var shakai = parseInt(scores.shakai, 10); if (isNaN(shakai)) shakai = 0;
+    var sugaku = parseInt(scores.sugaku, 10); if (isNaN(sugaku)) sugaku = 0;
+    var rika   = parseInt(scores.rika,   10); if (isNaN(rika))   rika   = 0;
+    var eigo   = parseInt(scores.eigo,   10); if (isNaN(eigo))   eigo   = 0;
     var calcTotal = kokugo + shakai + sugaku + rika + eigo;
-    var total   = (scores.gokei && parseInt(scores.gokei) > 0) ? parseInt(scores.gokei) : calcTotal;
-    var average = total > 0 ? (total / 5).toFixed(1) : 0;
+    var gokei = parseInt(scores.gokei, 10);
+    var total   = (!isNaN(gokei) && gokei > 0) ? gokei : calcTotal;
+    var average = total > 0 ? parseFloat((total / 5).toFixed(1)) : 0;
 
-    // 氏名を取得（scores.studentName があればそれを、なければマスタから検索）
-    var studentName = scores.studentName || getStudentNameById(studentId);
+    var studentName = scores.studentName || getStudentNameById(sid);
 
-    var rowData = [
-      studentId, testName,
-      kokugo, shakai, sugaku, rika, eigo,
-      total, average,
-      scores.shogaku1       || '',
-      scores.shogaku1_gakka || '',
-      scores.shogaku2       || '',
-      scores.shogaku2_gakka || '',
-      new Date().toISOString(),
-      studentName
-    ];
+    var docId = makeGradeDocId_(sid, testName, year);
+    var isNew = !firestoreGet_('grades', docId);
 
-    // 既存行を検索して upsert（同じ生徒ID + テスト名があれば上書き、なければ追加）
-    var existingRowIndex = -1;
-    if (sheet.getLastRow() >= 2) {
-      var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-      for (var i = 0; i < ids.length; i++) {
-        // Sheetsの数値変換で先頭ゼロが消えた場合に10桁へ補完して比較
-        var idStr = String(ids[i][0] || '').trim();
-        if (idStr && /^\d+$/.test(idStr) && idStr.length < 10) {
-          idStr = idStr.padStart(10, '0');
-        }
-        if (idStr === String(studentId).trim() &&
-            String(ids[i][1]).trim() === String(testName).trim()) {
-          existingRowIndex = i + 2; // ヘッダー行分 +1、0-indexed分 +1
-          break;
-        }
-      }
-    }
+    firestoreSet_('grades', docId, {
+      studentId:      sid,
+      testName:       String(testName).trim(),
+      fiscalYear:     parseInt(year, 10),
+      kokugo:         kokugo,
+      shakai:         shakai,
+      sugaku:         sugaku,
+      rika:           rika,
+      eigo:           eigo,
+      total:          total,
+      average:        average,
+      shogaku1:       scores.shogaku1       || '',
+      shogaku1_gakka: scores.shogaku1_gakka || '',
+      shogaku2:       scores.shogaku2       || '',
+      shogaku2_gakka: scores.shogaku2_gakka || '',
+      recordedAt:     new Date().toISOString(),
+      studentName:    studentName
+    });
 
-    if (existingRowIndex > 0) {
-      sheet.getRange(existingRowIndex, 1, 1, rowData.length).setValues([rowData]);
-      // A列をテキスト形式に設定して先頭ゼロを保持
-      sheet.getRange(existingRowIndex, 1).setNumberFormat('@');
-      return { success: true, message: '成績データを上書き更新しました' };
-    } else {
-      sheet.appendRow(rowData);
-      // A列をテキスト形式に設定して先頭ゼロを保持
-      sheet.getRange(sheet.getLastRow(), 1).setNumberFormat('@');
-      return { success: true, message: '成績データを新規保存しました' };
-    }
+    Logger.log('✓ submitGradeData: ' + (isNew ? '新規' : '更新') + ' ' + docId);
+    return { success: true, message: isNew ? '成績データを新規保存しました' : '成績データを上書き更新しました' };
   } catch (error) {
     Logger.log('❌ submitGradeDataエラー: ' + error);
-    return {
-      success: false,
-      error: error.toString()
-    };
+    return { success: false, error: error.toString() };
   }
 }
 
@@ -1354,28 +1298,14 @@ function getStudentGradeReport(year, studentId) {
 // ----------------------------------------
 
 /**
- * 年度別成績スプレッドシート内に「学校別平均点」シートを取得または作成する
+ * 学校別平均点の Firestore ドキュメントIDを生成する内部ヘルパー
  * @param {number} year 学年年度
- * @return {Sheet|null} シートオブジェクト
+ * @param {string} testName テスト名
+ * @return {string} docId
  */
-function getAveragesSheet(year) {
-  try {
-    var ss = getGradeDataSheet(year);
-    if (!ss) return null;
-
-    var sheetName = '学校別平均点';
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = ['テスト名', '学校名', '国語', '社会', '数学', '理科', '英語', '合計', '更新日時'];
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-      sheet.setFrozenRows(1);
-    }
-    return sheet;
-  } catch (error) {
-    Logger.log('❌ getAveragesSheetエラー: ' + error);
-    return null;
-  }
+function makeSchoolAveDocId_(year, testName) {
+  var safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(year) + '_' + safe;
 }
 
 /**
@@ -1410,25 +1340,10 @@ function getSchoolListForAverages(year) {
  */
 function getSchoolAverages(year, testName) {
   try {
-    var sheet = getAveragesSheet(year);
-    if (!sheet) return { success: true, averages: [] };
-
-    var rows = sheet.getDataRange().getValues();
-    var averages = [];
-    for (var i = 1; i < rows.length; i++) {
-      var row = rows[i];
-      if (String(row[0]).trim() !== String(testName).trim()) continue;
-      averages.push({
-        schoolName: String(row[1]).trim(),
-        kokugo:     row[2] === '' ? '' : Number(row[2]),
-        shakai:     row[3] === '' ? '' : Number(row[3]),
-        sugaku:     row[4] === '' ? '' : Number(row[4]),
-        rika:       row[5] === '' ? '' : Number(row[5]),
-        eigo:       row[6] === '' ? '' : Number(row[6]),
-        total:      row[7] === '' ? '' : Number(row[7])
-      });
-    }
-    return { success: true, averages: averages };
+    var docId = makeSchoolAveDocId_(year, testName);
+    var doc = firestoreGet_('schoolAverages', docId);
+    if (!doc || !doc.averages) return { success: true, averages: [] };
+    return { success: true, averages: doc.averages };
   } catch (error) {
     Logger.log('❌ getSchoolAveragesエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -1437,6 +1352,7 @@ function getSchoolAverages(year, testName) {
 
 /**
  * 学校別平均点を保存する（upsert）
+ * Firestore の schoolAverages コレクションに docId={year}_{safeTestName} で保存
  * @param {number} year 学年年度
  * @param {string} testName テスト名
  * @param {Array} dataArray [{schoolName, kokugo, shakai, sugaku, rika, eigo, total}] totalは任意（指定時優先）
@@ -1445,20 +1361,18 @@ function getSchoolAverages(year, testName) {
  */
 function saveSchoolAverages(year, testName, dataArray, skipExisting) {
   try {
-    var sheet = getAveragesSheet(year);
-    if (!sheet) return { success: false, error: '成績データシートが見つかりません' };
-
-    var rows = sheet.getDataRange().getValues();
-    var existingMap = {};
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === String(testName).trim()) {
-        existingMap[String(rows[i][1]).trim()] = i + 1; // 1-indexed row number
-      }
-    }
-
+    var docId = makeSchoolAveDocId_(year, testName);
+    var now = new Date().toISOString();
     var savedCount = 0;
     var updatedCount = 0;
-    var now = new Date().toISOString();
+
+    // 既存ドキュメントを取得して既存 averages マップを構築
+    var existingDoc = firestoreGet_('schoolAverages', docId);
+    var existingAverages = (existingDoc && existingDoc.averages) ? existingDoc.averages : [];
+    var existingMap = {};
+    existingAverages.forEach(function(a) {
+      existingMap[String(a.schoolName || '')] = a;
+    });
 
     dataArray.forEach(function(d) {
       var schoolName = String(d.schoolName || '').trim();
@@ -1469,39 +1383,44 @@ function saveSchoolAverages(year, testName, dataArray, skipExisting) {
       var sugaku = d.sugaku === '' || d.sugaku === null || d.sugaku === undefined ? null : Number(d.sugaku);
       var rika   = d.rika   === '' || d.rika   === null || d.rika   === undefined ? null : Number(d.rika);
       var eigo   = d.eigo   === '' || d.eigo   === null || d.eigo   === undefined ? null : Number(d.eigo);
-
       var providedTotal = (d.total === '' || d.total === null || d.total === undefined) ? null : Number(d.total);
       var totalNums = [kokugo, shakai, sugaku, rika, eigo].filter(function(v) { return v !== null; });
       var calcTotal = totalNums.length === 5 ? totalNums.reduce(function(a, b) { return a + b; }, 0) : null;
       var total = providedTotal !== null ? providedTotal : calcTotal;
 
-      var rowValues = [testName, schoolName, kokugo, shakai, sugaku, rika, eigo, total, now];
-
       if (existingMap[schoolName]) {
-        var rowNum = existingMap[schoolName];
         if (skipExisting) {
           // OCRモード: 既存の非ゼロ値はスキップして空/ゼロのみ補完
-          var existRow = rows[rowNum - 1];
-          var merged = [testName, schoolName,
-            (existRow[2] && existRow[2] !== 0) ? existRow[2] : (kokugo !== null ? kokugo : existRow[2]),
-            (existRow[3] && existRow[3] !== 0) ? existRow[3] : (shakai !== null ? shakai : existRow[3]),
-            (existRow[4] && existRow[4] !== 0) ? existRow[4] : (sugaku !== null ? sugaku : existRow[4]),
-            (existRow[5] && existRow[5] !== 0) ? existRow[5] : (rika   !== null ? rika   : existRow[5]),
-            (existRow[6] && existRow[6] !== 0) ? existRow[6] : (eigo   !== null ? eigo   : existRow[6]),
-            null, now
-          ];
-          var mergedTotal = [merged[2], merged[3], merged[4], merged[5], merged[6]]
+          var existing = existingMap[schoolName];
+          var merged = {
+            schoolName: schoolName,
+            kokugo: (existing.kokugo && existing.kokugo !== 0) ? existing.kokugo : (kokugo !== null ? kokugo : existing.kokugo),
+            shakai: (existing.shakai && existing.shakai !== 0) ? existing.shakai : (shakai !== null ? shakai : existing.shakai),
+            sugaku: (existing.sugaku && existing.sugaku !== 0) ? existing.sugaku : (sugaku !== null ? sugaku : existing.sugaku),
+            rika:   (existing.rika   && existing.rika   !== 0) ? existing.rika   : (rika   !== null ? rika   : existing.rika),
+            eigo:   (existing.eigo   && existing.eigo   !== 0) ? existing.eigo   : (eigo   !== null ? eigo   : existing.eigo)
+          };
+          var mergedNums = [merged.kokugo, merged.shakai, merged.sugaku, merged.rika, merged.eigo]
             .filter(function(v) { return v !== null && v !== ''; });
-          merged[7] = mergedTotal.length === 5 ? mergedTotal.reduce(function(a, b) { return Number(a) + Number(b); }, 0) : null;
-          sheet.getRange(rowNum, 1, 1, merged.length).setValues([merged]);
+          merged.total = mergedNums.length === 5
+            ? mergedNums.reduce(function(a, b) { return Number(a) + Number(b); }, 0) : null;
+          existingMap[schoolName] = merged;
         } else {
-          sheet.getRange(rowNum, 1, 1, rowValues.length).setValues([rowValues]);
+          existingMap[schoolName] = { schoolName: schoolName, kokugo: kokugo, shakai: shakai, sugaku: sugaku, rika: rika, eigo: eigo, total: total };
         }
         updatedCount++;
       } else {
-        sheet.appendRow(rowValues);
+        existingMap[schoolName] = { schoolName: schoolName, kokugo: kokugo, shakai: shakai, sugaku: sugaku, rika: rika, eigo: eigo, total: total };
         savedCount++;
       }
+    });
+
+    var finalAverages = Object.keys(existingMap).map(function(name) { return existingMap[name]; });
+    firestoreSet_('schoolAverages', docId, {
+      year:      parseInt(year, 10),
+      testName:  String(testName),
+      updatedAt: now,
+      averages:  finalAverages
     });
 
     return { success: true, savedCount: savedCount, updatedCount: updatedCount };

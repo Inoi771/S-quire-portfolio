@@ -49,31 +49,14 @@ function fetchGeminiWithRetry_(url, options) {
 // ----------------------------------------
 
 /**
- * 年度別成績スプレッドシート内に「AI分析」シートを取得または作成する
+ * テスト全体AI分析の Firestore ドキュメントIDを生成する内部ヘルパー
  * @param {number} year 学年年度
- * @return {Sheet|null} シートオブジェクト
+ * @param {string} testName テスト名
+ * @return {string} docId
  */
-function getAnalysisSheet(year) {
-  try {
-    var ss = getGradeDataSheet(year);
-    if (!ss) return null;
-
-    var sheetName = 'AI分析';
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = ['テスト名', '分析コメント', '生成日時'];
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-      sheet.setFrozenRows(1);
-      sheet.setColumnWidth(1, 150);
-      sheet.setColumnWidth(2, 800);
-      sheet.setColumnWidth(3, 180);
-    }
-    return sheet;
-  } catch (error) {
-    Logger.log('❌ getAnalysisSheetエラー: ' + error);
-    return null;
-  }
+function makeTestAnalysisDocId_(year, testName) {
+  var safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(year) + '_' + safe;
 }
 
 /**
@@ -85,35 +68,16 @@ function getAnalysisSheet(year) {
  */
 function getGradeAnalysis(year, testName) {
   try {
-
-    var sheet = getAnalysisSheet(year);
-    if (!sheet) {
+    var docId = makeTestAnalysisDocId_(year, testName);
+    var doc = firestoreGet_('testAnalysis', docId);
+    if (!doc || !doc.analysisJson) {
       return { success: true, exists: false, analysis: null, generatedAt: '' };
     }
-
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
+    var analysis = safeJsonParse_(doc.analysisJson, null);
+    if (!analysis) {
       return { success: true, exists: false, analysis: null, generatedAt: '' };
     }
-
-    var rows = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
-    var targetTest = String(testName || '').trim();
-
-    for (var i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === targetTest) {
-        var analysisJson = String(rows[i][1]);
-        var generatedAt = String(rows[i][2]);
-        try {
-          var analysis = JSON.parse(analysisJson);
-          return { success: true, exists: true, analysis: analysis, generatedAt: generatedAt };
-        } catch (e) {
-          Logger.log('⚠ 分析データのパースに失敗: ' + e);
-          return { success: true, exists: false, analysis: null, generatedAt: '' };
-        }
-      }
-    }
-
-    return { success: true, exists: false, analysis: null, generatedAt: '' };
+    return { success: true, exists: true, analysis: analysis, generatedAt: doc.generatedAt || '' };
   } catch (error) {
     Logger.log('❌ getGradeAnalysisエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -164,29 +128,14 @@ function getYearTestAvgs_(year, testName) {
 }
 
 /**
- * 指定年度の「分布キャッシュ」シートを取得または作成する内部ヘルパー
- * 成績データ.gs 内に列（テスト名 / 分布JSON / 更新日時）を持つシートを管理する
+ * 得点分布キャッシュの Firestore ドキュメントIDを生成する内部ヘルパー
  * @param {number} year 学年年度
- * @return {Sheet|null} シートオブジェクト（取得・作成失敗時は null）
+ * @param {string} testName テスト名
+ * @return {string} docId
  */
-function getDistCacheSheet_(year) {
-  try {
-    var ss = getGradeDataSheet(year);
-    if (!ss) return null;
-    var sheet = ss.getSheetByName('分布キャッシュ');
-    if (!sheet) {
-      sheet = ss.insertSheet('分布キャッシュ');
-      sheet.getRange(1, 1, 1, 3).setValues([['テスト名', '分布JSON', '更新日時']]).setFontWeight('bold');
-      sheet.setFrozenRows(1);
-      sheet.setColumnWidth(1, 200);
-      sheet.setColumnWidth(2, 600);
-      sheet.setColumnWidth(3, 180);
-    }
-    return sheet;
-  } catch (e) {
-    Logger.log('⚠ getDistCacheSheet_ エラー (' + year + '): ' + e);
-    return null;
-  }
+function makeDistCacheDocId_(year, testName) {
+  var safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(year) + '_' + safe;
 }
 
 /**
@@ -201,22 +150,15 @@ function getDistCacheSheet_(year) {
  */
 function getOrBuildDistCache_(year, testName, sigmaConfig, forceRecalc) {
   var targetTest = String(testName).trim();
-  var sheet = getDistCacheSheet_(year);
+  var distDocId = makeDistCacheDocId_(year, testName);
 
   // --- キャッシュ読み込み（forceRecalc=false のとき） ---
-  if (!forceRecalc && sheet) {
+  if (!forceRecalc) {
     try {
-      var lastRow = sheet.getLastRow();
-      if (lastRow >= 2) {
-        var rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-        for (var i = 0; i < rows.length; i++) {
-          if (String(rows[i][0]).trim() === targetTest) {
-            var cached = safeJsonParse_(String(rows[i][1]), null);
-            if (cached) {
-              return cached;
-            }
-          }
-        }
+      var cacheDoc = firestoreGet_('distCache', distDocId);
+      if (cacheDoc && cacheDoc.distributionJson) {
+        var cached = safeJsonParse_(cacheDoc.distributionJson, null);
+        if (cached) return cached;
       }
     } catch (e) {
       Logger.log('⚠ getOrBuildDistCache_ キャッシュ読み込みスキップ: ' + e);
@@ -276,24 +218,15 @@ function getOrBuildDistCache_(year, testName, sigmaConfig, forceRecalc) {
     return {};
   }
 
-  // --- キャッシュに保存（シートが取得できない場合は保存スキップ） ---
-  if (sheet && Object.keys(distribution).length > 0) {
+  // --- Firestore にキャッシュ保存 ---
+  if (Object.keys(distribution).length > 0) {
     try {
-      var distJson = JSON.stringify(distribution);
-      var now = new Date().toISOString();
-      var lastRow2 = sheet.getLastRow();
-      var updated = false;
-      if (lastRow2 >= 2) {
-        var rows2 = sheet.getRange(2, 1, lastRow2 - 1, 1).getValues();
-        for (var j = 0; j < rows2.length; j++) {
-          if (String(rows2[j][0]).trim() === targetTest) {
-            sheet.getRange(j + 2, 2, 1, 2).setValues([[distJson, now]]);
-            updated = true;
-            break;
-          }
-        }
-      }
-      if (!updated) sheet.appendRow([targetTest, distJson, now]);
+      firestoreSet_('distCache', distDocId, {
+        year:             parseInt(year, 10),
+        testName:         targetTest,
+        distributionJson: JSON.stringify(distribution),
+        updatedAt:        new Date().toISOString()
+      });
     } catch (e) {
       Logger.log('⚠ getOrBuildDistCache_ キャッシュ保存スキップ: ' + e);
     }
@@ -654,31 +587,15 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
     // scoreDistribution を analysis に付加して保存（フロントで上位層・下位層の視覚表示に使用）
     analysis.scoreDistribution = scoreDistribution;
 
-    // --- 6. 保存 (upsert) ---
+    // --- 6. Firestoreに保存 (upsert) ---
     var now = new Date().toISOString();
-    var sheet = getAnalysisSheet(year);
-    if (sheet) {
-      var lastRow = sheet.getLastRow();
-      var targetTest = String(testName).trim();
-      var existingRow = -1;
-
-      if (lastRow >= 2) {
-        var rows = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        for (var i = 0; i < rows.length; i++) {
-          if (String(rows[i][0]).trim() === targetTest) {
-            existingRow = i + 2;
-            break;
-          }
-        }
-      }
-
-      var rowValues = [testName, JSON.stringify(analysis), now];
-      if (existingRow > 0) {
-        sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
-      } else {
-        sheet.appendRow(rowValues);
-      }
-    }
+    var analysisDocId = makeTestAnalysisDocId_(year, testName);
+    firestoreSet_('testAnalysis', analysisDocId, {
+      year:         parseInt(year, 10),
+      testName:     String(testName),
+      analysisJson: JSON.stringify(analysis),
+      generatedAt:  now
+    });
 
     return { success: true, analysis: analysis, generatedAt: now };
   } catch (error) {
@@ -744,32 +661,15 @@ function calcPassProbability_(studentDev, schoolDev) {
 }
 
 /**
- * 生徒別AI分析シートを取得または作成する
- * @param {number} year 年度
- * @return {Sheet|null} シートオブジェクト
+ * 生徒別AI分析の Firestore ドキュメントIDを生成する内部ヘルパー
+ * @param {string} studentId 生徒ID
+ * @param {string} testName テスト名
+ * @param {number} year 学年年度
+ * @return {string} docId
  */
-function getStudentAnalysisSheet_(year) {
-  try {
-    var ss = getGradeDataSheet(year);
-    if (!ss) return null;
-
-    var sheetName = '生徒別AI分析';
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = ['生徒ID', 'テスト名', '分析データJSON', '生成日時'];
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-      sheet.setFrozenRows(1);
-      sheet.setColumnWidth(1, 130);
-      sheet.setColumnWidth(2, 180);
-      sheet.setColumnWidth(3, 800);
-      sheet.setColumnWidth(4, 180);
-    }
-    return sheet;
-  } catch (error) {
-    Logger.log('❌ getStudentAnalysisSheet_エラー: ' + error);
-    return null;
-  }
+function makeStudentAnalysisDocId_(studentId, testName, year) {
+  var safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(studentId) + '_' + safe + '_' + String(year);
 }
 
 /**
@@ -782,49 +682,31 @@ function getStudentAnalysisSheet_(year) {
  */
 function getStudentAnalysis(year, studentId, testName) {
   try {
-    var sheet = getStudentAnalysisSheet_(year);
-    if (!sheet) return { success: true, exists: false };
-
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return { success: true, exists: false };
-
-    var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-    var targetId = String(studentId).trim();
+    var sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
     var targetTest = String(testName).trim();
 
-    for (var i = 0; i < rows.length; i++) {
-      // Sheets が数値自動変換で先頭ゼロを消す問題に対応（padStart で復元）
-      var sheetStudentId = String(rows[i][0] || '').trim();
-      if (/^\d+$/.test(sheetStudentId) && sheetStudentId.length < 10) {
-        sheetStudentId = sheetStudentId.padStart(10, '0');
-      }
-      if (sheetStudentId === targetId && String(rows[i][1]).trim() === targetTest) {
-        var analysisData = JSON.parse(rows[i][2]);
-        return { success: true, exists: true, analysis: analysisData, generatedAt: rows[i][3] };
-      }
+    // 完全一致でまず取得
+    var docId = makeStudentAnalysisDocId_(sid, targetTest, year);
+    var doc = firestoreGet_('studentAnalysis', docId);
+    if (doc && doc.analysisJson) {
+      var analysisData = safeJsonParse_(doc.analysisJson, null);
+      if (analysisData) return { success: true, exists: true, analysis: analysisData, generatedAt: doc.generatedAt || '' };
     }
+
     // 基礎学力テストの特例：完全一致がない場合、N回以上のデータにフォールバック
     var basicMatch = targetTest.match(/^第(\d+)回基礎学力テスト$/);
     if (basicMatch) {
       var targetNum = parseInt(basicMatch[1], 10);
-      var bestRow = null;
-      var bestNum = -1;
-      for (var j = 0; j < rows.length; j++) {
-        var sid = String(rows[j][0] || '').trim();
-        if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-        if (sid !== targetId) continue;
-        var rowTestName = String(rows[j][1]).trim();
-        var rowMatch = rowTestName.match(/^第(\d+)回基礎学力テスト$/);
-        if (!rowMatch) continue;
-        var rowNum = parseInt(rowMatch[1], 10);
-        if (rowNum >= targetNum && rowNum > bestNum) {
-          bestNum = rowNum;
-          bestRow = rows[j];
+      // 高い回数から順に試みる（第3回 → 第targetNum+1回）
+      for (var r = 3; r > targetNum; r--) {
+        var fallbackTest = '第' + r + '回基礎学力テスト';
+        var fallbackDocId = makeStudentAnalysisDocId_(sid, fallbackTest, year);
+        var fallbackDoc = firestoreGet_('studentAnalysis', fallbackDocId);
+        if (fallbackDoc && fallbackDoc.analysisJson) {
+          var fbData = safeJsonParse_(fallbackDoc.analysisJson, null);
+          if (fbData) return { success: true, exists: true, analysis: fbData, generatedAt: fallbackDoc.generatedAt || '' };
         }
-      }
-      if (bestRow) {
-        var fbData = JSON.parse(bestRow[2]);
-        return { success: true, exists: true, analysis: fbData, generatedAt: bestRow[3] };
       }
     }
 
@@ -1119,25 +1001,10 @@ function generateStudentAnalyses(year, testName) {
       return { success: false, error: 'AIの応答形式が不正です' };
     }
 
-    // --- 5. シートに保存 ---
-    var sheet = getStudentAnalysisSheet_(year);
-    if (!sheet) return { success: false, error: 'AI分析シートの作成に失敗しました' };
-
+    // --- 5. Firestoreに保存 ---
     var now = new Date().toISOString();
     var savedCount = 0;
-
-    // 既存データを一括読み込み（Sheets の数値変換で消えた先頭ゼロを padStart で復元）
-    var existingMap = {};
-    var lastRow = sheet.getLastRow();
-    if (lastRow >= 2) {
-      var existingRows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-      for (var i = 0; i < existingRows.length; i++) {
-        var eid = String(existingRows[i][0] || '').trim();
-        if (/^\d+$/.test(eid) && eid.length < 10) eid = eid.padStart(10, '0');
-        var key = eid + '|' + String(existingRows[i][1]).trim();
-        existingMap[key] = i + 2;
-      }
-    }
+    var writes = [];
 
     studentsData.forEach(function(sd) {
       var aiComment = aiResult.students[sd.id];
@@ -1150,16 +1017,17 @@ function generateStudentAnalyses(year, testName) {
         displayTestNames: displayTestNames
       };
 
-      var rowValues = [sd.id, testNameTrimmed, JSON.stringify(analysisData), now];
-      var existingKey = sd.id + '|' + testNameTrimmed;
-
-      if (existingMap[existingKey]) {
-        sheet.getRange(existingMap[existingKey], 1, 1, rowValues.length).setValues([rowValues]);
-      } else {
-        sheet.appendRow(rowValues);
-      }
-      savedCount++;
+      var docId = makeStudentAnalysisDocId_(sd.id, testNameTrimmed, year);
+      writes.push({ collection: 'studentAnalysis', docId: docId, data: {
+        studentId:    String(sd.id),
+        testName:     testNameTrimmed,
+        year:         parseInt(year, 10),
+        analysisJson: JSON.stringify(analysisData),
+        generatedAt:  now
+      }});
     });
+
+    if (writes.length > 0) firestoreBatchWrite_(writes);
 
     return { success: true, count: savedCount, message: savedCount + '人の生徒分析を生成しました' };
   } catch (error) {
@@ -1289,8 +1157,8 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
 }
 
 /**
- * 生徒別AI分析をスプレッドシートに保存する内部ヘルパー
- * generateAllAnalyses の単一コール・バッチ両方から共通で呼び出される
+ * 生徒別AI分析を Firestore に一括保存する内部ヘルパー
+ * generateAllAnalyses のバッチ処理から呼び出される
  * @param {Array} studentsData 全生徒データ配列（偏差値・合格判定含む）
  * @param {Object} aiStudentAnalyses Geminiから返された {studentId: commentObject}
  * @param {number} year 学年年度
@@ -1300,23 +1168,9 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
  * @return {number} 保存した生徒数
  */
 function saveStudentAnalyses_(studentsData, aiStudentAnalyses, year, testNameTrimmed, displayTestNames, now) {
-  var studentSheet = getStudentAnalysisSheet_(year);
-  if (!studentSheet) return 0;
-
-  var existingMap = {};
-  var lastRowStudent = studentSheet.getLastRow();
-  if (lastRowStudent >= 2) {
-    var existingRows = studentSheet.getRange(2, 1, lastRowStudent - 1, 2).getValues();
-    for (var ei = 0; ei < existingRows.length; ei++) {
-      // Sheets の数値変換で消えた先頭ゼロを padStart で復元
-      var eid = String(existingRows[ei][0] || '').trim();
-      if (/^\d+$/.test(eid) && eid.length < 10) eid = eid.padStart(10, '0');
-      var key = eid + '|' + String(existingRows[ei][1]).trim();
-      existingMap[key] = ei + 2;
-    }
-  }
-
+  var writes = [];
   var savedCount = 0;
+
   studentsData.forEach(function(sd) {
     var aiComment = aiStudentAnalyses[sd.id];
     if (!aiComment) return;
@@ -1326,17 +1180,18 @@ function saveStudentAnalyses_(studentsData, aiStudentAnalyses, year, testNameTri
       passAssessment: sd.passAssessment,
       displayTestNames: displayTestNames
     };
-    var rowValues = [sd.id, testNameTrimmed, JSON.stringify(analysisData), now];
-    var existingKey = sd.id + '|' + testNameTrimmed;
-    if (existingMap[existingKey]) {
-      studentSheet.getRange(existingMap[existingKey], 1, 1, rowValues.length).setValues([rowValues]);
-    } else {
-      studentSheet.appendRow(rowValues);
-      existingMap[existingKey] = studentSheet.getLastRow(); // 次回のupsert用に更新
-    }
+    var docId = makeStudentAnalysisDocId_(sd.id, testNameTrimmed, year);
+    writes.push({ collection: 'studentAnalysis', docId: docId, data: {
+      studentId:    String(sd.id),
+      testName:     testNameTrimmed,
+      year:         parseInt(year, 10),
+      analysisJson: JSON.stringify(analysisData),
+      generatedAt:  now
+    }});
     savedCount++;
   });
 
+  if (writes.length > 0) firestoreBatchWrite_(writes);
   return savedCount;
 }
 
@@ -1366,18 +1221,19 @@ function generateAllAnalyses(year, testName, skipExisting) {
       if (existingGrade.exists) {
         skipGradeAnalysis = true;
       }
-      var studentSheetSkip = getStudentAnalysisSheet_(year);
-      if (studentSheetSkip) {
-        var lastRowSkip = studentSheetSkip.getLastRow();
-        if (lastRowSkip >= 2) {
-          var existingSkipRows = studentSheetSkip.getRange(2, 1, lastRowSkip - 1, 2).getValues();
-          for (var rsi = 0; rsi < existingSkipRows.length; rsi++) {
-            var eskipId = String(existingSkipRows[rsi][0] || '').trim();
-            if (/^\d+$/.test(eskipId) && eskipId.length < 10) eskipId = eskipId.padStart(10, '0');
-            var eskipKey = eskipId + '|' + String(existingSkipRows[rsi][1]).trim();
-            existingStudentKeys[eskipKey] = true;
-          }
-        }
+      // Firestore から既存の生徒別分析キーを取得（testName が一致するドキュメント）
+      try {
+        var existingDocs = firestoreQuery_('studentAnalysis', [
+          fsFilter_('testName', 'EQUAL', String(testName).trim()),
+          fsFilter_('year', 'EQUAL', parseInt(year, 10))
+        ]);
+        existingDocs.forEach(function(doc) {
+          var eskipId = String(doc.studentId || '').trim();
+          if (/^\d+$/.test(eskipId) && eskipId.length < 10) eskipId = eskipId.padStart(10, '0');
+          existingStudentKeys[eskipId + '|' + String(testName).trim()] = true;
+        });
+      } catch (e) {
+        Logger.log('⚠ generateAllAnalyses skipExisting チェックスキップ: ' + e);
       }
     }
 
