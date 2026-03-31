@@ -1,0 +1,102 @@
+<script>
+// ===== Firebase Auth 管理 =====
+// DOMContentLoaded より先に実行される（<head> 内でロード）
+
+window.fbCurrentUser  = null;  // Firebase Auth ユーザーオブジェクト
+window.fbUserEmail    = null;  // Firebase Auth メールアドレス
+window.fbAuthReady    = false; // 認証状態の確認が完了したか
+window.fbAuthCallbacks = [];   // 認証完了後に呼ぶコールバック一覧
+
+/**
+ * Firebase Auth 準備完了後に実行するコールバックを登録する。
+ * すでに準備完了（ログイン済み）なら即実行。
+ * @param {Function} callback
+ */
+window.onFbAuthReady = function(callback) {
+  if (window.fbAuthReady && window.fbCurrentUser) {
+    callback();
+  } else if (window.fbAuthReady && !window.fbCurrentUser) {
+    // 準備済みだが未ログイン → 何もしない（ログイン画面が出ている）
+  } else {
+    window.fbAuthCallbacks.push(callback);
+  }
+};
+
+// 認証状態の変化を監視
+fbAuth.onAuthStateChanged(function(user) {
+  window.fbAuthReady = true;
+
+  if (user) {
+    // ログイン済み
+    window.fbCurrentUser = user;
+    window.fbUserEmail   = user.email;
+
+    // ログイン画面を隠す
+    var loginScreen = document.getElementById('fbLoginScreen');
+    if (loginScreen) loginScreen.style.display = 'none';
+
+    // スプラッシュ画面を再表示（ログイン後の起動）
+    var splash = document.getElementById('splashScreen');
+    if (splash && splash.style.display === 'none') {
+      splash.style.display = 'flex';
+    }
+
+    // 待機中のアプリ起動コールバックを実行
+    var cbs = window.fbAuthCallbacks.slice();
+    window.fbAuthCallbacks = [];
+    cbs.forEach(function(cb) { cb(); });
+
+  } else {
+    // 未ログイン
+    window.fbCurrentUser = null;
+    window.fbUserEmail   = null;
+
+    // スプラッシュ画面を隠してログイン画面を表示
+    var splash = document.getElementById('splashScreen');
+    if (splash) splash.style.display = 'none';
+
+    var loginScreen = document.getElementById('fbLoginScreen');
+    if (loginScreen) loginScreen.style.display = 'flex';
+  }
+});
+
+/**
+ * Googleアカウントでログインする
+ */
+window.signInWithGoogle = function() {
+  var btn = document.getElementById('fbSignInBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'ログイン中...'; }
+  var msgEl = document.getElementById('fbLoginError');
+  if (msgEl) msgEl.style.display = 'none';
+
+  var provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  fbAuth.signInWithPopup(provider).catch(function(error) {
+    console.error('ログインエラー:', error);
+    if (btn) { btn.disabled = false; btn.textContent = 'Googleでログイン'; }
+    if (msgEl) {
+      msgEl.textContent = 'ログインに失敗しました。もう一度お試しください。';
+      msgEl.style.display = 'block';
+    }
+  });
+};
+
+/**
+ * 別のGoogleアカウントに切り替える
+ */
+window.switchGoogleAccount = function() {
+  var provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  fbAuth.signInWithPopup(provider).catch(function(error) {
+    console.error('アカウント切り替えエラー:', error);
+  });
+};
+
+/**
+ * ログアウトする
+ */
+window.fbSignOut = function() {
+  fbAuth.signOut();
+};
+</script>

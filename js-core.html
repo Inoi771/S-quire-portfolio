@@ -567,6 +567,27 @@
   // ===== 起動処理 =====
 
   document.addEventListener('DOMContentLoaded', function() {
+    // Firebase Auth の認証状態確認後にアプリを起動する
+    if (typeof onFbAuthReady === 'function') {
+      onFbAuthReady(startAppAfterAuth_);
+    } else {
+      // Firebase 未設定の場合はそのまま起動（フォールバック）
+      startAppAfterAuth_();
+    }
+  });
+
+  /**
+   * Firebase Auth でログイン確認後に実行するアプリ起動処理
+   */
+  function startAppAfterAuth_() {
+    // ヘッダーのアカウントボタンにメールアドレスを表示
+    if (window.fbCurrentUser) {
+      var btn = document.getElementById('fbAccountBtn');
+      var emailEl = document.getElementById('fbAccountEmail');
+      if (btn) btn.style.display = 'inline-flex';
+      if (emailEl) emailEl.textContent = window.fbUserEmail || '';
+    }
+
     // getAppStartupData・getScheduleData・アニメーション の3つが揃ったらスプラッシュを閉じる
 
     // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
@@ -603,7 +624,7 @@
         checkAdminTabVisibility();
       })
       .getAppStartupData();
-  });
+  }
 
   /**
    * getAppStartupData() の結果を受け取り、スプラッシュ画面を即座に閉じて
