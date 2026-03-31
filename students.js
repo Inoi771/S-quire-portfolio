@@ -451,18 +451,20 @@ function getStudentListWithGrades(year, testName) {
     });
 
 
-    // AI分析シートから合格可能性（%）を一括ロード
+    // Firestore studentAnalysis から合格可能性（%）を一括ロード
     // {studentId|testName: {schoolName: percent}} の形式でマップ化
     var analysisPassMap = {};
-    var analysisSheet = getStudentAnalysisSheet_(year);
-    if (analysisSheet && analysisSheet.getLastRow() >= 2) {
-      var aRows = analysisSheet.getRange(2, 1, analysisSheet.getLastRow() - 1, 3).getValues();
-      aRows.forEach(function(aRow) {
-        var sid = String(aRow[0] || '').trim();
+    try {
+      var aDocs = firestoreQuery_('studentAnalysis', [
+        fsFilter_('testName', 'EQUAL', targetTest),
+        fsFilter_('year', 'EQUAL', parseInt(year, 10))
+      ]);
+      aDocs.forEach(function(doc) {
+        var sid = String(doc.studentId || '').trim();
         if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-        var tname = String(aRow[1] || '').trim();
+        var tname = String(doc.testName || '').trim();
         if (!sid || !tname) return;
-        var data = safeJsonParse_(aRow[2], null);
+        var data = safeJsonParse_(doc.analysisJson, null);
         if (!data || !Array.isArray(data.passAssessment)) return;
         var m = {};
         data.passAssessment.forEach(function(pa) {
@@ -472,6 +474,8 @@ function getStudentListWithGrades(year, testName) {
         });
         analysisPassMap[sid + '|' + tname] = m;
       });
+    } catch (e) {
+      Logger.log('⚠ getStudentListWithGrades 合格可能性ロードスキップ: ' + e);
     }
 
     // 生徒マスタと成績を結合
