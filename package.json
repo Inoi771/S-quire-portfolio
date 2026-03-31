@@ -2,7 +2,8 @@
   "name": "s-quire-tests",
   "private": true,
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "build": "node scripts/build.js"
   },
   "jest": {
     "testMatch": ["**/__tests__/**/*.test.js"],
