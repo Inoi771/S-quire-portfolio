@@ -1,0 +1,2357 @@
+<script>
+  // ===== 【1】グローバル変数 =====
+  var allSchedules = [];
+  var currentYear = new Date().getFullYear();
+  var currentMonth = new Date().getMonth() + 1;
+  // currentScheduleType, currentWeekStart は廃止（月表示・全タイプ統合に変更）
+  var rollScrollResetting = false; // スクロールロールのリセット中フラグ（無限ループ防止）
+  var tabScrollPositions = {}; // タブごと・サブタブごとのスクロール位置を記憶
+  function saveScrollPosition(key) {
+    var ca = document.querySelector('.content-area');
+    if (ca) tabScrollPositions[key] = ca.scrollTop;
+  }
+  function restoreScrollPosition(key) {
+    var ca = document.querySelector('.content-area');
+    if (ca) ca.scrollTop = tabScrollPositions[key] || 0;
+  }
+  var currentSettings = {};
+  var isUpdatingSchedule = false;
+  var selectedSubjects = [];
+  var aiWidgetConversationHistory = [];
+  var aiMicRecognition = null;
+  var aiMicListening = false;
+  var basicTestDateOverrides = {};    // 基礎学力テスト日程上書き設定
+  var basicTestDetailsOverrides = {}; // 基礎学力テスト詳細上書き設定
+  var jukuEventOverrides = {};        // 塾内部イベント（○□★△）上書き設定
+  var closedDayOverrides = { add: [], del: [] }; // 休校日上書き設定（予定タブ専用）
+  var pubHighExamDateOverrides = {};  // 公立高校一般選抜日程上書き設定
+  var scheduleLecturePeriods = [];    // 講習期間データ（予定タブの締切イベント表示用）
+  var lectureDeadlineOverrides = {};  // 講習日程締切の手動上書き設定
+  var overridesLoadedCount = 0;       // オーバーライド系データの読み込み完了数（全7種）
+  var drumBaseYear = null;          // ドラムピッカー生成時の基準年
+  var drumBaseMonth = null;         // ドラムピッカー生成時の基準月
+  var drumScrollResetting = false;  // ドラムスクロールのリセット中フラグ
+
+  // スプラッシュ画面の読み込み状態管理
+  var splashLoadState = { settingsLoaded: false, scheduleLoaded: false };
+
+  // タブ事前読み込みフラグ（起動時にバックグラウンドで読み込んだかどうか）
+  var settingsTabPreloaded = false;
+  var adminTabPreloaded = false;
+  var tabDataPreloaded_ = false;    // preloadTabData() の二重呼び出し防止
+  var scheduleLoadStarted_ = false; // getScheduleData() の二重呼び出し防止
+
+  // 高速起動: 3条件すべて揃ったらスプラッシュを閉じる
+  var splashStartupData_ = null;   // getAppStartupData() の結果
+  var splashScheduleDone_ = false; // getScheduleData() 完了フラグ
+  var splashAnimDone_ = false;     // スプラッシュアニメーション完了フラグ
+
+  // 設定タブ: 事前読み込みキャッシュ（null = 未取得、object = 取得済み）
+  var preloadedProfile = null;
+  var preloadedNotificationSettings = null;
+
+  function checkStartupComplete_() {
+    if (splashStartupData_ && splashScheduleDone_ && splashAnimDone_) {
+      applyStartupData_(splashStartupData_);
+    }
+  }
+
+  // Phase 2: 6文字（square）が集まった後、アニメーションを解除
+  setTimeout(function() {
+    var logo = document.getElementById('splashLogo');
+    if (!logo) return;
+    logo.classList.add('splash-letters-settled');
+    // Phase 3: 「i」が飛んできて「a」を画面外に押し出す
+    setTimeout(function() {
+      logo.classList.add('splash-swap-ai');
+      // Phase 4: 「-」が上から落ちてくる
+      setTimeout(function() {
+        logo.classList.add('splash-dash-insert');
+        // Phase 5: 呼吸アニメーション開始 → アニメーション完了
+        setTimeout(function() {
+          logo.classList.add('splash-settled');
+          splashAnimDone_ = true;
+          checkStartupComplete_();
+        }, 800);
+      }, 700);
+    }, 300);
+  }, 3000);
+
+  function checkSplashDone() {
+    if (splashLoadState.settingsLoaded && splashLoadState.scheduleLoaded) {
+      hideSplashScreen();
+      // スプラッシュ消去後にバックグラウンドで設定タブのデータを事前読み込み
+      // （スプラッシュ表示時間に影響しない）
+      preloadTabData();
+    }
+  }
+
+  function preloadTabData() {
+    if (tabDataPreloaded_) return;
+    tabDataPreloaded_ = true;
+    // 設定タブのデータを事前読み込み
+    // campusData が揃ってからプロフィールを読み込むためコールバックを使用
+    loadDropdownData(function() {
+      loadProfileInfo();
+      loadNotificationSettings();
+      loadLineSchedulerNotifPrefs();
+      settingsTabPreloaded = true;
+    });
+    // 管理タブのデータは checkAdminTabVisibility() 側で処理
+  }
+
+  function hideSplashScreen() {
+    var splash = document.getElementById('splashScreen');
+    if (!splash || splash.classList.contains('splash-fade-out')) return;
+    splash.classList.add('splash-fade-out');
+    var appContainer = document.querySelector('.app-container');
+    if (appContainer) appContainer.classList.add('app-visible');
+    setTimeout(function() {
+      if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+    }, 600);
+  }
+
+  // 日本の祝日データ（2024〜2028年）
+  var JAPAN_HOLIDAYS = {
+    '2024-01-01':'元日','2024-01-08':'成人の日','2024-02-11':'建国記念の日',
+    '2024-02-12':'建国記念の日 振替','2024-02-23':'天皇誕生日','2024-03-20':'春分の日',
+    '2024-04-29':'昭和の日','2024-05-03':'憲法記念日','2024-05-04':'みどりの日',
+    '2024-05-05':'こどもの日','2024-05-06':'こどもの日 振替','2024-07-15':'海の日',
+    '2024-08-11':'山の日','2024-08-12':'山の日 振替','2024-09-16':'敬老の日',
+    '2024-09-22':'秋分の日 振替','2024-09-23':'秋分の日','2024-10-14':'スポーツの日',
+    '2024-11-03':'文化の日','2024-11-04':'文化の日 振替','2024-11-23':'勤労感謝の日',
+    '2025-01-01':'元日','2025-01-13':'成人の日','2025-02-11':'建国記念の日',
+    '2025-02-23':'天皇誕生日','2025-02-24':'天皇誕生日 振替','2025-03-20':'春分の日',
+    '2025-04-29':'昭和の日','2025-05-03':'憲法記念日','2025-05-04':'みどりの日',
+    '2025-05-05':'こどもの日','2025-05-06':'こどもの日 振替','2025-07-21':'海の日',
+    '2025-08-11':'山の日','2025-09-15':'敬老の日','2025-09-23':'秋分の日',
+    '2025-10-13':'スポーツの日','2025-11-03':'文化の日','2025-11-23':'勤労感謝の日',
+    '2025-11-24':'勤労感謝の日 振替',
+    '2026-01-01':'元日','2026-01-12':'成人の日','2026-02-11':'建国記念の日',
+    '2026-02-23':'天皇誕生日','2026-03-20':'春分の日','2026-04-29':'昭和の日',
+    '2026-05-03':'憲法記念日','2026-05-04':'みどりの日','2026-05-05':'こどもの日',
+    '2026-05-06':'みどりの日 振替','2026-07-20':'海の日','2026-08-11':'山の日',
+    '2026-09-21':'敬老の日','2026-09-22':'国民の休日','2026-09-23':'秋分の日',
+    '2026-10-12':'スポーツの日','2026-11-03':'文化の日','2026-11-23':'勤労感謝の日',
+    '2027-01-01':'元日','2027-01-11':'成人の日','2027-02-11':'建国記念の日',
+    '2027-02-23':'天皇誕生日','2027-03-21':'春分の日','2027-03-22':'春分の日 振替',
+    '2027-04-29':'昭和の日','2027-05-03':'憲法記念日','2027-05-04':'みどりの日',
+    '2027-05-05':'こどもの日','2027-07-19':'海の日','2027-08-11':'山の日',
+    '2027-09-20':'敬老の日','2027-09-23':'秋分の日','2027-10-11':'スポーツの日',
+    '2027-11-03':'文化の日','2027-11-23':'勤労感謝の日',
+    '2028-01-01':'元日','2028-01-10':'成人の日','2028-02-11':'建国記念の日',
+    '2028-02-23':'天皇誕生日','2028-03-20':'春分の日','2028-04-29':'昭和の日',
+    '2028-05-03':'憲法記念日','2028-05-04':'みどりの日','2028-05-05':'こどもの日',
+    '2028-07-17':'海の日','2028-08-11':'山の日','2028-09-18':'敬老の日',
+    '2028-09-22':'秋分の日','2028-10-09':'スポーツの日','2028-11-03':'文化の日',
+    '2028-11-23':'勤労感謝の日'
+  };
+    var googleCalendarHolidays = null; // Googleカレンダーから取得した祝日データ（取得前はnull）
+    var preferredCampuses = [];        // 配属校舎コードの配列（ユーザーごとに保存）
+    var aiWidgetChatHistory = [];      // AIアシスタントの会話履歴（{role:'user'|'ai', text:'...'}の配列）
+
+    // ===== 講習管理タブ用グローバル変数 =====
+    var lecturePeriods = [];              // 全講習期間データ [{id, name, startDate, endDate}]
+    var currentLectureYear = null;        // 選択中の年度（数値）
+    var currentLectureId = null;          // 選択中の講習ID
+    var currentLectureWeekStart = null;   // 現在の週の月曜日（Dateオブジェクト）校舎タブ切り替えでも維持
+    var currentLectureScrollTop = 0;      // タイムグリッドの縦スクロール位置（px）校舎タブ切り替えでも維持
+    var currentLectureScrollLeft = 0;     // 水平グリッドの横スクロール位置（px）校舎タブ切り替えでも維持
+    var currentLectureCampus = null;      // 現在表示中の校舎コード
+    var lectureTabInitialized = false;    // 初回ロード済みフラグ
+    // エントリ操作用
+    var selectedSubjectForEntry = null;   // 選択中の教科
+    var selectedGradeForEntry = null;     // 選択中の学年
+    var selectedLecClass = null;          // 選択中のクラスラベル（'A'/'B'/'C'/null）
+    var selectedEntryId = null;           // 選択中のエントリID
+    var lectureEntries = {};              // 校舎コードをキーにしたエントリ配列（例: {'01': [...], '02': [...]}）
+    var pendingChanges = false;           // 未保存の変更フラグ
+    var autoSaveTimer = null;             // 講習自動保存デバウンスタイマー
+    var lecAutoRefreshTimer = null;       // 講習グリッド自動更新タイマー（30秒ごと）
+    var pendingAutoRestoreCampuses = null; // 自動復元待ちの校舎コード配列（localStorage復元用）
+    var campusCheckboxesBuilt = false;    // 校舎チェックボックスが DOM に存在するか
+    var dirtyCampuses = {};               // 保存待ち校舎コード { '01': true, ... }
+    var lectureSaveVersion = {};          // 保存中に新たな変更があったか判定するバージョン管理 { '01': 3, ... }
+    var AUTO_SAVE_DELAY = 2500;           // 自動保存遅延（ms）
+    var lecDefaultDuration = 9;          // デフォルト授業幅（9スロット = 90分）
+    var teacherColorMap = {};             // email → 色 マッピング
+    var teacherColorPalette = [
+      '#4facfe','#43e97b','#fa709a','#f6d365','#a18cd1',
+      '#fbc2eb','#fd7043','#26c6da','#66bb6a','#ef5350'
+    ];
+    var myTeacherName = '';               // ログイン中のユーザー表示名
+    var myTeacherEmail = '';             // ログイン中のユーザーメール
+    var myTeacherId = '';                // ログイン中のユーザーの講師ID
+    var isAdminUser = false;             // 管理者フラグ（checkAdminTabVisibility で設定）
+    var logoTapCount = 0;               // 隠し管理者モード: ロゴタップ回数
+    var logoTapTimer = null;            // 隠し管理者モード: タップリセットタイマー
+    var lecAdminTeacherEmail = '';       // 管理者が選択中の講師メール（空＝自分自身）
+    var lecAdminTeacherName  = '';       // 管理者が選択中の講師名
+    var lecAdminTeacherId = '';          // 管理者が選択中の講師の teacherId
+    var lecTeacherNameMap = {};          // teacherId → { email, name } マップ（getTeacherNamesMap から取得）
+
+  // ===== 汎用ダイアログ（confirm/alert 代替） =====
+
+    /**
+     * ブラウザ標準 confirm() の代替。カスタムモーダルを表示し Promise<boolean> を返す
+     * @param {string} message 表示メッセージ（改行対応）
+     * @return {Promise<boolean>} OK なら true、キャンセルなら false
+     */
+    function appConfirm(message) {
+      return new Promise(function(resolve) {
+        var overlay = document.getElementById('appDialogOverlay');
+        var modal   = document.getElementById('appDialogModal');
+        var body    = document.getElementById('appDialogBody');
+        var buttons = document.getElementById('appDialogButtons');
+
+        body.textContent = '';
+        message.split('\n').forEach(function(line, i) {
+          if (i > 0) body.appendChild(document.createElement('br'));
+          body.appendChild(document.createTextNode(line));
+        });
+
+        buttons.innerHTML =
+          '<button class="dialog-btn dialog-cancel">キャンセル</button>' +
+          '<button class="dialog-btn dialog-ok">OK</button>';
+
+        overlay.style.display = 'block';
+        modal.style.display   = 'block';
+
+        function close(result) {
+          overlay.style.display = 'none';
+          modal.style.display   = 'none';
+          resolve(result);
+        }
+
+        buttons.querySelector('.dialog-ok').onclick     = function() { close(true); };
+        buttons.querySelector('.dialog-cancel').onclick  = function() { close(false); };
+        overlay.onclick = function() { close(false); };
+      });
+    }
+
+    /**
+     * ブラウザ標準 alert() の代替。カスタムモーダルを表示し Promise<void> を返す
+     * @param {string} message 表示メッセージ（改行対応）
+     * @return {Promise<void>}
+     */
+    function appAlert(message) {
+      return new Promise(function(resolve) {
+        var overlay = document.getElementById('appDialogOverlay');
+        var modal   = document.getElementById('appDialogModal');
+        var body    = document.getElementById('appDialogBody');
+        var buttons = document.getElementById('appDialogButtons');
+
+        body.textContent = '';
+        message.split('\n').forEach(function(line, i) {
+          if (i > 0) body.appendChild(document.createElement('br'));
+          body.appendChild(document.createTextNode(line));
+        });
+
+        buttons.innerHTML =
+          '<button class="dialog-btn dialog-ok-only">OK</button>';
+
+        overlay.style.display = 'block';
+        modal.style.display   = 'block';
+
+        function close() {
+          overlay.style.display = 'none';
+          modal.style.display   = 'none';
+          resolve();
+        }
+
+        buttons.querySelector('.dialog-ok-only').onclick = function() { close(); };
+        overlay.onclick = function() { close(); };
+      });
+    }
+
+    /**
+     * 画面下部にトースト通知を一時表示する（自動保存完了時など）
+     * @param {string} msg 表示メッセージ
+     * @param {string} type 'success' または 'error'
+     */
+    var _toastTimer = null;
+    function showToast(msg, type) {
+      var el = document.getElementById('toastNotification');
+      if (!el) return;
+      if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+      el.className = 'toast-notification';
+      el.style.display = 'none';
+      el.textContent = msg;
+      void el.offsetWidth;
+      el.classList.add(type === 'error' ? 'toast-error' : 'toast-success');
+      el.classList.add('toast-show');
+      el.style.display = 'block';
+      _toastTimer = setTimeout(function() {
+        el.classList.remove('toast-show');
+        el.classList.add('toast-hide');
+        setTimeout(function() {
+          el.style.display = 'none';
+          el.className = 'toast-notification';
+        }, 300);
+      }, 2500);
+    }
+
+  // ===== 【2】初期化関数 =====
+
+    /**
+     * テーマカラーをアプリ全体に適用する
+     * CSS変数 --theme-color / --theme-color-light を更新し、meta theme-colorも変更する
+     * @param {string} color 16進数カラーコード（例: #43e97b）
+     */
+    function applyThemeColor(color) {
+      if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) return;
+      // メインカラーを適用
+      document.documentElement.style.setProperty('--theme-color', color);
+      // サブカラー（ライト）を自動計算：RGB各値を255に向けて30%明るくする
+      var r = parseInt(color.slice(1, 3), 16);
+      var g = parseInt(color.slice(3, 5), 16);
+      var b = parseInt(color.slice(5, 7), 16);
+      var lr = Math.min(255, Math.round(r + (255 - r) * 0.3));
+      var lg = Math.min(255, Math.round(g + (255 - g) * 0.3));
+      var lb = Math.min(255, Math.round(b + (255 - b) * 0.3));
+      var light = '#' + lr.toString(16).padStart(2, '0') + lg.toString(16).padStart(2, '0') + lb.toString(16).padStart(2, '0');
+      document.documentElement.style.setProperty('--theme-color-light', light);
+      // meta theme-color（ブラウザのタブ・アドレスバー色）も更新
+      var metaEl = document.getElementById('metaThemeColor');
+      if (metaEl) metaEl.setAttribute('content', color);
+    }
+
+  /**
+   * 校舎ドロップダウンの <option> HTML を生成する
+   * 配属校舎（preferredCampuses）が先頭に来る。それ以外は元の順序で続く。
+   * 【ルール】校舎選択欄を作る際は必ずこの関数を使うこと（CLAUDE.md参照）
+   * @param {Array} campuses {code, name} の配列
+   * @param {string} [placeholder] 先頭に表示するテキスト（デフォルト: "選択してください"）
+   * @return {string} <option>タグのHTML文字列
+   */
+  function buildCampusOptions(campuses, placeholder) {
+    var pref = preferredCampuses || [];
+    var preferred = campuses.filter(function(c) { return pref.indexOf(c.code) !== -1; });
+    var others    = campuses.filter(function(c) { return pref.indexOf(c.code) === -1; });
+    var sorted    = preferred.concat(others);
+    var html = '<option value="">' + (placeholder || '選択してください') + '</option>';
+    sorted.forEach(function(c) {
+      html += '<option value="' + c.code + '">' + c.name + '</option>';
+    });
+    return html;
+  }
+
+  /**
+   * campusData から校舎ドロップダウンを再描画する（配属校舎 preferredCampuses 変更後に呼ぶ）
+   */
+  function rebuildCampusDropdowns() {
+    var arr = Object.keys(campusData).map(function(code) { return { code: code, name: campusData[code] }; });
+    var opts = buildCampusOptions(arr);
+    var inputEl = document.getElementById('input-campus');
+    var scoreEl = document.getElementById('score-campus');
+    var reportEl = document.getElementById('report-campus');
+    var matEl = document.getElementById('mat-campus-select');
+    var flyerEl = document.getElementById('flyerAiCampusSelect');
+    if (inputEl) inputEl.innerHTML = opts;
+    if (scoreEl) scoreEl.innerHTML = opts;
+    if (reportEl) reportEl.innerHTML = opts;
+    if (matEl) matEl.innerHTML = buildCampusOptions(arr, '校舎');
+    if (flyerEl) {
+      var commonOpt = '<option value="">校舎を選択</option><option value="common">📋 共通</option>';
+      flyerEl.innerHTML = commonOpt + buildCampusOptions(arr);
+    }
+    // 講習管理タブの校舎チェックボックスが表示中なら再構築
+    if (document.getElementById('lec-campus-checkboxes')) {
+      buildLectureCampusCheckboxes();
+    }
+  }
+
+  /**
+   * プロフィール欄の「配属校舎」チェックボックスを描画する
+   * campusData が未ロードの場合は読み込み中を表示して早期リターン
+   */
+  function renderPreferredCampusCheckboxes() {
+    var container = document.getElementById('preferredCampusContainer');
+    if (!container) return;
+    var codes = Object.keys(campusData);
+    if (codes.length === 0) {
+      container.innerHTML = '<small style="color:#999;">校舎データを読み込み中...</small>';
+      return;
+    }
+    var html = '';
+    codes.forEach(function(code) {
+      var checked = preferredCampuses.indexOf(code) !== -1 ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 0;">'
+            + '<input type="checkbox" class="preferred-campus-cb" value="' + code + '"' + checked
+            + ' onchange="onPreferredCampusChange()" style="width:16px;height:16px;cursor:pointer;">'
+            + campusData[code] + '</label>';
+    });
+    container.innerHTML = html;
+  }
+
+  /**
+   * 配属校舎チェックボックスの変更時に呼ばれる。即座に自動保存し、全校舎ドロップダウンを再描画する。
+   */
+  function onPreferredCampusChange() {
+    var codes = [];
+    document.querySelectorAll('.preferred-campus-cb:checked').forEach(function(cb) { codes.push(cb.value); });
+    preferredCampuses = codes;
+    var statusEl = document.getElementById('preferredCampusSaveStatus');
+    if (statusEl) statusEl.textContent = '保存中...';
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          showToast('✓ 配属校舎を保存しました', 'success');
+        } else {
+          showToast('❌ 配属校舎の保存に失敗しました', 'error');
+        }
+        if (statusEl) statusEl.textContent = result.success ? '✓ 保存しました' : '❌ ' + result.error;
+        rebuildCampusDropdowns();
+        setTimeout(function() {
+          if (statusEl) statusEl.textContent = 'チェックするだけで自動保存されます。選択した校舎が校舎選択欄の上位に表示されます。';
+        }, 1800);
+      })
+      .withFailureHandler(function(err) {
+        showToast('❌ 配属校舎の保存に失敗しました', 'error');
+        if (statusEl) statusEl.textContent = '❌ 保存失敗';
+        console.error(err);
+      })
+      .savePreferredCampuses(codes);
+  }
+
+  // ===== セットアップウィザード関数 =====
+
+  /**
+   * セットアップウィザードを表示する
+   * @param {string} email 現在ログイン中のメールアドレス
+   */
+  function showSetupWizard(email) {
+    var wizard = document.getElementById('setupWizard');
+    if (wizard) wizard.style.display = 'block';
+    var emailEl = document.getElementById('setupCurrentEmail');
+    if (emailEl) emailEl.textContent = email || '（メール取得中）';
+    // スプラッシュを非表示
+    var splash = document.getElementById('splashScreen');
+    if (splash) splash.style.display = 'none';
+  }
+
+  /** ステップインジケーターのドットを更新する */
+  function updateSetupDots(step) {
+    for (var i = 1; i <= 5; i++) {
+      var dot = document.getElementById('dot' + i);
+      if (dot) dot.className = 'setup-step-dot' + (i <= step ? ' active' : '');
+    }
+  }
+
+  /**
+   * Step 1: 管理者として登録するボタンの処理
+   */
+  function registerFirstAdmin() {
+    var btn = document.querySelector('#setupStep1 button');
+    if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          document.getElementById('setupStep1').style.display = 'none';
+          document.getElementById('setupStep2').style.display = 'block';
+          updateSetupDots(2);
+        } else {
+          var err = document.getElementById('setupStep1Error');
+          if (err) { err.style.display = 'block'; err.textContent = '❌ ' + result.error; }
+          if (btn) { btn.disabled = false; btn.textContent = 'このアカウントを管理者として登録する'; }
+        }
+      })
+      .withFailureHandler(function(e) {
+        var err = document.getElementById('setupStep1Error');
+        if (err) { err.style.display = 'block'; err.textContent = '❌ エラーが発生しました。ページを再読み込みしてください。'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'このアカウントを管理者として登録する'; }
+      })
+      .initializeFirstAdmin();
+  }
+
+  /**
+   * Step 2: フォルダIDを保存して次へ
+   */
+  function saveFolderIdsAndNext() {
+    var accessId = (document.getElementById('setupAccessFolderId').value || '').trim();
+    var appId = (document.getElementById('setupAppFolderId').value || '').trim();
+    var err = document.getElementById('setupStep2Error');
+    if (!accessId || !appId) {
+      if (err) { err.style.display = 'block'; err.textContent = '❌ 両方のフォルダIDを入力してください。'; }
+      return;
+    }
+    if (err) err.style.display = 'none';
+    var btn = document.querySelector('#setupStep2 button');
+    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          document.getElementById('setupStep2').style.display = 'none';
+          document.getElementById('setupStep3').style.display = 'block';
+          updateSetupDots(3);
+        } else {
+          if (err) { err.style.display = 'block'; err.textContent = '❌ ' + result.error; }
+          if (btn) { btn.disabled = false; btn.textContent = '次へ →'; }
+        }
+      })
+      .withFailureHandler(function(e) {
+        if (err) { err.style.display = 'block'; err.textContent = '❌ エラーが発生しました。'; }
+        if (btn) { btn.disabled = false; btn.textContent = '次へ →'; }
+      })
+      .updateSettings({ appFolderId: appId, accessFolderId: accessId });
+  }
+
+  /**
+   * Step 3: APIキーを保存して次へ
+   */
+  function saveApiKeyAndNext() {
+    var apiKey = (document.getElementById('setupApiKey').value || '').trim();
+    var err = document.getElementById('setupStep3Error');
+    if (!apiKey) {
+      if (err) { err.style.display = 'block'; err.textContent = '❌ APIキーを入力してください。スキップする場合は下のボタンを使ってください。'; }
+      return;
+    }
+    if (err) err.style.display = 'none';
+    var btn = document.querySelector('#setupStep3 button');
+    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+    google.script.run
+      .withSuccessHandler(function(result) {
+        document.getElementById('setupStep3').style.display = 'none';
+        document.getElementById('setupStep4').style.display = 'block';
+        updateSetupDots(4);
+      })
+      .withFailureHandler(function(e) {
+        if (err) { err.style.display = 'block'; err.textContent = '❌ エラーが発生しました。'; }
+        if (btn) { btn.disabled = false; btn.textContent = '次へ →'; }
+      })
+      .updateSettings({ geminiApiKey: apiKey });
+  }
+
+  /** Step 3: APIキーをスキップ */
+  function skipApiKeyStep() {
+    document.getElementById('setupStep3').style.display = 'none';
+    document.getElementById('setupStep4').style.display = 'block';
+    updateSetupDots(4);
+  }
+
+  /**
+   * Step 4: 初期化を実行
+   */
+  function runSetupInitialization() {
+    var btn = document.getElementById('setupInitBtn');
+    var status = document.getElementById('setupStep4Status');
+    var err = document.getElementById('setupStep4Error');
+    if (btn) { btn.disabled = true; btn.textContent = '初期化中...（1〜2分かかります）'; }
+    if (status) { status.style.display = 'block'; status.textContent = '⏳ フォルダ・シートを作成しています...'; }
+    if (err) err.style.display = 'none';
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          document.getElementById('setupStep4').style.display = 'none';
+          document.getElementById('setupStep5').style.display = 'block';
+          updateSetupDots(5);
+        } else {
+          if (err) { err.style.display = 'block'; err.textContent = '❌ ' + result.error; }
+          if (btn) { btn.disabled = false; btn.textContent = '初期化を実行する'; }
+          if (status) status.style.display = 'none';
+        }
+      })
+      .withFailureHandler(function(e) {
+        if (err) { err.style.display = 'block'; err.textContent = '❌ エラーが発生しました。ページを再読み込みして再試行してください。'; }
+        if (btn) { btn.disabled = false; btn.textContent = '初期化を実行する'; }
+        if (status) status.style.display = 'none';
+      })
+      .manualInitializeSheets();
+  }
+
+  /** Step 5: セットアップ完了 → ページリロード */
+  function finishSetup() {
+    location.reload();
+  }
+
+  // ===== 起動処理 =====
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // getAppStartupData・getScheduleData・アニメーション の3つが揃ったらスプラッシュを閉じる
+
+    // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
+    google.script.run
+      .withSuccessHandler(function(schedules) {
+        onScheduleDataLoaded(schedules); // カレンダーデータをセット
+        splashScheduleDone_ = true;
+        checkStartupComplete_();
+      })
+      .withFailureHandler(function() {
+        splashScheduleDone_ = true; // 失敗しても続行
+        checkStartupComplete_();
+      })
+      .getScheduleData();
+    scheduleLoadStarted_ = true;
+
+    // 起動データを取得
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (data && data.success) {
+          splashStartupData_ = data;
+          checkStartupComplete_();
+        } else {
+          // フォールバック: 旧来の起動フロー
+          initializeApp();
+          setupTabNavigation();
+          checkAdminTabVisibility();
+        }
+      })
+      .withFailureHandler(function() {
+        // 失敗時は旧来の起動フローで起動
+        initializeApp();
+        setupTabNavigation();
+        checkAdminTabVisibility();
+      })
+      .getAppStartupData();
+  });
+
+  /**
+   * getAppStartupData() の結果を受け取り、スプラッシュ画面を即座に閉じて
+   * アプリを表示する。ロゴ・ファビコン・スケジュールはバックグラウンドで続けて読み込む。
+   */
+  function applyStartupData_(data) {
+    // 初回セットアップチェック
+    if (data.isFirstSetup) {
+      showSetupWizard(data.currentUserEmail);
+      return;
+    }
+
+    // 講師ID入力が必要な場合（初回アクセス・未紐付けアカウント）
+    if (data.needsIdInput) {
+      showIdInputScreen_();
+      return;
+    }
+
+    // テーマカラーを即座に適用
+    if (data.themeColor) {
+      applyThemeColor(data.themeColor);
+    }
+
+    // 配属校舎を早期セット（講習管理タブなど、設定タブより先に開いた場合も正しく動くように）
+    if (Array.isArray(data.preferredCampuses)) {
+      preferredCampuses = data.preferredCampuses;
+    }
+
+    // ヘッダーのユーザー情報を設定
+    var userEl = document.getElementById('currentUser');
+    if (userEl) userEl.textContent = '👤 ' + (data.displayName || '名前未設定');
+
+    // Admin タブの表示制御（getUserRoleInfo API呼び出し不要）
+    var adminTabBtn = document.getElementById('adminTabButton');
+    if (adminTabBtn) {
+      if (data.isAdmin) {
+        adminTabBtn.style.display = 'block';
+        isAdminUser = true;
+        if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
+      } else {
+        adminTabBtn.style.display = 'none';
+      }
+    }
+
+    // currentSettings に基本データを事前設定（getSettings() が返るまでの間も機能するように）
+    currentSettings = {
+      themeColor: data.themeColor,
+      displayName: data.displayName,
+      currentUser: data.currentUserEmail,
+      geminiApiKey: data.geminiApiKey,
+      appFolderId: data.appFolderId,
+      aiAssistantName: data.aiAssistantName,
+      aiPersonality: data.aiPersonality
+    };
+
+    // タブナビゲーション設定
+    setupTabNavigation();
+
+    // 設定タブのデータを事前読み込み（二重呼び出し防止ガードあり）
+    preloadTabData();
+
+    // スプラッシュ画面を閉じる（ここがキーポイント：ロゴ・スケジュールを待たない）
+    hideSplashScreen();
+
+    // バックグラウンドでロゴ・ファビコン・スケジュールデータを読み込む
+    initializeApp();
+  }
+
+  // 講師ID入力画面を表示（初回アクセス・未紐付けアカウント時）
+  function showIdInputScreen_() {
+    var splash = document.getElementById('splashScreen');
+    if (splash) splash.style.display = 'none';
+
+    var overlay = document.createElement('div');
+    overlay.id = 'idInputOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;z-index:99999;';
+    overlay.innerHTML =
+      '<div style="background:white;border-radius:16px;padding:40px 32px;max-width:380px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.2);">' +
+      '<div style="font-size:56px;margin-bottom:12px;">🔑</div>' +
+      '<h2 style="margin:0 0 8px;color:#333;font-size:20px;">講師IDを入力してください</h2>' +
+      '<p style="color:#666;font-size:14px;line-height:1.7;margin:0 0 8px;">LINE登録時に送られた講師IDを入力してください</p>' +
+      '<p style="color:#999;font-size:12px;margin:0 0 24px;">（例：T1707123456789_abc123def）</p>' +
+      '<input id="idInputField" type="text" placeholder="T から始まるIDを入力" style="width:100%;box-sizing:border-box;padding:12px 16px;font-size:14px;font-family:monospace;border:2px solid #e0e0e0;border-radius:10px;outline:none;margin-bottom:8px;" />' +
+      '<div id="idInputError" style="color:#e53935;font-size:13px;min-height:20px;margin-bottom:8px;"></div>' +
+      '<button onclick="submitIdInput_()" style="width:100%;padding:14px;background:var(--theme-color,#43e97b);color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;">確認する</button>' +
+      '<p style="color:#aaa;font-size:12px;margin:16px 0 0;">IDが不明な場合は管理者にお問い合わせください</p>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var field = document.getElementById('idInputField');
+    if (field) {
+      field.focus();
+      field.addEventListener('keydown', function(e) { if (e.key === 'Enter') submitIdInput_(); });
+    }
+  }
+
+  function submitIdInput_() {
+    var field = document.getElementById('idInputField');
+    var errorEl = document.getElementById('idInputError');
+    var inputId = field ? field.value.trim() : '';
+    if (!inputId) { if (errorEl) errorEl.textContent = '講師IDを入力してください'; return; }
+    if (errorEl) errorEl.textContent = '';
+    if (field) field.disabled = true;
+
+    var btn = document.querySelector('#idInputOverlay button');
+    if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success && result.found) {
+          var overlay = document.getElementById('idInputOverlay');
+          if (overlay) overlay.remove();
+          // 紐付け完了 → アプリを正式に起動
+          splashStartupData_.displayName = result.displayName;
+          splashStartupData_.isAdmin = result.isAdmin;
+          splashStartupData_.teacherId = result.teacherId;
+          splashStartupData_.needsIdInput = false;
+          applyStartupData_(splashStartupData_);
+        } else {
+          if (field) field.disabled = false;
+          if (btn) { btn.disabled = false; btn.textContent = '確認する'; }
+          if (errorEl) errorEl.textContent = 'この講師IDは見つかりませんでした。LINEで受け取ったIDを確認してください。';
+        }
+      })
+      .withFailureHandler(function() {
+        if (field) field.disabled = false;
+        if (btn) { btn.disabled = false; btn.textContent = '確認する'; }
+        if (errorEl) errorEl.textContent = '通信エラーが発生しました。もう一度お試しください。';
+      })
+      .linkUserById(inputId);
+  }
+
+  function startHeaderClock() {
+      var el = document.getElementById('headerClock');
+      if (!el) return;
+      function update() {
+        var now = new Date();
+        var h = String(now.getHours()).padStart(2, '0');
+        var m = String(now.getMinutes()).padStart(2, '0');
+        el.textContent = h + ':' + m;
+      }
+      update();
+      setInterval(update, 60000);
+    }
+
+    function initializeApp() {
+      startHeaderClock();
+
+      // ユーザー情報と設定を取得
+      google.script.run
+        .withSuccessHandler(onSettingsLoaded)
+        .withFailureHandler(onError)
+        .getSettings();
+      
+      // スケジュールデータを取得（DOMContentLoaded で既に開始済みの場合はスキップ）
+      if (!scheduleLoadStarted_) {
+        google.script.run
+          .withSuccessHandler(onScheduleDataLoaded)
+          .withFailureHandler(onError)
+          .getScheduleData();
+      }
+
+      // オーバーライド系データの読み込み完了時にカレンダー再描画（スケジュールより後に到着した場合の補正）
+      function onOverrideLoaded_() {
+        overridesLoadedCount++;
+        if (overridesLoadedCount >= 7 && allSchedules.length > 0) {
+          renderCalendar();
+        }
+      }
+
+      // 基礎学力テスト日程の上書き設定を取得
+      google.script.run
+        .withSuccessHandler(function(overrides) { basicTestDateOverrides = overrides || {}; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getBasicTestDateOverrides();
+
+      // 基礎学力テスト詳細の上書き設定を取得
+      google.script.run
+        .withSuccessHandler(function(details) { basicTestDetailsOverrides = details || {}; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getBasicTestDetails();
+
+      // 塾内部イベント上書き設定を取得
+      google.script.run
+        .withSuccessHandler(function(overrides) { jukuEventOverrides = overrides || {}; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getJukuEventOverrides();
+
+      // 休校日上書き設定を取得（予定タブ専用）
+      google.script.run
+        .withSuccessHandler(function(overrides) { closedDayOverrides = overrides || { add: [], del: [] }; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getClosedDayOverrides();
+
+      // 公立高校一般選抜日程の上書き設定を取得
+      google.script.run
+        .withSuccessHandler(function(overrides) { pubHighExamDateOverrides = overrides || {}; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getPublicHighExamDateOverrides();
+
+      // 講習期間データを取得（予定タブの締切イベント表示用）
+      google.script.run
+        .withSuccessHandler(function(result) { scheduleLecturePeriods = Array.isArray(result) ? result : []; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getLecturePeriods();
+
+      // 講習日程締切の手動上書き設定を取得
+      google.script.run
+        .withSuccessHandler(function(overrides) { lectureDeadlineOverrides = overrides || {}; onOverrideLoaded_(); })
+        .withFailureHandler(function() { onOverrideLoaded_(); })
+        .getLectureDeadlineOverrides();
+
+      // 祝日データをスクリプトプロパティのキャッシュから取得（時間トリガーで毎日更新済み）
+      google.script.run
+        .withSuccessHandler(function(holidays) {
+          if (holidays && Object.keys(holidays).length > 0) {
+            googleCalendarHolidays = holidays;
+          }
+          // キャッシュ未作成の場合は null のまま → isWeekendOrHoliday() がアルゴリズム計算にフォールバック
+        })
+        .withFailureHandler(function() {})
+        .getCachedHolidays();
+
+      // プロフィール情報を事前取得（設定タブ切り替え時に即時表示するため）
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedProfile = result;
+        })
+        .withFailureHandler(function() {})
+        .getUserProfile();
+
+      // 通知設定を事前取得（設定タブ切り替え時に即時表示するため）
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedNotificationSettings = result;
+        })
+        .withFailureHandler(function() {})
+        .getNotificationSettings();
+
+      // LINEスケジューラー通知設定を事前取得
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedLineSchedulerNotifPrefs = result;
+        })
+        .withFailureHandler(function() {})
+        .getLineSchedulerNotifPrefs();
+
+      // 校舎・学年・テスト名ドロップダウンを事前取得（成績管理・設定タブ共通）
+      loadDropdownData();
+    }
+
+    function openDrawer() {
+      document.getElementById('drawerPanel').classList.add('open');
+      document.getElementById('drawerOverlay').style.display = 'block';
+    }
+
+    function closeDrawer() {
+      document.getElementById('drawerPanel').classList.remove('open');
+      document.getElementById('drawerOverlay').style.display = 'none';
+    }
+
+    // スワイプでドロワーを開閉（document レベルで座標判定）
+    (function() {
+      var startX = 0, startY = 0, isInZone = false;
+      document.addEventListener('touchstart', function(e) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        // ヘッダー(56px)より下 かつ 画面左20%ならスワイプゾーン判定
+        isInZone = (startX <= window.innerWidth * 0.2 && startY >= 56);
+      }, { passive: true });
+      document.addEventListener('touchend', function(e) {
+        var dx = e.changedTouches[0].clientX - startX;
+        var dy = e.changedTouches[0].clientY - startY;
+        if (Math.abs(dx) < Math.abs(dy) * 1.5) return; // 縦スクロールは無視
+        var panel = document.getElementById('drawerPanel');
+        // 【開く】左端ゾーンからの右スワイプ
+        if (isInZone && dx > 30) { openDrawer(); return; }
+        // 【閉じる】ドロワーが開いているとき左スワイプ
+        if (Math.abs(dx) >= 40 && dx < 0 && panel.classList.contains('open')) closeDrawer();
+      }, { passive: true });
+    })();
+
+    function setupTabNavigation() {
+      var tabButtons = document.querySelectorAll('.tab-button');
+      
+      tabButtons.forEach(function(button) {
+        button.addEventListener('click', function() {
+          var tabName = this.getAttribute('data-tab');
+          switchTab(tabName);
+        });
+      });
+    }
+
+    // ===== 隠し管理者モード =====
+    /**
+     * ロゴタップ時のカウンター処理（5回で認証ダイアログを表示）
+     */
+    function onLogoTap() {
+      logoTapCount++;
+      if (logoTapTimer) clearTimeout(logoTapTimer);
+      if (logoTapCount >= 5) {
+        logoTapCount = 0;
+        showHiddenAdminModal();
+        return;
+      }
+      logoTapTimer = setTimeout(function() { logoTapCount = 0; }, 2000);
+    }
+
+    /**
+     * 隠し管理者モード パスワードダイアログを表示
+     */
+    function showHiddenAdminModal() {
+      var overlay = document.getElementById('hiddenAdminOverlay');
+      var modal   = document.getElementById('hiddenAdminModal');
+      var errMsg  = document.getElementById('hiddenAdminError');
+      var input   = document.getElementById('hiddenAdminPwInput');
+      if (!overlay || !modal) return;
+      errMsg.style.display = 'none';
+      input.value = '';
+      overlay.style.display = 'block';
+      modal.style.display   = 'block';
+      fitToScreen();
+      setTimeout(function() { input.focus(); }, 100);
+    }
+
+    /**
+     * 隠し管理者モード パスワードダイアログを閉じる
+     */
+    function closeHiddenAdminModal() {
+      document.getElementById('hiddenAdminOverlay').style.display = 'none';
+      document.getElementById('hiddenAdminModal').style.display   = 'none';
+    }
+
+    /**
+     * 隠し管理者モード パスワード検証
+     */
+    function checkHiddenAdminPassword() {
+      var input  = document.getElementById('hiddenAdminPwInput');
+      var errMsg = document.getElementById('hiddenAdminError');
+      if (input.value === 'inoiman') {
+        sessionStorage.setItem('hiddenAdminMode', 'true');
+        closeHiddenAdminModal();
+        isAdminUser = true;
+        var adminTabBtn = document.getElementById('adminTabButton');
+        if (adminTabBtn) adminTabBtn.style.display = 'block';
+        if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
+        if (typeof showToast === 'function') showToast('管理者モードが有効になりました', 'success');
+      } else {
+        errMsg.style.display = 'block';
+        input.value = '';
+        input.focus();
+      }
+    }
+
+    /**
+     * Admin タブの表示/非表示を制御
+     */
+    function checkAdminTabVisibility() {
+      // 隠し管理者モードが有効な場合はサーバー呼び出し不要
+      if (sessionStorage.getItem('hiddenAdminMode') === 'true') {
+        var adminTabBtn = document.getElementById('adminTabButton');
+        if (adminTabBtn) adminTabBtn.style.display = 'block';
+        isAdminUser = true;
+        if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(roleInfo) {
+          var adminTabBtn = document.getElementById('adminTabButton');
+          if (roleInfo.isAdmin) {
+            adminTabBtn.style.display = 'block';
+            isAdminUser = true;
+            // 管理タブのデータをバックグラウンドで事前読み込み
+            loadUsersList();
+            adminTabPreloaded = true;
+          } else {
+            adminTabBtn.style.display = 'none';
+          }
+        })
+        .getUserRoleInfo();
+    }
+    
+
+  // ===== 【3】タブ・UI管理 =====
+    /**
+     * 現在表示中のサブタブIDを返す（サブタブがないタブならnull）
+     */
+    function getActiveSubTabId() {
+      var selectors = [
+        '.sub-content',           // 成績管理
+        '.admin-tab-content',     // 管理
+        '.univ-sub-content',      // 資料
+        '.lecture-sub-content'    // 講習管理
+      ];
+      for (var i = 0; i < selectors.length; i++) {
+        var els = document.querySelectorAll(selectors[i]);
+        for (var j = 0; j < els.length; j++) {
+          if (els[j].style.display !== 'none' && els[j].offsetParent !== null) {
+            return els[j].id;
+          }
+        }
+      }
+      return null;
+    }
+
+    function switchTab(tabName) {
+      closeDrawer();
+      // 現在のタブ＆サブタブのスクロール位置を保存
+      var currentTab = document.querySelector('.tab-button.active');
+      if (currentTab) {
+        var currentTabName = currentTab.getAttribute('data-tab');
+        var activeSubTab = getActiveSubTabId();
+        if (activeSubTab) {
+          saveScrollPosition(activeSubTab);
+        }
+        saveScrollPosition(currentTabName);
+      }
+
+      // アクティブなタブボタンを更新
+      document.querySelectorAll('.tab-button').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      document.querySelector('[data-tab="' + tabName + '"]').classList.add('active');
+
+      // アクティブなコンテンツを更新
+      document.querySelectorAll('.tab-content').forEach(function(content) {
+        content.classList.remove('active');
+      });
+      document.getElementById(tabName).classList.add('active');
+
+      // スクロール位置を復元（サブタブがあればサブタブの位置、なければメインタブの位置）
+      var newActiveSubTab = getActiveSubTabId();
+      if (newActiveSubTab && tabScrollPositions[newActiveSubTab] !== undefined) {
+        restoreScrollPosition(newActiveSubTab);
+      } else {
+        restoreScrollPosition(tabName);
+      }
+
+      if (tabName === 'grades') {
+        loadGradesYears();
+        setTimeout(function() { initSubTabLoop('gradesSubTabs'); }, 50);
+      } else if (tabName === 'universities') {
+        generateFiscalCalendar();
+        setTimeout(function() { initSubTabLoop('univSubTabs'); }, 50);
+      } else if (tabName === 'lectures') {
+        initLecturesTab();
+        setTimeout(function() { initSubTabLoop('lecSubTabNav'); }, 50);
+      } else if (tabName === 'admin') {
+        // 事前読み込み済みの場合は再読み込みしない
+        if (!adminTabPreloaded) loadUsersList();
+        setTimeout(function() { initSubTabLoop('adminSubTabs'); }, 50);
+      }
+    }
+
+    function switchAdminTab(btn, tabName) {
+      // 現在のサブタブのスクロール位置を保存
+      var cur = document.querySelector('.admin-tab-content[style*="display: block"]');
+      if (cur) saveScrollPosition(cur.id);
+
+      // ボタンの更新（data-subtab属性で全コピーを同期）
+      document.querySelectorAll('.admin-tab-btn').forEach(function(b) {
+        b.classList.remove('active');
+      });
+      var activeKey = (btn.getAttribute && btn.getAttribute('data-subtab')) || ('admin-' + tabName);
+      document.querySelectorAll('.admin-tab-btn[data-subtab="' + activeKey + '"]').forEach(function(b) {
+        b.classList.add('active');
+      });
+
+      // コンテンツの更新
+      document.querySelectorAll('.admin-tab-content').forEach(function(tab) {
+        tab.style.display = 'none';
+      });
+      document.getElementById('admin-' + tabName).style.display = 'block';
+
+      // スクロール位置を復元
+      restoreScrollPosition('admin-' + tabName);
+
+      // 初回読み込み
+      if (tabName === 'users') {
+        loadUsersList();
+      } else if (tabName === 'properties') {
+        loadProperties();
+        setTimeout(function() {
+          loadGradesSettings();
+          loadSigmaSettings();
+          initStudentAnalysisPanel();
+        }, 500);
+      } else if (tabName === 'sheets') {
+        loadSheetsList();
+      } else if (tabName === 'drive') {
+        exploreDriveFolder();
+      } else if (tabName === 'logs') {
+        loadLogsTab();
+      } else if (tabName === 'scheduler') {
+        initLineScheduler();
+      }
+    }
+
+    /**
+     * サブタブバーの無限ループスクロールを初期化する（汎用）
+     * タブボタンを前後にクローンし、スクロール端に達したら本物の位置にジャンプする
+     * @param {string} containerId タブバーコンテナのID
+     */
+    function initSubTabLoop(containerId) {
+      var container = document.getElementById(containerId);
+      if (!container || container.dataset.loopInit) return;
+      container.dataset.loopInit = '1';
+
+      // オリジナルボタンを収集（コンテナ直下のbutton要素）
+      var origBtns = Array.prototype.slice.call(container.querySelectorAll('button'));
+      var count = origBtns.length;
+      if (count === 0) return;
+
+      // 前後にクローンを追加
+      origBtns.forEach(function(btn) {
+        var after = btn.cloneNode(true);
+        after.classList.remove('active');
+        container.appendChild(after);
+      });
+      var frag = document.createDocumentFragment();
+      origBtns.forEach(function(btn) {
+        var before = btn.cloneNode(true);
+        before.classList.remove('active');
+        frag.appendChild(before);
+      });
+      container.insertBefore(frag, container.firstChild);
+
+      // 1セット分の幅とオリジナルセットの開始位置を計算
+      var realStart = origBtns[0].offsetLeft;
+      var setWidth = 0;
+      origBtns.forEach(function(btn) { setWidth += btn.offsetWidth; });
+
+      // 初期スクロール位置をオリジナルセットの先頭に
+      container.scrollLeft = realStart;
+
+      // スクロール終了時にクローン領域→本物領域へジャンプ（デバウンス100ms）
+      var jumpTimer = null;
+      container.addEventListener('scroll', function() {
+        clearTimeout(jumpTimer);
+        jumpTimer = setTimeout(function() {
+          var sl = container.scrollLeft;
+          if (sl < realStart - 5) {
+            container.style.scrollBehavior = 'auto';
+            container.scrollLeft = sl + setWidth;
+            container.style.scrollBehavior = '';
+          } else if (sl > realStart + setWidth + 5) {
+            container.style.scrollBehavior = 'auto';
+            container.scrollLeft = sl - setWidth;
+            container.style.scrollBehavior = '';
+          }
+        }, 100);
+      }, { passive: true });
+
+      // リサイズ時に幅を再計算
+      window.addEventListener('resize', function() {
+        if (!container.dataset.loopInit) return;
+        realStart = origBtns[0].offsetLeft;
+        setWidth = 0;
+        origBtns.forEach(function(btn) { setWidth += btn.offsetWidth; });
+      });
+    }
+
+    function switchSubTab(event, subTabName) {
+      // 現在のサブタブのスクロール位置を保存
+      document.querySelectorAll('.sub-content').forEach(function(el) {
+        if (el.style.display !== 'none') saveScrollPosition(el.id);
+      });
+
+      // すべてのサブタブを非表示・active クラスを削除
+      document.querySelectorAll('.sub-content').forEach(function(el) {
+        el.style.display = 'none';
+        el.classList.remove('active');
+      });
+      document.querySelectorAll('.sub-tab').forEach(function(el) {
+        el.style.borderBottomColor = 'transparent';
+        el.style.color = '#666';
+      });
+
+      // 選択されたサブタブを表示：インラインの display をクリアして CSS に委ねる
+      // display:block でなく '' にすることで CSS の display:flex 等が正しく適用される
+      var activeEl = document.getElementById(subTabName);
+      activeEl.style.display = '';
+      activeEl.classList.add('active');
+
+      // ボタンをアクティブ状態に（data-subtab属性で全コピーを同期）
+      var activeSubTab = (event.target.getAttribute && event.target.getAttribute('data-subtab')) || subTabName;
+      document.querySelectorAll('.sub-tab[data-subtab="' + activeSubTab + '"]').forEach(function(el) {
+        el.style.borderBottomColor = '#667eea';
+        el.style.color = '#667eea';
+      });
+
+      // スクロール位置を復元
+      restoreScrollPosition(subTabName);
+
+      // 一覧表タブを開いたとき、フィルター選択肢を初期化
+      if (subTabName === 'grades-list') {
+        initGradesList();
+      } else if (subTabName === 'grades-average') {
+        initGradesAverage();
+      } else if (subTabName === 'grades-analysis') {
+        initGradesAnalysis();
+      } else if (subTabName === 'grades-report') {
+        initGradesReport();
+      } else if (subTabName === 'grades-placement') {
+        initGradesPlacement();
+      }
+    }
+
+    function switchUniversitiesSubTab(event, name) {
+      // 現在のサブタブのスクロール位置を保存
+      document.querySelectorAll('.univ-sub-content').forEach(function(el) {
+        if (el.style.display !== 'none') saveScrollPosition(el.id);
+      });
+
+      document.querySelectorAll('.univ-sub-content').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      document.querySelectorAll('.univ-sub-tab').forEach(function(el) {
+        el.style.borderBottomColor = 'transparent';
+        el.style.color = '#666';
+      });
+      document.getElementById(name).style.display = 'block';
+
+      // ボタンをアクティブ状態に（data-subtab属性で全コピーを同期）
+      var activeKey = (event.target.getAttribute && event.target.getAttribute('data-subtab')) || name;
+      document.querySelectorAll('.univ-sub-tab[data-subtab="' + activeKey + '"]').forEach(function(el) {
+        el.style.borderBottomColor = '#667eea';
+        el.style.color = '#667eea';
+      });
+
+      // スクロール位置を復元
+      restoreScrollPosition(name);
+      if (name === 'univ-pricing') {
+        loadPricingTable();
+      }
+    }
+
+    // ========================================
+  // ===== 【4】スケジュール関連 =====
+    function onScheduleDataLoaded(schedules) {
+      allSchedules = schedules || [];
+      document.getElementById('scheduleLoading').style.display = 'none';
+
+      renderCalendar();
+
+      // スプラッシュ画面: スケジュールの読み込み完了
+      splashLoadState.scheduleLoaded = true;
+      checkSplashDone();
+    }
+
+    /**
+     * イベントの種類（juku/junior/high）を判定して返す
+     * @param {Object} event イベントオブジェクト
+     * @return {string} 'juku' | 'junior' | 'high'
+     */
+    function classifyEvent(event) {
+      if (event.school === '塾' || (event.school && event.school.indexOf('塾') !== -1)) return 'juku';
+      if (event.school && event.school.indexOf('中学') !== -1) return 'junior';
+      return 'high';
+    }
+
+    /**
+     * 開始日の前日からcount日前を計算し、その日が日曜・休校日なら前の営業日に調整して返す（予定タブ締切日計算用）
+     * 例: 開始日7/20 count=28 → 7/19 - 28日 = 6/21 → 日曜なら6/20、休校日なら前日...と調整
+     * @param {Date} startDate 講習開始日
+     * @param {number} count 遡る日数（カレンダー日数）
+     * @param {Object} closedDays 休校日マップ（dateKey: YYYY-MM-DD → true）
+     * @return {Date} 締切日
+     */
+    function countBackLecDeadline_(startDate, count, closedDays) {
+      var current = new Date(startDate.getTime());
+      current.setDate(current.getDate() - 1);   // 開始日の前日
+      current.setDate(current.getDate() - count); // カレンダー上でcount日前
+      // その日が日曜・休校日なら前の営業日にずらす
+      for (var i = 0; i < 14; i++) {
+        var dow = current.getDay();
+        var mm = current.getMonth() + 1;
+        var dd = current.getDate();
+        var key = current.getFullYear() + '-' + (mm < 10 ? '0' : '') + mm + '-' + (dd < 10 ? '0' : '') + dd;
+        if (dow !== 0 && !closedDays[key]) break;
+        current.setDate(current.getDate() - 1);
+      }
+      return current;
+    }
+
+    /**
+     * 指定月に含まれる講習日程締切の仮想イベント配列を返す
+     * 締切日 = 手動上書きがあればその日付、なければ開始日から指定日数前（日曜・休校日なら前の営業日）
+     * 春期・夏期・冬期講習: 14日前 / その他（基礎学力テスト対策・入試直前など）: 28日前
+     * @param {number} calYear 表示年
+     * @param {number} calMonth 表示月（1〜12）
+     * @return {Array} 仮想イベント配列
+     */
+    function getLectureDeadlineEventsForMonth(calYear, calMonth) {
+      var result = [];
+      scheduleLecturePeriods.forEach(function(lp) {
+        if (!lp.startDate) return;
+        var deadline;
+        // 手動上書き設定があればそれを使用
+        if (lp.id && lectureDeadlineOverrides[lp.id]) {
+          var op = lectureDeadlineOverrides[lp.id].split('-');
+          if (op.length === 3) {
+            deadline = new Date(parseInt(op[0]), parseInt(op[1]) - 1, parseInt(op[2]));
+          }
+        }
+        if (!deadline) {
+          // 自動計算
+          var parts = lp.startDate.split('-');
+          if (parts.length < 3) return;
+          var startDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          var sm = startDate.getMonth() + 1; // 1〜12
+          var fy;
+          if (lp.name && lp.name.indexOf('春期') !== -1 && sm < 4) {
+            fy = startDate.getFullYear() - 1; // 春期3月 → FY前年
+          } else {
+            fy = sm >= 4 ? startDate.getFullYear() : startDate.getFullYear() - 1;
+          }
+          var closedDays = getClosedDays(fy);
+          closedDayOverrides.del.forEach(function(d) { delete closedDays[d]; });
+          closedDayOverrides.add.forEach(function(d) { closedDays[d] = true; });
+          // 春期・夏期・冬期は42日前（28+14）、それ以外は28日前
+          var name = lp.name || '';
+          var daysBack = (name.indexOf('春期') !== -1 || name.indexOf('夏期') !== -1 || name.indexOf('冬期') !== -1) ? 42 : 28;
+          deadline = countBackLecDeadline_(startDate, daysBack, closedDays);
+        }
+        if (deadline.getFullYear() === calYear && deadline.getMonth() + 1 === calMonth) {
+          result.push({
+            day: deadline.getDate(),
+            school: '塾',
+            eventType: '講習日程締切',
+            details: lp.name,
+            schedule: calYear + '年' + calMonth + '月' + deadline.getDate() + '日',
+            _virtual: true
+          });
+        }
+      });
+      return result;
+    }
+
+    /**
+     * 指定月の全日カレンダーHTMLを4列テーブル（日付|塾|中学校|高校）で生成する
+     * @param {number} year 年
+     * @param {number} month 月（1〜12）
+     * @return {string} カレンダーHTML
+     */
+    function buildMonthHTML(year, month) {
+      var dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+      var reportMonthLabels = {4: '春期講習', 9: '夏期講習', 10: '第1回基礎学', 11: '第2回基礎学', 1: '冬期講習', 3: '直前講座'};
+      var daysInMonth = new Date(year, month, 0).getDate();
+      var todayDate = new Date();
+      var fiscalYear = month >= 4 ? year : year - 1;
+
+      // 塾の休校日を計算
+      var cDays = getClosedDays(fiscalYear);
+      closedDayOverrides.del.forEach(function(d) { delete cDays[d]; });
+      closedDayOverrides.add.forEach(function(d) { cDays[d] = true; });
+
+      // 塾の仮想イベント（○□★△）を日付キーで準備
+      var jukuVirtualByDay = {};
+      var resolveJukuEvent = function(type, computedDay) {
+        var ovKey = type + '_' + year + '_' + month;
+        var ov = jukuEventOverrides[ovKey];
+        if (ov === false) return null;
+        if (ov && ov.date) {
+          var p = ov.date.split('/');
+          return { day: parseInt(p[2]), details: ov.details || '' };
+        }
+        var defaultDetails = (type === 'meeting') ? '14:00' : '';
+        return computedDay ? { day: computedDay, details: defaultDetails } : null;
+      };
+      var pushJukuVirtual = function(day, eventType, res) {
+        if (!jukuVirtualByDay[day]) jukuVirtualByDay[day] = [];
+        jukuVirtualByDay[day].push({ school: '塾', eventType: eventType, details: res.details, schedule: year + '年' + month + '月' + res.day + '日', _virtual: true });
+      };
+      var rRes = resolveJukuEvent('report', getReportDay(year, month));
+      if (rRes) pushJukuVirtual(rRes.day, '○ 回数報告書提出日', rRes);
+      var mRes = resolveJukuEvent('meeting', getMeetingDay(year, month));
+      if (mRes) pushJukuVirtual(mRes.day, '□ 全体ミーティング', mRes);
+      var dbt = getDebitDays(year, month);
+      var dRes = resolveJukuEvent('debit', dbt.debit);
+      if (dRes) pushJukuVirtual(dRes.day, '★ 引落データ送信日', dRes);
+      var eRes = resolveJukuEvent('email', dbt.email);
+      if (eRes) pushJukuVirtual(eRes.day, '△ メール送信日', eRes);
+
+      // 基礎学力テスト仮想イベント
+      var basicTestByDay = {};
+      getBasicTestEventsForMonth(year, month).forEach(function(ev) {
+        if (!basicTestByDay[ev.day]) basicTestByDay[ev.day] = [];
+        basicTestByDay[ev.day].push(ev);
+      });
+
+      // 公立高校一般選抜仮想イベント
+      var pubHighExamByDay = {};
+      getPublicHighSchoolExamDaysForMonth(year, month).forEach(function(ev) {
+        if (!pubHighExamByDay[ev.day]) pubHighExamByDay[ev.day] = [];
+        pubHighExamByDay[ev.day].push(ev);
+      });
+
+      // 講習日程締切仮想イベント
+      var lecDeadlineByDay = {};
+      getLectureDeadlineEventsForMonth(year, month).forEach(function(ev) {
+        if (!lecDeadlineByDay[ev.day]) lecDeadlineByDay[ev.day] = [];
+        lecDeadlineByDay[ev.day].push(ev);
+      });
+
+      // イベント1件分のHTML生成ヘルパー
+      var renderEvent = function(event, typeCls) {
+        var displayDetails = event.details || '';
+        if (event.eventType && event.eventType.indexOf('回数報告書') !== -1 && reportMonthLabels[month]) {
+          displayDetails = reportMonthLabels[month] + (displayDetails ? '　' + displayDetails : '');
+        }
+        var showSchool = (typeCls !== 'juku');
+        var itemExtraCls = event._closedDay ? ' event-closed-day' : (event._virtual ? ' event-juku-virtual' : '');
+        return '<div class="event-item ' + typeCls + itemExtraCls + '" onclick=\'addToGoogleCalendar(' +
+          JSON.stringify(event).replace(/'/g, "\\'") + ')\'>' +
+          (showSchool ? '<div class="event-school">' + event.school + '</div>' : '') +
+          '<div class="event-name">' + event.eventType + '</div>' +
+          (displayDetails ? '<div class="event-details">' + displayDetails + '</div>' : '') +
+          '</div>';
+      };
+
+      // テーブル開始（theadは固定ヘッダーdivに分離済み。colgroupで列幅を明示）
+      var html = '<table class="month-table"><colgroup>' +
+        '<col style="width:36px">' +
+        '<col style="width:calc((100% - 36px) / 3)">' +
+        '<col style="width:calc((100% - 36px) / 3)">' +
+        '<col style="width:calc((100% - 36px) / 3)">' +
+        '</colgroup><tbody>';
+
+      for (var day = 1; day <= daysInMonth; day++) {
+        var date = new Date(year, month - 1, day);
+        var dayOfWeek = date.getDay();
+        var dayName = dayNames[dayOfWeek];
+
+        // 休校日・祝日判定用のゼロパディング済みキー
+        var mmP = month < 10 ? '0' + month : '' + month;
+        var ddP = day < 10 ? '0' + day : '' + day;
+        var dateKeyPadded = year + '-' + mmP + '-' + ddP;
+
+        // 祝日判定（dateKeyPadded を使用 — googleCalendarHolidays のキーはゼロパディング済み）
+        var isHolidayDate = false;
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          if (googleCalendarHolidays !== null) {
+            isHolidayDate = !!googleCalendarHolidays[dateKeyPadded];
+          } else {
+            isHolidayDate = !!getJapaneseHolidays(year)[dateKeyPadded];
+          }
+        }
+        var isJukuClosed = !!cDays[dateKeyPadded];
+
+        // 今日かどうか
+        var isToday = (year === todayDate.getFullYear() && month === todayDate.getMonth() + 1 && day === todayDate.getDate());
+
+        // 日付セルの色クラス
+        var dateClass = 'month-date-cell';
+        if (dayOfWeek === 0 || isHolidayDate) dateClass += ' sunday';
+        else if (dayOfWeek === 6) dateClass += ' saturday';
+        if (isToday) dateClass += ' today';
+
+        // 行クラス・ID
+        var rowAttrs = isJukuClosed ? ' class="month-row-closed"' : '';
+        if (isToday) rowAttrs += ' id="today-row"';
+
+        // この日の実イベントを取得
+        var daySchedules = allSchedules.filter(function(schedule) {
+          var match = schedule.schedule.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+          if (match) {
+            return parseInt(match[1]) === year &&
+                   parseInt(match[2]) === month &&
+                   parseInt(match[3]) === day;
+          }
+          return false;
+        });
+
+        // 塾の仮想イベント（休校日 + ○□★△）
+        var virtualJuku = jukuVirtualByDay[day] || [];
+        if (isJukuClosed) {
+          virtualJuku = [{ school: '塾', eventType: '休校日', details: '', schedule: year + '年' + month + '月' + day + '日', _closedDay: true, _virtual: true }].concat(virtualJuku);
+        }
+
+        // 基礎学力テスト仮想イベント（中学列に入る）
+        var virtualBasic = basicTestByDay[day] || [];
+
+        // 3列に分類
+        var jukuEvents = [], juniorEvents = [], highEvents = [];
+        daySchedules.forEach(function(ev) {
+          var t = classifyEvent(ev);
+          if (t === 'juku') jukuEvents.push(ev);
+          else if (t === 'junior') juniorEvents.push(ev);
+          else highEvents.push(ev);
+        });
+        // 仮想イベントを追加
+        jukuEvents = virtualJuku.concat(lecDeadlineByDay[day] || []).concat(jukuEvents);
+        juniorEvents = virtualBasic.concat(pubHighExamByDay[day] || []).concat(juniorEvents);
+
+        // 行を生成
+        html += '<tr' + rowAttrs + '>';
+        html += '<td class="' + dateClass + '">' + day + '<br>' + dayName + '</td>';
+
+        // 塾列
+        html += '<td>';
+        jukuEvents.forEach(function(ev) { html += renderEvent(ev, 'juku'); });
+        html += '</td>';
+
+        // 中学列
+        html += '<td>';
+        juniorEvents.forEach(function(ev) { html += renderEvent(ev, 'junior'); });
+        html += '</td>';
+
+        // 高校列
+        html += '<td>';
+        highEvents.forEach(function(ev) { html += renderEvent(ev, 'high'); });
+        html += '</td>';
+
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+      return html;
+    }
+
+    /**
+     * ドラムピッカー＋月カレンダーとして予定タブを描画する
+     */
+    function renderCalendar() {
+      // ドラムの基準月を設定
+      drumBaseYear = currentYear;
+      drumBaseMonth = currentMonth;
+
+      // ドラムをstickyナビに、カレンダーをcontentに出力
+      var navSticky = document.getElementById('scheduleNavSticky');
+      navSticky.innerHTML = buildMonthDrumHTML();
+
+      // テーブルの固定ヘッダー（塾・中学校・高校）を別エリアに出力
+      var tableHeader = document.getElementById('scheduleTableHeader');
+      if (tableHeader) {
+        tableHeader.innerHTML = '<table class="month-table"><thead><tr>' +
+          '<th></th>' +
+          '<th class="col-juku">塾</th>' +
+          '<th class="col-junior">中学校</th>' +
+          '<th class="col-high">高校</th>' +
+          '</tr></thead></table>';
+        tableHeader.style.display = 'block';
+      }
+
+      var scheduleContent = document.getElementById('scheduleContent');
+      scheduleContent.innerHTML = '<div id="monthCalContent">' + buildMonthHTML(currentYear, currentMonth) + '</div>';
+      scheduleContent.style.display = 'block';
+
+      // 今日の行が存在すれば自動スクロール
+      var todayRow = document.getElementById('today-row');
+      if (todayRow) {
+        setTimeout(function() { todayRow.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 50);
+      }
+
+      initMonthDrum();
+    }
+
+    /**
+     * 月ドラムピッカーのHTML文字列を生成して返す
+     * 現在月を中心に前後18ヶ月のリストを生成する
+     * @return {string} ドラムピッカーHTML
+     */
+    function buildMonthDrumHTML() {
+      var HALF = 18;        // 前後18ヶ月（合計3年分）
+      var ITEM_H = 34;      // 1アイテムの高さ（px）
+      var PAD = ITEM_H * 2; // 上下パディング（2アイテム分 = 68px）
+
+      var themeColor = (currentSettings && currentSettings.themeColor) ? currentSettings.themeColor : '#43e97b';
+      var html = '<div class="week-drum-outer" style="--drum-sel-color:' + themeColor + ';">';
+      // 左：前月ボタン
+      html += '<button class="drum-month-btn" onclick="changeMonth(-1)"><span>前月</span>▲<span></span></button>';
+      html += '<div class="week-drum-wrapper">';
+      html += '<div id="monthDrumScroll" class="week-drum-scroll">';
+      html += '<div style="height:' + PAD + 'px;"></div>';
+
+      for (var i = -HALF; i <= HALF; i++) {
+        var m = drumBaseMonth + i;
+        var y = drumBaseYear;
+        while (m > 12) { m -= 12; y++; }
+        while (m < 1)  { m += 12; y--; }
+
+        var label = y + '年' + m + '月';
+        var cls = 'week-drum-item';
+        if (i === 0) cls += ' drum-sel';
+        else if (Math.abs(i) === 1) cls += ' drum-near1';
+        else if (Math.abs(i) === 2) cls += ' drum-near2';
+
+        html += '<div class="' + cls + '" data-year="' + y + '" data-month="' + m + '" style="height:' + ITEM_H + 'px;">' + label + '</div>';
+      }
+
+      html += '<div style="height:' + PAD + 'px;"></div>';
+      html += '</div>';
+      html += '<div class="week-drum-grad-top"></div>';
+      html += '<div class="week-drum-grad-bot"></div>';
+      html += '<div class="week-drum-line week-drum-line-t"></div>';
+      html += '<div class="week-drum-line week-drum-line-b"></div>';
+      html += '</div>'; // .week-drum-wrapper
+      // 右：翌月ボタン
+      html += '<button class="drum-month-btn" onclick="changeMonth(1)"><span></span>▼<span>翌月</span></button>';
+      html += '</div>'; // .week-drum-outer
+
+      return html;
+    }
+
+    /**
+     * 月ドラムピッカーのスクロール動作を初期化する
+     */
+    function initMonthDrum() {
+      var scroll = document.getElementById('monthDrumScroll');
+      if (!scroll) return;
+
+      var ITEM_H = 34;
+      var HALF = 18;
+      var items = scroll.querySelectorAll('.week-drum-item');
+
+      // 初期位置（中央=HALF）
+      drumScrollResetting = true;
+      scroll.scrollTop = HALF * ITEM_H;
+      setTimeout(function() { drumScrollResetting = false; }, 400);
+
+      var prevIdx = HALF;
+
+      function updateHighlight(idx) {
+        items.forEach(function(item, i) {
+          item.classList.remove('drum-sel', 'drum-near1', 'drum-near2');
+          var diff = Math.abs(i - idx);
+          if (diff === 0) item.classList.add('drum-sel');
+          else if (diff === 1) item.classList.add('drum-near1');
+          else if (diff === 2) item.classList.add('drum-near2');
+        });
+      }
+
+      var timer = null;
+      scroll.addEventListener('scroll', function() {
+        if (drumScrollResetting) return;
+
+        var pos = scroll.scrollTop;
+        var idx = Math.round(pos / ITEM_H);
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+
+        if (idx !== prevIdx) {
+          prevIdx = idx;
+          updateHighlight(idx);
+        }
+
+        clearTimeout(timer);
+        timer = setTimeout(function() {
+          var selItem = items[idx];
+          if (selItem) {
+            currentYear = parseInt(selItem.getAttribute('data-year'));
+            currentMonth = parseInt(selItem.getAttribute('data-month'));
+
+            // カレンダーコンテンツのみ更新（ドラムは再生成しない）
+            var calContent = document.getElementById('monthCalContent');
+            if (calContent) {
+              calContent.innerHTML = buildMonthHTML(currentYear, currentMonth);
+              // 月変更時は1日が最上部に来るようスクロール
+              var scheduleContent = document.getElementById('scheduleContent');
+              if (scheduleContent) scheduleContent.scrollTop = 0;
+            }
+          }
+        }, 200);
+      }, { passive: true });
+    }
+
+    /**
+     * 月を前後に移動する
+     * @param {number} delta 移動量（-1=前月、+1=翌月）
+     */
+    function changeMonth(delta) {
+      var scroll = document.getElementById('monthDrumScroll');
+      if (scroll) {
+        scroll.scrollBy({ top: delta * 34, behavior: 'smooth' });
+      } else {
+        currentMonth += delta;
+        if (currentMonth > 12) { currentYear++; currentMonth = 1; }
+        if (currentMonth < 1)  { currentYear--; currentMonth = 12; }
+        renderCalendar();
+      }
+    }
+
+    function addToGoogleCalendar(schedule) {
+      var dateObj = parseDateString(schedule.schedule);
+      if (!dateObj) {
+        appAlert('日付の解析に失敗しました');
+        return;
+      }
+      
+      var title = '[' + schedule.school + '] ' + schedule.eventType;
+      var details = schedule.details || '';
+      var startDate = formatDateForGoogle(dateObj);
+      
+      var url = 'https://calendar.google.com/calendar/render?action=TEMPLATE' +
+                '&text=' + encodeURIComponent(title) +
+                '&dates=' + startDate + '/' + startDate +
+                '&details=' + encodeURIComponent(details);
+      
+      window.open(url, '_blank');
+    }
+
+    function exportAllToGoogleCalendar() {
+      var y = currentYear, m = currentMonth;
+      var monthSchedules = allSchedules.filter(function(schedule) {
+        var match = schedule.schedule.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+        if (match) {
+          return parseInt(match[1]) === y && parseInt(match[2]) === m;
+        }
+        return false;
+      });
+
+      if (monthSchedules.length === 0) {
+        appAlert('今月の予定がありません');
+        return;
+      }
+
+      monthSchedules.forEach(function(schedule, index) {
+        setTimeout(function() {
+          addToGoogleCalendar(schedule);
+        }, index * 500);
+      });
+    }
+
+    function downloadAllAsICS() {
+      var y = currentYear, m = currentMonth;
+      var monthSchedules = allSchedules.filter(function(schedule) {
+        var match = schedule.schedule.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+        if (match) {
+          return parseInt(match[1]) === y && parseInt(match[2]) === m;
+        }
+        return false;
+      });
+
+      if (monthSchedules.length === 0) {
+        appAlert('今月の予定がありません');
+        return;
+      }
+
+      var startLabel = y + '年' + m + '月';
+      var icsContent = generateICS(monthSchedules);
+      downloadFile(icsContent, '学校予定_' + startLabel + '.ics', 'text/calendar');
+    }
+
+    function generateICS(schedules) {
+      var ics = 'BEGIN:VCALENDAR\n';
+      ics += 'VERSION:2.0\n';
+      ics += 'PRODID:-//教育機関ダッシュボード//JP\n';
+      ics += 'CALSCALE:GREGORIAN\n';
+      
+      schedules.forEach(function(schedule) {
+        var dateObj = parseDateString(schedule.schedule);
+        if (!dateObj) return;
+        
+        var title = '[' + schedule.school + '] ' + schedule.eventType;
+        var description = schedule.details || '';
+        var dateStr = formatDateForICS(dateObj);
+        
+        ics += 'BEGIN:VEVENT\n';
+        ics += 'DTSTART;VALUE=DATE:' + dateStr + '\n';
+        ics += 'DTEND;VALUE=DATE:' + dateStr + '\n';
+        ics += 'SUMMARY:' + title + '\n';
+        if (description) {
+          ics += 'DESCRIPTION:' + description + '\n';
+        }
+        ics += 'UID:' + Date.now() + '-' + Math.random() + '@schoolcalendar\n';
+        ics += 'DTSTAMP:' + formatDateForICS(new Date()) + 'T000000Z\n';
+        ics += 'END:VEVENT\n';
+      });
+      
+      ics += 'END:VCALENDAR';
+      return ics;
+    }
+
+    function downloadFile(content, filename, mimeType) {
+      var blob = new Blob([content], { type: mimeType });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function manualUpdateSchedules() {
+      appConfirm('スケジュールを更新します。しばらく時間がかかります。よろしいですか？').then(function(ok) {
+        if (!ok) return;
+
+        var button = event.target;
+        button.disabled = true;
+        button.textContent = '🔄 更新中...';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            button.disabled = false;
+            button.textContent = '🔄 スケジュール更新';
+
+            if (result.success) {
+              showMessage('scheduleLoading', '✓ ' + result.count + '件のスケジュールを更新しました', 'success');
+              // データを再取得
+              google.script.run
+                .withSuccessHandler(onScheduleDataLoaded)
+                .getScheduleData();
+            } else {
+              showMessage('scheduleLoading', '❌ 更新に失敗しました: ' + result.error, 'error');
+            }
+          })
+        .withFailureHandler(function(error) {
+          button.disabled = false;
+          button.textContent = '🔄 スケジュール更新';
+          showMessage('scheduleLoading', '❌ エラー: ' + error, 'error');
+        })
+        .updateSchedules();
+      });
+    }
+
+  // ===== 【5】設定管理 =====
+    function onSettingsLoaded(settings) {
+      currentSettings = settings;
+
+      // ファビコン・アイコンを動的に設定（base64データURLでCSP制限を回避）
+      if (settings.faviconUrl) {
+        // 既存の apple-touch-icon タグのhrefをbase64で上書き更新
+        var appleIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+        appleIcons.forEach(function(el) { el.href = settings.faviconUrl; });
+        // 既存の favicon タグを更新。なければ新規追加
+        var favicons = document.querySelectorAll('link[rel="icon"]');
+        if (favicons.length > 0) {
+          favicons.forEach(function(el) { el.href = settings.faviconUrl; });
+        } else {
+          var newFav = document.createElement('link');
+          newFav.rel = 'icon';
+          newFav.type = 'image/png';
+          newFav.href = settings.faviconUrl;
+          document.head.appendChild(newFav);
+        }
+      }
+
+      // ヘッダーのロゴ画像を設定
+      if (settings.logoUrl) {
+        var logoImg = document.getElementById('appLogoImg');
+        if (logoImg) {
+          logoImg.src = settings.logoUrl;
+          logoImg.style.display = 'inline';
+        }
+      }
+
+      // ヘッダーのユーザー情報を更新
+      document.getElementById('currentUser').textContent = '👤 ' + (settings.displayName || '名前未設定');
+      
+      // テーマカラーを即座に適用（ユーザー個別設定またはグローバル設定）
+      if (settings.themeColor) {
+        applyThemeColor(settings.themeColor);
+      }
+
+      // Admin かどうかをチェック
+      google.script.run
+        .withSuccessHandler(function(roleInfo) {
+          if (roleInfo.isAdmin) {
+            updateApiKeyStatus(settings.geminiApiKey);
+          }
+        })
+        .getUserRoleInfo();
+
+      // スプラッシュ画面: 設定の読み込み完了
+      splashLoadState.settingsLoaded = true;
+      checkSplashDone();
+    }
+
+    function updateApiKeyStatus(status) {
+      var statusEl = document.getElementById('geminiApiStatus');
+      if (status === '***設定済み***') {
+        statusEl.textContent = '✓ 設定済み';
+        statusEl.className = 'status active';
+      } else {
+        statusEl.textContent = '❌ 未設定';
+        statusEl.className = 'status inactive';
+      }
+    }
+
+    function saveSettings() {
+      var settingsData = {
+        geminiApiKey: document.getElementById('geminiApiKey').value,
+        appFolderId: document.getElementById('appFolderId').value
+      };
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            showMessage('settingsMessage', '❌ 設定の保存に失敗しました: ' + (result && result.error ? result.error : '不明なエラー'), 'error');
+            return;
+          }
+          showMessage('settingsMessage', '✓ 設定を保存しました', 'success');
+          // APIキーが新たに設定された場合、ステータスを更新
+          if (settingsData.geminiApiKey && settingsData.geminiApiKey !== '***設定済み***') {
+            updateApiKeyStatus('***設定済み***');
+            document.getElementById('geminiApiKey').value = '';
+          }
+        })
+        .withFailureHandler(function(error) {
+          showMessage('settingsMessage', '❌ 設定の保存に失敗しました: ' + error, 'error');
+        })
+        .updateSettings(settingsData);
+    }
+
+  // ===== 【6】プロフィール管理 =====
+    function loadProfileInfo() {
+      // 事前取得済みのキャッシュがあれば即時表示（通信なし）
+      if (preloadedProfile !== null) {
+        if (preloadedProfile.success) {
+          displayProfileInfo(preloadedProfile);
+        } else {
+          showMessage('profileMessage', '❌ プロフィール読み込みエラー: ' + preloadedProfile.error, 'error');
+        }
+        return;
+      }
+      // キャッシュ未取得の場合はバックエンドから取得
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedProfile = result;
+          if (result.success) {
+            displayProfileInfo(result);
+          } else {
+            showMessage('profileMessage', '❌ プロフィール読み込みエラー: ' + result.error, 'error');
+          }
+        })
+        .getUserProfile();
+    }
+
+    function displayProfileInfo(profile) {
+      // プロフィール写真の表示
+      var photoImg = document.getElementById('profilePhotoImg');
+      var defaultIcon = document.getElementById('profileDefaultIcon');
+      if (photoImg && defaultIcon) {
+        if (profile.profilePhotoUrl) {
+          photoImg.src = profile.profilePhotoUrl;
+          photoImg.style.display = 'block';
+          defaultIcon.style.display = 'none';
+        } else {
+          photoImg.style.display = 'none';
+          defaultIcon.style.display = '';
+        }
+      }
+
+      // ヘッダー表示
+      document.getElementById('profileDisplayName').textContent = profile.displayName;
+      document.getElementById('profileRegisteredEmail').textContent = '📧 ' + profile.registeredEmail;
+      document.getElementById('profileSubjects').textContent = profile.subjectsDisplay;
+
+      // 講師ID表示
+      var tidEl = document.getElementById('profileTeacherId');
+      if (tidEl) tidEl.textContent = profile.teacherId || '未設定';
+
+      // アカウント情報表示（要素が存在する場合のみ）
+      var regEl = document.getElementById('registeredEmailDisplay');
+      if (regEl) regEl.textContent = profile.registeredEmail;
+      var curEl = document.getElementById('currentEmailDisplay');
+      if (curEl) curEl.textContent = profile.currentEmail;
+
+      // メールアドレス一覧を読み込む
+      loadTeacherEmailList_();
+
+      // フォーム入力欄に反映
+      document.getElementById('displayNameInput').value = profile.displayName;
+      var aiName = profile.aiAssistantName || 'イノイマン';
+      document.getElementById('aiAssistantNameInput').value = aiName === 'イノイマン' ? '' : aiName;
+      document.getElementById('aiWidgetTitle').textContent = '🤖 AI ' + aiName;
+      document.getElementById('aiPersonalitySelect').value = profile.aiPersonality || 'polite';
+      // テーマカラーを適用
+      if (profile.themeColor) applyThemeColor(profile.themeColor);
+      document.getElementById('userThemeColor').value = profile.themeColor || '#43e97b';
+
+      // 担当教科をセット
+      selectedSubjects = profile.subjects || [];
+      myTeacherName  = profile.displayName || '';
+      myTeacherEmail = profile.registeredEmail || '';
+      myTeacherId    = profile.teacherId || '';
+      loadSubjectCheckboxes();
+      updateSelectedSubjectsDisplay();
+
+      // 配属校舎をセット → 全校舎ドロップダウンに反映
+      preferredCampuses = profile.preferredCampuses || [];
+      renderPreferredCampusCheckboxes();
+      rebuildCampusDropdowns(); // 配属校舎が先頭に来るようドロップダウンを再描画
+
+      // 未設定項目の案内メッセージ
+      var notSet = [];
+      if (!profile.isDisplayNameSet) notSet.push('表示名');
+      if (!profile.subjects || profile.subjects.length === 0) notSet.push('担当教科');
+      var profileMsgEl = document.getElementById('profileMessage');
+      if (notSet.length > 0) {
+        profileMsgEl.innerHTML = '<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px 16px; color: #856404; margin-bottom: 8px; font-size: 14px;">⚠️ <strong>' + notSet.join('と') + '</strong> がまだ設定されていません。下のフォームから設定してください。</div>';
+      } else {
+        profileMsgEl.innerHTML = '';
+      }
+    }
+
+    // ===== 【6-B】プロフィール写真 =====
+
+    /**
+     * プロフィール写真アップロード用のファイル選択ダイアログを開く
+     */
+    function triggerProfilePhotoUpload() {
+      document.getElementById('profilePhotoInput').click();
+    }
+
+    /**
+     * プロフィール写真が選択されたときの処理
+     * 画像を200×200pxに圧縮してバックエンドへ送信する
+     */
+    function handleProfilePhotoChange(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        showToast('画像ファイルを選択してください', 'error');
+        return;
+      }
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+          // canvas で 200×200px に正方形クロップして圧縮
+          var canvas = document.createElement('canvas');
+          var size = 200;
+          canvas.width = size;
+          canvas.height = size;
+          var ctx = canvas.getContext('2d');
+          var srcMin = Math.min(img.width, img.height);
+          var sx = (img.width - srcMin) / 2;
+          var sy = (img.height - srcMin) / 2;
+          ctx.drawImage(img, sx, sy, srcMin, srcMin, 0, 0, size, size);
+
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          var base64 = dataUrl.split(',')[1];
+
+          // プレビューを即時反映
+          var photoImg = document.getElementById('profilePhotoImg');
+          var defaultIcon = document.getElementById('profileDefaultIcon');
+          if (photoImg) {
+            photoImg.src = dataUrl;
+            photoImg.style.display = 'block';
+          }
+          if (defaultIcon) defaultIcon.style.display = 'none';
+
+          // バックエンドに保存
+          showToast('写真をアップロード中...', 'success');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result && result.success) {
+                showToast('写真を保存しました', 'success');
+              } else {
+                showToast('保存に失敗しました: ' + (result ? result.error : '不明なエラー'), 'error');
+              }
+            })
+            .withFailureHandler(function(err) {
+              showToast('エラーが発生しました', 'error');
+              console.error('saveProfilePhoto error:', err);
+            })
+            .saveProfilePhoto(base64, 'image/jpeg');
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+      // 同じファイルを再選択できるようにリセット
+      event.target.value = '';
+    }
+
+    function loadSubjectCheckboxes() {
+      google.script.run
+        .withSuccessHandler(function(options) {
+          var container = document.getElementById('subjectsContainer');
+          container.innerHTML = '';
+          
+          options.forEach(function(subject) {
+            var isChecked = selectedSubjects.includes(subject);
+            var label = document.createElement('label');
+            label.style.cssText = 'display: flex; align-items: center; padding: 8px 12px; background: ' + (isChecked ? '#4facfe' : '#f5f5f5') + '; border: 2px solid ' + (isChecked ? '#2196F3' : '#ddd') + '; border-radius: 20px; cursor: pointer; transition: all 0.2s; font-size: 13px; color: ' + (isChecked ? 'white' : '#333') + ';';
+            
+            var checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = subject;
+            checkbox.checked = isChecked;
+            checkbox.style.marginRight = '6px';
+            checkbox.onchange = function() {
+              toggleSubject(subject, this.checked);
+            };
+            
+            var labelText = document.createElement('label');
+            labelText.textContent = subject;
+            labelText.style.cssText = 'cursor: pointer; margin: 0; font-weight: ' + (isChecked ? '600' : '400') + ';';
+            
+            label.appendChild(checkbox);
+            label.appendChild(labelText);
+            container.appendChild(label);
+          });
+        })
+        .getSubjectOptions();
+    }
+
+    function toggleSubject(subject, isChecked) {
+      if (isChecked) {
+        if (!selectedSubjects.includes(subject)) {
+          selectedSubjects.push(subject);
+        }
+      } else {
+        selectedSubjects = selectedSubjects.filter(function(s) { return s !== subject; });
+      }
+      loadSubjectCheckboxes();
+      updateSelectedSubjectsDisplay();
+      autoSaveProfile();
+    }
+
+    function updateSelectedSubjectsDisplay() {
+      var display = document.getElementById('selectedSubjectsDisplay');
+      
+      if (selectedSubjects.length === 0) {
+        display.innerHTML = '<span style="color: #999; font-style: italic;">教科を選択してください</span>';
+        return;
+      }
+      
+      display.innerHTML = '';
+      selectedSubjects.forEach(function(subject) {
+        var tag = document.createElement('div');
+        tag.style.cssText = 'background: #4facfe; color: white; padding: 4px 12px; border-radius: 15px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;';
+        tag.innerHTML = subject + ' <span style="cursor: pointer; font-weight: bold; opacity: 0.7;" onclick="removeSubjectTag(\'' + subject + '\')" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">✕</span>';
+        display.appendChild(tag);
+      });
+    }
+
+    function removeSubjectTag(subject) {
+      selectedSubjects = selectedSubjects.filter(function(s) { return s !== subject; });
+      loadSubjectCheckboxes();
+      updateSelectedSubjectsDisplay();
+      autoSaveProfile();
+    }
+
+    var _autoSaveTimer = null;
+    var _autoSaving = false;
+
+    /**
+     * テーマカラーをデフォルト（システム設定）に戻す
+     */
+    function resetThemeColorToDefault() {
+      var statusEl = document.getElementById('profileAutoSaveStatus');
+      if (statusEl) statusEl.textContent = '戻し中...';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            document.getElementById('userThemeColor').value = result.themeColor;
+            applyThemeColor(result.themeColor);
+            if (statusEl) {
+              statusEl.textContent = '✓ デフォルトに戻しました';
+              setTimeout(function() { statusEl.textContent = '変更は自動で保存されます'; }, 1800);
+            }
+          } else {
+            if (statusEl) statusEl.textContent = '❌ 失敗しました';
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('resetThemeColorToDefault エラー:', err);
+          if (statusEl) statusEl.textContent = '❌ 失敗しました';
+        })
+        .resetUserThemeColor();
+    }
+
+    /**
+     * プロフィールを自動保存する。短時間に複数回呼ばれた場合は最後の1回だけ実行する（デバウンス）。
+     */
+    function autoSaveProfile() {
+      if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+      _autoSaveTimer = setTimeout(function() {
+        _autoSaveTimer = null;
+        _doSaveProfile();
+      }, 400);
+    }
+
+    function _doSaveProfile() {
+      if (_autoSaving) return;
+      _autoSaving = true;
+      var statusEl = document.getElementById('profileAutoSaveStatus');
+      if (statusEl) statusEl.textContent = '保存中...';
+
+      var aiNameInput = document.getElementById('aiAssistantNameInput').value.trim();
+      var profileData = {
+        displayName: document.getElementById('displayNameInput').value,
+        subjects: selectedSubjects,
+        aiAssistantName: aiNameInput || 'イノイマン',
+        aiPersonality: document.getElementById('aiPersonalitySelect').value,
+        themeColor: document.getElementById('userThemeColor').value
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          _autoSaving = false;
+          if (result.success) {
+            showToast('✓ プロフィールを保存しました', 'success');
+            if (statusEl) {
+              statusEl.textContent = '✓ 保存しました';
+              setTimeout(function() { statusEl.textContent = '変更は自動で保存されます'; }, 1800);
+            }
+            // チャットタイトルを即時更新
+            var savedAiName = profileData.aiAssistantName || 'イノイマン';
+            document.getElementById('aiWidgetTitle').textContent = '🤖 AI ' + savedAiName;
+            // テーマカラーを即時適用
+            applyThemeColor(profileData.themeColor);
+            // プロフィール表示を更新（キャッシュをクリアしてサーバーから最新データを取得）
+            preloadedProfile = null;
+            setTimeout(function() { loadProfileInfo(); }, 500);
+          } else {
+            showToast('❌ プロフィールの保存に失敗しました', 'error');
+            if (statusEl) {
+              statusEl.textContent = '❌ 保存失敗';
+              setTimeout(function() { statusEl.textContent = '変更は自動で保存されます'; }, 2500);
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          _autoSaving = false;
+          console.error('プロフィール自動保存エラー:', err);
+          showToast('❌ プロフィールの保存に失敗しました', 'error');
+          if (statusEl) {
+            statusEl.textContent = '❌ 保存失敗';
+            setTimeout(function() { statusEl.textContent = '変更は自動で保存されます'; }, 2500);
+          }
+        })
+        .updateUserProfile(profileData);
+    }
+    
+    // ===== 講師ID・メールアドレス管理 =====
+
+    function copyTeacherId_() {
+      var tid = document.getElementById('profileTeacherId');
+      var text = tid ? tid.textContent : '';
+      if (!text || text === '未設定') return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() { showToast('✓ 講師IDをコピーしました', 'success'); });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); showToast('✓ 講師IDをコピーしました', 'success'); } catch(e) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    function loadTeacherEmailList_() {
+      var listEl = document.getElementById('teacherEmailList');
+      if (!listEl) return;
+      listEl.innerHTML = '<p style="color:#999;font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            listEl.innerHTML = '<p style="color:#e53935;font-size:13px;">読み込みエラー</p>';
+            return;
+          }
+          renderTeacherEmailList_(result.emails, result.currentEmail);
+        })
+        .withFailureHandler(function() {
+          listEl.innerHTML = '<p style="color:#e53935;font-size:13px;">読み込みに失敗しました</p>';
+        })
+        .getTeacherEmails();
+    }
+
+    function renderTeacherEmailList_(emails, currentEmail) {
+      var listEl = document.getElementById('teacherEmailList');
+      if (!listEl) return;
+      if (!emails || emails.length === 0) {
+        listEl.innerHTML = '<p style="color:#999;font-size:13px;">メールアドレスが登録されていません</p>';
+        return;
+      }
+      var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+      emails.forEach(function(em) {
+        var isCurrent = em.toLowerCase() === (currentEmail || '').toLowerCase();
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:10px 14px;">' +
+          '<span style="font-size:14px;font-family:monospace;">' + em + (isCurrent ? ' <span style="font-size:11px;background:#4caf50;color:white;border-radius:10px;padding:2px 7px;">現在</span>' : '') + '</span>' +
+          (isCurrent ? '' : '<button onclick="removeTeacherEmail_(\'' + em + '\')" style="background:#fff0f0;border:1px solid #ffcdd2;color:#c62828;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">削除</button>') +
+          '</div>';
+      });
+      html += '</div>';
+      listEl.innerHTML = html;
+    }
+
+    function addTeacherEmail_() {
+      var input = document.getElementById('addEmailInput');
+      var email = input ? input.value.trim() : '';
+      if (!email) { showMessage('emailListMessage', '⚠ メールアドレスを入力してください', 'error'); return; }
+      if (input) input.disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (input) { input.disabled = false; input.value = ''; }
+          if (result && result.success) {
+            showMessage('emailListMessage', '✓ メールアドレスを追加しました', 'success');
+            loadTeacherEmailList_();
+          } else {
+            showMessage('emailListMessage', '❌ ' + (result ? result.error : 'エラーが発生しました'), 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (input) input.disabled = false;
+          showMessage('emailListMessage', '❌ エラー: ' + err, 'error');
+        })
+        .addEmailToTeacher(email);
+    }
+
+    function removeTeacherEmail_(email) {
+      appConfirm(email + ' を削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success) {
+              showMessage('emailListMessage', '✓ 削除しました', 'success');
+              loadTeacherEmailList_();
+            } else {
+              showMessage('emailListMessage', '❌ ' + (result ? result.error : 'エラーが発生しました'), 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('emailListMessage', '❌ エラー: ' + err, 'error');
+          })
+          .removeEmailFromTeacher(email);
+      });
+    }
+
+    // 設定タブを切り替える際にプロフィール情報を読み込み（キャッシュ済みなら即時表示）
+    var originalSwitchTab = switchTab;
+    switchTab = function(tabName) {
+      originalSwitchTab(tabName);
+      if (tabName === 'settings') {
+        // 事前読み込み済みの場合は再読み込みしない
+        if (!settingsTabPreloaded) {
+          if (Object.keys(campusData).length === 0) {
+            // 校舎データが未ロードの場合はコールバックで順番に読み込む
+            loadDropdownData(function() {
+              loadProfileInfo();
+              loadNotificationSettings();
+              loadLineSchedulerNotifPrefs();
+              settingsTabPreloaded = true;
+            });
+          } else {
+            loadProfileInfo();
+            loadNotificationSettings();
+            loadLineSchedulerNotifPrefs();
+            settingsTabPreloaded = true;
+          }
+        }
+      }
+    };
+
+</script>

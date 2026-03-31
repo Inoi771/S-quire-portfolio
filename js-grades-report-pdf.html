@@ -1,0 +1,665 @@
+<script>
+    /**
+     * 成績表：PDF/印刷用モノクロHTML文字列を生成する内部ヘルパー
+     * 色を一切使わず黒・白・グレーのみで構成する
+     * テストごとに太線（2px）で囲み、内部は細線（1px）
+     * 学校平均・偏差値は小数第1位まで必ず表示
+     */
+    function buildStudentReportHtmlMono_(student, grades, testNames, schoolAverages, analysisData, deviationMap, selectedTest) {
+      var campusName = campusData[student.campus] || student.campus;
+      var gradeName = gradeData[student.grade] || student.grade;
+
+      var gradeMap = {};
+      grades.forEach(function(g) { gradeMap[g.testName] = g; });
+
+      var html = '';
+
+      // ---- 塾名・タイトル ----
+      html += '<div style="text-align:center; margin-bottom:10px;">';
+      html += '<div style="font-size:11px; color:#555; margin-bottom:2px;">個別指導スクエア</div>';
+      html += '<div style="font-size:16px; font-weight:bold;">' + currentFiscalYear + '年度　' + (selectedTest || '') + '　成績表</div>';
+      html += '</div>';
+
+      // ---- 生徒情報ヘッダー ----
+      html += '<div style="border:2px solid #000; padding:10px 14px; margin-bottom:12px;">';
+      html += '<div style="font-size:17px; font-weight:bold; margin-bottom:6px;">' + student.name + '</div>';
+      html += '<div style="font-size:12px; display:flex; flex-wrap:wrap; gap:16px;">';
+      html += '<span>' + currentFiscalYear + '年度</span>';
+      html += '<span>' + campusName + '</span>';
+      if (student.schoolName) html += '<span>' + student.schoolName + '</span>';
+      html += '<span>' + gradeName + '</span>';
+      html += '</div>';
+
+      // 合格判定（合格可能性）
+      var passAssessment = (analysisData && analysisData.passAssessment) ? analysisData.passAssessment : [];
+      if (passAssessment.length > 0) {
+        var paTexts = [];
+        passAssessment.forEach(function(pa) {
+          if (!pa.probability) return;
+          var txt = pa.schoolName;
+          if (pa.department) txt += ' ' + pa.department;
+          txt += ' ' + pa.probability.grade + '判定（' + pa.probability.percent + '%）';
+          paTexts.push(txt);
+        });
+        if (paTexts.length > 0) {
+          html += '<div style="margin-top:6px; font-size:12px; font-weight:bold; border-top:1px solid #888; padding-top:4px;">合格判定（合格可能性）: ' + paTexts.join('　') + '</div>';
+        }
+      }
+      html += '</div>';
+
+      // ---- 成績テーブル ----
+      // テストごとに太線（2px solid #000）で囲み、グループ内は細線（1px solid #888）
+      html += '<table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:10px;">';
+      html += '<thead><tr style="background:#e0e0e0;">';
+      html += '<th style="border-top:2px solid #000; border-bottom:2px solid #000; border-left:2px solid #000; border-right:1px solid #888; padding:6px 8px; text-align:left; white-space:nowrap;">テスト名</th>';
+      ['国語', '社会', '数学', '理科', '英語', '合計'].forEach(function(s, si) {
+        var isLast = si === 5;
+        html += '<th style="border-top:2px solid #000; border-bottom:2px solid #000; border-left:1px solid #888; border-right:' + (isLast ? '2px solid #000' : '1px solid #888') + '; padding:6px 4px; text-align:center; min-width:38px;">' + s + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      var hasAnyGrade = false;
+      var hasAnyAvg = false;
+      var fields = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+
+      // セルのボーダースタイルを返すヘルパー
+      // isFirstRow/isLastRow: グループ内の位置（最初/最後の行かどうか）
+      // isFirstCol/isLastCol: テーブル内の列位置
+      function cellBorder(isFirstRow, isLastRow, isFirstCol, isLastCol) {
+        return (
+          'border-top:' + (isFirstRow ? '2px solid #000' : '1px solid #bbb') + ';' +
+          'border-bottom:' + (isLastRow ? '2px solid #000' : '1px solid #bbb') + ';' +
+          'border-left:' + (isFirstCol ? '2px solid #000' : '1px solid #888') + ';' +
+          'border-right:' + (isLastCol ? '2px solid #000' : '1px solid #888') + ';'
+        );
+      }
+
+      testNames.forEach(function(testName, idx) {
+        var g = gradeMap[testName];
+        var avg = schoolAverages[testName] || null;
+        var dev = deviationMap[testName] || null;
+        var rowBg = idx % 2 === 1 ? 'background:#f5f5f5;' : '';
+
+        var hasAvg = !!avg;
+        var hasDev = !!dev;
+        var gradeIsLast = !hasAvg && !hasDev;
+        var avgIsLast   = hasAvg && !hasDev;
+
+        // 生徒の成績行（グループ最初の行）
+        html += '<tr style="' + rowBg + '">';
+        html += '<td style="' + cellBorder(true, gradeIsLast, true, false) + 'padding:5px 8px; font-weight:bold; white-space:nowrap;">' + testName + '</td>';
+        if (g) {
+          hasAnyGrade = true;
+          fields.forEach(function(f, fi) {
+            var val = g[f];
+            var display = (val !== '' && val !== null && val !== undefined) ? val : '-';
+            var fw = f === 'total' ? 'font-weight:bold;' : '';
+            var isLastCol = fi === fields.length - 1;
+            html += '<td style="' + cellBorder(true, gradeIsLast, false, isLastCol) + 'padding:5px 4px; text-align:center; ' + fw + '">' + display + '</td>';
+          });
+        } else {
+          fields.forEach(function(f, fi) {
+            var isLastCol = fi === fields.length - 1;
+            html += '<td style="' + cellBorder(true, gradeIsLast, false, isLastCol) + 'padding:5px 4px; text-align:center; color:#aaa;">-</td>';
+          });
+        }
+        html += '</tr>';
+
+        // 学校平均行
+        if (avg) {
+          hasAnyAvg = true;
+          html += '<tr style="' + rowBg + '">';
+          html += '<td style="' + cellBorder(false, avgIsLast, true, false) + 'padding:3px 8px 3px 18px; font-size:11px; white-space:nowrap;">学校平均</td>';
+          fields.forEach(function(f, fi) {
+            var v = avg[f];
+            var d = '-';
+            if (v !== '' && v !== null && v !== undefined) {
+              var num = parseFloat(v);
+              d = isNaN(num) ? String(v) : num.toFixed(1);
+            }
+            var isLastCol = fi === fields.length - 1;
+            html += '<td style="' + cellBorder(false, avgIsLast, false, isLastCol) + 'padding:3px 4px; text-align:center; font-size:11px;">' + d + '</td>';
+          });
+          html += '</tr>';
+        }
+
+        // 偏差値行（グループ最後の行）
+        if (dev) {
+          html += '<tr style="' + rowBg + '">';
+          html += '<td style="' + cellBorder(false, true, true, false) + 'padding:3px 8px 5px 18px; font-size:11px; white-space:nowrap; font-weight:bold;">偏差値</td>';
+          fields.forEach(function(f, fi) {
+            var v = dev[f];
+            var d = '-';
+            if (v !== null && v !== undefined) {
+              var num = parseFloat(v);
+              d = isNaN(num) ? String(v) : num.toFixed(1);
+            }
+            var isLastCol = fi === fields.length - 1;
+            html += '<td style="' + cellBorder(false, true, false, isLastCol) + 'padding:3px 4px 5px; text-align:center; font-size:11px; font-weight:bold;">' + d + '</td>';
+          });
+          html += '</tr>';
+        }
+      });
+
+      if (!hasAnyGrade) {
+        html += '<tr><td colspan="7" style="padding:20px; text-align:center; color:#888;">成績データがまだ登録されていません。</td></tr>';
+      }
+      html += '</tbody></table>';
+
+      if (hasAnyAvg) {
+        html += '<div style="text-align:right; font-size:10px; color:#666; margin-bottom:10px;">※学校平均と偏差値はおよその値です。</div>';
+      }
+
+      // ---- AI分析コメント ----
+      if (analysisData && analysisData.comment) {
+        var c = analysisData.comment;
+        html += '<div style="border:1px solid #000; padding:10px; font-size:12px;">';
+        html += '<div style="font-weight:bold; font-size:13px; border-bottom:1px solid #000; padding-bottom:4px; margin-bottom:8px;">分析コメント</div>';
+
+        if (c.overall) {
+          html += '<div style="margin-bottom:8px;"><span style="font-weight:bold;">【総合評価】</span> ' + c.overall + '</div>';
+        }
+        if (c.subjects) {
+          var subjLabels = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語' };
+          var diffMap = { harder: '（難化）', easier: '（易化）' };
+          html += '<div style="margin-bottom:8px;"><span style="font-weight:bold;">【教科別分析】</span><br>';
+          ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'].forEach(function(subj) {
+            if (!c.subjects[subj]) return;
+            var diff = c.subjectDifficulty && c.subjectDifficulty[subj] ? diffMap[c.subjectDifficulty[subj]] || '' : '';
+            html += subjLabels[subj] + diff + ': ' + c.subjects[subj] + '<br>';
+          });
+          html += '</div>';
+        }
+        if (c.targetSchool) {
+          html += '<div style="margin-bottom:8px;"><span style="font-weight:bold;">【志望校分析】</span> ' + c.targetSchool + '</div>';
+        }
+        if (c.trend) {
+          html += '<div><span style="font-weight:bold;">【推移分析】</span> ' + c.trend + '</div>';
+        }
+        html += '</div>';
+      }
+
+      return html;
+    }
+
+    /**
+     * 成績表カラーPDF用HTML生成（塾名・タイトル付き・カラー版）
+     */
+    function buildStudentReportHtmlColor_(student, grades, testNames, schoolAverages, analysisData, deviationMap, selectedTest) {
+      var campusName = campusData[student.campus] || student.campus;
+      var gradeName = gradeData[student.grade] || student.grade;
+      var gradeMap = {};
+      grades.forEach(function(g) { gradeMap[g.testName] = g; });
+      var html = '';
+      var tc = '#667eea'; // テーマカラー
+
+      // ---- 塾名・タイトル（カラーヘッダー）----
+      html += '<div style="background:' + tc + '; padding:10px 16px; border-radius:6px 6px 0 0;">';
+      html += '<div style="font-size:10px; color:rgba(255,255,255,0.8); margin-bottom:2px;">個別指導スクエア</div>';
+      html += '<div style="font-size:16px; font-weight:bold; color:white;">' + currentFiscalYear + '年度　' + (selectedTest || '') + '　成績表</div>';
+      html += '</div>';
+
+      // ---- 生徒情報ヘッダー ----
+      html += '<div style="border:1px solid ' + tc + '; border-top:none; padding:10px 14px; margin-bottom:12px; border-radius:0 0 6px 6px;">';
+      html += '<div style="font-size:17px; font-weight:bold; margin-bottom:6px; color:#222;">' + student.name + '</div>';
+      html += '<div style="font-size:12px; display:flex; flex-wrap:wrap; gap:16px; color:#555;">';
+      html += '<span>' + currentFiscalYear + '年度</span>';
+      html += '<span>' + campusName + '</span>';
+      if (student.schoolName) html += '<span>' + student.schoolName + '</span>';
+      html += '<span>' + gradeName + '</span>';
+      html += '</div>';
+
+      // 合格判定（カラーバッジ）
+      var passAssessment = (analysisData && analysisData.passAssessment) ? analysisData.passAssessment : [];
+      if (passAssessment.length > 0) {
+        var paItems = [];
+        passAssessment.forEach(function(pa) {
+          if (!pa.probability) return;
+          var gColors = { A: '#1b5e20', B: '#2e7d32', 'C+': '#a16207', 'C-': '#b45309', 'D+': '#c2410c', 'D-': '#9a3412', E: '#b91c1c' };
+          var gBgs   = { A: '#dcfce7', B: '#dcfce7', 'C+': '#fef9c3', 'C-': '#fef3c7', 'D+': '#ffedd5', 'D-': '#fef2f2', E: '#fee2e2' };
+          var cl = gColors[pa.probability.grade] || '#555';
+          var bg = gBgs[pa.probability.grade] || '#f5f5f5';
+          var txt = pa.schoolName + (pa.department ? ' ' + pa.department : '');
+          paItems.push('<span style="display:inline-block;padding:2px 8px;background:' + bg + ';border-radius:4px;border:1px solid ' + cl + '60;font-size:12px;">'
+            + '<strong style="color:' + cl + ';font-size:14px;">' + pa.probability.grade + '</strong>'
+            + '<span style="color:' + cl + ';"> (' + pa.probability.percent + '%)</span>'
+            + ' <span style="color:#444;">' + txt + '</span></span>');
+        });
+        if (paItems.length > 0) {
+          html += '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #eee;">';
+          html += '<div style="font-size:11px;font-weight:bold;color:#777;margin-bottom:4px;">合格判定（合格可能性）</div>';
+          html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + paItems.join('') + '</div>';
+          html += '</div>';
+        }
+      }
+      html += '</div>';
+
+      // ---- 成績テーブル ----
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px;">';
+      html += '<thead><tr style="background:' + tc + ';">';
+      html += '<th style="padding:7px 8px;text-align:left;color:white;font-weight:bold;border-right:1px solid rgba(255,255,255,0.3);">テスト名</th>';
+      ['国語','社会','数学','理科','英語','合計'].forEach(function(s, si) {
+        html += '<th style="padding:7px 4px;text-align:center;color:white;font-weight:bold;min-width:38px;border-right:' + (si < 5 ? '1px solid rgba(255,255,255,0.3)' : 'none') + ';">' + s + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      var hasAnyGrade = false, hasAnyAvg = false;
+      var fields = ['kokugo','shakai','sugaku','rika','eigo','total'];
+
+      testNames.forEach(function(testName, idx) {
+        var g = gradeMap[testName];
+        var avg = schoolAverages[testName] || null;
+        var dev = deviationMap[testName] || null;
+        var bg = idx % 2 === 1 ? '#f5f7fa' : '#ffffff';
+        var gradeIsLast = !avg && !dev;
+        var avgIsLast   = !!avg && !dev;
+        var bBot = function(isLast) { return 'border-bottom:' + (isLast ? '2px solid #ddd' : 'none') + ';'; };
+
+        html += '<tr style="background:' + bg + ';">';
+        html += '<td style="padding:6px 8px;font-weight:bold;white-space:nowrap;' + bBot(gradeIsLast) + 'border-right:1px solid #e0e0e0;">' + testName + '</td>';
+        if (g) {
+          hasAnyGrade = true;
+          fields.forEach(function(f, fi) {
+            var val = g[f];
+            var display = (val !== '' && val !== null && val !== undefined) ? val : '-';
+            var fw = f === 'total' ? 'font-weight:bold;color:' + tc + ';' : '';
+            html += '<td style="padding:6px 4px;text-align:center;' + bBot(gradeIsLast) + 'border-right:' + (fi < 5 ? '1px solid #e0e0e0' : 'none') + ';' + fw + '">' + display + '</td>';
+          });
+        } else {
+          fields.forEach(function(f, fi) {
+            html += '<td style="padding:6px 4px;text-align:center;' + bBot(gradeIsLast) + 'border-right:' + (fi < 5 ? '1px solid #e0e0e0' : 'none') + ';color:#ccc;">-</td>';
+          });
+        }
+        html += '</tr>';
+
+        if (avg) {
+          hasAnyAvg = true;
+          html += '<tr style="background:' + bg + ';">';
+          html += '<td style="padding:3px 8px 3px 18px;font-size:11px;color:#999;white-space:nowrap;' + bBot(avgIsLast) + 'border-right:1px solid #e0e0e0;">学校平均</td>';
+          fields.forEach(function(f, fi) {
+            var v = avg[f], d = '-';
+            if (v !== '' && v !== null && v !== undefined) { var n = parseFloat(v); d = isNaN(n) ? String(v) : n.toFixed(1); }
+            html += '<td style="padding:3px 4px;text-align:center;font-size:11px;color:#999;' + bBot(avgIsLast) + 'border-right:' + (fi < 5 ? '1px solid #e0e0e0' : 'none') + ';">' + d + '</td>';
+          });
+          html += '</tr>';
+        }
+
+        if (dev) {
+          html += '<tr style="background:' + bg + ';">';
+          html += '<td style="padding:3px 8px 5px 18px;font-size:11px;font-weight:bold;color:#5e35b1;white-space:nowrap;border-bottom:2px solid #ddd;border-right:1px solid #e0e0e0;">偏差値</td>';
+          fields.forEach(function(f, fi) {
+            var v = dev[f], d = '-', devColor = '#5e35b1';
+            if (v !== null && v !== undefined) {
+              var n = parseFloat(v); d = isNaN(n) ? String(v) : n.toFixed(1);
+              if (!isNaN(n)) { devColor = n >= 55 ? '#1565c0' : (n < 45 ? '#c62828' : '#5e35b1'); }
+            }
+            html += '<td style="padding:3px 4px 5px;text-align:center;font-size:11px;font-weight:bold;color:' + devColor + ';border-bottom:2px solid #ddd;border-right:' + (fi < 5 ? '1px solid #e0e0e0' : 'none') + ';">' + d + '</td>';
+          });
+          html += '</tr>';
+        }
+      });
+
+      if (!hasAnyGrade) {
+        html += '<tr><td colspan="7" style="padding:20px;text-align:center;color:#aaa;">成績データがまだ登録されていません。</td></tr>';
+      }
+      html += '</tbody></table>';
+
+      if (hasAnyAvg) {
+        html += '<div style="text-align:right;font-size:10px;color:#999;margin-bottom:10px;">※学校平均と偏差値はおよその値です。</div>';
+      }
+
+      // ---- 分析コメント ----
+      if (analysisData && analysisData.comment) {
+        var c = analysisData.comment;
+        html += '<div style="border:1px solid #e0e0e0;border-radius:6px;padding:12px;font-size:12px;">';
+        html += '<div style="font-weight:bold;font-size:13px;color:' + tc + ';border-bottom:1px solid #e0e0e0;padding-bottom:6px;margin-bottom:10px;">分析コメント</div>';
+        if (c.overall) {
+          html += '<div style="margin-bottom:10px;padding:8px;background:#f5f7fa;border-radius:4px;">';
+          html += '<div style="font-weight:bold;font-size:11px;color:#555;margin-bottom:4px;">【総合評価】</div>';
+          html += '<div style="color:#333;line-height:1.6;">' + c.overall + '</div></div>';
+        }
+        if (c.subjects) {
+          var subjLabels = { kokugo:'国語', shakai:'社会', sugaku:'数学', rika:'理科', eigo:'英語' };
+          var diffMap = { harder:'（難化）', easier:'（易化）' };
+          html += '<div style="margin-bottom:10px;">';
+          html += '<div style="font-weight:bold;font-size:11px;color:#555;margin-bottom:6px;">【教科別分析】</div>';
+          ['kokugo','shakai','sugaku','rika','eigo'].forEach(function(subj) {
+            if (!c.subjects[subj]) return;
+            var diff = c.subjectDifficulty && c.subjectDifficulty[subj] ? (diffMap[c.subjectDifficulty[subj]] || '') : '';
+            html += '<div style="padding:4px 0;border-bottom:1px solid #f0f0f0;"><span style="font-weight:bold;color:#444;">' + subjLabels[subj] + diff + '</span>: ' + c.subjects[subj] + '</div>';
+          });
+          html += '</div>';
+        }
+        if (c.targetSchool) {
+          html += '<div style="margin-bottom:10px;padding:8px;background:#f0f4ff;border-radius:4px;">';
+          html += '<div style="font-weight:bold;font-size:11px;color:#555;margin-bottom:4px;">【志望校分析】</div>';
+          html += '<div style="color:#333;line-height:1.6;">' + c.targetSchool + '</div></div>';
+        }
+        if (c.trend) {
+          html += '<div style="padding:8px;background:#f5f7fa;border-radius:4px;">';
+          html += '<div style="font-weight:bold;font-size:11px;color:#555;margin-bottom:4px;">【推移分析】</div>';
+          html += '<div style="color:#333;line-height:1.6;">' + c.trend + '</div></div>';
+        }
+        html += '</div>';
+      }
+
+      return html;
+    }
+
+    /** 成績表PDFメニューの表示切替 */
+    function toggleReportPdfMenu(event) {
+      event.stopPropagation();
+      var menu = document.getElementById('reportPdfMenu');
+      if (menu.style.display === 'none') {
+        menu.style.display = 'block';
+        setTimeout(function() {
+          document.addEventListener('click', closeReportPdfMenu, { once: true });
+        }, 0);
+      } else {
+        menu.style.display = 'none';
+      }
+    }
+
+    /** 成績表PDFメニューを閉じる */
+    function closeReportPdfMenu() {
+      var menu = document.getElementById('reportPdfMenu');
+      if (menu) menu.style.display = 'none';
+    }
+
+    /**
+     * 全生徒の成績表をまとめてPDF出力する
+     * @param {string} mode 'download' または 'print'
+     * @param {boolean} colorMode true=カラー / false=モノクロ
+     */
+    function generateAllReportsPdf(mode, colorMode) {
+      if (!reportStudentListData || reportStudentListData.length === 0) {
+        appAlert('先に「表示する」ボタンを押して生徒を読み込んでください。');
+        return;
+      }
+
+      // 印刷モードは同期的にウィンドウを開く（ポップアップブロック回避）
+      var printWindow = null;
+      if (mode === 'print') {
+        printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write('<html><body style="margin:0;background:#f0f0f0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;color:#555;">⏳ 生成中...</body></html>');
+        }
+      }
+
+      // ボタンをローディング状態に
+      var btnId  = colorMode ? 'reportColorPdfBtn'      : 'reportPdfBtn';
+      var arwId  = colorMode ? 'reportColorPdfArrowBtn' : 'reportPdfArrowBtn';
+      var label  = colorMode ? 'カラーPDF' : 'PDF（白黒）';
+      var rb = document.getElementById(btnId);
+      var ra = document.getElementById(arwId);
+      if (rb) { rb.textContent = '⏳ 生成中...'; rb.disabled = true; rb.style.cursor = 'not-allowed'; }
+      if (ra) { ra.disabled = true; }
+
+      function restoreBtn() {
+        if (rb) { rb.textContent = label; }
+        var hasData = reportStudentListData && reportStudentListData.length > 0;
+        if (rb) { rb.disabled = !hasData; rb.style.opacity = hasData ? '1' : '0.5'; rb.style.cursor = hasData ? 'pointer' : 'not-allowed'; }
+        if (ra) { ra.disabled = !hasData; ra.style.opacity = hasData ? '1' : '0.5'; ra.style.cursor = hasData ? 'pointer' : 'not-allowed'; }
+      }
+
+      var builderFn = colorMode ? buildStudentReportHtmlColor_ : buildStudentReportHtmlMono_;
+
+      var selectedTest = (document.getElementById('report-test') || {}).value || '';
+
+      // 全生徒のデータを逐次取得（キャッシュ優先）
+      fetchAllReportData_(reportStudentListData, 0, [], selectedTest, function(allData) {
+        if (mode === 'print') {
+          // ---- 印刷モード ----
+          var combinedHtml = '';
+          var count = 0;
+          allData.forEach(function(item) {
+            if (!item || !item.gradeResult || !item.gradeResult.success) return;
+            var gr = item.gradeResult;
+            var displayTests = getDisplayTestNames(selectedTest, gr.testNames);
+            var analysis = item.analysis || null;
+            var deviationMap = Object.assign({}, (gr.deviationValues || {}), (analysis && analysis.deviationValues) ? analysis.deviationValues : {});
+            var html = builderFn(gr.student, gr.grades, displayTests, gr.schoolAverages, analysis, deviationMap, selectedTest);
+            if (count > 0) combinedHtml += '<div style="page-break-before:always;"></div>';
+            combinedHtml += '<div style="padding:12px 16px;">' + html + '</div>';
+            count++;
+          });
+
+          if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(
+              '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+              '<title>' + currentFiscalYear + '年度 ' + selectedTest + ' 成績表</title>' +
+              '<style>' +
+              '* { margin:0; padding:0; box-sizing:border-box; }' +
+              'body { font-family: sans-serif; background:#fff; color:#000; }' +
+              'table { border-collapse:collapse; width:100%; }' +
+              '@page { size: A4 portrait; margin: 10mm; }' +
+              '</style></head><body>' +
+              combinedHtml +
+              '<script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>' +
+              '</body></html>'
+            );
+            printWindow.document.close();
+          } else {
+            appAlert('ポップアップがブロックされました。ブラウザのポップアップ許可設定を確認してください。');
+          }
+          restoreBtn();
+
+        } else {
+          // ---- ダウンロードモード（html2canvas + jsPDF） ----
+          var validItems = allData.filter(function(item) {
+            return item && item.gradeResult && item.gradeResult.success;
+          });
+          if (validItems.length === 0) {
+            restoreBtn();
+            appAlert('出力できる成績データがありませんでした。');
+            return;
+          }
+
+          var fileName = currentFiscalYear + '年度_' + selectedTest + '_成績表.pdf';
+
+          renderStudentsToCanvases_(validItems, 0, [], selectedTest, builderFn, function(canvases) {
+            if (canvases.length === 0) {
+              restoreBtn();
+              appAlert('PDF生成中にエラーが発生しました。');
+              return;
+            }
+            var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            var pageW = pdf.internal.pageSize.getWidth();
+            var pageH = pdf.internal.pageSize.getHeight();
+            var margin = 8;
+            canvases.forEach(function(canvas, idx) {
+              if (idx > 0) pdf.addPage();
+              var imgData = canvas.toDataURL('image/jpeg', 0.95);
+              var drawW = pageW - margin * 2;
+              var drawH = drawW * (canvas.height / canvas.width);
+              if (drawH > pageH - margin * 2) drawH = pageH - margin * 2;
+              pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+            });
+            pdf.save(fileName);
+            restoreBtn();
+          });
+        }
+      });
+    }
+
+    /**
+     * 全生徒データを逐次取得する内部ヘルパー（キャッシュ優先）
+     * 全生徒のカラーPDFをDriveに保存する（成績管理/{year}/{校舎名}/{生徒名}.pdf）
+     */
+    function saveAllReportsToDrive() {
+      if (!reportStudentListData || reportStudentListData.length === 0) {
+        appAlert('先に「表示する」ボタンを押して生徒を読み込んでください。');
+        return;
+      }
+      var btn = document.getElementById('reportDriveSaveBtn');
+      var selectedTest = (document.getElementById('report-test') || {}).value || '';
+
+      function restoreBtn() {
+        if (btn) {
+          btn.textContent = 'Driveに保存';
+          var hasData = reportStudentListData && reportStudentListData.length > 0;
+          btn.disabled = !hasData;
+          btn.style.opacity = hasData ? '1' : '0.5';
+          btn.style.cursor  = hasData ? 'pointer' : 'not-allowed';
+        }
+      }
+
+      if (btn) { btn.textContent = '⏳ 準備中...'; btn.disabled = true; btn.style.cursor = 'not-allowed'; }
+
+      fetchAllReportData_(reportStudentListData, 0, [], selectedTest, function(allData) {
+        var validItems = allData.filter(function(item) {
+          return item && item.gradeResult && item.gradeResult.success;
+        });
+        if (validItems.length === 0) {
+          restoreBtn();
+          appAlert('保存できる成績データがありませんでした。');
+          return;
+        }
+
+        var total = validItems.length, savedCount = 0, errorCount = 0;
+
+        function saveNext(idx) {
+          if (idx >= validItems.length) {
+            restoreBtn();
+            if (errorCount === 0) {
+              showToast(total + '件のPDFをDriveに保存しました。', 'success');
+            } else {
+              showToast(savedCount + '件保存完了、' + errorCount + '件エラー', 'error');
+            }
+            return;
+          }
+
+          if (btn) btn.textContent = '⏳ 保存中 (' + (idx + 1) + '/' + total + ')';
+
+          var item        = validItems[idx];
+          var gr          = item.gradeResult;
+          var displayTests = getDisplayTestNames(selectedTest, gr.testNames);
+          var analysis    = item.analysis || null;
+          var devMap      = Object.assign({}, (gr.deviationValues || {}), (analysis && analysis.deviationValues) ? analysis.deviationValues : {});
+          var html        = buildStudentReportHtmlColor_(gr.student, gr.grades, displayTests, gr.schoolAverages, analysis, devMap, selectedTest);
+          var campusName  = campusData[gr.student.campus] || gr.student.campus;
+
+          var container = document.createElement('div');
+          container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;background:#fff;padding:12px 16px;font-family:sans-serif;';
+          container.innerHTML = html;
+          document.body.appendChild(container);
+
+          html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', windowWidth: 800 })
+            .then(function(canvas) {
+              document.body.removeChild(container);
+              var pdf    = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+              var margin = 8;
+              var drawW  = pdf.internal.pageSize.getWidth() - margin * 2;
+              var drawH  = drawW * (canvas.height / canvas.width);
+              if (drawH > pdf.internal.pageSize.getHeight() - margin * 2) drawH = pdf.internal.pageSize.getHeight() - margin * 2;
+              pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, drawW, drawH);
+
+              var base64 = pdf.output('datauristring').split(',')[1];
+              google.script.run
+                .withSuccessHandler(function(r) {
+                  if (r && r.success) savedCount++; else errorCount++;
+                  saveNext(idx + 1);
+                })
+                .withFailureHandler(function() {
+                  errorCount++;
+                  saveNext(idx + 1);
+                })
+                .saveGradeReportPdf(currentFiscalYear, campusName, gr.student.name, base64);
+            })
+            .catch(function() {
+              if (container.parentNode) document.body.removeChild(container);
+              errorCount++;
+              saveNext(idx + 1);
+            });
+        }
+
+        saveNext(0);
+      });
+    }
+
+    /**
+     * gradeデータとAI分析を並列取得してキャッシュに保存する（saveAllReportsToDrive・generateAllReportsPdf 共用）
+     * @param {Array} students 生徒リスト
+     * @param {number} idx 現在のインデックス
+     * @param {Array} results 収集済み結果
+     * @param {string} selectedTest 選択中のテスト名（AI分析取得に使用）
+     * @param {Function} callback 完了コールバック
+     */
+    function fetchAllReportData_(students, idx, results, selectedTest, callback) {
+      if (idx >= students.length) {
+        callback(results);
+        return;
+      }
+      var studentId = students[idx].studentId;
+      if (reportDataCache[studentId]) {
+        results.push(reportDataCache[studentId]);
+        fetchAllReportData_(students, idx + 1, results, selectedTest, callback);
+        return;
+      }
+
+      var gradeResult    = null;
+      var analysisResult = null;
+      var loaded         = 0;
+
+      function onBothLoaded() {
+        loaded++;
+        if (loaded < 2) return;
+        if (gradeResult && gradeResult.success) {
+          var analysis = (analysisResult && analysisResult.success && analysisResult.exists) ? analysisResult.analysis : null;
+          reportDataCache[studentId] = { gradeResult: gradeResult, analysis: analysis };
+          results.push(reportDataCache[studentId]);
+        } else {
+          results.push(null);
+        }
+        fetchAllReportData_(students, idx + 1, results, selectedTest, callback);
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) { gradeResult = result; onBothLoaded(); })
+        .withFailureHandler(function() { gradeResult = null; onBothLoaded(); })
+        .getStudentGradeReport(currentFiscalYear, studentId);
+
+      google.script.run
+        .withSuccessHandler(function(result) { analysisResult = result; onBothLoaded(); })
+        .withFailureHandler(function() { analysisResult = null; onBothLoaded(); })
+        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+    }
+
+    /**
+     * 全生徒のモノクロHTMLを順番にhtml2canvasでキャプチャする内部ヘルパー
+     * @param {Array} items 生徒データ配列
+     * @param {number} idx 現在のインデックス
+     * @param {Array} canvases 収集済みcanvas
+     * @param {string} selectedTest 選択中のテスト名
+     * @param {Function} callback 完了コールバック
+     */
+    function renderStudentsToCanvases_(items, idx, canvases, selectedTest, builderFn, callback) {
+      if (idx >= items.length) {
+        callback(canvases);
+        return;
+      }
+      var item = items[idx];
+      var gr = item.gradeResult;
+      var displayTests = getDisplayTestNames(selectedTest, gr.testNames);
+      var analysis = item.analysis || null;
+      var deviationMap = Object.assign({}, (gr.deviationValues || {}), (analysis && analysis.deviationValues) ? analysis.deviationValues : {});
+      var html = builderFn(gr.student, gr.grades, displayTests, gr.schoolAverages, analysis, deviationMap, selectedTest);
+
+      var container = document.createElement('div');
+      container.style.cssText = 'position:fixed; left:-9999px; top:0; width:760px; background:#fff; padding:12px 16px; font-family:sans-serif;';
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', windowWidth: 800 })
+        .then(function(canvas) {
+          document.body.removeChild(container);
+          canvases.push(canvas);
+          renderStudentsToCanvases_(items, idx + 1, canvases, selectedTest, builderFn, callback);
+        })
+        .catch(function() {
+          if (container.parentNode) document.body.removeChild(container);
+          renderStudentsToCanvases_(items, idx + 1, canvases, selectedTest, builderFn, callback);
+        });
+    }
+</script>

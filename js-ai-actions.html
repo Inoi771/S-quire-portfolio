@@ -1,0 +1,350 @@
+<script>
+    // ===== 【AIアシスタント アクション実行】 =====
+    // handleAIWidgetResponse から呼ばれるナビゲーション関数・確認フロー
+    // ========================================
+
+    // 保留中の確認待ちアクション（needsConfirmation: true の場合に一時保存）
+    var pendingAiAction_ = null;
+
+    /**
+     * AIアシスタントのapp_actionを処理するメインディスパッチャー
+     * handleAIWidgetResponse() から呼ばれる
+     * @param {Object} result Geminiの応答オブジェクト
+     * @return {string|null} 表示したメッセージ（履歴追加用）
+     */
+    function dispatchAiAction_(result) {
+      var action = result.action;
+      var message = '';
+
+      // --- 確認が必要な書き込み操作 ---
+      if (result.needsConfirmation) {
+        message = '⚠️ ' + (result.message || '実行してよろしいですか？');
+        addAIWidgetMessage('ai', message);
+        // 確認待ち状態を保存（ユーザーが「はい」と答えたら実行）
+        pendingAiAction_ = {
+          action: action,
+          params: result
+        };
+        return message;
+      }
+
+      // --- 確認済みの書き込み操作 ---
+      if (result.confirmed) {
+        message = '⏳ ' + (result.message || '処理を実行中...');
+        addAIWidgetMessage('ai', message);
+        executeConfirmedAiAction_(action, result);
+        return message;
+      }
+
+      // --- 読み取り・ナビゲーション操作 ---
+      if (action === 'show_grades_list') {
+        message = '📋 ' + (result.message || '成績一覧を表示します');
+        addAIWidgetMessage('ai', message);
+        navigateToGradesList_fromAI(result.campusCode, result.testName, result.year);
+        return message;
+
+      } else if (action === 'show_student_report') {
+        message = '📄 ' + (result.message || '成績表を表示します');
+        addAIWidgetMessage('ai', message);
+        navigateToStudentReport_fromAI(result.studentId, result.year, result.testName || '');
+        return message;
+
+      } else if (action === 'navigate_schedule') {
+        message = '📅 ' + (result.message || '予定を表示します');
+        addAIWidgetMessage('ai', message);
+        navigateToSchedule_fromAI(result.year, result.month);
+        return message;
+
+      } else if (action === 'navigate_tab') {
+        message = '📂 ' + (result.message || 'タブを切り替えます');
+        addAIWidgetMessage('ai', message);
+        navigateToTab_fromAI(result.tab, result.subTab);
+        return message;
+
+      } else if (action === 'show_grade_analysis') {
+        message = '📈 ' + (result.message || '分析を表示します');
+        addAIWidgetMessage('ai', message);
+        navigateToGradeAnalysis_fromAI(result.year, result.testName);
+        return message;
+
+      } else if (action === 'navigate_lectures') {
+        message = '📚 ' + (result.message || '講習管理を表示します');
+        addAIWidgetMessage('ai', message);
+        navigateToLectures_fromAI(result.lectureId, result.campusCode);
+        return message;
+      }
+
+      // 不明なアクション
+      message = '❌ 不明なアクションです: ' + action;
+      addAIWidgetMessage('ai', message);
+      return message;
+    }
+
+    /**
+     * ユーザーの「はい」応答で保留中のアクションがあるかチェックし、あれば実行する
+     * sendAIWidgetMessage() のメッセージ送信前に呼ばれる
+     * @param {string} userMessage ユーザーの入力メッセージ
+     * @return {boolean} 保留アクションを実行した場合 true（通常のAI送信をスキップ）
+     */
+    function checkPendingAiAction_(userMessage) {
+      if (!pendingAiAction_) return false;
+
+      var trimmed = userMessage.trim();
+      var positivePatterns = /^(はい|うん|お願い|OK|ok|yes|実行|やって|頼む|いいよ|ええ|おねがい|オッケー)$/i;
+
+      if (positivePatterns.test(trimmed)) {
+        // ユーザーの「はい」を表示
+        addAIWidgetMessage('user', trimmed);
+        // 保留アクションを取り出して実行
+        var pending = pendingAiAction_;
+        pendingAiAction_ = null;
+        var execMsg = '⏳ 処理を実行中...';
+        var thinkingId = 'exec_' + Date.now();
+        addAIWidgetMessage('ai', execMsg, thinkingId);
+        executeConfirmedAiAction_(pending.action, pending.params, thinkingId);
+        return true;
+      }
+
+      var negativePatterns = /^(いいえ|いや|やめて|やめる|キャンセル|cancel|no|だめ|ダメ|止め|やっぱ|やっぱり)$/i;
+      if (negativePatterns.test(trimmed)) {
+        addAIWidgetMessage('user', trimmed);
+        pendingAiAction_ = null;
+        addAIWidgetMessage('ai', '🚫 キャンセルしました');
+        aiWidgetChatHistory.push({ role: 'user', text: trimmed });
+        aiWidgetChatHistory.push({ role: 'ai', text: 'キャンセルしました' });
+        return true;
+      }
+
+      // 「はい」「いいえ」以外 → 保留解除して通常フローへ
+      pendingAiAction_ = null;
+      return false;
+    }
+
+    /**
+     * 確認済みの書き込みアクションをバックエンドで実行する
+     * @param {string} action アクション名
+     * @param {Object} params アクションパラメータ
+     * @param {string} thinkingId 削除する「実行中」メッセージのID（省略可）
+     */
+    function executeConfirmedAiAction_(action, params, thinkingId) {
+      // バックエンドに送るパラメータを整理
+      var execParams = {};
+      if (action === 'submit_grade') {
+        execParams = {
+          year: params.year,
+          studentId: params.studentId,
+          testName: params.testName,
+          scores: params.scores
+        };
+      } else if (action === 'submit_student') {
+        execParams = {
+          year: params.year,
+          campusCode: params.campusCode,
+          gradeCode: params.gradeCode,
+          sei: params.sei,
+          mei: params.mei || '',
+          seiFurigana: params.seiFurigana || '',
+          meiFurigana: params.meiFurigana || '',
+          schoolName: params.schoolName || ''
+        };
+      } else if (action === 'add_schedule') {
+        execParams = {
+          schoolName: params.schoolName,
+          eventName: params.eventName,
+          dateStr: params.dateStr,
+          details: params.details || ''
+        };
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (thinkingId) removeAIWidgetMessage(thinkingId);
+          if (result && result.success) {
+            var successMsg = '✅ ' + (result.message || '処理が完了しました');
+            addAIWidgetMessage('ai', successMsg);
+            aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
+          } else {
+            var errMsg = '❌ ' + (result ? result.error || 'エラーが発生しました' : 'エラーが発生しました');
+            addAIWidgetMessage('ai', errMsg);
+            aiWidgetChatHistory.push({ role: 'ai', text: errMsg });
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (thinkingId) removeAIWidgetMessage(thinkingId);
+          var errMsg = '❌ エラー: ' + err;
+          addAIWidgetMessage('ai', errMsg);
+          aiWidgetChatHistory.push({ role: 'ai', text: errMsg });
+        })
+        .executeAiAction(action, JSON.stringify(execParams));
+    }
+
+    // ========================================
+    // ナビゲーション関数
+    // ========================================
+
+    /**
+     * AIアシスタントから予定タブへ自動ナビゲートし、指定月に移動する
+     * @param {number} year 年（省略時はそのまま）
+     * @param {number} month 月（省略時はそのまま）
+     */
+    function navigateToSchedule_fromAI(year, month) {
+      switchTab('schedule');
+      if (year && month) {
+        // currentYear / currentMonth はjs-core.htmlのグローバル変数
+        var targetYear = parseInt(year, 10);
+        var targetMonth = parseInt(month, 10);
+        // changeMonth(delta) で移動する回数を計算
+        var currentTotal = (typeof currentYear !== 'undefined' ? currentYear : new Date().getFullYear()) * 12
+          + (typeof currentMonth !== 'undefined' ? currentMonth : new Date().getMonth() + 1);
+        var targetTotal = targetYear * 12 + targetMonth;
+        var delta = targetTotal - currentTotal;
+        if (delta !== 0) {
+          changeMonth(delta);
+        }
+      }
+    }
+
+    /**
+     * AIアシスタントから任意のタブ・サブタブへ自動ナビゲートする
+     * @param {string} tab タブID（schedule, grades, lectures, universities, settings, admin）
+     * @param {string} subTab サブタブID（省略可）
+     */
+    function navigateToTab_fromAI(tab, subTab) {
+      if (!tab) return;
+      switchTab(tab);
+
+      if (!subTab) return;
+
+      // サブタブの切り替えはタブごとに異なるAPI
+      setTimeout(function() {
+        if (tab === 'grades') {
+          // grades系: switchSubTab(event, subTabName)
+          switchSubTab(makeDummySubTabEvt_(), subTab);
+        } else if (tab === 'lectures') {
+          // lectures系: switchLectureSubTab(event, subTabName)
+          switchLectureSubTab(makeDummySubTabEvt_(), subTab);
+        } else if (tab === 'universities') {
+          // universities系: 専用の switchUniversitiesSubTab を使う
+          switchUniversitiesSubTab(makeDummySubTabEvt_(), subTab);
+        } else if (tab === 'admin') {
+          // admin系: switchAdminTab(btn, tabName)
+          // subTab は "admin-users" 形式 → "users" に変換
+          var adminTabName = subTab.replace(/^admin-/, '');
+          var btn = document.querySelector('.admin-tab-btn[data-subtab="' + subTab + '"]');
+          if (btn) {
+            switchAdminTab(btn, adminTabName);
+            // 初期化関数を手動で呼ぶ（onclick属性と同等）
+            triggerAdminSubTabInit_(adminTabName);
+          }
+        }
+      }, 200);
+    }
+
+    /**
+     * 管理タブのサブタブ初期化関数をトリガーする内部ヘルパー
+     * switchAdminTab だけでは onclick で呼ばれる init 関数が実行されないため
+     * @param {string} tabName 管理サブタブ名（users, properties, sheets, ...）
+     */
+    function triggerAdminSubTabInit_(tabName) {
+      if (tabName === 'fixed-events' && typeof initFixedEventsAdmin === 'function') initFixedEventsAdmin();
+      else if (tabName === 'normal-config' && typeof initNormalConfigAdmin === 'function') initNormalConfigAdmin();
+      else if (tabName === 'lectures-config' && typeof initLecturesAdmin === 'function') initLecturesAdmin();
+      else if (tabName === 'scheduler' && typeof initLineScheduler === 'function') initLineScheduler();
+      else if (tabName === 'chatbot' && typeof initChatbotAdmin === 'function') initChatbotAdmin();
+    }
+
+    /**
+     * AIアシスタントから成績分析タブへ自動ナビゲートし、テスト名を選択して分析をロードする
+     * @param {number} year 学年年度
+     * @param {string} testName テスト名
+     */
+    function navigateToGradeAnalysis_fromAI(year, testName) {
+      switchTab('grades');
+      switchSubTab(makeDummySubTabEvt_(), 'grades-analysis');
+
+      // 年度セレクト＋テスト名ドロップダウンの両方が揃うまでポーリング
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        var yearSel = document.getElementById('gradesYearSelect');
+        var yearReady = yearSel && !yearSel.disabled && yearSel.options.length > 0 && yearSel.options[0].value !== '';
+        var testSel = document.getElementById('analysis-test-select');
+        var ready = yearReady && testSel && testSel.options.length > 1;
+        if (ready || attempts >= 50) {
+          clearInterval(timer);
+          if (!ready) return;
+          // ① 年度をセットしてchangeイベント発火（AIからのyearを最優先、未指定ならcurrentFiscalYear）
+          var targetYear = (year != null && year !== '') ? String(year) : String(currentFiscalYear);
+          yearSel.value = targetYear;
+          yearSel.dispatchEvent(new Event('change'));
+          // ② 年度変更の反映を待ってからテスト名セット＋分析ロード
+          setTimeout(function() {
+            var testSelRefresh = document.getElementById('analysis-test-select');
+            if (testName && testSelRefresh) {
+              testSelRefresh.value = testName;
+              testSelRefresh.dispatchEvent(new Event('change'));
+            }
+            if (typeof loadGradeAnalysis === 'function') loadGradeAnalysis();
+          }, 300);
+        }
+      }, 100);
+    }
+
+    /**
+     * AIアシスタントから講習管理タブへ自動ナビゲートする
+     * 指定された lectureId で年度・講習セレクトをセットし、校舎をチェックする
+     * @param {string} lectureId 講習ID（例: "2026-spring"）
+     * @param {string} campusCode 校舎コード2桁（省略可）
+     */
+    function navigateToLectures_fromAI(lectureId, campusCode) {
+      switchTab('lectures');
+
+      if (!lectureId) return;
+
+      // lectureId から年度とtypeを抽出（例: "2026-spring" → 年度=2026, type=spring）
+      var parts = lectureId.split('-');
+      var targetFy = parts[0];
+
+      // 講習セレクトが準備完了するまでポーリング
+      // 完了条件: lec-name-select に選択肢があり value が空でない
+      // （「読み込み中...」プレースホルダーや「この年度の講習なし」は value="" のため除外される）
+      // これにより getLecturePeriods() の非同期完了 + デフォルト値セット後に上書きできる
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        var yearSel = document.getElementById('lec-year-select');
+        var lecSel = document.getElementById('lec-name-select');
+        var ready = yearSel && lecSel && lecSel.options.length > 0 && lecSel.value !== '';
+        if (ready || attempts >= 50) {
+          clearInterval(timer);
+          if (!ready) return;
+
+          // ① 年度セレクトをセット → change イベント発火
+          if (targetFy) {
+            yearSel.value = targetFy;
+            yearSel.dispatchEvent(new Event('change'));
+          }
+
+          // ② 講習名セレクトの再構築を待つ（300ms）
+          setTimeout(function() {
+            var lecSelRefresh = document.getElementById('lec-name-select');
+            if (lecSelRefresh) {
+              lecSelRefresh.value = lectureId;
+              lecSelRefresh.dispatchEvent(new Event('change'));
+            }
+
+            // ③ 校舎チェックボックスをセット（さらに300ms後）
+            if (campusCode) {
+              setTimeout(function() {
+                var allCb = document.getElementById('lec-campus-all');
+                if (allCb) allCb.checked = false;
+                document.querySelectorAll('#lec-campus-checkboxes input[type="checkbox"]').forEach(function(cb) {
+                  cb.checked = (cb.value === String(campusCode));
+                });
+              }, 300);
+            }
+          }, 300);
+        }
+      }, 100);
+    }
+</script>

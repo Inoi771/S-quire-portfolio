@@ -1,0 +1,225 @@
+<script>
+// ===== 【チャットボット管理】ナレッジベース管理 =====
+
+var kbEntries_ = [];
+
+/**
+ * チャットボット管理サブタブの初期化
+ */
+function initChatbotAdmin() {
+  var list = document.getElementById('kbEntriesList');
+  if (list) list.innerHTML = '<p style="color:#888; text-align:center;">読み込み中...</p>';
+  hideKbForm();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        kbEntries_ = result.entries || [];
+        renderKbEntries(kbEntries_);
+      } else {
+        list.innerHTML = '<p style="color:red;">読み込みに失敗しました: ' + (result ? result.error : '不明') + '</p>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('getAiKnowledgeBase error:', err);
+      list.innerHTML = '<p style="color:red;">エラー: ' + err + '</p>';
+    })
+    .getAiKnowledgeBase();
+}
+
+/**
+ * ナレッジベースエントリをカテゴリ別に描画
+ * @param {Array} entries エントリ配列
+ */
+function renderKbEntries(entries) {
+  var list = document.getElementById('kbEntriesList');
+  var stats = document.getElementById('kbStats');
+
+  if (!entries || entries.length === 0) {
+    list.innerHTML = '<p style="color:#888; text-align:center; padding: 20px 0;">まだ登録がありません。「＋ 追加」ボタンから情報を登録してください。</p>';
+    if (stats) stats.textContent = '0件';
+    return;
+  }
+
+  // 文字数カウント
+  var totalChars = 0;
+  entries.forEach(function(e) { totalChars += (e.content || '').length; });
+  if (stats) {
+    stats.textContent = entries.length + '件 / 約' + totalChars.toLocaleString() + '文字';
+    if (totalChars > 5000) {
+      stats.style.color = '#e74c3c';
+      stats.textContent += '（多め — 回答精度に影響する可能性があります）';
+    } else {
+      stats.style.color = '#888';
+    }
+  }
+
+  // カテゴリ別にグループ化
+  var groups = {};
+  entries.forEach(function(e) {
+    var cat = e.category || 'その他';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(e);
+  });
+
+  var html = '';
+  Object.keys(groups).forEach(function(cat) {
+    html += '<div style="margin-bottom: 16px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">';
+    html += '<div style="background: #f0f0f0; padding: 10px 14px; font-weight: bold; font-size: 14px;">■ ' + escapeHtmlKb_(cat) + ' （' + groups[cat].length + '件）</div>';
+    groups[cat].forEach(function(entry) {
+      html += '<div style="padding: 10px 14px; border-top: 1px solid #eee; display: flex; align-items: flex-start; gap: 10px;">';
+      html += '<div style="flex: 1; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">' + escapeHtmlKb_(entry.content) + '</div>';
+      html += '<div style="display: flex; gap: 4px; flex-shrink: 0;">';
+      html += '<button onclick="editKbEntry(\'' + entry.id + '\')" style="padding: 4px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">編集</button>';
+      html += '<button onclick="deleteKbEntry(\'' + entry.id + '\')" style="padding: 4px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">削除</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  list.innerHTML = html;
+}
+
+/**
+ * 追加フォームを表示（新規）
+ */
+function showKbEntryForm() {
+  document.getElementById('kbEntryId').value = '';
+  document.getElementById('kbCategorySelect').value = '';
+  document.getElementById('kbCategoryCustom').style.display = 'none';
+  document.getElementById('kbCategoryCustom').value = '';
+  document.getElementById('kbContent').value = '';
+  document.getElementById('kbFormArea').style.display = 'block';
+  document.getElementById('kbContent').focus();
+}
+
+/**
+ * 編集フォームを表示（既存エントリ）
+ * @param {string} entryId エントリID
+ */
+function editKbEntry(entryId) {
+  var entry = null;
+  for (var i = 0; i < kbEntries_.length; i++) {
+    if (kbEntries_[i].id === entryId) { entry = kbEntries_[i]; break; }
+  }
+  if (!entry) return;
+
+  document.getElementById('kbEntryId').value = entry.id;
+  document.getElementById('kbContent').value = entry.content;
+
+  // カテゴリをセレクトから選択。選択肢にない場合はカスタム入力
+  var sel = document.getElementById('kbCategorySelect');
+  var found = false;
+  for (var j = 0; j < sel.options.length; j++) {
+    if (sel.options[j].value === entry.category) { sel.value = entry.category; found = true; break; }
+  }
+  if (!found) {
+    sel.value = '__custom__';
+    document.getElementById('kbCategoryCustom').style.display = '';
+    document.getElementById('kbCategoryCustom').value = entry.category;
+  } else {
+    document.getElementById('kbCategoryCustom').style.display = 'none';
+    document.getElementById('kbCategoryCustom').value = '';
+  }
+
+  document.getElementById('kbFormArea').style.display = 'block';
+  document.getElementById('kbContent').focus();
+}
+
+/**
+ * フォームを閉じる
+ */
+function hideKbForm() {
+  document.getElementById('kbFormArea').style.display = 'none';
+}
+
+/**
+ * カテゴリセレクト変更時ハンドラー
+ */
+function onKbCategorySelectChange() {
+  var sel = document.getElementById('kbCategorySelect');
+  var custom = document.getElementById('kbCategoryCustom');
+  if (sel.value === '__custom__') {
+    custom.style.display = '';
+    custom.focus();
+  } else {
+    custom.style.display = 'none';
+    custom.value = '';
+  }
+}
+
+/**
+ * エントリを保存（追加/更新）
+ */
+function saveKbEntry() {
+  var sel = document.getElementById('kbCategorySelect');
+  var category = sel.value === '__custom__'
+    ? document.getElementById('kbCategoryCustom').value.trim()
+    : sel.value;
+  var content = document.getElementById('kbContent').value.trim();
+  var entryId = document.getElementById('kbEntryId').value;
+
+  if (!category) { appAlert('カテゴリを選択してください。'); return; }
+  if (!content) { appAlert('内容を入力してください。'); return; }
+
+  var entry = { category: category, content: content };
+  if (entryId) entry.id = entryId;
+
+  var saveBtn = document.querySelector('#kbFormArea button');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
+      if (result && result.success) {
+        hideKbForm();
+        showToast(result.message, 'success');
+        initChatbotAdmin();
+      } else {
+        appAlert('保存に失敗しました: ' + (result ? result.error : '不明'));
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
+      console.error('saveAiKnowledgeEntry error:', err);
+      appAlert('エラーが発生しました: ' + err);
+    })
+    .saveAiKnowledgeEntry(JSON.stringify(entry));
+}
+
+/**
+ * エントリを削除（確認ダイアログ付き）
+ * @param {string} entryId エントリID
+ */
+function deleteKbEntry(entryId) {
+  appConfirm('この項目を削除しますか？').then(function(ok) {
+    if (!ok) return;
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          showToast(result.message, 'success');
+          initChatbotAdmin();
+        } else {
+          appAlert('削除に失敗しました: ' + (result ? result.error : '不明'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.error('deleteAiKnowledgeEntry error:', err);
+        appAlert('エラーが発生しました: ' + err);
+      })
+      .deleteAiKnowledgeEntry(entryId);
+  });
+}
+
+/**
+ * HTML特殊文字をエスケープする
+ * @param {string} str 文字列
+ * @return {string} エスケープ済み文字列
+ */
+function escapeHtmlKb_(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>

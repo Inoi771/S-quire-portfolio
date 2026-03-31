@@ -1,0 +1,2183 @@
+<script>
+
+    function loadProperties() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displayProperties(result.properties);
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', 'プロパティの読み込みに失敗しました: ' + err, 'error');
+        })
+        .getAllScriptPropertiesForGUI();
+    }
+    
+    function displayProperties(properties) {
+      var container = document.getElementById('propertiesList');
+      var html = '';
+      
+      properties.forEach(function(prop) {
+        var eKey = escapeHtml_(prop.key);
+        var eValue = escapeHtml_(prop.value);
+        html += '<div class="property-item">' +
+                '<div style="display: flex; justify-content: space-between; width: 100%;">' +
+                '<strong>' + eKey + ':</strong>' +
+                '<button onclick="deleteProperty(\'' + eKey + '\')">削除</button>' +
+                '</div>' +
+                '<div class="prop-value">' + eValue + '</div>' +
+                '</div>';
+      });
+      
+      container.innerHTML = html || '<p style="text-align: center; color: #999;">プロパティがありません</p>';
+    }
+    
+    function addProperty() {
+      var key = document.getElementById('newPropKey').value.trim();
+      var value = document.getElementById('newPropValue').value.trim();
+      
+      if (!key || !value) {
+        showMessage('adminMessage', '❌ キーと値を入力してください', 'error');
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ プロパティを追加しました', 'success');
+            document.getElementById('newPropKey').value = '';
+            document.getElementById('newPropValue').value = '';
+            loadProperties();
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .updateScriptPropertyFromGUI(key, value);
+    }
+    
+    function deleteProperty(key) {
+      appConfirm('このプロパティを削除しますか？\n' + key).then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ プロパティを削除しました', 'success');
+              loadProperties();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .deleteScriptPropertyFromGUI(key);
+      });
+    }
+
+    function loadGradesSettings() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displayGradesSettings(result);
+          } else {
+            showMessage('adminMessage', 'エラー: ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '成績設定の読み込みに失敗しました: ' + err, 'error');
+        })
+        .getGradesConfigForWeb();
+    }
+
+    function displayGradesSettings(config) {
+      var btnEdit   = 'background:#667eea;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;';
+      var btnDel    = 'background:#ff6b6b;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;';
+      var btnSave   = 'background:#43a047;color:white;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:10px;flex:1;';
+      var btnCancel = 'background:#9e9e9e;color:white;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:10px;flex:1;';
+      var inputSt   = 'width:100%;padding:4px 6px;border:1px solid #ddd;border-radius:3px;box-sizing:border-box;font-size:12px;margin-bottom:4px;';
+      var editBg    = 'background:#fff9e6;padding:8px 10px;border-radius:4px;margin-bottom:6px;border:1px solid #ffc107;font-size:12px;display:none;';
+
+      // テスト名リスト
+      var testNameHtml = '';
+      config.testNames.forEach(function(testName, idx) {
+        var esc  = testName.replace(/'/g, "\\'");
+        var html = testName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        testNameHtml +=
+          '<div id="tn-view-' + idx + '" style="background:white;padding:6px 10px;border-radius:4px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e0e0e0;font-size:12px;">' +
+            '<span>📋 ' + html + '</span>' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="editTestNameRow(' + idx + ')" style="' + btnEdit + '">編集</button>' +
+              '<button onclick="deleteTestNameItem(\'' + esc + '\')" style="' + btnDel + '">削除</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="tn-edit-' + idx + '" style="' + editBg + 'margin-bottom:6px;">' +
+            '<input id="tn-input-' + idx + '" value="' + html + '" style="' + inputSt + '">' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="saveTestNameRow(' + idx + ',\'' + esc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="cancelEditRow(\'tn\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
+            '</div>' +
+          '</div>';
+      });
+      document.getElementById('testNamesList').innerHTML = testNameHtml || '<p style="text-align:center;color:#999;font-size:11px;">テスト名なし</p>';
+
+      // 校舎リスト
+      var campusHtml = '';
+      config.campuses.forEach(function(campus, idx) {
+        var codeEsc = campus.code.replace(/'/g, "\\'");
+        var nameHtml = campus.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        campusHtml +=
+          '<div id="cp-view-' + idx + '" style="background:white;padding:6px 10px;border-radius:4px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e0e0e0;font-size:12px;">' +
+            '<span>🏢 ' + escapeHtml_(campus.code) + ': ' + nameHtml + '</span>' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="editCampusRow(' + idx + ')" style="' + btnEdit + '">編集</button>' +
+              '<button onclick="deleteCampusItem(\'' + codeEsc + '\')" style="' + btnDel + '">削除</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="cp-edit-' + idx + '" style="' + editBg + 'margin-bottom:6px;">' +
+            '<div style="font-size:11px;color:#666;margin-bottom:4px;">コード: <strong>' + campus.code + '</strong>（変更不可）</div>' +
+            '<input id="cp-input-' + idx + '" value="' + nameHtml + '" placeholder="校舎名" style="' + inputSt + '">' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="saveCampusRow(' + idx + ',\'' + codeEsc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="cancelEditRow(\'cp\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
+            '</div>' +
+          '</div>';
+      });
+      document.getElementById('campusList').innerHTML = campusHtml || '<p style="text-align:center;color:#999;font-size:11px;">校舎なし</p>';
+
+      // 学年チェックボックス（表示切替）
+      var gradeHtml = '';
+      var visibleCodes = config.visibleGradeCodes || [];
+      (config.allGrades || config.grades).forEach(function(grade) {
+        var checked = visibleCodes.indexOf(grade.code) !== -1 ? ' checked' : '';
+        gradeHtml +=
+          '<label style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:white;border:1px solid #e0e0e0;border-radius:4px;font-size:12px;cursor:pointer;">' +
+            '<input type="checkbox" value="' + grade.code + '"' + checked +
+            ' onchange="saveVisibleGrades()" style="margin:0;">' +
+            grade.code + ': ' + grade.name +
+          '</label>';
+      });
+      document.getElementById('gradesList').innerHTML = gradeHtml || '<p style="text-align:center;color:#999;font-size:11px;">学年なし</p>';
+
+      // 志望校リスト
+      var schoolHtml = '';
+      (config.schools || []).forEach(function(school, idx) {
+        var nameEsc  = school.name.replace(/'/g, "\\'");
+        var nameHtml = school.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        var deptStr = (school.departments && school.departments.length > 0)
+          ? school.departments.map(function(d) {
+              if (typeof d === 'string') return d;
+              return d.deviation != null ? d.name + '<span style="color:#43a047;margin-left:2px;">(' + d.deviation + ')</span>' : d.name;
+            }).join('、')
+          : '（学科未設定）';
+        var deptInputVal = (school.departments && school.departments.length > 0)
+          ? school.departments.map(function(d) {
+              if (typeof d === 'string') return d;
+              return d.deviation != null ? d.name + ':' + d.deviation : d.name;
+            }).join(', ').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+          : '';
+        schoolHtml +=
+          '<div id="sc-view-' + idx + '" style="background:white;padding:6px 10px;border-radius:4px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e0e0e0;font-size:12px;">' +
+            '<span>🏫 ' + nameHtml + '<span style="color:#999;margin-left:6px;">' + deptStr + '</span></span>' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="editSchoolRow(' + idx + ')" style="' + btnEdit + '">編集</button>' +
+              '<button onclick="deleteSchoolItem(\'' + nameEsc + '\')" style="' + btnDel + '">削除</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="sc-edit-' + idx + '" style="' + editBg + 'margin-bottom:6px;">' +
+            '<input id="sc-name-' + idx + '" value="' + nameHtml + '" placeholder="高校名" style="' + inputSt + '">' +
+            '<input id="sc-depts-' + idx + '" value="' + deptInputVal + '" placeholder="学科と偏差値（例: 普通科:55, 理数科:62）" style="' + inputSt + '">' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button onclick="saveSchoolRow(' + idx + ',\'' + nameEsc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="cancelEditRow(\'sc\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
+            '</div>' +
+          '</div>';
+      });
+      document.getElementById('schoolList').innerHTML = schoolHtml || '<p style="text-align:center;color:#999;font-size:11px;">志望校なし</p>';
+    }
+
+    // --- インライン編集ヘルパー ---
+    function cancelEditRow(prefix, idx) {
+      document.getElementById(prefix + '-view-' + idx).style.display = 'flex';
+      document.getElementById(prefix + '-edit-' + idx).style.display = 'none';
+    }
+
+    // テスト名 編集/保存
+    function editTestNameRow(idx) {
+      document.getElementById('tn-view-' + idx).style.display = 'none';
+      document.getElementById('tn-edit-' + idx).style.display = 'block';
+      document.getElementById('tn-input-' + idx).focus();
+    }
+    function saveTestNameRow(idx, oldName) {
+      var newName = document.getElementById('tn-input-' + idx).value.trim();
+      if (!newName) { showMessage('adminMessage', 'テスト名を入力してください', 'error'); return; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') loadDropdownData();
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .updateTestName(oldName, newName);
+    }
+
+    // 校舎 編集/保存
+    function editCampusRow(idx) {
+      document.getElementById('cp-view-' + idx).style.display = 'none';
+      document.getElementById('cp-edit-' + idx).style.display = 'block';
+      document.getElementById('cp-input-' + idx).focus();
+    }
+    function saveCampusRow(idx, campusCode) {
+      var newName = document.getElementById('cp-input-' + idx).value.trim();
+      if (!newName) { showMessage('adminMessage', '校舎名を入力してください', 'error'); return; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') loadDropdownData();
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .updateCampusName(campusCode, newName);
+    }
+
+    // 学年 表示切替
+    function saveVisibleGrades() {
+      var checkboxes = document.querySelectorAll('#gradesList input[type="checkbox"]');
+      var visibleCodes = [];
+      checkboxes.forEach(function(cb) {
+        if (cb.checked) visibleCodes.push(cb.value);
+      });
+      if (visibleCodes.length === 0) {
+        showMessage('adminMessage', '少なくとも1つの学年を選択してください', 'error');
+        loadGradesSettings();
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            if (typeof loadDropdownData === 'function') loadDropdownData();
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+            loadGradesSettings();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ ' + err, 'error');
+          loadGradesSettings();
+        })
+        .updateVisibleGrades(visibleCodes);
+    }
+
+    // 志望校 編集/保存
+    function editSchoolRow(idx) {
+      document.getElementById('sc-view-' + idx).style.display = 'none';
+      document.getElementById('sc-edit-' + idx).style.display = 'block';
+      document.getElementById('sc-name-' + idx).focus();
+    }
+    function saveSchoolRow(idx, oldName) {
+      var newName  = document.getElementById('sc-name-' + idx).value.trim();
+      var newDepts = document.getElementById('sc-depts-' + idx).value.trim();
+      if (!newName) { showMessage('adminMessage', '学校名を入力してください', 'error'); return; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') loadDropdownData();
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .updateSchool(oldName, newName, newDepts);
+    }
+    // --- インライン編集ヘルパー ここまで ---
+
+    function addNewSchool() {
+      var name = document.getElementById('newSchoolName').value.trim();
+      var depts = document.getElementById('newSchoolDepts').value.trim();
+      if (!name) {
+        showMessage('adminMessage', '高校名を入力してください', 'error');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            document.getElementById('newSchoolName').value = '';
+            document.getElementById('newSchoolDepts').value = '';
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') loadDropdownData();
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .addSchool(name, depts);
+    }
+
+    function deleteSchoolItem(schoolName) {
+      appConfirm('「' + schoolName + '」を削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ' + result.message, 'success');
+              loadGradesSettings();
+              if (typeof loadDropdownData === 'function') loadDropdownData();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .deleteSchool(schoolName);
+      });
+    }
+
+    function addNewTestName() {
+      var testName = document.getElementById('newTestName').value.trim();
+      
+      if (!testName) {
+        showMessage('adminMessage', 'テスト名を入力してください', 'error');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            document.getElementById('newTestName').value = '';
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') {
+              loadDropdownData();
+            }
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .addTestName(testName);
+    }
+
+    function deleteTestNameItem(testName) {
+      appConfirm('「' + testName + '」を削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ' + result.message, 'success');
+              loadGradesSettings();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .deleteTestName(testName);
+      });
+    }
+
+    function addNewCampus() {
+      var campusCode = document.getElementById('newCampusCode').value.trim();
+      var campusName = document.getElementById('newCampusName').value.trim();
+      
+      if (!campusCode || !campusName) {
+        showMessage('adminMessage', 'コードと校舎名を入力してください', 'error');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+            document.getElementById('newCampusCode').value = '';
+            document.getElementById('newCampusName').value = '';
+            loadGradesSettings();
+            if (typeof loadDropdownData === 'function') {
+              loadDropdownData();
+            }
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .addCampus(campusCode, campusName);
+    }
+
+    function deleteCampusItem(campusCode) {
+      appConfirm('コード「' + campusCode + '」の校舎を削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ' + result.message, 'success');
+              loadGradesSettings();
+              if (typeof loadDropdownData === 'function') {
+                loadDropdownData();
+              }
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .deleteCampus(campusCode);
+      });
+    }
+
+
+    function loadSigmaSettings() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) return;
+          var s = result.sigma;
+          document.getElementById('sigma-kokugo').value = s.kokugo;
+          document.getElementById('sigma-shakai').value = s.shakai;
+          document.getElementById('sigma-sugaku').value = s.sugaku;
+          document.getElementById('sigma-rika').value   = s.rika;
+          document.getElementById('sigma-eigo').value   = s.eigo;
+          document.getElementById('sigma-total').value  = s.total;
+        })
+        .withFailureHandler(function(err) {
+          console.error('σ設定読み込みエラー:', err);
+        })
+        .getGradeAnalysisSigmaConfig();
+    }
+
+    function saveSigmaSettings() {
+      var sigmaData = {
+        kokugo: Number(document.getElementById('sigma-kokugo').value),
+        shakai: Number(document.getElementById('sigma-shakai').value),
+        sugaku: Number(document.getElementById('sigma-sugaku').value),
+        rika:   Number(document.getElementById('sigma-rika').value),
+        eigo:   Number(document.getElementById('sigma-eigo').value),
+        total:  Number(document.getElementById('sigma-total').value)
+      };
+      for (var k in sigmaData) {
+        if (isNaN(sigmaData[k]) || sigmaData[k] <= 0) {
+          showMessage('adminMessage', '❌ ' + k + ' の値が正しくありません（1以上の数値を入力してください）', 'error');
+          return;
+        }
+      }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ ' + result.message, 'success');
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ σ設定の保存に失敗しました: ' + err, 'error');
+        })
+        .updateGradeAnalysisSigmaConfig(sigmaData);
+    }
+
+    function resetSigmaSettings() {
+      appConfirm('σ設定をデフォルト値に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ' + result.message, 'success');
+              loadSigmaSettings();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ σ設定のリセットに失敗しました: ' + err, 'error');
+          })
+          .resetGradeAnalysisSigmaConfig();
+      });
+    }
+
+    /** 生徒別AI分析の年度・テスト名ドロップダウンを初期化 */
+    function initStudentAnalysisPanel() {
+      var yearSelect = document.getElementById('student-analysis-year');
+      var testSelect = document.getElementById('student-analysis-test');
+      if (!yearSelect || !testSelect) return;
+
+      // 年度を成績管理フォルダの実フォルダ一覧から取得
+      yearSelect.innerHTML = '<option value="">読み込み中...</option>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var yearOpts = '<option value="">選択してください</option>';
+          if (result && result.years && result.years.length > 0) {
+            result.years.forEach(function(y) {
+              yearOpts += '<option value="' + y + '">' + y + '年度</option>';
+            });
+          }
+          yearSelect.innerHTML = yearOpts;
+        })
+        .withFailureHandler(function(err) {
+          console.error('年度取得エラー:', err);
+          yearSelect.innerHTML = '<option value="">取得失敗</option>';
+        })
+        .getGradesYearFolders();
+
+      // テスト名をバックエンドから取得
+      testSelect.innerHTML = '<option value="">読み込み中...</option>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var testOpts = '<option value="">選択してください</option>';
+          if (result && result.testNames && result.testNames.length > 0) {
+            result.testNames.forEach(function(name) {
+              testOpts += '<option value="' + name + '">' + name + '</option>';
+            });
+          }
+          testSelect.innerHTML = testOpts;
+        })
+        .withFailureHandler(function(err) {
+          console.error('テスト名取得エラー:', err);
+          testSelect.innerHTML = '<option value="">取得失敗</option>';
+        })
+        .getGradesConfigForWeb();
+    }
+
+    /**
+     * AI成績分析（全体＋生徒別）一括生成ボタンハンドラー
+     * skipExisting=true: 未分析のみ生成（既存データを保持）
+     * skipExisting=false: 全員を上書き生成
+     */
+    function generateAllAnalysesAdmin(skipExisting) {
+      var year = parseInt(document.getElementById('student-analysis-year').value, 10);
+      var testName = document.getElementById('student-analysis-test').value;
+      var statusEl = document.getElementById('student-analysis-status');
+      var btnSkip = document.getElementById('btn-gen-analysis-skip');
+      var btnOverwrite = document.getElementById('btn-gen-analysis-overwrite');
+
+      if (!testName) {
+        statusEl.innerHTML = '<span style="color:#e53935;">テスト名を選択してください</span>';
+        return;
+      }
+
+      var confirmMsg = skipExisting
+        ? year + '年度「' + testName + '」の未分析の生徒のみ分析を生成します。\n既存の分析はそのまま保持されます。よろしいですか？'
+        : year + '年度「' + testName + '」のテスト全体分析と全生徒の個別分析を一括生成します。\n既存のデータは上書きされます。よろしいですか？';
+
+      appConfirm(confirmMsg).then(function(ok) {
+        if (!ok) return;
+        btnSkip.disabled = true;
+        btnOverwrite.disabled = true;
+        statusEl.innerHTML = '<span style="color:#999;">AIが分析を生成しています。しばらくお待ちください...</span>';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btnSkip.disabled = false;
+            btnOverwrite.disabled = false;
+            if (result.success) {
+              if (result.skipped) {
+                statusEl.innerHTML = '<span style="color:#f57c00;">ℹ️ すべての分析が既に存在します（スキップしました）</span>';
+              } else if (skipExisting) {
+                statusEl.innerHTML = '<span style="color:#2e7d32;">✓ ' + result.studentCount + ' 人分の生徒別分析を新規生成しました（' + (result.skippedCount || 0) + ' 人はスキップ）</span>';
+              } else {
+                statusEl.innerHTML = '<span style="color:#2e7d32;">✓ テスト全体分析と ' + result.studentCount + ' 人分の生徒別分析を生成しました。</span>';
+              }
+            } else {
+              statusEl.innerHTML = '<span style="color:#e53935;">❌ ' + result.error + '</span>';
+            }
+          })
+          .withFailureHandler(function(err) {
+            btnSkip.disabled = false;
+            btnOverwrite.disabled = false;
+            statusEl.innerHTML = '<span style="color:#e53935;">❌ 通信エラー: ' + err + '</span>';
+          })
+          .generateAllAnalyses(year, testName, skipExisting);
+      });
+    }
+
+    function loadSheetsList() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displaySheetsList(result.sheets);
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', 'シート一覧の読み込みに失敗しました: ' + err, 'error');
+        })
+        .getSheetsList();
+    }
+    
+    function displaySheetsList(sheets) {
+      var container = document.getElementById('sheetsList');
+      var selector = document.getElementById('sheetSelector');
+      var html = '';
+      var options = '<option value="">シートを選択...</option>';
+      
+      sheets.forEach(function(sheet) {
+        var eName = escapeHtml_(sheet.name);
+        html += '<div class="sheet-item" style="flex-direction: column; align-items: flex-start;">' +
+                '<div><strong>' + eName + '</strong></div>' +
+                '<small style="color: #666; margin-top: 5px;">' + sheet.rowCount + ' 行 × ' + sheet.columnCount + ' 列</small>' +
+                '</div>';
+        options += '<option value="' + eName + '">' + eName + '</option>';
+      });
+      
+      container.innerHTML = html;
+      selector.innerHTML = options;
+    }
+    
+    function loadSheetData() {
+      var sheetName = document.getElementById('sheetSelector').value;
+      var startRow = parseInt(document.getElementById('sheetRowStart').value) || 1;
+      
+      if (!sheetName) {
+        showMessage('adminMessage', '❌ シートを選択してください', 'error');
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displaySheetData(result.data);
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .getSheetData(sheetName, startRow, startRow + 9, 1, 10);
+    }
+    
+    function displaySheetData(data) {
+      var container = document.getElementById('sheetDataDisplay');
+      var html = '<table style="width: 100%; border-collapse: collapse;">';
+      
+      html += '<thead><tr style="background: #f0f0f0;">';
+      for (var i = 0; i < data[0].length; i++) {
+        html += '<th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: 600; font-size: 12px;">' + (i + 1) + '</th>';
+      }
+      html += '</tr></thead>';
+      
+      html += '<tbody>';
+      data.forEach(function(row) {
+        html += '<tr>';
+        row.forEach(function(cell) {
+          html += '<td style="border: 1px solid #ddd; padding: 8px; font-size: 12px;">' + escapeHtml_(cell || '') + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      
+      container.innerHTML = html;
+    }
+
+    function exploreDriveFolder() {
+      var folderId = document.getElementById('folderIdInput').value.trim() || '';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displayDriveContents(result);
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .getDriveContents(folderId);
+    }
+    
+    function displayDriveContents(result) {
+      // フォルダ表示
+      var folderContainer = document.getElementById('driveFoldersList');
+      var folderHtml = '';
+      result.folders.forEach(function(folder) {
+        folderHtml += '<div class="drive-item">' +
+                      '<div><strong>' + escapeHtml_(folder.name) + '</strong><br><small style="color: #999;">' + escapeHtml_(folder.id) + '</small></div>' +
+                      '<button onclick="openDriveFolder(\'' + escapeHtml_(folder.id) + '\')">開く</button>' +
+                      '</div>';
+      });
+      folderContainer.innerHTML = folderHtml || '<p style="text-align: center; color: #999;">フォルダなし</p>';
+
+      // ファイル表示
+      var fileContainer = document.getElementById('driveFilesList');
+      var fileHtml = '';
+      result.files.forEach(function(file) {
+        fileHtml += '<div class="drive-item">' +
+                    '<div><strong>' + escapeHtml_(file.name) + '</strong><br><small style="color: #999;">' + (file.size / 1024).toFixed(2) + ' KB</small></div>' +
+                    '<button onclick="deleteFile(\'' + escapeHtml_(file.id) + '\')">削除</button>' +
+                    '</div>';
+      });
+      fileContainer.innerHTML = fileHtml || '<p style="text-align: center; color: #999;">ファイルなし</p>';
+    }
+    
+    function openDriveFolder(folderId) {
+      document.getElementById('folderIdInput').value = folderId;
+      exploreDriveFolder();
+    }
+    
+    function deleteFile(fileId) {
+      appConfirm('ファイルを削除しますか？（ゴミ箱に移動）').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ファイルを削除しました', 'success');
+              exploreDriveFolder();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .deleteFileFromDrive(fileId);
+      });
+    }
+    
+    function uploadPDFFile() {
+      var fileInput = document.getElementById('pdfFileInput');
+      var file = fileInput.files[0];
+      
+      if (!file) {
+        showMessage('adminMessage', '❌ ファイルを選択してください', 'error');
+        return;
+      }
+      
+      var reader = new FileReader();
+      reader.onload = function(event) {
+        var base64 = event.target.result.split(',')[1];
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ ファイルをアップロードしました', 'success');
+              fileInput.value = '';
+              exploreDriveFolder();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .uploadPDFToFolder(base64, file.name, '');
+      };
+      
+      reader.readAsDataURL(file);
+    }
+
+    function loadLogsTab() {
+      google.script.run
+        .withSuccessHandler(function(info) {
+          document.getElementById('userRoleInfo').innerHTML =
+            '👤 名前: ' + escapeHtml_(info.displayName) + '<br>' +
+            '📧 メール: ' + escapeHtml_(info.email) + '<br>' +
+            '🔐 ロール: ' + escapeHtml_(info.roleLabel);
+        })
+        .getUserRoleInfo();
+
+      // 年度入力欄の初期値をセット
+      document.getElementById('importYearInput').value = new Date().getFullYear();
+
+    }
+
+    function checkInitStatus() {
+      var display = document.getElementById('initStatusDisplay');
+      display.textContent = '確認中...';
+      display.style.color = '#999';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            var folders = result.folders;
+            var html = '<strong style="color: ' + (result.status === '初期化完了' ? '#43a047' : '#ff9800') + ';">' + result.status + '</strong><br>' +
+              '<small style="color: #666;">' + result.message + '</small><br><br>' +
+              '📁 月間スケジュール: ' + (folders.schedule ? '✅' : '❌') + '<br>' +
+              '📁 成績管理: ' + (folders.grades ? '✅' : '❌') + '<br>' +
+              '📁 生徒マスタ: ' + (folders.studentMaster ? '✅' : '❌') + '<br>' +
+              '📁 設定: ' + (folders.settings ? '✅' : '❌');
+            display.innerHTML = html;
+            display.style.color = '#333';
+          } else {
+            display.textContent = '❌ ' + (result.error || result.message);
+            display.style.color = '#c62828';
+          }
+        })
+        .withFailureHandler(function(error) {
+          display.textContent = '❌ エラー: ' + error;
+          display.style.color = '#c62828';
+        })
+        .checkInitializationStatus();
+    }
+
+    function runManualInitialize() {
+      appConfirm('手動初期化を実行しますか？\n既存のフォルダ・シートはスキップされます。').then(function(ok) {
+        if (!ok) return;
+        showMessage('initMessage', '⏳ 初期化中...', 'info');
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('initMessage', '✅ ' + result.message, 'success');
+              checkInitStatus();
+            } else {
+              showMessage('initMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showMessage('initMessage', '❌ エラー: ' + error, 'error');
+          })
+          .manualInitializeSheets();
+      });
+    }
+
+    function runAutoImport() {
+      var year = parseInt(document.getElementById('importYearInput').value);
+
+      if (!year || year < 2000 || year > 2100) {
+        showMessage('initMessage', '❌ 正しい年度を入力してください', 'error');
+        return;
+      }
+
+      appConfirm(year + '年度のスケジュール自動インポートを実行しますか？\nしばらく時間がかかります。').then(function(ok) {
+        if (!ok) return;
+        showMessage('initMessage', '⏳ インポート中...（数分かかる場合があります）', 'info');
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              var detail = result.results.map(function(r) {
+                return r.school + ': ' + r.count + '件';
+              }).join('、');
+              showMessage('initMessage', '✅ 合計 ' + result.totalCount + '件インポート完了\n' + detail, 'success');
+            } else {
+              showMessage('initMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showMessage('initMessage', '❌ エラー: ' + error, 'error');
+          })
+          .autoImportAllSchedules(year);
+      });
+    }
+
+  // ===== 基礎学力テスト日程管理（Admin）=====
+
+    /**
+     * 管理タブ：公立高校一般選抜日程管理セクションの初期化
+     */
+    function initPubHighExamDatesAdmin() {
+      var sel = document.getElementById('pubHighExamYear');
+      if (!sel) return;
+      sel.innerHTML = '';
+      var now = new Date();
+      var thisYear = now.getFullYear();
+      var fiscalYear = (now.getMonth() + 1) >= 4 ? thisYear : thisYear - 1;
+      for (var y = fiscalYear - 1; y <= fiscalYear + 2; y++) {
+        var opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y + '年度（' + (y + 1) + '年3月試験）';
+        if (y === fiscalYear) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      loadPubHighExamDates();
+    }
+
+    /**
+     * 管理タブ：選択年度の公立高校一般選抜日程を読み込む
+     */
+    function loadPubHighExamDates() {
+      var sel = document.getElementById('pubHighExamYear');
+      if (!sel) return;
+      var yr = parseInt(sel.value);
+      document.getElementById('pubHighExamDateTable').innerHTML =
+        '<p style="color:#999; text-align:center; font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(overrides) {
+          pubHighExamDateOverrides = overrides || {};
+          renderPubHighExamDateTable(yr);
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('pubHighExamDateTable').innerHTML =
+            '<p style="color:red; font-size:13px;">読み込みエラー: ' + (err.message || err) + '</p>';
+        })
+        .getPublicHighExamDateOverrides();
+    }
+
+    /**
+     * 管理タブ：公立高校一般選抜日程テーブルを描画する
+     * @param {number} yr 学年年度
+     */
+    function renderPubHighExamDateTable(yr) {
+      // 自動計算日（フロントエンドで計算）
+      var march1Dow = new Date(yr + 1, 2, 1).getDay();
+      var daysToTue = (2 - march1Dow + 7) % 7;
+      var firstTueDay = 1 + daysToTue;
+      var autoTueDay = (firstTueDay <= 2) ? firstTueDay + 7 : firstTueDay;
+      var autoWedDay = autoTueDay + 1;
+      var autoDateStr = (yr + 1) + '年3月' + autoTueDay + '日（火）・' + autoWedDay + '日（水）';
+
+      var overrideKey = String(yr);
+      var hasOverride = !!pubHighExamDateOverrides[overrideKey];
+      var overrideDateVal = '';
+      if (hasOverride) {
+        var p = pubHighExamDateOverrides[overrideKey].split('/');
+        overrideDateVal = p[0] + '-' + (p[1].length < 2 ? '0' + p[1] : p[1]) + '-' + (p[2].length < 2 ? '0' + p[2] : p[2]);
+      }
+
+      var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+      html += '<thead><tr style="background:#f5f5f5;">';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">試験年</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">自動計算日</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">設定中の日程</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">変更（1日目を入力）</th>';
+      html += '</tr></thead><tbody>';
+
+      html += '<tr>';
+      html += '<td style="padding:10px; border:1px solid #ddd;">' + (yr + 1) + '年3月</td>';
+      html += '<td style="padding:10px; border:1px solid #ddd; color:#666;">' + autoDateStr + '</td>';
+      if (hasOverride) {
+        var pd = pubHighExamDateOverrides[overrideKey].split('/');
+        var wedDay2 = parseInt(pd[2]) + 1;
+        var setStr = pd[0] + '年' + parseInt(pd[1]) + '月' + parseInt(pd[2]) + '日（火）・' + wedDay2 + '日（水）';
+        html += '<td style="padding:10px; border:1px solid #ddd; color:#e67e22; font-weight:600;">' + setStr + '</td>';
+      } else {
+        html += '<td style="padding:10px; border:1px solid #ddd; color:#999;">自動計算</td>';
+      }
+      html += '<td style="padding:10px; border:1px solid #ddd;">';
+      html += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">';
+      html += '<input type="date" id="pubHighExamInput_' + yr + '" value="' + overrideDateVal + '" style="padding:6px; border:1px solid #ddd; border-radius:5px; font-size:13px;">';
+      html += '<button onclick="savePubHighExamDate(' + yr + ')" style="padding:6px 12px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">日程変更</button>';
+      if (hasOverride) {
+        html += '<button onclick="resetPubHighExamDate(' + yr + ')" style="padding:6px 12px; background:#e74c3c; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">リセット</button>';
+      }
+      html += '</div></td>';
+      html += '</tr>';
+      html += '</tbody></table>';
+
+      document.getElementById('pubHighExamDateTable').innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：公立高校一般選抜の日程を上書き保存する
+     * @param {number} academicYear 学年年度
+     */
+    function savePubHighExamDate(academicYear) {
+      var inputEl = document.getElementById('pubHighExamInput_' + academicYear);
+      if (!inputEl || !inputEl.value) { appAlert('日付を選択してください'); return; }
+      var parts = inputEl.value.split('-');
+      var dateStr = parts[0] + '/' + parts[1] + '/' + parts[2];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            pubHighExamDateOverrides[String(academicYear)] = dateStr;
+            renderPubHighExamDateTable(academicYear);
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+        })
+        .setPublicHighExamDateOverride(academicYear, dateStr);
+    }
+
+    /**
+     * 管理タブ：公立高校一般選抜の日程上書きをリセットして自動計算に戻す
+     * @param {number} academicYear 学年年度
+     */
+    function resetPubHighExamDate(academicYear) {
+      appConfirm((academicYear + 1) + '年3月の設定をリセットして自動計算日に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              delete pubHighExamDateOverrides[String(academicYear)];
+              renderPubHighExamDateTable(academicYear);
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+          })
+          .deletePublicHighExamDateOverride(academicYear);
+      });
+    }
+
+    /**
+     * 管理タブ：基礎学力テスト日程管理セクションの初期化
+     * 年度セレクタを生成してデータを読み込む
+     */
+    function initBasicTestDatesAdmin() {
+      var sel = document.getElementById('basicTestYear');
+      if (!sel) return;
+      sel.innerHTML = '';
+      var now = new Date();
+      var thisYear = now.getFullYear();
+      var fiscalYear = (now.getMonth() + 1) >= 4 ? thisYear : thisYear - 1;
+      for (var y = fiscalYear - 1; y <= fiscalYear + 2; y++) {
+        var opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y + '年度';
+        if (y === fiscalYear) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      loadBasicTestDates();
+    }
+
+    /**
+     * 管理タブ：選択中の年度の基礎学力テスト日程・詳細を読み込む（統合版）
+     */
+    function loadBasicTestDates() {
+      var sel = document.getElementById('basicTestYear');
+      if (!sel) return;
+      var yr = parseInt(sel.value);
+      document.getElementById('basicTestDateTable').innerHTML =
+        '<p style="color:#999; text-align:center; font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(overrides) {
+          basicTestDateOverrides = overrides || {};
+          google.script.run
+            .withSuccessHandler(function(details) {
+              basicTestDetailsOverrides = details || {};
+              renderBasicTestDateTable(yr);
+            })
+            .withFailureHandler(function(err) {
+              document.getElementById('basicTestDateTable').innerHTML =
+                '<p style="color:red; font-size:13px;">読み込みエラー: ' + (err.message || err) + '</p>';
+            })
+            .getBasicTestDetails();
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('basicTestDateTable').innerHTML =
+            '<p style="color:red; font-size:13px;">読み込みエラー: ' + (err.message || err) + '</p>';
+        })
+        .getBasicTestDateOverrides();
+    }
+
+    /**
+     * 管理タブ：基礎学力テスト日程・詳細テーブルを描画する（統合版）
+     * @param {number} academicYear 対象年度
+     */
+    function renderBasicTestDateTable(academicYear) {
+      var names = ['第1回基礎学力テスト', '第2回基礎学力テスト', '第3回基礎学力テスト'];
+      var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">' +
+        '<thead><tr style="background:#f5f5f5;">' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0;">テスト</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0;">自動計算日</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0;">設定中の日程</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0;">詳細</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0;">変更</th>' +
+        '</tr></thead><tbody>';
+
+      for (var i = 1; i <= 3; i++) {
+        var computed = getComputedBasicTestDate(academicYear, i);
+        var cy = computed.getFullYear(), cm = computed.getMonth() + 1, cd = computed.getDate();
+        var computedLabel = cy + '年' + cm + '月' + cd + '日';
+        var overrideKey = academicYear + '-' + i;
+        var hasDateOverride = !!basicTestDateOverrides[overrideKey];
+        var hasDetailsOverride = basicTestDetailsOverrides[overrideKey] !== undefined;
+
+        // 日程の現在設定値
+        var currentDateLabel, inputVal;
+        if (hasDateOverride) {
+          var op = basicTestDateOverrides[overrideKey].split('/');
+          currentDateLabel = op[0] + '年' + parseInt(op[1]) + '月' + parseInt(op[2]) + '日' +
+            ' <span style="color:#e67e22; font-size:11px; font-weight:600;">（変更済み）</span>';
+          inputVal = op[0] + '-' + (op[1].length < 2 ? '0'+op[1] : op[1]) + '-' + (op[2].length < 2 ? '0'+op[2] : op[2]);
+        } else {
+          currentDateLabel = computedLabel + ' <span style="color:#888; font-size:11px;">（自動）</span>';
+          inputVal = cy + '-' + (cm < 10 ? '0' : '') + cm + '-' + (cd < 10 ? '0' : '') + cd;
+        }
+
+        // 詳細の現在値
+        var currentDetailsVal = hasDetailsOverride ? basicTestDetailsOverrides[overrideKey] : '中3';
+        var detailsBadge = hasDetailsOverride
+          ? '<span style="color:#e67e22; font-size:11px; font-weight:600;">（変更済み）</span>'
+          : '<span style="color:#888; font-size:11px;">（デフォルト）</span>';
+
+        html += '<tr style="border-bottom:1px solid #f0f0f0;">' +
+          '<td style="padding:10px 8px; font-weight:600; white-space:nowrap;">' + names[i-1] + '</td>' +
+          '<td style="padding:10px 8px; color:#555; white-space:nowrap;">' + computedLabel + '</td>' +
+          '<td style="padding:10px 8px;">' + currentDateLabel + '</td>' +
+          '<td style="padding:10px 8px;">' + currentDetailsVal + ' ' + detailsBadge + '</td>' +
+          '<td style="padding:10px 8px;">' +
+            '<div style="display:flex; flex-direction:column; gap:6px;">' +
+              '<div style="white-space:nowrap;">' +
+                '<input type="date" id="basicTestInput_' + academicYear + '_' + i + '" value="' + inputVal + '" ' +
+                  'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px; margin-right:4px;">' +
+                '<button onclick="saveBasicTestDate(' + academicYear + ',' + i + ')" ' +
+                  'style="padding:5px 10px; background:#667eea; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px;">日程変更</button>' +
+                (hasDateOverride
+                  ? '<button onclick="resetBasicTestDate(' + academicYear + ',' + i + ')" ' +
+                    'style="padding:5px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">リセット</button>'
+                  : '') +
+              '</div>' +
+              '<div style="white-space:nowrap;">' +
+                '<input type="text" id="basicTestDetailsInput_' + academicYear + '_' + i + '" value="' + currentDetailsVal + '" ' +
+                  'placeholder="詳細（例: 中3）" ' +
+                  'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px; width:80px; margin-right:4px;">' +
+                '<button onclick="saveBasicTestDetails(' + academicYear + ',' + i + ')" ' +
+                  'style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px;">詳細変更</button>' +
+                (hasDetailsOverride
+                  ? '<button onclick="resetBasicTestDetails(' + academicYear + ',' + i + ')" ' +
+                    'style="padding:5px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">リセット</button>'
+                  : '') +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+          '</tr>';
+      }
+      // 中1・中2 行
+      var c2 = getChuu12BasicTestDate(academicYear);
+      var c2y = c2.getFullYear(), c2m = c2.getMonth() + 1, c2d = c2.getDate();
+      var c2ComputedLabel = c2y + '年' + c2m + '月' + c2d + '日';
+      var c2Key = academicYear + '-chuu12';
+      var c2HasDateOverride = !!basicTestDateOverrides[c2Key];
+      var c2HasDetailsOverride = basicTestDetailsOverrides[c2Key] !== undefined;
+      var c2CurrentLabel, c2InputVal;
+      if (c2HasDateOverride) {
+        var c2p = basicTestDateOverrides[c2Key].split('/');
+        c2CurrentLabel = c2p[0] + '年' + parseInt(c2p[1]) + '月' + parseInt(c2p[2]) + '日' +
+          ' <span style="color:#e67e22; font-size:11px; font-weight:600;">（変更済み）</span>';
+        c2InputVal = c2p[0] + '-' + (c2p[1].length < 2 ? '0'+c2p[1] : c2p[1]) + '-' + (c2p[2].length < 2 ? '0'+c2p[2] : c2p[2]);
+      } else {
+        c2CurrentLabel = c2ComputedLabel + ' <span style="color:#888; font-size:11px;">（自動）</span>';
+        c2InputVal = c2y + '-' + (c2m < 10 ? '0' : '') + c2m + '-' + (c2d < 10 ? '0' : '') + c2d;
+      }
+      var c2CurrentDetailsVal = c2HasDetailsOverride ? basicTestDetailsOverrides[c2Key] : '中1・中2';
+      var c2DetailsBadge = c2HasDetailsOverride
+        ? '<span style="color:#e67e22; font-size:11px; font-weight:600;">（変更済み）</span>'
+        : '<span style="color:#888; font-size:11px;">（デフォルト）</span>';
+      html += '<tr style="border-bottom:1px solid #f0f0f0;">' +
+        '<td style="padding:10px 8px; font-weight:600; white-space:nowrap;">基礎学力テスト（中1・中2）</td>' +
+        '<td style="padding:10px 8px; color:#555; white-space:nowrap;">' + c2ComputedLabel + '</td>' +
+        '<td style="padding:10px 8px;">' + c2CurrentLabel + '</td>' +
+        '<td style="padding:10px 8px;">' + c2CurrentDetailsVal + ' ' + c2DetailsBadge + '</td>' +
+        '<td style="padding:10px 8px;">' +
+          '<div style="display:flex; flex-direction:column; gap:6px;">' +
+            '<div style="white-space:nowrap;">' +
+              '<input type="date" id="basicTestInput_' + academicYear + '_chuu12" value="' + c2InputVal + '" ' +
+                'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px; margin-right:4px;">' +
+              '<button onclick="saveBasicTestDate(' + academicYear + ',\'chuu12\')" ' +
+                'style="padding:5px 10px; background:#667eea; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px;">日程変更</button>' +
+              (c2HasDateOverride
+                ? '<button onclick="resetBasicTestDate(' + academicYear + ',\'chuu12\')" ' +
+                  'style="padding:5px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">リセット</button>'
+                : '') +
+            '</div>' +
+            '<div style="white-space:nowrap;">' +
+              '<input type="text" id="basicTestDetailsInput_' + academicYear + '_chuu12" value="' + c2CurrentDetailsVal + '" ' +
+                'placeholder="詳細（例: 中1・中2）" ' +
+                'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px; width:80px; margin-right:4px;">' +
+              '<button onclick="saveBasicTestDetails(' + academicYear + ',\'chuu12\')" ' +
+                'style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px;">詳細変更</button>' +
+              (c2HasDetailsOverride
+                ? '<button onclick="resetBasicTestDetails(' + academicYear + ',\'chuu12\')" ' +
+                  'style="padding:5px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">リセット</button>'
+                : '') +
+            '</div>' +
+          '</div>' +
+        '</td>' +
+        '</tr>';
+
+      html += '</tbody></table>';
+      document.getElementById('basicTestDateTable').innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：基礎学力テストの日程を上書き保存する
+     * @param {number} academicYear 年度
+     * @param {number} testNum テスト番号（1〜3）
+     */
+    function saveBasicTestDate(academicYear, testNum) {
+      var inputEl = document.getElementById('basicTestInput_' + academicYear + '_' + testNum);
+      if (!inputEl || !inputEl.value) { appAlert('日付を選択してください'); return; }
+      var parts = inputEl.value.split('-');
+      var dateStr = parts[0] + '/' + parts[1] + '/' + parts[2];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            basicTestDateOverrides[academicYear + '-' + testNum] = dateStr;
+            renderBasicTestDateTable(academicYear);
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+        })
+        .setBasicTestDateOverride(academicYear, testNum, dateStr);
+    }
+
+    /**
+     * 管理タブ：基礎学力テストの日程上書きを削除し自動計算に戻す
+     * @param {number} academicYear 年度
+     * @param {number} testNum テスト番号（1〜3）
+     */
+    function resetBasicTestDate(academicYear, testNum) {
+      appConfirm('第' + testNum + '回の設定をリセットして自動計算日に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              delete basicTestDateOverrides[academicYear + '-' + testNum];
+              renderBasicTestDateTable(academicYear);
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+          })
+          .deleteBasicTestDateOverride(academicYear, testNum);
+      });
+    }
+
+  // ===== カスタムイベント追加（Admin）=====
+
+    /**
+     * 管理タブ：表示先ラジオボタン変更時に学校名欄の表示を切り替える
+     */
+    function onCustomEventTypeChange() {
+      var type = document.querySelector('input[name="customEventType"]:checked').value;
+      var schoolRow = document.getElementById('customSchoolRow');
+      var schoolInput = document.getElementById('customSchoolName');
+      if (type === 'juku') {
+        schoolRow.style.display = 'none';
+        schoolInput.value = '';
+      } else {
+        schoolRow.style.display = 'flex';
+        if (type === 'junior' && !schoolInput.value) {
+          schoolInput.placeholder = '例: ○○中学校';
+        } else if (type === 'high' && !schoolInput.value) {
+          schoolInput.placeholder = '例: ○○高校';
+        }
+      }
+    }
+
+    /**
+     * 管理タブ：カスタムイベント追加フォームを送信する
+     */
+    function submitCustomScheduleEntry() {
+      var type = document.querySelector('input[name="customEventType"]:checked').value;
+      var schoolInput = document.getElementById('customSchoolName');
+      var eventName = document.getElementById('customEventName').value.trim();
+      var dateVal = document.getElementById('customEventDate').value;
+      var details = document.getElementById('customEventDetails').value.trim();
+
+      // 学校名の決定
+      var schoolName;
+      if (type === 'juku') {
+        schoolName = '塾';
+      } else {
+        schoolName = schoolInput ? schoolInput.value.trim() : '';
+        if (!schoolName) {
+          appAlert('学校名を入力してください');
+          return;
+        }
+        // 高校の場合、塾・中学が含まれていないか確認
+        if (type === 'high' && (schoolName.includes('塾') || schoolName.includes('中学'))) {
+          appAlert('高校の予定として追加する場合、学校名に「塾」「中学」は使えません。\n変更してください。');
+          return;
+        }
+      }
+      if (!eventName) { appAlert('イベント名を入力してください'); return; }
+      if (!dateVal)   { appAlert('日付を選択してください'); return; }
+
+      // 中学校の場合、学校名に「中学」が含まれているか確認
+      function doSubmit() {
+        var parts = dateVal.split('-');
+        var dateYear = parseInt(parts[0]);
+        var dateMonth = parseInt(parts[1]);
+        var dateDay = parseInt(parts[2]);
+
+        var btn = document.querySelector('button[onclick="submitCustomScheduleEntry()"]');
+        btn.disabled = true;
+        btn.textContent = '追加中...';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btn.disabled = false;
+            btn.textContent = '追加する';
+            if (result.success) {
+              document.getElementById('customEventName').value = '';
+              document.getElementById('customEventDate').value = '';
+              document.getElementById('customEventDetails').value = '';
+              loadCustomScheduleEntries();
+              allSchedules.push({
+                timestamp: result.timestamp || new Date().toISOString(),
+                school: schoolName,
+                eventType: eventName,
+                schedule: dateYear + '年' + dateMonth + '月' + dateDay + '日',
+                details: details,
+                source: 'Admin 直接入力'
+              });
+              renderCalendar();
+              showMessage('adminMessage', '✅ 追加しました', 'success');
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.textContent = '追加する';
+            showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+          })
+          .addCustomScheduleEntry(schoolName, eventName, dateYear, dateMonth, dateDay, details);
+      }
+
+      if (type === 'junior' && !schoolName.includes('中学')) {
+        appConfirm('学校名に「中学」が含まれていないと中学校の予定タブに表示されません。\n入力値: ' + schoolName + '\nこのまま追加しますか？').then(function(ok) {
+          if (ok) doSubmit();
+        });
+      } else {
+        doSubmit();
+      }
+    }
+
+    /**
+     * 管理タブ：追加済みカスタムイベント一覧を読み込んで表示する
+     */
+    function loadCustomScheduleEntries() {
+      var container = document.getElementById('customScheduleList');
+      if (!container) return;
+      container.innerHTML = '<p style="color:#999; font-size:13px; text-align:center;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(entries) {
+          renderCustomScheduleList(entries || []);
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = '<p style="color:red; font-size:13px;">読み込みエラー: ' + (err.message || err) + '</p>';
+        })
+        .getAdminScheduleEntries();
+    }
+
+    /**
+     * 管理タブ：追加済みカスタムイベント一覧を描画する
+     * @param {Array} entries イベント配列
+     */
+    function renderCustomScheduleList(entries) {
+      var container = document.getElementById('customScheduleList');
+      if (!container) return;
+      if (entries.length === 0) {
+        container.innerHTML = '<p style="color:#999; font-size:13px;">追加済みのカスタムイベントはありません</p>';
+        return;
+      }
+      // 日付順（古い順）にソート
+      entries.sort(function(a, b) { return a.schedule < b.schedule ? -1 : 1; });
+      var typeLabel = function(school) {
+        if (school === '塾' || school.includes('塾')) return '🏠 塾';
+        if (school.includes('中学')) return '🏫 中学';
+        return '🎓 高校';
+      };
+      var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">' +
+        '<thead><tr style="background:#f5f5f5;">' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">種別</th>' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">学校名</th>' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">日付</th>' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0;">イベント名</th>' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0;">詳細</th>' +
+        '<th style="padding:8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;"></th>' +
+        '</tr></thead><tbody>';
+      entries.forEach(function(e, i) {
+        html += '<tr style="border-bottom:1px solid #f0f0f0;">' +
+          '<td style="padding:8px; white-space:nowrap;">' + escapeHtml_(typeLabel(e.school)) + '</td>' +
+          '<td style="padding:8px; white-space:nowrap;">' + escapeHtml_(e.school) + '</td>' +
+          '<td style="padding:8px; white-space:nowrap;">' + escapeHtml_(e.schedule) + '</td>' +
+          '<td style="padding:8px;">' + escapeHtml_(e.eventType) + '</td>' +
+          '<td style="padding:8px; color:#666;">' + escapeHtml_(e.details || '—') + '</td>' +
+          '<td style="padding:8px; white-space:nowrap;">' +
+            '<button onclick="deleteCustomEntry(' + e.fiscalYear + ',\'' + escapeHtml_(e.timestamp.replace(/'/g, '')) + '\')" ' +
+            'style="padding:4px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; min-height:30px;">削除</button>' +
+          '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：追加済みカスタムイベントを削除する
+     * @param {number} fiscalYear 年度
+     * @param {string} timestamp タイムスタンプ文字列
+     */
+    function deleteCustomEntry(fiscalYear, timestamp) {
+      appConfirm('このイベントを削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              allSchedules = allSchedules.filter(function(s) {
+                return !(s.source === 'Admin 直接入力' && Math.abs(new Date(s.timestamp).getTime() - new Date(timestamp).getTime()) < 1000);
+              });
+              renderCalendar();
+              loadCustomScheduleEntries();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+          })
+          .deleteCustomScheduleEntry(fiscalYear, timestamp);
+      });
+    }
+
+  // ===== 【9】スケジュール更新（Admin） =====
+
+  // ===== 固定イベント管理（Admin）=====
+
+    /**
+     * 管理タブ：📅固定イベントタブの初期化
+     */
+    function initFixedEventsAdmin() {
+      // 塾イベント：年月セレクタ初期化
+      var now = new Date();
+      var curYear = now.getFullYear();
+      var curMonth = now.getMonth() + 1;
+
+      var ySel = document.getElementById('fixedEventYear');
+      if (ySel && ySel.options.length === 0) {
+        for (var y = curYear - 1; y <= curYear + 1; y++) {
+          var opt = document.createElement('option');
+          opt.value = y; opt.textContent = y + '年';
+          if (y === curYear) opt.selected = true;
+          ySel.appendChild(opt);
+        }
+      }
+      var mSel = document.getElementById('fixedEventMonth');
+      if (mSel && mSel.options.length === 0) {
+        for (var m = 1; m <= 12; m++) {
+          var opt2 = document.createElement('option');
+          opt2.value = m; opt2.textContent = m + '月';
+          if (m === curMonth) opt2.selected = true;
+          mSel.appendChild(opt2);
+        }
+      }
+      loadJukuEventsTable();
+
+      // 休校日：年度セレクタ初期化
+      var fiscalYear = curMonth >= 4 ? curYear : curYear - 1;
+      var fSel = document.getElementById('closedDayFiscalYear');
+      if (fSel && fSel.options.length === 0) {
+        for (var fy = fiscalYear - 1; fy <= fiscalYear + 1; fy++) {
+          var opt3 = document.createElement('option');
+          opt3.value = fy; opt3.textContent = fy + '年度';
+          if (fy === fiscalYear) opt3.selected = true;
+          fSel.appendChild(opt3);
+        }
+      }
+      loadClosedDaysAdmin();
+
+      // 基礎学力テスト日程・詳細：年度セレクタ初期化
+      initBasicTestDatesAdmin();
+
+      // 公立高校一般選抜日程：年度セレクタ初期化
+      initPubHighExamDatesAdmin();
+
+      // 講習日程締切：年度セレクタ初期化
+      initLectureDeadlineDatesAdmin();
+
+      // カスタムイベント一覧を読み込む
+      loadCustomScheduleEntries();
+    }
+
+    /**
+     * 管理タブ：塾内部イベント一覧テーブルを描画する
+     */
+    function loadJukuEventsTable() {
+      var yr = parseInt(document.getElementById('fixedEventYear').value);
+      var mo = parseInt(document.getElementById('fixedEventMonth').value);
+      var dbt = getDebitDays(yr, mo);
+      var eventTypes = [
+        { type: 'report',  label: '○ 回数報告書提出日', computedDay: getReportDay(yr, mo) },
+        { type: 'meeting', label: '□ 全体ミーティング',  computedDay: getMeetingDay(yr, mo) },
+        { type: 'debit',   label: '★ 引落データ送信日', computedDay: dbt.debit },
+        { type: 'email',   label: '△ メール送信日',     computedDay: dbt.email },
+      ];
+      var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">' +
+        '<thead><tr style="background:#f5f5f5;">' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">イベント</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">自動計算日</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">日程を変更</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">詳細</th>' +
+        '<th style="padding:10px 8px; text-align:left; border-bottom:2px solid #e0e0e0; white-space:nowrap;">操作</th>' +
+        '</tr></thead><tbody>';
+
+      eventTypes.forEach(function(ev) {
+        var ovKey = ev.type + '_' + yr + '_' + mo;
+        var ov = jukuEventOverrides[ovKey];
+        var isDisabled = (ov === false);
+        var isOverride = isDisabled || (ov && ov.date);
+        var computedLabel = ev.computedDay ? (yr + '年' + mo + '月' + ev.computedDay + '日') : 'なし';
+
+        var dateInputVal = '';
+        if (ev.computedDay) {
+          var mmStr = mo < 10 ? '0' + mo : '' + mo;
+          var ddStr = ev.computedDay < 10 ? '0' + ev.computedDay : '' + ev.computedDay;
+          dateInputVal = yr + '-' + mmStr + '-' + ddStr;
+        }
+        var detailsVal = (ev.type === 'meeting') ? '14:00' : '';
+        if (!isDisabled && ov && ov.date) {
+          var p = ov.date.split('/');
+          var ddv = parseInt(p[2]);
+          var ddStr2 = ddv < 10 ? '0' + ddv : '' + ddv;
+          var mmv = parseInt(p[1]);
+          var mmStr2 = mmv < 10 ? '0' + mmv : '' + mmv;
+          dateInputVal = p[0] + '-' + mmStr2 + '-' + ddStr2;
+          detailsVal = ov.details || '';
+        }
+
+        var statusBadge = isDisabled
+          ? '<span style="color:#e74c3c; font-size:11px; font-weight:600;">（無効化中）</span>'
+          : isOverride
+            ? '<span style="color:#e67e22; font-size:11px; font-weight:600;">（変更済み）</span>'
+            : '<span style="color:#888; font-size:11px;">（自動）</span>';
+
+        html += '<tr style="border-bottom:1px solid #f0f0f0;">' +
+          '<td style="padding:10px 8px; font-weight:600; white-space:nowrap;">' + ev.label + '</td>' +
+          '<td style="padding:10px 8px; color:#555; white-space:nowrap;">' + computedLabel + '</td>' +
+          '<td style="padding:10px 8px; white-space:nowrap;">' +
+            '<input type="date" id="jukuDate_' + ev.type + '" value="' + dateInputVal + '" ' +
+            'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px;"> ' + statusBadge +
+          '</td>' +
+          '<td style="padding:10px 8px;">' +
+            '<input type="text" id="jukuDetails_' + ev.type + '" value="' + detailsVal + '" placeholder="詳細テキスト" ' +
+            'style="padding:5px; border:1px solid #ddd; border-radius:4px; font-size:12px; width:110px;">' +
+          '</td>' +
+          '<td style="padding:10px 8px; white-space:nowrap;">' +
+            '<button onclick="saveJukuEvent(\'' + ev.type + '\',' + yr + ',' + mo + ')" ' +
+            'style="padding:5px 10px; background:#667eea; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px; min-height:32px;">変更</button>' +
+            '<button onclick="disableJukuEvent(\'' + ev.type + '\',' + yr + ',' + mo + ')" ' +
+            'style="padding:5px 10px; background:#e67e22; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px; min-height:32px;">無効化</button>' +
+            (isOverride
+              ? '<button onclick="resetJukuEvent(\'' + ev.type + '\',' + yr + ',' + mo + ')" ' +
+                'style="padding:5px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; min-height:32px;">リセット</button>'
+              : '') +
+          '</td>' +
+          '</tr>';
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('jukuEventTable').innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：塾内部イベントの上書きを保存する
+     */
+    function saveJukuEvent(type, year, month) {
+      var dateEl = document.getElementById('jukuDate_' + type);
+      var detailsEl = document.getElementById('jukuDetails_' + type);
+      if (!dateEl || !dateEl.value) { appAlert('日付を入力してください'); return; }
+      var parts = dateEl.value.split('-');
+      var dateStr = parts[0] + '/' + parseInt(parts[1]) + '/' + parseInt(parts[2]);
+      var details = detailsEl ? detailsEl.value : '';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            jukuEventOverrides[type + '_' + year + '_' + month] = { date: dateStr, details: details };
+            loadJukuEventsTable();
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error'); })
+        .setJukuEventOverride(type, year, month, dateStr, details);
+    }
+
+    /**
+     * 管理タブ：塾内部イベントをその月だけ無効化する
+     */
+    function disableJukuEvent(type, year, month) {
+      var labels = { report: '○ 回数報告書提出日', meeting: '□ 全体ミーティング', debit: '★ 引落データ送信日', email: '△ メール送信日' };
+      appConfirm(labels[type] + ' を ' + year + '年' + month + '月 だけ無効化（非表示）にしますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              jukuEventOverrides[type + '_' + year + '_' + month] = false;
+              loadJukuEventsTable();
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+          })
+          .withFailureHandler(function(err) { showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error'); })
+          .setJukuEventOverride(type, year, month, 'none', '');
+      });
+    }
+
+    /**
+     * 管理タブ：塾内部イベントの上書きを削除して自動計算に戻す
+     */
+    function resetJukuEvent(type, year, month) {
+      appConfirm('自動計算の日程・詳細に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              delete jukuEventOverrides[type + '_' + year + '_' + month];
+              loadJukuEventsTable();
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+          })
+          .withFailureHandler(function(err) { showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error'); })
+          .deleteJukuEventOverride(type, year, month);
+      });
+    }
+
+    /**
+     * 管理タブ：休校日テーブルを描画する
+     */
+    function loadClosedDaysAdmin() {
+      var fiscalYear = parseInt(document.getElementById('closedDayFiscalYear').value);
+      var computed = getClosedDays(fiscalYear);
+      var computedDates = Object.keys(computed).sort();
+
+      var html = '<h5 style="margin:0 0 8px; color:#555; font-size:13px;">▼ 計算上の休校日（クリックで開校日に変更 / 再クリックで元に戻す）</h5>';
+      html += '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px;">';
+      computedDates.forEach(function(d) {
+        var isRemoved = closedDayOverrides.del.indexOf(d) !== -1;
+        var style = isRemoved
+          ? 'background:#fce4ec; color:#c62828; text-decoration:line-through; border:1px solid #ef9a9a;'
+          : 'background:#e3f2fd; color:#1565c0; border:1px solid #90caf9;';
+        html += '<span style="' + style + ' padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;"' +
+          ' onclick="toggleComputedClosedDay(\'' + d + '\')">' + d +
+          (isRemoved ? ' <span style="font-size:10px;">開校</span>' : '') + '</span>';
+      });
+      html += '</div>';
+
+      var addedDates = closedDayOverrides.add.slice().sort();
+      html += '<h5 style="margin:0 0 8px; color:#555; font-size:13px;">▼ 追加した臨時休校日</h5>';
+      if (addedDates.length === 0) {
+        html += '<p style="color:#999; font-size:13px; margin:0;">追加した臨時休校日はありません</p>';
+      } else {
+        html += '<div style="display:flex; flex-wrap:wrap; gap:6px;">';
+        addedDates.forEach(function(d) {
+          html += '<span style="background:#fff8e1; color:#f57f17; border:1px solid #ffe082; padding:4px 8px; border-radius:4px; font-size:12px;">' + d +
+            ' <button onclick="removeAddedClosedDay(\'' + d + '\')" ' +
+            'style="background:none; border:none; color:#e74c3c; cursor:pointer; font-weight:bold; font-size:13px; padding:0 2px; line-height:1;">×</button></span>';
+        });
+        html += '</div>';
+      }
+      document.getElementById('closedDayTable').innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：計算上の休校日を開校日に変更する（再クリックで元に戻す）
+     */
+    function toggleComputedClosedDay(dateStr) {
+      var isRemoved = closedDayOverrides.del.indexOf(dateStr) !== -1;
+      if (isRemoved) {
+        appConfirm(dateStr + ' の変更をリセットして休校日に戻しますか？').then(function(ok) {
+          if (!ok) return;
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                closedDayOverrides.del = closedDayOverrides.del.filter(function(d) { return d !== dateStr; });
+                loadClosedDaysAdmin();
+                renderCalendar();
+                showMessage('adminMessage', '✅ ' + result.message, 'success');
+              }
+            })
+            .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + (err.message || err), 'error'); })
+            .deleteClosedDayOverride(dateStr);
+        });
+      } else {
+        appConfirm(dateStr + ' を開校日に変更しますか？').then(function(ok) {
+          if (!ok) return;
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                if (closedDayOverrides.del.indexOf(dateStr) === -1) closedDayOverrides.del.push(dateStr);
+                loadClosedDaysAdmin();
+                renderCalendar();
+                showMessage('adminMessage', '✅ ' + result.message, 'success');
+              }
+            })
+            .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + (err.message || err), 'error'); })
+            .removeComputedClosedDay(dateStr);
+        });
+      }
+    }
+
+    /**
+     * 管理タブ：臨時休校日を追加する
+     */
+    function addExtraClosedDay() {
+      var input = document.getElementById('newClosedDayInput').value;
+      if (!input) { appAlert('日付を選択してください'); return; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            if (closedDayOverrides.add.indexOf(input) === -1) closedDayOverrides.add.push(input);
+            closedDayOverrides.del = closedDayOverrides.del.filter(function(d) { return d !== input; });
+            document.getElementById('newClosedDayInput').value = '';
+            loadClosedDaysAdmin();
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + (err.message || err), 'error'); })
+        .addClosedDayExtra(input);
+    }
+
+    /**
+     * 管理タブ：追加した臨時休校日を削除して元に戻す
+     */
+    function removeAddedClosedDay(dateStr) {
+      appConfirm(dateStr + ' を休校日リストから削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              closedDayOverrides.add = closedDayOverrides.add.filter(function(d) { return d !== dateStr; });
+              loadClosedDaysAdmin();
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            }
+          })
+          .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + (err.message || err), 'error'); })
+          .deleteClosedDayOverride(dateStr);
+      });
+    }
+
+    /**
+     * 管理タブ：基礎学力テストの詳細テキストを保存する
+     */
+    function saveBasicTestDetails(academicYear, testNum) {
+      var input = document.getElementById('basicTestDetailsInput_' + academicYear + '_' + testNum);
+      var details = input ? input.value : '';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            basicTestDetailsOverrides[academicYear + '-' + testNum] = details;
+            renderBasicTestDateTable(academicYear);
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+        })
+        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error'); })
+        .setBasicTestDetails(academicYear, testNum, details);
+    }
+
+    /**
+     * 管理タブ：基礎学力テストの詳細テキストをデフォルトに戻す
+     */
+    function resetBasicTestDetails(academicYear, testNum) {
+      var defaultLabel = (testNum === 'chuu12') ? '中1・中2' : '中3';
+      appConfirm('詳細をデフォルト（' + defaultLabel + '）に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              delete basicTestDetailsOverrides[academicYear + '-' + testNum];
+              renderBasicTestDateTable(academicYear);
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
+          })
+          .withFailureHandler(function(err) { showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error'); })
+          .deleteBasicTestDetails(academicYear, testNum);
+      });
+    }
+
+  // ===== 【10】AI アシスタント =====
+    function toggleAIWidget() {
+      var modal = document.getElementById('aiWidgetModal');
+      var overlay = document.getElementById('aiWidgetOverlay');
+      
+      if (modal.style.display === 'none') {
+        modal.style.display = 'flex';
+        overlay.style.display = 'block';
+        document.getElementById('aiWidgetInput').focus();
+      } else {
+        closeAIWidget();
+      }
+    }
+    
+    function closeAIWidget() {
+      document.getElementById('aiWidgetModal').style.display = 'none';
+      document.getElementById('aiWidgetOverlay').style.display = 'none';
+    }
+    
+    function sendAIWidgetMessage() {
+      var input = document.getElementById('aiWidgetInput');
+      var message = input.value.trim();
+
+      if (!message) {
+        return;
+      }
+
+      // 確認待ちアクションがある場合は「はい/いいえ」をローカルで処理
+      if (typeof checkPendingAiAction_ === 'function' && checkPendingAiAction_(message)) {
+        input.value = '';
+        return;
+      }
+
+      // ユーザーメッセージを表示
+      addAIWidgetMessage('user', message);
+      input.value = '';
+
+      // AI 処理中を表示
+      var thinkingId = 'thinking_' + Date.now();
+      addAIWidgetMessage('ai', '🤔 考え中...', thinkingId);
+
+      // 送信前の履歴（直近10件）をコピーしてからユーザーメッセージを履歴に追加
+      var historyToSend = aiWidgetChatHistory.slice(-10);
+      aiWidgetChatHistory.push({ role: 'user', text: message });
+
+      // AI に送信（履歴も渡す）
+      google.script.run
+        .withSuccessHandler(function(result) {
+          removeAIWidgetMessage(thinkingId);
+          var aiText = handleAIWidgetResponse(result);
+          // AI応答を履歴に追加
+          if (aiText) {
+            aiWidgetChatHistory.push({ role: 'ai', text: aiText });
+          }
+        })
+        .withFailureHandler(function(error) {
+          removeAIWidgetMessage(thinkingId);
+          addAIWidgetMessage('ai', '❌ エラー: ' + error);
+        })
+        .requestAIAssistant(message, historyToSend);
+    }
+
+    // マイク権限が拒否されている場合の案内モーダルを表示
+    function showMicPermissionModal() {
+      if (document.getElementById('micPermissionModal')) return; // 重複防止
+
+      var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      var isAndroid = /Android/.test(navigator.userAgent);
+      var themeColor = (currentSettings && currentSettings.themeColor) ? currentSettings.themeColor : '#43e97b';
+
+      var steps = '';
+      if (isIOS) {
+        steps =
+          '<li>iPhoneの「設定」アプリを開く</li>' +
+          '<li>「Safari」をタップ</li>' +
+          '<li>「マイク」→「許可」に変更する</li>' +
+          '<li>このページを再読み込みする</li>';
+      } else if (isAndroid) {
+        steps =
+          '<li>ブラウザのアドレスバー横の 🔒 をタップ</li>' +
+          '<li>「権限」または「サイトの設定」をタップ</li>' +
+          '<li>「マイク」を「許可」に変更する</li>' +
+          '<li>ページを再読み込みする</li>';
+      } else {
+        steps =
+          '<li>アドレスバー左の 🔒 または ⓘ をクリック</li>' +
+          '<li>「マイク」が「ブロック」になっているのを確認</li>' +
+          '<li>「許可」に変更する</li>' +
+          '<li>ページを再読み込みする（F5 キー）</li>';
+      }
+
+      var modal = document.createElement('div');
+      modal.id = 'micPermissionModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      modal.innerHTML =
+        '<div style="background:white;border-radius:16px;padding:24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
+          '<div style="text-align:center;margin-bottom:16px;">' +
+            '<div style="font-size:44px;margin-bottom:8px;">🎤</div>' +
+            '<h3 style="margin:0;color:#333;">マイクが許可されていません</h3>' +
+          '</div>' +
+          '<p style="color:#666;text-align:center;margin:0 0 12px;">以下の手順でマイクを許可してください。</p>' +
+          '<div style="background:#f5f5f5;border-radius:8px;padding:14px;">' +
+            '<ol style="margin:0;padding-left:20px;color:#444;line-height:2.1;">' + steps + '</ol>' +
+          '</div>' +
+          '<div style="text-align:center;margin-top:20px;">' +
+            '<button onclick="document.getElementById(\'micPermissionModal\').remove()" ' +
+              'style="background:' + themeColor + ';color:white;border:none;border-radius:8px;padding:12px 32px;font-size:16px;cursor:pointer;font-weight:bold;">' +
+              '閉じる' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+    }
+
+    // マイク権限の状態を確認し、拒否されていればモーダルを表示して false を返す
+    function checkMicPermissionAndStart() {
+      if (navigator.permissions && navigator.permissions.query) {
+        return navigator.permissions.query({ name: 'microphone' }).then(function(result) {
+          if (result.state === 'denied') {
+            showMicPermissionModal();
+            return false;
+          }
+          return true;
+        }).catch(function() {
+          return true; // Permissions API 非対応の場合はスルーして通常起動
+        });
+      }
+      return Promise.resolve(true);
+    }
+
+    // 音声認識を実際に開始する
+    function startVoiceRecognition() {
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      aiMicRecognition = new SR();
+      aiMicRecognition.lang = 'ja-JP';
+      aiMicRecognition.continuous = false;
+      aiMicRecognition.interimResults = true;
+
+      var micBtn = document.getElementById('aiMicBtn');
+
+      aiMicRecognition.onstart = function() {
+        aiMicListening = true;
+        micBtn.classList.add('recording');
+        micBtn.title = 'タップして停止';
+      };
+
+      aiMicRecognition.onresult = function(event) {
+        var transcript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        document.getElementById('aiWidgetInput').value = transcript;
+      };
+
+      aiMicRecognition.onend = function() {
+        aiMicListening = false;
+        micBtn.classList.remove('recording');
+        micBtn.title = '音声入力';
+      };
+
+      aiMicRecognition.onerror = function(event) {
+        aiMicListening = false;
+        micBtn.classList.remove('recording');
+        micBtn.title = '音声入力';
+        if (event.error === 'not-allowed') {
+          showMicPermissionModal();
+        } else if (event.error === 'no-speech') {
+          addAIWidgetMessage('ai', '⚠️ 音声が検出されませんでした。');
+        } else {
+          addAIWidgetMessage('ai', '⚠️ 音声入力エラー: ' + event.error);
+        }
+      };
+
+      aiMicRecognition.start();
+    }
+
+    function toggleVoiceInput() {
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        addAIWidgetMessage('ai', '⚠️ お使いのブラウザは音声入力に対応していません。Chrome または Edge をお使いください。');
+        return;
+      }
+
+      // 録音中なら停止
+      if (aiMicListening) {
+        aiMicRecognition.stop();
+        return;
+      }
+
+      // 権限を確認してから音声認識を開始
+      checkMicPermissionAndStart().then(function(canProceed) {
+        if (!canProceed) return;
+        startVoiceRecognition();
+      });
+
+    }
+
+    function addAIWidgetMessage(role, message, messageId) {
+      var container = document.getElementById('aiWidgetMessages');
+      var messageEl = document.createElement('div');
+      messageEl.id = messageId || '';
+      messageEl.style.cssText = 'margin-bottom: 12px; animation: fadeIn 0.3s ease-in;';
+      
+      if (role === 'user') {
+        messageEl.innerHTML = '<div style="background: #4facfe; color: white; padding: 10px 14px; border-radius: 12px; margin-left: 40px; word-break: break-word;">' +
+                              '<small style="opacity: 0.8;">' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '</small><br>' +
+                              message.replace(/\n/g, '<br>') +
+                              '</div>';
+      } else {
+        var displayMessage = message
+          .replace(/\\n/g, '<br>')
+          .replace(/\n/g, '<br>');
+        
+        messageEl.innerHTML = '<div style="background: #f0f0f0; color: #333; padding: 10px 14px; border-radius: 12px; margin-right: 40px; word-break: break-word;">' +
+                              '<small style="opacity: 0.8;">' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '</small><br>' +
+                              displayMessage +
+                              '</div>';
+      }
+      
+      container.appendChild(messageEl);
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    function removeAIWidgetMessage(messageId) {
+      var el = document.getElementById(messageId);
+      if (el) {
+        el.remove();
+      }
+    }
+    
+    function handleAIWidgetResponse(result) {
+      if (!result) {
+        addAIWidgetMessage('ai', '❌ レスポンスが空です');
+        return null;
+      }
+
+      var type = result.type;
+      var message = '';
+
+      if (!result.success && result.type === 'error') {
+        addAIWidgetMessage('ai', '❌ ' + (result.error || 'エラーが発生しました'));
+        return null;
+      }
+
+      if (type === 'config_change') {
+        if (result.success) {
+          // バックエンドで設定は適用済み → フロントエンドに即時反映
+          if (result.recommendedSettings) {
+            var rs = result.recommendedSettings;
+            if (rs.themeColor) applyThemeColor(rs.themeColor);
+            if (rs.aiAssistantName) {
+              var titleEl = document.querySelector('#aiWidgetModal div[style*="font-size: 18px"]');
+              if (titleEl) titleEl.textContent = '🤖 AI ' + rs.aiAssistantName;
+            }
+          }
+          message = '✓ 🔧 ' + (result.explanation || '設定を変更しました');
+        } else {
+          message = '❌ ' + (result.error || '設定の変更に失敗しました');
+        }
+      } else if (type === 'qa_help') {
+        if (result.success) {
+          message = '📚 ' + (result.answer || 'ご質問にお答えしました');
+        } else {
+          message = '❌ ' + (result.error || 'お答えできませんでした');
+        }
+      } else if (type === 'other') {
+        if (result.success) {
+          message = '💬 ' + (result.response || 'ご質問にお答えしました');
+        } else {
+          message = '❌ ' + (result.error || 'お答えできませんでした');
+        }
+      } else if (type === 'app_action') {
+        // app_action は js-ai-actions.html の dispatchAiAction_ に委譲
+        return dispatchAiAction_(result);
+      } else {
+        message = '❌ 不明な応答タイプです';
+      }
+
+      addAIWidgetMessage('ai', message);
+      return message;
+    }
+
+    /**
+     * switchSubTab用ダミーイベント生成（event.target.style アクセスによるエラーを防ぐ）
+     */
+    function makeDummySubTabEvt_() {
+      return { preventDefault: function(){}, stopPropagation: function(){}, currentTarget: null, target: { style: {}, classList: { add: function(){}, remove: function(){} } } };
+    }
+
+    /**
+     * AIアシスタントから成績一覧表タブへ自動ナビゲートする
+     * テスト名セレクトの選択肢が揃うまでポーリングして待機してからフィルターをセットする
+     * @param {string} campusCode 校舎コード2桁（空文字なら全校舎）
+     * @param {string} testName テスト名（空文字なら未選択）
+     * @param {number} year 学年年度（省略時は currentFiscalYear）
+     */
+    function navigateToGradesList_fromAI(campusCode, testName, year) {
+      switchTab('grades');
+      switchSubTab(makeDummySubTabEvt_(), 'grades-list');
+      // 年度セレクト＋テスト名セレクトの両方が揃うまでポーリング（最大5秒）
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        var yearSel = document.getElementById('gradesYearSelect');
+        var yearReady = yearSel && !yearSel.disabled && yearSel.options.length > 0 && yearSel.options[0].value !== '';
+        var testSel = document.getElementById('list-test-select');
+        var ready = yearReady && testSel && testSel.options.length > 1;
+        if (ready || attempts >= 50) {
+          clearInterval(timer);
+          if (!ready) return;
+          // ① 年度をセットしてchangeイベント発火（AIからのyearを最優先、未指定ならcurrentFiscalYear）
+          var targetYear = (year != null && year !== '') ? String(year) : String(currentFiscalYear);
+          yearSel.value = targetYear;
+          yearSel.dispatchEvent(new Event('change'));
+          // ② 年度変更の反映を待ってからテスト名・校舎をセット
+          setTimeout(function() {
+            var testSelRefresh = document.getElementById('list-test-select');
+            if (testName && testSelRefresh) {
+              testSelRefresh.value = testName;
+              testSelRefresh.dispatchEvent(new Event('change'));
+            }
+            // ③ 校舎フィルター
+            if (campusCode) {
+              var allCb = document.getElementById('list-campus-all');
+              if (allCb) allCb.checked = false;
+              document.querySelectorAll('#list-campus-checkboxes input[type="checkbox"]').forEach(function(cb) {
+                cb.checked = (cb.value === String(campusCode));
+              });
+            }
+            loadGradesList();
+          }, 300);
+        }
+      }, 100);
+    }
+
+    /**
+     * AIアシスタントから成績表タブへ自動ナビゲートする
+     * 校舎・テスト名をセットして生徒タブを構築し、指定生徒の成績表を表示する
+     * @param {string} studentId 生徒ID10桁（先頭2桁が校舎コード）
+     * @param {number} year 学年年度
+     * @param {string} testName テスト名（会話で特定できた場合のみ。空文字なら全テスト表示）
+     */
+    function navigateToStudentReport_fromAI(studentId, year, testName) {
+      if (!studentId) return;
+      var campusCode = String(studentId).substring(0, 2);
+      switchTab('grades');
+      switchSubTab(makeDummySubTabEvt_(), 'grades-report');
+
+      // 年度セレクト＋校舎セレクトが揃うまでポーリング
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        var yearSel   = document.getElementById('gradesYearSelect');
+        var campusSel = document.getElementById('report-campus');
+        var ready = yearSel && !yearSel.disabled && yearSel.options.length > 0 && campusSel && campusSel.options.length > 1;
+        if (ready || attempts >= 50) {
+          clearInterval(timer);
+          if (!ready) return;
+          // ① 年度セット
+          var targetYear = (year != null && year !== '') ? String(year) : String(currentFiscalYear);
+          yearSel.value = targetYear;
+          yearSel.dispatchEvent(new Event('change'));
+          // ② 校舎セット
+          setTimeout(function() {
+            var cs = document.getElementById('report-campus');
+            if (cs) { cs.value = campusCode; cs.dispatchEvent(new Event('change')); }
+            // ③ テスト名セット
+            setTimeout(function() {
+              var testSel = document.getElementById('report-test');
+              if (testSel && testName) { testSel.value = testName; }
+              // ④ loadReportStudentList() を呼んでタブを構築
+              loadReportStudentList();
+              // ⑤ タブが構築されるまでポーリング → 指定生徒に切り替え
+              var stAttempts = 0;
+              var stTimer = setInterval(function() {
+                stAttempts++;
+                var found = reportStudentListData.filter(function(s) { return s.studentId === studentId; });
+                if (found.length > 0 || stAttempts >= 60) {
+                  clearInterval(stTimer);
+                  if (found.length > 0) {
+                    switchReportStudentTab(studentId);
+                  }
+                }
+              }, 100);
+            }, 300);
+          }, 300);
+        }
+      }, 100);
+    }
+    
+    /**
+     * キーボードイベント（Enter で送信）
+     */
+    document.addEventListener('DOMContentLoaded', function() {
+      var aiInput = document.getElementById('aiWidgetInput');
+      if (aiInput) {
+        aiInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendAIWidgetMessage();
+          } else if (e.key === 'Enter' && e.shiftKey) {
+            // Shift+Enter で改行
+          }
+        });
+      }
+      
+      // オーバーレイをクリックで閉じる
+      document.getElementById('aiWidgetOverlay').addEventListener('click', closeAIWidget);
+    });
+
+</script>

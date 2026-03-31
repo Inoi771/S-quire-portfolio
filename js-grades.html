@@ -1,0 +1,1873 @@
+<script>
+// ===== 【7】成績管理 =====
+    var currentFiscalYear = null;
+    var gradesYearsLoaded = false;
+    var campusData = {};
+    var gradeData = {};
+    var testNamesData = [];
+    var selectedStudentId = null;
+    var currentStudentList = [];
+
+    function loadGradesYears() {
+      if (gradesYearsLoaded) return;
+      var select = document.getElementById('gradesYearSelect');
+      var status = document.getElementById('gradesYearStatus');
+      select.innerHTML = '<option value="">読み込み中...</option>';
+      select.disabled = true;
+      status.textContent = '';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          select.innerHTML = '';
+
+          // 現在の年度を日付から算出（4月以降=当該年、1-3月=前年）
+          var now = new Date();
+          var fy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+
+          if (result.success && result.years.length > 0) {
+            result.years.forEach(function(year) {
+              var opt = document.createElement('option');
+              opt.value = year;
+              opt.textContent = year + '年度';
+              select.appendChild(opt);
+            });
+            select.disabled = false;
+            gradesYearsLoaded = true;
+
+            // 年度フォルダの中から現在年度に一致するものを選択、なければ最新を選択
+            if (result.years.indexOf(String(fy)) >= 0) {
+              select.value = String(fy);
+              currentFiscalYear = fy;
+            } else {
+              currentFiscalYear = parseInt(result.years[0]);
+            }
+
+            status.textContent = result.years.length + '件の年度フォルダを取得';
+          } else {
+            // 年度フォルダがなくても currentFiscalYear は日付から設定しておく
+            select.innerHTML = '<option value="">年度フォルダが見つかりません</option>';
+            currentFiscalYear = fy;
+            status.textContent = result.error || '成績管理フォルダを確認してください';
+            status.style.color = '#e53935';
+          }
+
+          // 校舎・学年・テスト名のドロップダウンは年度フォルダの有無に関わらず常に読み込む
+          loadDropdownData();
+        })
+        .withFailureHandler(function(err) {
+          select.innerHTML = '<option value="">取得エラー</option>';
+          document.getElementById('gradesYearStatus').textContent = 'エラー: ' + err;
+          document.getElementById('gradesYearStatus').style.color = '#e53935';
+        })
+        .getGradesYearFolders();
+    }
+
+    function onGradesYearChanged() {
+      var select = document.getElementById('gradesYearSelect');
+      if (select.value) {
+        currentFiscalYear = parseInt(select.value);
+        // 情報入力タブで校舎・学年が既に選択済みなら生徒一覧を再取得
+        var campusCode = document.getElementById('input-campus').value;
+        var gradeCode  = document.getElementById('input-grade').value;
+        if (campusCode && gradeCode) {
+          onInputCampusOrGradeChanged();
+        }
+      }
+    }
+
+function loadDropdownData(onComplete) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        if (typeof onComplete === 'function') onComplete();
+        return;
+      }
+
+      // campusData / gradeData を更新
+      campusData = {};
+      result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
+      gradeData = {};
+      result.grades.forEach(function(g) { gradeData[g.code] = g.name; });
+      testNamesData = result.testNames || [];
+
+      // 校舎ドロップダウン（情報入力・成績入力の両方）配属校舎が先頭に来る
+      var campusOptions = buildCampusOptions(result.campuses);
+      document.getElementById('input-campus').innerHTML = campusOptions;
+      document.getElementById('score-campus').innerHTML = campusOptions;
+      // プロフィール欄の校舎チェックボックスを更新（設定タブが開いていれば即時反映）
+      renderPreferredCampusCheckboxes();
+
+      // 学年ドロップダウン（情報入力）
+      var gradeOptions = '<option value="">選択してください</option>';
+      result.grades.forEach(function(g) {
+        gradeOptions += '<option value="' + g.code + '">' + g.name + '</option>';
+      });
+      document.getElementById('input-grade').innerHTML = gradeOptions;
+
+      // 学年ドロップダウン（成績入力）― 校舎選択後に有効化するため初期は無効＋別options
+      var scoreGradeOpts = '<option value="">校舎を先に選択してください</option>';
+      result.grades.forEach(function(g) {
+        scoreGradeOpts += '<option value="' + g.code + '">' + g.name + '</option>';
+      });
+      document.getElementById('score-grade').innerHTML = scoreGradeOpts;
+      document.getElementById('score-grade').disabled = true;
+
+      // テスト名ドロップダウン（成績入力）
+      var testOptions = '<option value="">選択してください</option>';
+      result.testNames.forEach(function(t) {
+        testOptions += '<option value="' + t + '">' + t + '</option>';
+      });
+      document.getElementById('score-test').innerHTML = testOptions;
+
+      // テスト名ドロップダウン（一覧表タブ）— score-test のコピーではなく直接設定
+      var listTestSel = document.getElementById('list-test-select');
+      if (listTestSel) {
+        var savedListVal = listTestSel.value;
+        listTestSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+        result.testNames.forEach(function(t) {
+          listTestSel.innerHTML += '<option value="' + t + '">' + t + '</option>';
+        });
+        if (savedListVal) listTestSel.value = savedListVal;
+      }
+
+      // テスト名ドロップダウン（平均点タブ）— score-test のコピーではなく直接設定
+      var avgTestSel = document.getElementById('avg-test-select');
+      if (avgTestSel) {
+        var savedAvgVal = avgTestSel.value;
+        avgTestSel.innerHTML = '<option value="">テストを選択してください</option>';
+        avgTestNames = [];
+        result.testNames.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          avgTestSel.appendChild(opt);
+          avgTestNames.push(t);
+        });
+        if (savedAvgVal) avgTestSel.value = savedAvgVal;
+        avgInitialized = true;
+      }
+
+      // 志望校ドロップダウン（成績入力）
+      schoolsData = result.schools || [];
+      var schoolOptions = '<option value="">選択してください</option>';
+      schoolsData.forEach(function(s) {
+        schoolOptions += '<option value="' + s.name + '">' + s.name + '</option>';
+      });
+      schoolOptions += '<option value="__other__">その他（直接入力）</option>';
+      document.getElementById('score-shogaku1-select').innerHTML = schoolOptions;
+      document.getElementById('score-shogaku2-select').innerHTML = schoolOptions;
+
+      // 一覧表タブの校舎チェックボックスを更新する
+      if (typeof initGradesList === 'function') {
+        var box = document.getElementById('list-campus-checkboxes');
+        if (box) initGradesList();
+      }
+
+      // コールバックがあれば実行（事前読み込みで campusData が揃った後に呼ぶ処理用）
+      if (typeof onComplete === 'function') onComplete();
+    })
+    .withFailureHandler(function(err) {
+      console.error('loadDropdownData エラー: ' + err);
+      if (typeof onComplete === 'function') onComplete();
+    })
+    .getGradesConfigForWeb();
+}
+
+    // ===== 情報入力タブ =====
+
+    function onInputCampusOrGradeChanged() {
+      // 編集モード中（生徒が選択済み）の場合は転籍として扱い、リロードしない
+      if (selectedStudentId) {
+        document.getElementById('input-campus').style.borderColor = '#ff9800';
+        document.getElementById('input-campus').style.outline = '2px solid #ff980044';
+        return;
+      }
+
+      var campusCode = document.getElementById('input-campus').value;
+      var gradeCode  = document.getElementById('input-grade').value;
+
+      document.getElementById('input-student-section').style.display = 'none';
+      document.getElementById('input-details-section').style.display = 'none';
+      document.getElementById('input-buttons-new').style.display     = 'none';
+      document.getElementById('input-buttons-existing').style.display = 'none';
+      selectedStudentId   = null;
+      currentStudentList  = [];
+
+      if (!campusCode || !gradeCode) return;
+
+      document.getElementById('input-student-section').style.display = 'block';
+      document.getElementById('student-candidates').innerHTML =
+        '<p style="padding:12px; color:#999; font-size:13px;">読み込み中...</p>';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          currentStudentList = result.success ? result.students : [];
+          // 選択状態をリセットしてカードを表示
+          document.getElementById('selected-student-badge').style.display = 'none';
+          document.getElementById('student-candidates').style.display = 'block';
+          document.getElementById('input-new-btn').style.display = 'block';
+          document.getElementById('input-details-section').style.display = 'none';
+          renderCandidates(currentStudentList);
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('student-candidates').innerHTML =
+            '<p style="padding:12px; color:#e53935; font-size:13px;">取得エラー: ' + err + '</p>';
+        })
+        .getStudentsForDropdown(campusCode, gradeCode, currentFiscalYear);
+    }
+
+    function renderCandidates(students) {
+      var container = document.getElementById('student-candidates');
+      if (students.length === 0) {
+        container.innerHTML =
+          '<p style="padding:12px; color:#999; font-size:13px; text-align:center;">一致する生徒が見つかりません</p>';
+        return;
+      }
+      var html = '';
+      students.forEach(function(s) {
+        var school = s.schoolName ? '<span style="color:#bbb; font-size:12px; margin-left:auto;">' + s.schoolName + '</span>' : '';
+        html += '<div class="student-card" onclick="selectStudentFromCard(\'' + s.studentId + '\')">'
+              + '<span style="color:#999; font-size:13px; min-width:110px; flex-shrink:0;">' + (s.furigana || '') + '</span>'
+              + '<span style="font-weight:600; font-size:14px; color:#333;">' + s.name + '</span>'
+              + school
+              + '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function selectStudentFromCard(studentId) {
+      // 転籍モードのスタイルをリセット
+      document.getElementById('input-campus').style.borderColor = '';
+      document.getElementById('input-campus').style.outline = '';
+
+      var student = null;
+      for (var i = 0; i < currentStudentList.length; i++) {
+        if (currentStudentList[i].studentId === studentId) { student = currentStudentList[i]; break; }
+      }
+      if (!student) return;
+
+      selectedStudentId = studentId;
+
+      // フォームに自動入力
+      document.getElementById('input-sei').value          = student.sei || '';
+      document.getElementById('input-mei').value          = student.mei || '';
+      document.getElementById('input-sei-furigana').value = student.seiFurigana || '';
+      document.getElementById('input-mei-furigana').value = student.meiFurigana || '';
+      document.getElementById('input-school').value       = student.schoolName || '';
+
+      // 選択バッジを表示、一覧UIを非表示
+      var badge = student.furigana + '　' + student.name
+                + (student.schoolName ? '（' + student.schoolName + '）' : '');
+      document.getElementById('selected-student-info').textContent = badge;
+      document.getElementById('selected-student-badge').style.display = 'flex';
+      document.getElementById('student-candidates').style.display  = 'none';
+      document.getElementById('input-new-btn').style.display       = 'none';
+
+      // 詳細フォームを表示（編集モード）
+      document.getElementById('input-details-section').style.display  = 'block';
+      document.getElementById('input-buttons-new').style.display      = 'none';
+      document.getElementById('input-buttons-existing').style.display = 'grid';
+
+      // 受験情報セクションの表示チェック（中3年度の翌年2月以降）
+      document.getElementById('input-exam-section').style.display = 'none';
+      if (shouldShowExamSection(studentId)) {
+        loadStudentExamData(studentId);
+      }
+    }
+
+    function showNewStudentForm() {
+      selectedStudentId = null;
+      document.getElementById('input-sei').value          = '';
+      document.getElementById('input-mei').value          = '';
+      document.getElementById('input-sei-furigana').value = '';
+      document.getElementById('input-mei-furigana').value = '';
+      document.getElementById('input-school').value       = '';
+
+      // 一覧UIを非表示
+      document.getElementById('student-candidates').style.display   = 'none';
+      document.getElementById('selected-student-badge').style.display = 'none';
+      document.getElementById('input-new-btn').style.display        = 'none';
+
+      // 詳細フォームを表示（新規モード）
+      document.getElementById('input-details-section').style.display  = 'block';
+      document.getElementById('input-buttons-new').style.display      = 'grid';
+      document.getElementById('input-buttons-existing').style.display = 'none';
+    }
+
+    function clearSearch() {
+      selectedStudentId = null;
+      // 転籍モードのスタイルをリセット
+      document.getElementById('input-campus').style.borderColor = '';
+      document.getElementById('input-campus').style.outline = '';
+      document.getElementById('selected-student-badge').style.display = 'none';
+      document.getElementById('student-candidates').style.display     = 'block';
+      document.getElementById('input-new-btn').style.display          = 'block';
+      document.getElementById('input-details-section').style.display  = 'none';
+      document.getElementById('input-buttons-new').style.display      = 'none';
+      document.getElementById('input-buttons-existing').style.display = 'none';
+      document.getElementById('input-exam-section').style.display     = 'none';
+      document.getElementById('input-sei').value          = '';
+      document.getElementById('input-mei').value          = '';
+      document.getElementById('input-sei-furigana').value = '';
+      document.getElementById('input-mei-furigana').value = '';
+      document.getElementById('input-school').value       = '';
+      renderCandidates(currentStudentList);
+    }
+
+    function registerStudent() {
+      var campusCode  = document.getElementById('input-campus').value;
+      var gradeCode   = document.getElementById('input-grade').value;
+      var sei         = document.getElementById('input-sei').value.trim();
+      var mei         = document.getElementById('input-mei').value.trim();
+      var seiFurigana = document.getElementById('input-sei-furigana').value.trim();
+      var meiFurigana = document.getElementById('input-mei-furigana').value.trim();
+      var schoolName  = document.getElementById('input-school').value.trim();
+
+      if (!campusCode || !gradeCode || !sei || !seiFurigana) {
+        showMessage('input-message', '校舎・学年・姓（漢字）・姓ふりがなは必須です', 'error');
+        return;
+      }
+
+      // 登録確認ダイアログ
+      var campusName = campusData[campusCode] || campusCode;
+      var gradeName  = gradeData[gradeCode]   || gradeCode;
+
+      // ⑤ 現在の年度で学年が範囲外になる場合の警告
+      var nowFy = new Date();
+      var actualCurrentYear = (nowFy.getMonth() >= 3) ? nowFy.getFullYear() : nowFy.getFullYear() - 1;
+      var currentCalcGrade = parseInt(gradeCode) + (actualCurrentYear - currentFiscalYear);
+      var warningMsg = '';
+      if (currentCalcGrade > 18) {
+        warningMsg = '\n\n⚠ 注意：現在の年度（' + actualCurrentYear + '年度）ではこの生徒の学年が範囲外のため、現在の年度では生徒一覧に表示されません。';
+      }
+
+      var fullName = sei + (mei ? mei : '');
+      var confirmMsg = '以下の内容で登録します。よろしいですか？\n\n'
+                     + '年度：' + currentFiscalYear + '年度\n'
+                     + '校舎：' + campusName + '\n'
+                     + '学年：' + gradeName + '\n'
+                     + '氏名：' + fullName
+                     + warningMsg;
+      appConfirm(confirmMsg).then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('input-message', '✓ ' + result.message + '（ID: ' + result.studentId + '）', 'success');
+              clearInputForm();
+              onInputCampusOrGradeChanged();
+            } else {
+              showMessage('input-message', 'エラー: ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('input-message', 'エラー: ' + err, 'error');
+          })
+          .submitStudentInfo(currentFiscalYear, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName);
+      });
+    }
+
+    function updateStudent() {
+      if (!selectedStudentId) return;
+      var campusCode  = document.getElementById('input-campus').value;
+      var sei         = document.getElementById('input-sei').value.trim();
+      var mei         = document.getElementById('input-mei').value.trim();
+      var seiFurigana = document.getElementById('input-sei-furigana').value.trim();
+      var meiFurigana = document.getElementById('input-mei-furigana').value.trim();
+      var schoolName  = document.getElementById('input-school').value.trim();
+
+      if (!sei || !seiFurigana) {
+        showMessage('input-message', '姓（漢字）と姓ふりがなは必須です', 'error');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('input-message', '✓ ' + result.message, 'success');
+            // オレンジ枠をリセットし、編集モードを解除してからリロード
+            document.getElementById('input-campus').style.borderColor = '';
+            document.getElementById('input-campus').style.outline = '';
+            selectedStudentId = null;
+            onInputCampusOrGradeChanged();
+          } else {
+            showMessage('input-message', 'エラー: ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('input-message', 'エラー: ' + err, 'error');
+        })
+        .updateStudentInfo(selectedStudentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName);
+    }
+
+    function deleteStudentConfirm() {
+      if (!selectedStudentId) return;
+      var name = document.getElementById('input-sei').value + document.getElementById('input-mei').value;
+      appConfirm('「' + name + '」を削除しますか？\n（削除後もデータは保持されます）').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('input-message', '✓ ' + result.message, 'success');
+              clearInputForm();
+              onInputCampusOrGradeChanged();
+            } else {
+              showMessage('input-message', 'エラー: ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('input-message', 'エラー: ' + err, 'error');
+          })
+          .deleteStudent(selectedStudentId);
+      });
+    }
+
+    function clearInputForm() {
+      clearSearch(); // 検索状態・フォームを一括リセット
+    }
+
+    // ===== 受験情報（中3専用） =====
+
+    /**
+     * 受験情報セクションを表示すべきか判定する
+     * 条件: 生徒が中3であった年度の翌年2月1日以降
+     * 生徒IDから登録年度・登録学年を取得し、中3年度を算出して判定する
+     * @param {string} studentId 生徒ID（{校舎CD2桁}{登録年度4桁}{登録学年コード2桁}{連番2桁}）
+     * @return {boolean}
+     */
+    function shouldShowExamSection(studentId) {
+      if (!studentId || studentId.length < 8) return false;
+      var regYear  = parseInt(studentId.substring(2, 6), 10);
+      var regGrade = parseInt(studentId.substring(6, 8), 10);
+      // 高校生（16〜18）は中3を経験していないため対象外
+      if (regGrade > 15) return false;
+      // この生徒が中3であった（または中3になる予定の）年度
+      var chuu3Year = regYear + (15 - regGrade);
+      // 中3年度の翌年2月1日以降であれば表示（monthは0始まり: 1=2月）
+      var now = new Date();
+      return now >= new Date(chuu3Year + 1, 1, 1);
+    }
+
+    /**
+     * バックエンドから受験情報と最新志望校データを取得してフォームに反映する
+     */
+    function loadStudentExamData(studentId) {
+      var fy = currentFiscalYear || ((new Date().getMonth() >= 3) ? new Date().getFullYear() : new Date().getFullYear() - 1);
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            renderExamSection(result);
+          } else {
+            // エラーでも空の状態でセクションを表示
+            renderExamSection({ examData: {}, latestGrade: {} });
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('loadStudentExamData エラー:', err);
+          renderExamSection({ examData: {}, latestGrade: {} });
+        })
+        .getStudentExamData(studentId, fy);
+    }
+
+    /**
+     * 受験情報セクションを表示し、取得データを反映する
+     */
+    function renderExamSection(result) {
+      var exam = result.examData || {};
+      var latest = result.latestGrade || {};
+
+      // 学校ドロップダウンのオプションを構築（schoolsDataを利用）
+      buildExamSchoolOptions(1);
+      buildExamSchoolOptions(2);
+
+      // 受験校1：保存済みデータ優先、なければ最新テストの第1志望校
+      var school1 = exam.jukoukou1 || latest.shogaku1 || '';
+      var dept1   = exam.jukoukou1_gakka || latest.shogaku1_gakka || '';
+      setExamSchoolField(1, school1, dept1);
+
+      // 合否（受験校1）：保存済みデータ優先、デフォルト合格
+      var gokaku1 = exam.jukoukou1_gokaku || '合格';
+      document.getElementById('exam-gokaku1-pass').checked = (gokaku1 !== '不合格');
+      document.getElementById('exam-gokaku1-fail').checked = (gokaku1 === '不合格');
+
+      // 育成型推薦
+      document.getElementById('exam-ikusei').checked = (exam.ikusei === 'true');
+
+      // 受験校2
+      var school2 = exam.jukoukou2 || '';
+      var dept2   = exam.jukoukou2_gakka || '';
+      setExamSchoolField(2, school2, dept2);
+
+      // 合否（受験校2）：デフォルト合格
+      var gokaku2 = exam.jukoukou2_gokaku || '合格';
+      document.getElementById('exam-gokaku2-pass').checked = (gokaku2 !== '不合格');
+      document.getElementById('exam-gokaku2-fail').checked = (gokaku2 === '不合格');
+
+      // 受験校2セクションの表示（不合格のときのみ）
+      document.getElementById('input-exam-school2-section').style.display =
+        (gokaku1 === '不合格') ? 'block' : 'none';
+
+      // メッセージクリア
+      document.getElementById('exam-message').innerHTML = '';
+
+      // セクション表示
+      document.getElementById('input-exam-section').style.display = 'block';
+    }
+
+    /**
+     * schoolsDataから受験校ドロップダウンのオプションを構築する
+     */
+    function buildExamSchoolOptions(which) {
+      var select = document.getElementById('exam-school' + which + '-select');
+      var opts = '<option value="">選択してください</option>';
+      schoolsData.forEach(function(s) {
+        opts += '<option value="' + escapeHtmlExam_(s.name) + '">' + escapeHtmlExam_(s.name) + '</option>';
+      });
+      opts += '<option value="__other__">その他（直接入力）</option>';
+      select.innerHTML = opts;
+    }
+
+    /**
+     * 受験校と学科をフォームにセットするヘルパー
+     */
+    function setExamSchoolField(which, schoolName, deptName) {
+      var select   = document.getElementById('exam-school' + which + '-select');
+      var custom   = document.getElementById('exam-school' + which + '-custom');
+      var deptSel  = document.getElementById('exam-school' + which + '-dept-select');
+      var deptCust = document.getElementById('exam-school' + which + '-dept-custom');
+
+      // まず学校をセット
+      var found = false;
+      for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === schoolName) { found = true; break; }
+      }
+      if (schoolName && !found) {
+        // 一覧にない → その他（直接入力）
+        select.value = '__other__';
+        custom.value = schoolName;
+        custom.style.display = 'block';
+      } else {
+        select.value = schoolName || '';
+        custom.style.display = 'none';
+        custom.value = '';
+      }
+
+      // 学科を構築してセット（onExamSchoolChange が1学科の場合は自動選択済み）
+      onExamSchoolChange(which);
+      if (deptName) {  // 保存済み学科がある場合のみ上書き（空欄なら自動選択を維持）
+        if (deptSel.style.display !== 'none') {
+          deptSel.value = deptName;
+          if (!deptSel.value) {
+            // ドロップダウンにない → テキスト入力
+            deptSel.style.display = 'none';
+            deptCust.style.display = 'block';
+            deptCust.value = deptName;
+          }
+        } else if (deptCust.style.display !== 'none') {
+          deptCust.value = deptName;
+        }
+      }
+    }
+
+    /**
+     * 受験校ドロップダウン変更時のハンドラー（onSchoolChangeと同じロジック）
+     */
+    function onExamSchoolChange(which) {
+      var select   = document.getElementById('exam-school' + which + '-select');
+      var custom   = document.getElementById('exam-school' + which + '-custom');
+      var deptSel  = document.getElementById('exam-school' + which + '-dept-select');
+      var deptCust = document.getElementById('exam-school' + which + '-dept-custom');
+
+      var val = select.value;
+      custom.style.display = (val === '__other__') ? 'block' : 'none';
+
+      deptSel.innerHTML = '';
+      deptSel.style.display = 'none';
+      deptCust.value = '';
+      deptCust.style.display = 'none';
+
+      if (val && val !== '__other__') {
+        var school = null;
+        for (var i = 0; i < schoolsData.length; i++) {
+          if (schoolsData[i].name === val) { school = schoolsData[i]; break; }
+        }
+        if (school && school.departments && school.departments.length > 0) {
+          var opts = '<option value="">選択してください</option>';
+          school.departments.forEach(function(d) {
+            var dn = typeof d === 'string' ? d : d.name;
+            opts += '<option value="' + escapeHtmlExam_(dn) + '">' + escapeHtmlExam_(dn) + '</option>';
+          });
+          opts += '<option value="__other__">その他（直接入力）</option>';
+          deptSel.innerHTML = opts;
+          deptSel.style.display = 'block';
+          if (school.departments.length === 1) {
+            var fd = school.departments[0];
+            deptSel.value = typeof fd === 'string' ? fd : fd.name;
+          }
+        } else {
+          deptCust.style.display = 'block';
+        }
+      } else if (val === '__other__') {
+        deptCust.style.display = 'block';
+      }
+    }
+
+    /**
+     * 受験校学科ドロップダウン変更時（その他選択への対応）
+     */
+    function onExamDeptChange(which) {
+      var deptSel  = document.getElementById('exam-school' + which + '-dept-select');
+      var deptCust = document.getElementById('exam-school' + which + '-dept-custom');
+      if (deptSel.value === '__other__') {
+        deptSel.style.display = 'none';
+        deptCust.style.display = 'block';
+        deptCust.value = '';
+        deptCust.focus();
+      }
+    }
+
+    /**
+     * 合否ラジオ変更ハンドラー
+     * which=1 の場合のみ受験校2セクションの表示を制御する
+     */
+    function onExamGokakuChange(which) {
+      if (which !== 1) return;
+      var fail = document.getElementById('exam-gokaku1-fail').checked;
+      document.getElementById('input-exam-school2-section').style.display = fail ? 'block' : 'none';
+    }
+
+    /**
+     * 受験校の値を取得するヘルパー
+     */
+    function getExamSchoolValue(which) {
+      var select = document.getElementById('exam-school' + which + '-select');
+      var custom = document.getElementById('exam-school' + which + '-custom');
+      return (select.value === '__other__') ? custom.value.trim() : select.value;
+    }
+
+    /**
+     * 受験校学科の値を取得するヘルパー
+     */
+    function getExamDeptValue(which) {
+      var deptSel  = document.getElementById('exam-school' + which + '-dept-select');
+      var deptCust = document.getElementById('exam-school' + which + '-dept-custom');
+      if (deptSel.style.display !== 'none') {
+        return (deptSel.value === '__other__') ? deptCust.value.trim() : deptSel.value;
+      }
+      return deptCust.style.display !== 'none' ? deptCust.value.trim() : '';
+    }
+
+    /**
+     * 受験情報を保存するボタンハンドラー
+     */
+    function saveExamResultUI() {
+      if (!selectedStudentId) return;
+      var fail1 = document.getElementById('exam-gokaku1-fail').checked;
+      var examData = {
+        jukoukou1:       getExamSchoolValue(1),
+        jukoukou1_gakka: getExamDeptValue(1),
+        jukoukou1_gokaku: fail1 ? '不合格' : '合格',
+        ikusei:          document.getElementById('exam-ikusei').checked ? 'true' : 'false',
+        jukoukou2:       fail1 ? getExamSchoolValue(2) : '',
+        jukoukou2_gakka: fail1 ? getExamDeptValue(2)  : '',
+        jukoukou2_gokaku: (function() {
+          if (!fail1) return '';
+          return document.getElementById('exam-gokaku2-fail').checked ? '不合格' : '合格';
+        })()
+      };
+      var btn = document.querySelector('#input-exam-section button[onclick="saveExamResultUI()"]');
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '受験情報を保存'; }
+          if (result && result.success) {
+            showToast('受験情報を保存しました', 'success');
+            loadStudentExamData(selectedStudentId);
+          } else {
+            showToast('保存に失敗しました: ' + (result && result.error ? result.error : '不明なエラー'), 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '受験情報を保存'; }
+          showToast('保存に失敗しました: ' + err, 'error');
+        })
+        .saveExamResult(selectedStudentId, JSON.stringify(examData));
+    }
+
+    /**
+     * HTML特殊文字エスケープ（受験情報セクション内部用）
+     */
+    function escapeHtmlExam_(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ===== ③ 削除済み生徒の管理 =====
+
+    function toggleDeletedSection() {
+      var section = document.getElementById('deleted-section');
+      var btn     = document.getElementById('deleted-toggle-btn');
+      if (section.style.display === 'none') {
+        section.style.display = 'block';
+        btn.textContent = '▼ 削除済み生徒の管理';
+      } else {
+        section.style.display = 'none';
+        btn.textContent = '▶ 削除済み生徒の管理';
+      }
+    }
+
+    function loadDeletedStudents() {
+      var campusCode = document.getElementById('input-campus').value;
+      var gradeCode  = document.getElementById('input-grade').value;
+      var list       = document.getElementById('deleted-students-list');
+      var msg        = document.getElementById('deleted-message');
+
+      list.innerHTML = '<p style="color:#999; font-size:13px;">読み込み中...</p>';
+      msg.innerHTML  = '';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            msg.innerHTML = '<p style="color:#e53935; font-size:13px;">エラー: ' + result.error + '</p>';
+            list.innerHTML = '';
+            return;
+          }
+          if (result.students.length === 0) {
+            list.innerHTML = '<p style="color:#999; font-size:13px;">削除済みの生徒はいません。</p>';
+            return;
+          }
+          var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">'
+                   + '<thead><tr style="background:#fce4ec;">'
+                   + '<th style="padding:8px; text-align:left; border-bottom:1px solid #f48fb1;">氏名</th>'
+                   + '<th style="padding:8px; text-align:left; border-bottom:1px solid #f48fb1;">ふりがな</th>'
+                   + '<th style="padding:8px; text-align:left; border-bottom:1px solid #f48fb1;">学校名</th>'
+                   + '<th style="padding:8px; text-align:left; border-bottom:1px solid #f48fb1;">登録年度</th>'
+                   + '<th style="padding:8px; border-bottom:1px solid #f48fb1;"></th>'
+                   + '</tr></thead><tbody>';
+          result.students.forEach(function(s) {
+            html += '<tr style="border-bottom:1px solid #eee;">'
+                  + '<td style="padding:8px;">' + s.name + '</td>'
+                  + '<td style="padding:8px; color:#777;">' + s.furigana + '</td>'
+                  + '<td style="padding:8px; color:#777;">' + (s.schoolName || '—') + '</td>'
+                  + '<td style="padding:8px; color:#777;">' + s.registrationYear + '年度</td>'
+                  + '<td style="padding:8px; text-align:center;">'
+                  + '<button onclick="doRestoreStudent(\'' + s.studentId + '\', \'' + s.name.replace(/'/g, "\\'") + '\')"'
+                  + ' style="padding:4px 12px; background:#66bb6a; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">復元</button>'
+                  + '</td></tr>';
+          });
+          html += '</tbody></table>';
+          list.innerHTML = html;
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('deleted-message').innerHTML =
+            '<p style="color:#e53935; font-size:13px;">エラー: ' + err + '</p>';
+          list.innerHTML = '';
+        })
+        .getDeletedStudents(campusCode || null, gradeCode || null, currentFiscalYear);
+    }
+
+    function doRestoreStudent(studentId, name) {
+      appConfirm('「' + name + '」を復元します。よろしいですか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            var msg = document.getElementById('deleted-message');
+            if (result.success) {
+              msg.innerHTML = '<p style="color:#388e3c; font-size:13px;">✓ ' + result.message + '</p>';
+              loadDeletedStudents();       // リストを再読み込み
+              onInputCampusOrGradeChanged(); // 通常の生徒一覧も更新
+            } else {
+              msg.innerHTML = '<p style="color:#e53935; font-size:13px;">エラー: ' + result.error + '</p>';
+            }
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('deleted-message').innerHTML =
+              '<p style="color:#e53935; font-size:13px;">エラー: ' + err + '</p>';
+          })
+          .restoreStudent(studentId);
+      });
+    }
+
+    // ===== 成績入力タブ =====
+
+function onCampusChanged() {
+  var campusCode = document.getElementById('score-campus').value;
+  var gradeSelect = document.getElementById('score-grade');
+
+  // 学年・生徒をリセット
+  gradeSelect.value = '';
+  document.getElementById('score-student').innerHTML = '<option value="">学年を先に選択してください</option>';
+  document.getElementById('score-message').innerHTML = '';
+  clearScoreFields();
+  updateScoreSubmitBtn(false);
+
+  if (!campusCode) {
+    gradeSelect.value = '';
+    gradeSelect.disabled = true;
+    return;
+  }
+
+  // 校舎が選択されたら学年ドロップダウンを有効化
+  gradeSelect.disabled = false;
+  updateGradeTemplateBtnState();
+}
+
+function onScoreGradeChanged() {
+  var campusCode = document.getElementById('score-campus').value;
+  var gradeCode  = document.getElementById('score-grade').value;
+
+  document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
+  document.getElementById('score-message').innerHTML = '';
+  clearScoreFields();
+  updateScoreSubmitBtn(false);
+
+  if (!campusCode || !gradeCode) {
+    updateGradeTemplateBtnState();
+    return;
+  }
+
+  document.getElementById('score-student').innerHTML = '<option value="">読み込み中...</option>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        populateStudentDropdown(result.students);
+      } else {
+        showMessage('score-message', 'エラー: ' + result.error, 'error');
+        document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
+      }
+      updateGradeTemplateBtnState();
+    })
+    .withFailureHandler(function(err) {
+      showMessage('score-message', 'エラー: ' + err, 'error');
+      document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
+      updateGradeTemplateBtnState();
+    })
+    .getStudentsForDropdown(campusCode, gradeCode, currentFiscalYear);
+}
+
+function getCampusNameFromCode(code) {
+  for (var c in campusData) {
+    if (c === code) {
+      return campusData[c];
+    }
+  }
+  return null;
+}
+
+function populateStudentDropdown(students) {
+  var studentSelect = document.getElementById('score-student');
+  studentSelect.innerHTML = '<option value="">選択してください</option>';
+
+  students.forEach(function(student) {
+    var option = document.createElement('option');
+    option.value = student.studentId;
+    option.textContent = student.name;
+    studentSelect.appendChild(option);
+  });
+}
+
+// ===== 志望校・学科ドロップダウン =====
+
+var schoolsData = [];
+
+function onSchoolChange(which) {
+  var select   = document.getElementById('score-shogaku' + which + '-select');
+  var custom   = document.getElementById('score-shogaku' + which + '-custom');
+  var deptSel  = document.getElementById('score-shogaku' + which + '-dept-select');
+  var deptCust = document.getElementById('score-shogaku' + which + '-dept-custom');
+
+  var val = select.value;
+  custom.style.display = (val === '__other__') ? 'block' : 'none';
+
+  // 学科リセット
+  deptSel.innerHTML = '';
+  deptSel.style.display = 'none';
+  deptCust.value = '';
+  deptCust.style.display = 'none';
+
+  if (val) {
+    if (val !== '__other__') {
+      var school = null;
+      for (var i = 0; i < schoolsData.length; i++) {
+        if (schoolsData[i].name === val) { school = schoolsData[i]; break; }
+      }
+      if (school && school.departments.length > 0) {
+        // 学科が設定済みの学校 → ドロップダウンを表示
+        var opts = '<option value="">選択してください</option>';
+        school.departments.forEach(function(d) {
+          var deptName = typeof d === 'string' ? d : d.name;
+          opts += '<option value="' + deptName + '">' + deptName + '</option>';
+        });
+        opts += '<option value="__other__">その他（直接入力）</option>';
+        deptSel.innerHTML = opts;
+        deptSel.style.display = 'block';
+        if (school.departments.length === 1) {
+          var firstDept = school.departments[0];
+          deptSel.value = typeof firstDept === 'string' ? firstDept : firstDept.name;
+        }
+      } else {
+        // 学科未設定の学校 → テキスト入力欄を表示
+        deptCust.style.display = 'block';
+      }
+    } else {
+      // その他（直接入力）→ 学科もテキスト入力欄を表示
+      deptCust.style.display = 'block';
+    }
+  }
+}
+
+function onDeptChange(which) {
+  var deptSel  = document.getElementById('score-shogaku' + which + '-dept-select');
+  var deptCust = document.getElementById('score-shogaku' + which + '-dept-custom');
+  deptCust.style.display = (deptSel.value === '__other__') ? 'block' : 'none';
+}
+
+function getSchoolValue(which) {
+  var select = document.getElementById('score-shogaku' + which + '-select');
+  var custom = document.getElementById('score-shogaku' + which + '-custom');
+  return select.value === '__other__' ? custom.value.trim() : select.value;
+}
+
+function getDeptValue(which) {
+  var deptSel  = document.getElementById('score-shogaku' + which + '-dept-select');
+  var deptCust = document.getElementById('score-shogaku' + which + '-dept-custom');
+  // ドロップダウンが表示中の場合
+  if (deptSel.style.display !== 'none') {
+    return deptSel.value === '__other__' ? deptCust.value.trim() : deptSel.value;
+  }
+  // テキスト入力欄が表示中の場合（学科未設定校・その他）
+  return deptCust.style.display !== 'none' ? deptCust.value.trim() : '';
+}
+
+// ===== 合計点 =====
+
+var totalManuallySet = false;
+
+function calculateTotal() {
+  if (totalManuallySet) return;
+  var kokugo = parseInt(document.getElementById('score-kokugo').value) || 0;
+  var shakai = parseInt(document.getElementById('score-shakai').value) || 0;
+  var sugaku = parseInt(document.getElementById('score-sugaku').value) || 0;
+  var rika = parseInt(document.getElementById('score-rika').value) || 0;
+  var eigo = parseInt(document.getElementById('score-eigo').value) || 0;
+
+  var total = kokugo + shakai + sugaku + rika + eigo;
+  document.getElementById('score-gokei').value = total > 0 ? total : '';
+}
+
+// ===== 【8-B】分析タブ =====
+
+    var analysisInitialized = false;
+
+    /** HTMLエスケープヘルパー */
+    function escapeAnalysisHtml(str) {
+      var div = document.createElement('div');
+      div.appendChild(document.createTextNode(String(str)));
+      return div.innerHTML;
+    }
+
+    /** 分析タブの初期化（テスト名ドロップダウンを構築） */
+    function initGradesAnalysis() {
+      var select = document.getElementById('analysis-test-select');
+      if (!select) return;
+
+      if (analysisInitialized && select.options.length > 1) return;
+
+      var testSelect = document.getElementById('score-test');
+      if (testSelect && testSelect.options.length > 1) {
+        select.innerHTML = '<option value="">テストを選択してください</option>';
+        for (var i = 1; i < testSelect.options.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = testSelect.options[i].value;
+          opt.textContent = testSelect.options[i].textContent;
+          select.appendChild(opt);
+        }
+        analysisInitialized = true;
+      } else if (!analysisInitialized) {
+        analysisInitialized = true;
+        google.script.run
+          .withSuccessHandler(function(r) {
+            if (!r.success) return;
+            var sel = document.getElementById('analysis-test-select');
+            if (sel && sel.options.length <= 1) {
+              sel.innerHTML = '<option value="">テストを選択してください</option>';
+              (r.testNames || []).forEach(function(name) {
+                var opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                sel.appendChild(opt);
+              });
+            }
+          })
+          .withFailureHandler(function() {
+            analysisInitialized = false;
+          })
+          .getGradesConfigForWeb();
+      }
+    }
+
+    /** 分析タブ：選択したテストの分析を読み込み・表示する */
+    function loadGradeAnalysis() {
+      var testName = document.getElementById('analysis-test-select').value;
+      var year = currentFiscalYear;
+
+      if (!testName || !year) {
+        document.getElementById('analysis-result-container').innerHTML =
+          '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">テストを選択してください</p>';
+        return;
+      }
+
+      document.getElementById('analysis-message').innerHTML = '';
+      document.getElementById('analysis-result-container').innerHTML =
+        '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">読み込み中...</p>';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            document.getElementById('analysis-result-container').innerHTML =
+              '<p style="color:red;padding:20px;font-size:13px;">❌ ' + (result.error || 'エラーが発生しました') + '</p>';
+            return;
+          }
+
+          if (result.exists && result.analysis) {
+            renderAnalysisResult(result.analysis, result.generatedAt, testName);
+          } else {
+            document.getElementById('analysis-result-container').innerHTML =
+              '<div style="background: white; border-radius: 10px; padding: 30px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">' +
+                '<p style="color: #666; font-size: 14px; margin-bottom: 8px;">📭 このテストのAI分析はまだ生成されていません。</p>' +
+                '<p style="color: #999; font-size: 12px;">管理者へご連絡ください。</p>' +
+              '</div>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('analysis-result-container').innerHTML =
+            '<p style="color:red;padding:20px;font-size:13px;">❌ エラー: ' + err + '</p>';
+        })
+        .getGradeAnalysis(year, testName);
+    }
+
+    /** 分析タブ：AIで分析を生成して表示する */
+    function generateAndDisplayAnalysis() {
+      var testName = document.getElementById('analysis-test-select').value;
+      var year = currentFiscalYear;
+
+      if (!testName || !year) return;
+
+      document.getElementById('analysis-result-container').innerHTML =
+        '<div style="background: white; border-radius: 10px; padding: 30px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">' +
+          '<p style="color: #667eea; font-size: 14px; margin-bottom: 10px;">🤖 AIが成績データを分析中です...</p>' +
+          '<p style="color: #999; font-size: 12px;">（数十秒かかることがあります）</p>' +
+        '</div>';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            document.getElementById('analysis-result-container').innerHTML =
+              '<p style="color:red;padding:20px;font-size:13px;">❌ ' + (result.error || 'エラーが発生しました') + '</p>';
+            return;
+          }
+          renderAnalysisResult(result.analysis, result.generatedAt, testName);
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('analysis-result-container').innerHTML =
+            '<p style="color:red;padding:20px;font-size:13px;">❌ エラー: ' + err + '</p>';
+        })
+        .generateGradeAnalysis(year, testName);
+    }
+
+    /** 分析タブ：分析結果をHTMLで描画する */
+    function renderAnalysisResult(analysis, generatedAt, testName) {
+      var container = document.getElementById('analysis-result-container');
+
+      var dateStr = '';
+      if (generatedAt) {
+        try {
+          var d = new Date(generatedAt);
+          dateStr = d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+        } catch (e) {
+          dateStr = generatedAt;
+        }
+      }
+
+      var html = '';
+
+      // ヘッダー（生成日時）
+      if (dateStr) {
+        html += '<div style="margin-bottom:16px;">';
+        html += '<span style="font-size: 12px; color: #999;">生成日時: ' + dateStr + '</span>';
+        html += '</div>';
+      }
+
+      // 全体概要
+      if (analysis.overview) {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #333;">📊 全体概要</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.overview) + '</p>';
+        html += '</div>';
+      }
+
+      // 上位層・下位層の得点分布（scoreDistribution がある場合のみ表示）
+      if (analysis.scoreDistribution && Object.keys(analysis.scoreDistribution).length > 0) {
+        var subjOrder = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+        var subjLabel = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語', total: '合計' };
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 14px 0; font-size: 15px; color: #333;">📊 得点分布（上位層・下位層）</h3>';
+        subjOrder.forEach(function(key) {
+          var d = analysis.scoreDistribution[key];
+          if (!d || d.total === 0) return;
+          var highPct = d.highPct || 0;
+          var lowPct = d.lowPct || 0;
+          var highCount = d.highCount || 0;
+          var lowCount = d.lowCount || 0;
+          var total = d.total || 0;
+          var highThreshold = d.highThreshold != null ? d.highThreshold : '—';
+          var lowThreshold = d.lowThreshold != null ? d.lowThreshold : '—';
+          var label = subjLabel[key] || key;
+
+          html += '<div style="margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #f0f0f0;">';
+          html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">';
+          html += '<span style="font-weight: 600; font-size: 14px;">' + label + '</span>';
+          html += '<span style="font-size: 11px; color: #999;">計' + total + '名</span>';
+          html += '</div>';
+
+          // 上位層バー
+          html += '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">';
+          html += '<span style="font-size: 11px; color: #4caf50; width: 42px; text-align: right; font-weight: 600;">上位層</span>';
+          html += '<div style="flex: 1; background: #eee; border-radius: 4px; height: 18px;">';
+          html += '<div style="width: ' + highPct + '%; background: #4caf50; border-radius: 4px; height: 100%; transition: width 0.5s;"></div>';
+          html += '</div>';
+          html += '<span style="font-size: 12px; color: #4caf50; font-weight: 600; min-width: 60px;">' + highPct + '% (' + highCount + '名)</span>';
+          html += '</div>';
+          html += '<div style="font-size: 10px; color: #999; margin-left: 50px; margin-bottom: 6px;">' + highThreshold + '点以上</div>';
+
+          // 下位層バー
+          html += '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">';
+          html += '<span style="font-size: 11px; color: #ff7043; width: 42px; text-align: right; font-weight: 600;">下位層</span>';
+          html += '<div style="flex: 1; background: #eee; border-radius: 4px; height: 18px;">';
+          html += '<div style="width: ' + lowPct + '%; background: #ff7043; border-radius: 4px; height: 100%; transition: width 0.5s;"></div>';
+          html += '</div>';
+          html += '<span style="font-size: 12px; color: #ff7043; font-weight: 600; min-width: 60px;">' + lowPct + '% (' + lowCount + '名)</span>';
+          html += '</div>';
+          html += '<div style="font-size: 10px; color: #999; margin-left: 50px;">' + lowThreshold + '点未満</div>';
+
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // 教科別分析（テキスト＋バーチャート）
+      if (analysis.subjectAnalysis && analysis.subjectAnalysis.length > 0) {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 14px 0; font-size: 15px; color: #333;">📚 教科別分析</h3>';
+
+        analysis.subjectAnalysis.forEach(function(subj) {
+          var jukuAvg = Number(subj.jukuAvg) || 0;
+          var schoolAvg = Number(subj.schoolAvg) || 0;
+          var maxScore = 100;
+          var jukuPct = Math.min((jukuAvg / maxScore) * 100, 100);
+          var schoolPct = Math.min((schoolAvg / maxScore) * 100, 100);
+
+          var trendIcon = '';
+          if (subj.trend === 'up') trendIcon = ' <span style="color: #4caf50;">▲</span>';
+          else if (subj.trend === 'down') trendIcon = ' <span style="color: #f44336;">▼</span>';
+          else trendIcon = ' <span style="color: #999;">→</span>';
+
+          // 易化/難化バッジ（前回テストとの比較がある場合のみ）
+          var rdHtml = '';
+          if (subj.roundDifficulty === 'easier') {
+            rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#2196f3; color:white; vertical-align:middle;">易化</span>';
+          } else if (subj.roundDifficulty === 'harder') {
+            rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#f44336; color:white; vertical-align:middle;">難化</span>';
+          } else if (subj.roundDifficulty === 'same') {
+            rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#9e9e9e; color:white; vertical-align:middle;">変化なし</span>';
+          }
+
+          // 塾-学校 差分（schoolAvg が有効な場合のみ表示）
+          var diffHtml = '';
+          if (schoolAvg > 0) {
+            var diff = jukuAvg - schoolAvg;
+            var diffStr = (diff >= 0 ? '+' : '') + diff.toFixed(1);
+            var diffColor = diff >= 1 ? '#4caf50' : diff <= -1 ? '#f44336' : '#888';
+            diffHtml = ' <span style="color:' + diffColor + '; font-weight:600;">(' + diffStr + ')</span>';
+          }
+
+          html += '<div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #f0f0f0;">';
+          html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">';
+          html += '<span style="font-weight: 600; font-size: 14px;">' + escapeAnalysisHtml(subj.subject) + trendIcon + rdHtml + '</span>';
+          html += '<span style="font-size: 12px; color: #999;">塾 ' + jukuAvg.toFixed(1) + ' / 学校 ' + schoolAvg.toFixed(1) + diffHtml + '</span>';
+          html += '</div>';
+
+          // バーチャート
+          html += '<div style="margin-bottom: 6px;">';
+          html += '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">';
+          html += '<span style="font-size: 11px; color: #666; width: 28px; text-align: right;">塾</span>';
+          html += '<div style="flex: 1; background: #eee; border-radius: 4px; height: 18px; position: relative;">';
+          html += '<div style="width: ' + jukuPct + '%; background: var(--theme-color, #667eea); border-radius: 4px; height: 100%; transition: width 0.5s;"></div>';
+          html += '</div>';
+          html += '</div>';
+          html += '<div style="display: flex; align-items: center; gap: 8px;">';
+          html += '<span style="font-size: 11px; color: #666; width: 28px; text-align: right;">学校</span>';
+          html += '<div style="flex: 1; background: #eee; border-radius: 4px; height: 18px; position: relative;">';
+          html += '<div style="width: ' + schoolPct + '%; background: #bbb; border-radius: 4px; height: 100%; transition: width 0.5s;"></div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+
+          // コメント
+          if (subj.comment) {
+            html += '<p style="font-size: 13px; color: #555; line-height: 1.7; margin: 0;">' + escapeAnalysisHtml(subj.comment) + '</p>';
+          }
+          html += '</div>';
+        });
+
+        html += '</div>';
+      }
+
+      // 後方互換：旧フォーマット（historicalComparison）を yearOverYearComparison として代替表示
+      if (!analysis.yearOverYearComparison && analysis.historicalComparison) {
+        analysis.yearOverYearComparison = analysis.historicalComparison;
+      }
+
+      // 過去の推移
+      if (analysis.historicalTrend && analysis.historicalTrend.trim() !== '') {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #333;">📈 過去の推移</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.historicalTrend) + '</p>';
+        html += '</div>';
+      }
+
+      // 前年度との比較
+      if (analysis.yearOverYearComparison && analysis.yearOverYearComparison.trim() !== '') {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #333;">📅 前年度との比較</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.yearOverYearComparison) + '</p>';
+        html += '</div>';
+      }
+
+      // 前回テストとの比較
+      if (analysis.roundComparison && analysis.roundComparison.trim() !== '') {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #333;">🔁 前回テストとの比較</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.roundComparison) + '</p>';
+        html += '</div>';
+      }
+
+      // 第1〜3回推移・総評（第3回のみ）
+      if (analysis.progression && analysis.progression.trim() !== '') {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #333;">🏁 第1〜3回の推移・総評</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.progression) + '</p>';
+        html += '</div>';
+      }
+
+      // 次回テスト難易度予測（第1回・第2回のみ）
+      if (analysis.nextRoundPrediction && analysis.nextRoundPrediction.trim() !== '') {
+        html += '<div style="background: #fffbeb; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px; border-left: 4px solid #f59e0b;">';
+        html += '<h3 style="margin: 0 0 10px 0; font-size: 15px; color: #92400e;">🔮 次回テスト難易度予測</h3>';
+        html += '<p style="font-size: 14px; color: #444; line-height: 1.8; white-space: pre-wrap;">' + escapeAnalysisHtml(analysis.nextRoundPrediction) + '</p>';
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+// ===== OCR 一覧表 一括読み込み =====
+
+function openCameraDialog() {
+  document.getElementById('ocrModal').style.display = 'block';
+  document.getElementById('ocrOverlay').style.display = 'block';
+  document.getElementById('ocrMessage').innerHTML = '';
+  document.getElementById('ocrPreview').style.display = 'none';
+  document.getElementById('ocrPreview').src = '';
+  document.getElementById('ocrPdfPreview').style.display = 'none';
+  document.getElementById('ocrPdfPreview').textContent = '';
+  document.getElementById('ocrRunBtn').style.display = 'none';
+  document.getElementById('ocrFileInput').value = '';
+}
+
+function closeOcrModal() {
+  document.getElementById('ocrModal').style.display = 'none';
+  document.getElementById('ocrOverlay').style.display = 'none';
+}
+
+// ファイル選択時プレビュー表示（画像・PDF 両対応）
+(function() {
+  document.addEventListener('DOMContentLoaded', function() {
+    var fileInput = document.getElementById('ocrFileInput');
+    if (!fileInput) return;
+    fileInput.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+
+      var imgPreview = document.getElementById('ocrPreview');
+      var pdfPreview = document.getElementById('ocrPdfPreview');
+      document.getElementById('ocrMessage').innerHTML = '';
+
+      if (file.type === 'application/pdf') {
+        // PDF: 画像プレビューは非表示にし、ファイル名を表示
+        imgPreview.style.display = 'none';
+        imgPreview.src = '';
+        pdfPreview.innerHTML = '📄 <strong>' + file.name + '</strong>'
+          + '<span style="margin-left:10px; color:#999; font-size:11px;">'
+          + (file.size > 1024 * 1024
+              ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
+              : Math.round(file.size / 1024) + ' KB')
+          + '</span>';
+        pdfPreview.style.display = 'block';
+        document.getElementById('ocrRunBtn').style.display = 'block';
+      } else {
+        // 画像: 従来どおり img プレビュー
+        pdfPreview.style.display = 'none';
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+          imgPreview.src = ev.target.result;
+          imgPreview.style.display = 'block';
+          document.getElementById('ocrRunBtn').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  });
+})();
+
+function runOCR() {
+  var file = document.getElementById('ocrFileInput').files[0];
+  if (!file) { showMessage('ocrMessage', '画像またはPDFを選択してください', 'error'); return; }
+
+  var btn = document.getElementById('ocrRunBtn');
+  btn.disabled = true;
+  btn.textContent = '読み込み中...';
+
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var base64   = ev.target.result.split(',')[1];
+    var mimeType = file.type || 'image/jpeg';
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false;
+        btn.textContent = 'AI で読み込んで保存';
+        if (result.success) {
+          var parts = [];
+          if (result.savedCount   > 0) parts.push(result.savedCount   + '件新規保存');
+          if (result.updatedCount > 0) parts.push(result.updatedCount + '件補完更新');
+          var msg = parts.length > 0
+            ? '✓ ' + parts.join('・') + 'しました（テスト名：' + result.testName + '）'
+            : '✓ 補完できるデータがありませんでした（テスト名：' + result.testName + '）';
+          if (result.skippedCount > 0) {
+            msg += '\n⚠️ ' + result.skippedCount + '行スキップ：' + result.skipped.join('、');
+          }
+          showMessage('ocrMessage', msg, 'success');
+        } else {
+          showMessage('ocrMessage', 'エラー: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'AI で読み込んで保存';
+        showMessage('ocrMessage', 'エラー: ' + err, 'error');
+      })
+      .ocrAndSaveGradeSheet(base64, mimeType, currentFiscalYear);
+  };
+  reader.readAsDataURL(file);
+}
+
+
+// ===== 成績テンプレート 印刷/PDF =====
+
+/** テンプレートボタンの有効/無効を校舎・学年・テスト名の選択状態で切り替える */
+function updateGradeTemplateBtnState() {
+  var campus = document.getElementById('score-campus').value;
+  var grade  = document.getElementById('score-grade').value;
+  var test   = document.getElementById('score-test').value;
+  var ok = !!(campus && grade && test);
+  var btn      = document.getElementById('gradeTemplatePrintBtn');
+  var arrowBtn = document.getElementById('gradeTemplatePdfArrowBtn');
+  btn.disabled      = !ok;
+  arrowBtn.disabled = !ok;
+  btn.style.opacity      = ok ? '1' : '0.5';
+  arrowBtn.style.opacity = ok ? '1' : '0.5';
+  btn.style.cursor      = ok ? 'pointer' : 'not-allowed';
+  arrowBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+}
+
+/** テンプレートPDFメニューの表示切替 */
+function toggleGradeTemplatePdfMenu() {
+  var menu = document.getElementById('gradeTemplatePdfMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+/** テンプレートPDFメニューを閉じる */
+function closeGradeTemplatePdfMenu() {
+  document.getElementById('gradeTemplatePdfMenu').style.display = 'none';
+}
+
+/**
+ * 選択した校舎・学年・テスト名から成績入力テンプレートをPDF出力する。
+ * html2canvas + jsPDF でキャプチャし、ダウンロードまたは印刷する。
+ * @param {string} mode 'download'（直接PDFダウンロード）または 'print'（新ウィンドウで印刷）
+ */
+function generateGradeTemplate(mode) {
+  var campusCode = document.getElementById('score-campus').value;
+  var gradeCode  = document.getElementById('score-grade').value;
+  var testName   = document.getElementById('score-test').value;
+  var year       = currentFiscalYear;
+  var campusOpts = document.getElementById('score-campus').options;
+  var gradeOpts  = document.getElementById('score-grade').options;
+  var campusName = campusOpts[campusOpts.selectedIndex].text;
+  var gradeName  = gradeOpts[gradeOpts.selectedIndex].text;
+
+  if (!campusCode || !gradeCode || !testName) return;
+
+  var btn      = document.getElementById('gradeTemplatePrintBtn');
+  var arrowBtn = document.getElementById('gradeTemplatePdfArrowBtn');
+  btn.textContent = '⏳ 生成中...';
+  btn.disabled      = true;
+  arrowBtn.disabled = true;
+
+  // 印刷モードの場合、先にウィンドウを開いておく（ポップアップブロック回避）
+  var printWindow = null;
+  if (mode === 'print') {
+    printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write('<html><body style="margin:0;background:#f0f0f0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;color:#555;">⏳ テンプレートを生成中...</body></html>');
+    }
+  }
+
+  function restoreBtn() {
+    btn.textContent   = '📄 成績テンプレートのPDF出力';
+    updateGradeTemplateBtnState();
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        restoreBtn();
+        if (printWindow) printWindow.close();
+        appAlert('エラー: ' + result.error);
+        return;
+      }
+      renderGradeTemplatePDF(result.students, year, testName, campusName, gradeName, mode, printWindow, restoreBtn);
+    })
+    .withFailureHandler(function(err) {
+      restoreBtn();
+      if (printWindow) printWindow.close();
+      appAlert('エラー: ' + err);
+    })
+    .getStudentsForDropdown(campusCode, gradeCode, year);
+}
+
+/**
+ * 成績入力テンプレートを非表示要素に描画し、html2canvas + jsPDF でPDF化する。
+ */
+function renderGradeTemplatePDF(students, year, testName, campusName, gradeName, mode, printWindow, restoreBtn) {
+  // 既存の一時描画コンテナがあれば削除
+  var old = document.getElementById('gradeTemplateRenderArea');
+  if (old) old.remove();
+
+  // 一時描画用コンテナを作成（画面外に配置）
+  var container = document.createElement('div');
+  container.id = 'gradeTemplateRenderArea';
+  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:1120px; background:#fff; padding:12px; font-family:"Meiryo","MS Gothic","Hiragino Kaku Gothic Pro",sans-serif; font-size:11px;';
+  document.body.appendChild(container);
+
+  // ヘッダー情報（右揃え）
+  var headerDiv = document.createElement('div');
+  headerDiv.style.cssText = 'text-align:right; font-size:14px; font-weight:bold; margin-bottom:6px;';
+  headerDiv.textContent = year + '年度　' + testName + ' / ' + gradeName + '　' + campusName;
+  container.appendChild(headerDiv);
+
+  // 注意書き
+  var warning = document.createElement('p');
+  warning.style.cssText = 'font-size:10px; border:1px dashed #555; padding:4px 10px; margin-bottom:8px; display:inline-block;';
+  warning.textContent = '\u26A0 撮影する際は、氏名欄（左端）を内側に折ってから撮影してください（個人情報保護）';
+  container.appendChild(warning);
+
+  // テーブル作成
+  var table = document.createElement('table');
+  table.style.cssText = 'width:100%; border-collapse:collapse; table-layout:fixed;';
+
+  var ROW_HEIGHT = '28px';
+
+  // スタイル定義
+  var colStyles = {
+    name:   'width:14%; text-align:left; padding-left:4px; border:1px solid #333; padding-top:4px; padding-bottom:4px; vertical-align:middle; word-break:break-all; height:' + ROW_HEIGHT + ';',
+    id:     'width:14%; text-align:center; font-size:9px; border:1px solid #333; padding:4px 3px; vertical-align:middle; word-break:break-all; height:' + ROW_HEIGHT + ';',
+    score:  'width:7%; text-align:center; border:1px solid #333; padding:4px 3px; vertical-align:middle; height:' + ROW_HEIGHT + ';',
+    school: 'width:13%; text-align:center; border:1px solid #333; padding:4px 3px; vertical-align:middle; height:' + ROW_HEIGHT + ';'
+  };
+  var thBase = 'font-weight:bold; font-size:10px; border:1px solid #333; padding:4px 3px; text-align:center; vertical-align:middle; background:#f0f0f0;';
+
+  // thead
+  var thead = document.createElement('thead');
+  var headRow = document.createElement('tr');
+  var headers = [
+    { text: '氏名', sub: '\u2605撮影前に折る', style: 'width:14%; text-align:left; padding-left:4px;' },
+    { text: '生徒ID', style: 'width:14%;' },
+    { text: '国語', style: 'width:7%;' },
+    { text: '社会', style: 'width:7%;' },
+    { text: '数学', style: 'width:7%;' },
+    { text: '理科', style: 'width:7%;' },
+    { text: '英語', style: 'width:7%;' },
+    { text: '合計', style: 'width:7%;' },
+    { text: '第1志望校', style: 'width:13%;' },
+    { text: '第2志望校', style: 'width:13%;' }
+  ];
+  headers.forEach(function(h) {
+    var th = document.createElement('th');
+    th.style.cssText = thBase + h.style;
+    th.textContent = h.text;
+    if (h.sub) {
+      var span = document.createElement('span');
+      span.style.cssText = 'font-size:8px; display:block; font-weight:normal;';
+      span.textContent = h.sub;
+      th.appendChild(span);
+    }
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  // tbody
+  var tbody = document.createElement('tbody');
+  var totalRows = students.length + 5; // 生徒 + 予備5行
+  for (var i = 0; i < totalRows; i++) {
+    var tr = document.createElement('tr');
+    if (i % 2 === 1) tr.style.background = '#f9f9f9';
+    var s = i < students.length ? students[i] : null;
+    var cols = [
+      { val: s ? (s.name || '') : '', type: 'name' },
+      { val: s ? (s.studentId || '') : '', type: 'id' },
+      { val: '', type: 'score' }, { val: '', type: 'score' },
+      { val: '', type: 'score' }, { val: '', type: 'score' },
+      { val: '', type: 'score' }, { val: '', type: 'score' },
+      { val: '', type: 'school' }, { val: '', type: 'school' }
+    ];
+    cols.forEach(function(c) {
+      var td = document.createElement('td');
+      td.style.cssText = colStyles[c.type];
+      td.textContent = c.val;
+      // 空セルにも高さを確保するため &nbsp; 相当を入れる
+      if (!c.val) td.innerHTML = '&nbsp;';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  // html2canvas でキャプチャ
+  html2canvas(container, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    backgroundColor: '#ffffff',
+    windowWidth: 1150
+  }).then(function(canvas) {
+    container.remove();
+
+    if (mode === 'print') {
+      // 印刷モード
+      var imgDataPng = canvas.toDataURL('image/png');
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(
+          '<!DOCTYPE html><html><head>' +
+          '<title>' + year + '年度 ' + testName + ' 成績入力テンプレート</title>' +
+          '<style>' +
+          '* { margin: 0; padding: 0; box-sizing: border-box; }' +
+          'body { background: #fff; }' +
+          'img { width: 100%; height: auto; display: block; }' +
+          '@page { size: A4 landscape; margin: 7mm; }' +
+          '@media print { img { width: 100%; } }' +
+          '</style></head><body>' +
+          '<img src="' + imgDataPng + '" onload="window.print();">' +
+          '</body></html>'
+        );
+        printWindow.document.close();
+      } else {
+        appAlert('ポップアップがブロックされました。\nブラウザのポップアップ許可設定を確認してください。');
+      }
+    } else {
+      // ダウンロードモード: jsPDF で A4 横向きに収めて直接ダウンロード
+      var imgData = canvas.toDataURL('image/jpeg', 0.92);
+      var pdf = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      var pageW  = pdf.internal.pageSize.getWidth();
+      var pageH  = pdf.internal.pageSize.getHeight();
+      var margin = 7;
+      var maxW   = pageW - margin * 2;
+      var maxH   = pageH - margin * 2;
+      var ratio  = canvas.width / canvas.height;
+      var drawW  = maxW;
+      var drawH  = drawW / ratio;
+      if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
+      pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+      pdf.save(year + '年度_' + testName + '_' + campusName + '_' + gradeName + '_成績テンプレート.pdf');
+    }
+
+    restoreBtn();
+
+  }).catch(function(e) {
+    container.remove();
+    if (printWindow) printWindow.close();
+    console.error('成績テンプレートPDF生成エラー:', e);
+    restoreBtn();
+    appAlert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+  });
+}
+
+
+// ===== 成績入力フォーム - 既存データ読み込み =====
+
+/**
+ * テスト名または生徒が変わったとき呼ばれる。
+ * 両方選択済みなら既存成績を取得してフォームに反映する。
+ */
+function onScoreFormChanged() {
+  var studentId = document.getElementById('score-student').value;
+  var testName  = document.getElementById('score-test').value;
+
+  if (!studentId || !testName) {
+    clearScoreFields();
+    updateScoreSubmitBtn(false);
+    document.getElementById('score-message').innerHTML = '';
+    return;
+  }
+
+  showMessage('score-message', '📥 データを読み込んでいます...', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        showMessage('score-message', 'エラー: ' + result.error, 'error');
+        return;
+      }
+      if (result.found) {
+        populateScoreForm(result.data);
+        showMessage('score-message', '✏️ 既存データを読み込みました。編集して「上書き保存」を押してください。', 'info');
+        updateScoreSubmitBtn(true);
+      } else {
+        clearScoreFields();
+        // 第N回基礎学力テスト（N>=2）なら前回テストの志望校を引き継ぐ
+        var basicMatch = testName.match(/^第(\d+)回基礎学力テスト$/);
+        var testNum = basicMatch ? parseInt(basicMatch[1], 10) : 0;
+        if (testNum >= 2) {
+          var prevTestName = '第' + (testNum - 1) + '回基礎学力テスト';
+          google.script.run
+            .withSuccessHandler(function(prevResult) {
+              if (prevResult.success && prevResult.found &&
+                  (prevResult.data.shogaku1 || prevResult.data.shogaku2)) {
+                setSchoolField(1, prevResult.data.shogaku1, prevResult.data.shogaku1_gakka);
+                setSchoolField(2, prevResult.data.shogaku2, prevResult.data.shogaku2_gakka);
+                showMessage('score-message',
+                  '📝 新規入力モードです。前回（' + prevTestName + '）の志望校を自動入力しました。',
+                  'info');
+              } else {
+                showMessage('score-message',
+                  '📝 新規入力モードです。点数を入力して「保存」を押してください。', 'info');
+              }
+              updateScoreSubmitBtn(false);
+            })
+            .withFailureHandler(function() {
+              showMessage('score-message',
+                '📝 新規入力モードです。点数を入力して「保存」を押してください。', 'info');
+              updateScoreSubmitBtn(false);
+            })
+            .getGradeDataByStudentAndTest(currentFiscalYear, studentId, prevTestName);
+        } else {
+          showMessage('score-message', '📝 新規入力モードです。点数を入力して「保存」を押してください。', 'info');
+          updateScoreSubmitBtn(false);
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      showMessage('score-message', 'エラー: ' + err, 'error');
+    })
+    .getGradeDataByStudentAndTest(currentFiscalYear, studentId, testName);
+}
+
+/** 点数・志望校フィールドをすべてクリア */
+function clearScoreFields() {
+  ['score-kokugo','score-shakai','score-sugaku','score-rika','score-eigo','score-gokei'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+  totalManuallySet = false;
+  [1, 2].forEach(function(w) {
+    document.getElementById('score-shogaku' + w + '-select').value = '';
+    document.getElementById('score-shogaku' + w + '-custom').value = '';
+    document.getElementById('score-shogaku' + w + '-custom').style.display = 'none';
+    document.getElementById('score-shogaku' + w + '-dept-select').innerHTML = '';
+    document.getElementById('score-shogaku' + w + '-dept-select').style.display = 'none';
+    document.getElementById('score-shogaku' + w + '-dept-custom').value = '';
+    document.getElementById('score-shogaku' + w + '-dept-custom').style.display = 'none';
+  });
+}
+
+/** 取得した成績データをフォームに反映する */
+function populateScoreForm(data) {
+  document.getElementById('score-kokugo').value = (data.kokugo !== '' && data.kokugo !== null) ? data.kokugo : '';
+  document.getElementById('score-shakai').value = (data.shakai !== '' && data.shakai !== null) ? data.shakai : '';
+  document.getElementById('score-sugaku').value = (data.sugaku !== '' && data.sugaku !== null) ? data.sugaku : '';
+  document.getElementById('score-rika').value   = (data.rika   !== '' && data.rika   !== null) ? data.rika   : '';
+  document.getElementById('score-eigo').value   = (data.eigo   !== '' && data.eigo   !== null) ? data.eigo   : '';
+  document.getElementById('score-gokei').value  = (data.gokei  !== '' && data.gokei  !== null) ? data.gokei  : '';
+  totalManuallySet = false; // 科目変更時に合計を再計算できるようにする
+
+  setSchoolField(1, data.shogaku1, data.shogaku1_gakka);
+  setSchoolField(2, data.shogaku2, data.shogaku2_gakka);
+}
+
+/**
+ * 志望校と志望学科をドロップダウンまたは直接入力欄にセットする
+ * @param {number} which 1 or 2
+ * @param {string} schoolName 志望校名
+ * @param {string} deptName   志望学科名
+ */
+function setSchoolField(which, schoolName, deptName) {
+  var select   = document.getElementById('score-shogaku' + which + '-select');
+  var custom   = document.getElementById('score-shogaku' + which + '-custom');
+  var deptSel  = document.getElementById('score-shogaku' + which + '-dept-select');
+  var deptCust = document.getElementById('score-shogaku' + which + '-dept-custom');
+
+  // いったんリセット
+  select.value = '';
+  custom.value = '';
+  custom.style.display = 'none';
+  deptSel.innerHTML = '';
+  deptSel.style.display = 'none';
+  deptCust.value = '';
+  deptCust.style.display = 'none';
+
+  if (!schoolName) return;
+
+  // ドロップダウンに存在するか確認
+  var found = false;
+  for (var i = 0; i < select.options.length; i++) {
+    if (select.options[i].value === schoolName) {
+      select.value = schoolName;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    select.value = '__other__';
+    custom.value = schoolName;
+    custom.style.display = 'block';
+  }
+
+  // 学科ドロップダウンを構築（onSchoolChange と同じ処理）
+  onSchoolChange(which);
+
+  // 学科をセット
+  if (deptName) {
+    var deptFound = false;
+    for (var j = 0; j < deptSel.options.length; j++) {
+      if (deptSel.options[j].value === deptName) {
+        deptSel.value = deptName;
+        deptFound = true;
+        break;
+      }
+    }
+    if (!deptFound) {
+      deptSel.value = '__other__';
+      deptCust.value = deptName;
+      deptCust.style.display = 'block';
+    }
+  }
+}
+
+/** 保存ボタンのラベル・色を新規/上書きで切り替える */
+function updateScoreSubmitBtn(isExisting) {
+  var btn = document.getElementById('score-submit-btn');
+  if (!btn) return;
+  if (isExisting) {
+    btn.textContent = '✏️ 上書き保存';
+    btn.style.background = '#ff9800';
+  } else {
+    btn.textContent = '保存';
+    btn.style.background = '#667eea';
+  }
+}
+
+/** クリアボタン押下時：フィールドクリア + ボタン状態リセット */
+function onScoreFormReset() {
+  setTimeout(function() {
+    totalManuallySet = false;
+    [1, 2].forEach(function(w) {
+      ['custom','dept-custom'].forEach(function(s) {
+        var el = document.getElementById('score-shogaku' + w + '-' + s);
+        if (el) { el.value = ''; el.style.display = 'none'; }
+      });
+      var ds = document.getElementById('score-shogaku' + w + '-dept-select');
+      if (ds) ds.style.display = 'none';
+    });
+    updateScoreSubmitBtn(false);
+    document.getElementById('score-message').innerHTML = '';
+  }, 0);
+}
+
+/**
+ * 情報入力フォーム送信
+ */
+document.addEventListener('DOMContentLoaded', function() {
+  // 成績入力フォーム
+  var gradeDataForm = document.getElementById('gradeDataForm');
+  if (gradeDataForm) {
+    gradeDataForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      var studentId = document.getElementById('score-student').value;
+      var testName = document.getElementById('score-test').value;
+
+      if (!studentId || !testName) {
+        showMessage('score-message', 'テスト名と生徒を選択してください', 'error');
+        return;
+      }
+
+      var scores = {
+        kokugo: document.getElementById('score-kokugo').value || '',
+        shakai: document.getElementById('score-shakai').value || '',
+        sugaku: document.getElementById('score-sugaku').value || '',
+        rika: document.getElementById('score-rika').value || '',
+        eigo: document.getElementById('score-eigo').value || '',
+        gokei: document.getElementById('score-gokei').value || '',
+        shogaku1: getSchoolValue(1),
+        shogaku1_gakka: getDeptValue(1),
+        shogaku2: getSchoolValue(2),
+        shogaku2_gakka: getDeptValue(2)
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('score-message', '✓ ' + result.message, 'success');
+            // 点数・志望校フィールドのみクリア（校舎・学年・テスト名は維持）
+            clearScoreFields();
+            // 生徒ドロップダウンをリセットして同じ校舎・学年で再読み込み
+            document.getElementById('score-student').innerHTML = '<option value="">読み込み中...</option>';
+            updateScoreSubmitBtn(false);
+            var _campusCode = document.getElementById('score-campus').value;
+            var _gradeCode  = document.getElementById('score-grade').value;
+            google.script.run
+              .withSuccessHandler(function(r) {
+                if (r.success) {
+                  populateStudentDropdown(r.students);
+                } else {
+                  document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
+                }
+              })
+              .withFailureHandler(function() {
+                document.getElementById('score-student').innerHTML = '<option value="">選択してください</option>';
+              })
+              .getStudentsForDropdown(_campusCode, _gradeCode, currentFiscalYear);
+          } else {
+            showMessage('score-message', 'エラー: ' + result.error, 'error');
+          }
+        })
+        .submitGradeData(currentFiscalYear, studentId, testName, scores);
+    });
+  }
+});
+
+</script>

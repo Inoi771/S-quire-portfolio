@@ -1,0 +1,1792 @@
+<script>
+// ===== 【一覧表タブ】 =====
+
+    var listTableData       = [];    // バックエンドから取得した全生徒データ
+    var listSortCol         = null;  // 現在のソート列
+    var listSortAsc         = true;  // true=昇順 / false=降順
+    var activeListCampusTab = 'all'; // 現在表示中のタブ（'all' or 校舎コード）
+
+    // 成績表キャッシュ（studentId → {gradeResult, analysis}）
+    // 「表示する」ボタンを押すたびにリセットされる
+    var reportDataCache = {};
+
+    /**
+     * 一覧表タブのフィルターパネルの表示/非表示を切り替える
+     */
+    function toggleListFilterPanel() {
+      var panel = document.getElementById('list-filter-panel');
+      var icon = document.getElementById('list-filter-toggle-icon');
+      var desc = document.getElementById('list-filter-desc');
+      if (panel.style.display === 'none') {
+        panel.style.display = '';
+        desc.style.display = '';
+        icon.textContent = '▼';
+      } else {
+        panel.style.display = 'none';
+        desc.style.display = 'none';
+        icon.textContent = '▶';
+      }
+      // 折りたたみ後にテーブルの高さを再計算
+      updateListScrollArea_();
+    }
+
+    /**
+     * 一覧表のスクロールエリアを整備する
+     * CSS flex レイアウトが高さ管理を担うため、JS はテーブルの横スクロールのみ設定する
+     */
+    function updateListScrollArea_() {
+      // overflow の設定はすべて grades-scroll-area（CSS）に集約
+      // list-table-container / list-tab-content に overflow を設定すると
+      // そちらが sticky の基準になってしまい thead が固定されなくなるためクリアのみ行う
+      var outerDiv = document.getElementById('list-table-container');
+      if (outerDiv) {
+        outerDiv.style.maxHeight = '';
+        outerDiv.style.overflow  = '';
+        outerDiv.style.overflowX = '';
+        outerDiv.style.overflowY = '';
+      }
+      var innerDiv = document.getElementById('list-tab-content');
+      if (innerDiv) {
+        innerDiv.style.maxHeight = '';
+        innerDiv.style.overflow  = '';
+      }
+    }
+
+    /**
+     * 一覧表タブを開いたとき、フィルター選択肢を設定する
+     * campusData / gradeData / testNames は loadDropdownData() で格納済み
+     */
+    function initGradesList() {
+      // テスト名セレクト
+      var testSel = document.getElementById('list-test-select');
+      if (!testSel) return;
+
+      // テスト名が未設定の場合のみ初期化する（loadDropdownData で設定済みならスキップ）
+      if (testSel.options.length <= 1) {
+        // score-test から選択肢をコピー
+        var scoreSel = document.getElementById('score-test');
+        if (scoreSel && scoreSel.options.length > 1) {
+          testSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+          for (var i = 1; i < scoreSel.options.length; i++) {
+            var opt = scoreSel.options[i];
+            testSel.innerHTML += '<option value="' + opt.value + '">' + opt.text + '</option>';
+          }
+        } else {
+          // score-test もまだ空の場合、直接バックエンドから取得
+          google.script.run
+            .withSuccessHandler(function(r) {
+              if (!r.success || !r.testNames) return;
+              var sel = document.getElementById('list-test-select');
+              if (sel && sel.options.length <= 1) {
+                sel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+                r.testNames.forEach(function(t) {
+                  sel.innerHTML += '<option value="' + t + '">' + t + '</option>';
+                });
+              }
+            })
+            .withFailureHandler(function(err) { console.error('getGradesConfigForWeb失敗:', err); })
+            .getGradesConfigForWeb();
+        }
+      }
+
+      // 校舎チェックボックス（campusData: code→name）
+      // campusData の読み込みタイミングに関わらず常に再生成する
+      var box = document.getElementById('list-campus-checkboxes');
+      if (box) {
+        // 配属校舎が設定されている場合はその校舎のみデフォルトチェック。未設定なら全校舎チェック
+        var prefCodes = (typeof preferredCampuses !== 'undefined' && Array.isArray(preferredCampuses) && preferredCampuses.length > 0)
+          ? preferredCampuses.map(function(c) { return String(c).padStart(2, '0'); })
+          : null; // null = 全校舎チェック
+        var html = '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+                 + '<input type="checkbox" id="list-campus-all" onchange="onListCampusAllChange()" checked style="width:16px;height:16px;cursor:pointer;"> 全校舎</label>';
+        for (var code in campusData) {
+          var isChecked = !prefCodes || prefCodes.indexOf(String(code).padStart(2, '0')) !== -1;
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+               + '<input type="checkbox" class="list-campus-cb" value="' + code + '" onchange="onListCampusChange()"' + (isChecked ? ' checked' : '') + ' style="width:16px;height:16px;cursor:pointer;"> '
+               + campusData[code] + '</label>';
+        }
+        box.innerHTML = html;
+      }
+
+      // 志望校フィルター（schoolsData は loadDropdownData() で設定済み）
+      var schoolSel = document.getElementById('list-school-filter');
+      if (schoolSel && schoolSel.options.length <= 1) {
+        schoolSel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+        if (typeof schoolsData !== 'undefined') {
+          schoolsData.forEach(function(s) {
+            schoolSel.innerHTML += '<option value="' + s.name + '">' + s.name + '</option>';
+          });
+        }
+      }
+    }
+
+    /** 志望校フィルター変更時：学科フィルターを更新する */
+    function onListSchoolFilterChange() {
+      var schoolVal = document.getElementById('list-school-filter').value;
+      var wrapEl    = document.getElementById('list-dept-filter-wrap');
+      var deptSel   = document.getElementById('list-dept-filter');
+
+      deptSel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+      wrapEl.style.display = 'none';
+
+      if (schoolVal && typeof schoolsData !== 'undefined') {
+        var school = null;
+        for (var i = 0; i < schoolsData.length; i++) {
+          if (schoolsData[i].name === schoolVal) { school = schoolsData[i]; break; }
+        }
+        if (school && school.departments && school.departments.length > 0) {
+          school.departments.forEach(function(d) {
+            deptSel.innerHTML += '<option value="' + d + '">' + d + '</option>';
+          });
+          wrapEl.style.display = 'block';
+        }
+      }
+    }
+
+    /** 「全校舎」チェックボックス変更時（各校舎チェックとは独立） */
+    function onListCampusAllChange() {
+      // 独立したチェックボックスのため同期処理なし
+    }
+
+    /** 個別校舎チェックボックス変更時（全校舎チェックとは独立） */
+    function onListCampusChange() {
+      // 独立したチェックボックスのため同期処理なし
+    }
+
+    /** 「表示する」ボタン：バックエンドからデータ取得して描画 */
+    function loadGradesList() {
+      var year     = currentFiscalYear;
+      var testName = document.getElementById('list-test-select').value;
+
+      if (!year) {
+        appAlert('年度が選択されていません。');
+        return;
+      }
+      if (!testName) {
+        appAlert('テスト名を選択してください。');
+        return;
+      }
+
+      var container = document.getElementById('list-table-container');
+      container.innerHTML = '<p style="padding:16px;color:#999;font-size:14px;">読み込み中...</p>';
+      document.getElementById('list-count-label').style.display = 'none';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            container.innerHTML = '<p style="padding:16px;color:#e53935;">エラー: ' + result.error + '</p>';
+            return;
+          }
+          listTableData = result.students;
+          listSortCol   = null;
+          listSortAsc   = true;
+          buildListCampusTabs();
+          // ランキング表ボタンを有効化
+          var rb = document.getElementById('rankingPdfBtn');
+          var ra = document.getElementById('rankingPdfArrowBtn');
+          if (rb) { rb.disabled = false; rb.style.opacity = '1'; rb.style.cursor = 'pointer'; }
+          if (ra) { ra.disabled = false; ra.style.opacity = '1'; ra.style.cursor = 'pointer'; }
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = '<p style="padding:16px;color:#e53935;">通信エラー: ' + err + '</p>';
+        })
+        .getStudentListWithGrades(year, testName);
+    }
+
+    /**
+     * 指定した校舎コードでフィルタリングしたデータを返す（タブ内部用ヘルパー）
+     * @param {string} campusCode 'all' で全校舎、それ以外は特定の校舎コード
+     */
+    function getFilteredListDataForCampus(campusCode) {
+      var schoolFilter = document.getElementById('list-school-filter').value;
+      var deptFilterEl = document.getElementById('list-dept-filter');
+      var deptFilter   = deptFilterEl ? deptFilterEl.value : '';
+
+      return listTableData.filter(function(s) {
+        if (!s.hasGrade) return false;
+        // 校舎フィルター
+        if (campusCode !== 'all') {
+          var normalizedCampus = String(s.campus || '').padStart(2, '0');
+          if (normalizedCampus !== campusCode) return false;
+        }
+        // 志望校フィルター
+        if (schoolFilter) {
+          if (deptFilter) {
+            var match1 = (s.shogaku1 === schoolFilter && s.shogaku1_gakka === deptFilter);
+            var match2 = (s.shogaku2 === schoolFilter && s.shogaku2_gakka === deptFilter);
+            if (!match1 && !match2) return false;
+          } else {
+            if (s.shogaku1 !== schoolFilter && s.shogaku2 !== schoolFilter) return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    /** 現在のアクティブタブのフィルタリング済みデータを返す */
+    function getFilteredListData() {
+      return getFilteredListDataForCampus(activeListCampusTab || 'all');
+    }
+
+    /**
+     * チェックボックスの状態をもとに校舎タブを動的に構築して最初のタブを表示する
+     * 「表示する」ボタン押下後に呼ばれる
+     */
+    function buildListCampusTabs() {
+      var tabBarContainer = document.getElementById('list-tab-bar-container');
+      var dataContainer   = document.getElementById('list-table-container');
+
+      // チェック済みのタブを収集
+      var tabs = [];
+      var allCb = document.getElementById('list-campus-all');
+      if (allCb && allCb.checked) {
+        tabs.push({ code: 'all', label: '全校舎' });
+      }
+      document.querySelectorAll('.list-campus-cb:checked').forEach(function(cb) {
+        var code = String(cb.value).padStart(2, '0');
+        var label = campusData[cb.value] || campusData[code] || cb.value;
+        tabs.push({ code: code, label: label });
+      });
+
+      if (tabs.length === 0) {
+        if (tabBarContainer) tabBarContainer.innerHTML = '';
+        if (dataContainer) dataContainer.innerHTML = '<p style="padding:16px;color:#999;text-align:center;">校舎を選択してください。</p>';
+        document.getElementById('list-count-label').style.display = 'none';
+        return;
+      }
+
+      // 最初のタブをアクティブに設定
+      activeListCampusTab = tabs[0].code;
+
+      // タブバーをフィルターエリア（list-tab-bar-container）に配置
+      var tabBarHtml = '<div id="list-campus-tab-bar" style="display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:2px solid #e0e8ff;padding-bottom:8px;margin-top:8px;">';
+      tabs.forEach(function(tab) {
+        var count = getFilteredListDataForCampus(tab.code).length;
+        var isActive = (tab.code === activeListCampusTab);
+        var btnStyle = isActive
+          ? 'padding:8px 16px;border:none;border-bottom:3px solid #667eea;background:#f0f4ff;color:#667eea;font-weight:700;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;'
+          : 'padding:8px 16px;border:1px solid #ddd;border-bottom:none;background:#f9f9f9;color:#888;font-weight:600;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+        tabBarHtml += '<button id="list-tab-btn-' + tab.code + '" onclick="switchListCampusTab(\'' + tab.code + '\')" style="' + btnStyle + '">'
+          + tab.label + ' <span style="font-size:11px;opacity:0.75;">(' + count + ')</span></button>';
+      });
+      tabBarHtml += '</div>';
+      if (tabBarContainer) tabBarContainer.innerHTML = tabBarHtml;
+
+      // データコンテナはスクロールエリア（list-table-container）内に配置
+      if (dataContainer) dataContainer.innerHTML = '<div id="list-tab-content"></div>';
+      renderGradesTable();
+    }
+
+    /**
+     * 校舎タブを切り替えてテーブルを再描画する
+     * @param {string} code 'all' または校舎コード
+     */
+    function switchListCampusTab(code) {
+      activeListCampusTab = code;
+      listSortCol = null;
+      listSortAsc = true;
+
+      // タブボタンのスタイルを更新
+      var tabBar = document.getElementById('list-campus-tab-bar');
+      if (tabBar) {
+        tabBar.querySelectorAll('button').forEach(function(btn) {
+          var tabCode = btn.id.replace('list-tab-btn-', '');
+          if (tabCode === code) {
+            btn.style.cssText = 'padding:8px 16px;border:none;border-bottom:3px solid #667eea;background:#f0f4ff;color:#667eea;font-weight:700;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+          } else {
+            btn.style.cssText = 'padding:8px 16px;border:1px solid #ddd;border-bottom:none;background:#f9f9f9;color:#888;font-weight:600;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+          }
+        });
+      }
+      renderGradesTable();
+    }
+
+    /**
+     * 一覧表を描画する（画面幅が狭ければカード表示、広ければテーブル表示）
+     * listSortCol / listSortAsc に従ってソートして描画
+     */
+    function renderGradesTable() {
+      var data = getFilteredListData();
+
+      // デフォルトソート: 校舎番号昇順 → 同一校舎内で五十音順
+      data.sort(function(a, b) {
+        var campA = parseInt(a.campus, 10) || 0;
+        var campB = parseInt(b.campus, 10) || 0;
+        if (campA !== campB) return campA - campB;
+        return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
+      });
+
+      // ユーザー指定のソート（列ヘッダークリック時）
+      if (listSortCol) {
+        data.sort(function(a, b) {
+          var va = a[listSortCol];
+          var vb = b[listSortCol];
+          // 空文字・null・undefinedはすべて「データなし」として末尾に回す
+          var aEmpty = (va === '' || va === null || va === undefined);
+          var bEmpty = (vb === '' || vb === null || vb === undefined);
+          if (aEmpty && bEmpty) return 0;
+          if (aEmpty) return 1;
+          if (bEmpty) return -1;
+          if (typeof va === 'number') return listSortAsc ? va - vb : vb - va;
+          return listSortAsc ? String(va).localeCompare(String(vb), 'ja') : String(vb).localeCompare(String(va), 'ja');
+        });
+      }
+
+      // 件数ラベル
+      var countLabel = document.getElementById('list-count-label');
+      countLabel.style.display = 'block';
+      countLabel.textContent   = data.length + '件';
+
+      if (data.length === 0) {
+        var emptyEl = document.getElementById('list-tab-content') || document.getElementById('list-table-container');
+        emptyEl.innerHTML = '<p style="padding:16px;color:#999;text-align:center;">該当する生徒がいません。</p>';
+        return;
+      }
+
+      // 画面幅で表示形式を切り替え（600px未満 → カード表示）
+      if (window.innerWidth < 600) {
+        renderGradesCards(data);
+      } else {
+        renderGradesTableDesktop(data);
+      }
+    }
+
+    /**
+     * PC向けテーブル表示（学年列なし）
+     */
+    function renderGradesTableDesktop(data) {
+      // ソートアイコンヘルパー
+      function sortIcon(col) {
+        if (listSortCol !== col) return ' <span style="color:#bbb;font-size:11px;">⇅</span>';
+        return listSortAsc
+          ? ' <span style="color:#667eea;font-size:11px;">▲</span>'
+          : ' <span style="color:#667eea;font-size:11px;">▼</span>';
+      }
+
+      var container = document.getElementById('list-tab-content') || document.getElementById('list-table-container');
+
+      // 固定列の幅定義（No. + 氏名の2列のみ固定）
+      var colW1 = 36;   // No.
+      var colW2 = 100;  // 氏名
+      var stickyBorder = 'border-right:2px solid #c8d8ff;';
+
+      // ヘッダー: <thead> 全体を sticky にする（個別 th への top:0 は thead の範囲内のみで切れてしまうため）
+      // thBase から position:sticky;top:0 を除去 → thead 要素に設定
+      var thBase   = 'padding:10px 6px;text-align:center;white-space:nowrap;background:#f0f4ff;border-bottom:2px solid #c8d8ff;font-size:13px;';
+      // 固定2列: 横方向 sticky（left）のみ。縦方向は thead が担う。角になるので z-index は thead(2) より高い 3
+      var thFixed1 = thBase + 'position:sticky;left:0;z-index:3;width:' + colW1 + 'px;min-width:' + colW1 + 'px;max-width:' + colW1 + 'px;';
+      var thFixed2 = thBase + 'position:sticky;left:' + colW1 + 'px;z-index:3;width:' + colW2 + 'px;min-width:' + colW2 + 'px;max-width:' + colW2 + 'px;' + stickyBorder;
+      // スクロール列: sticky 不要（thead が縦固定を担う）
+      var thScroll      = thBase;
+      var thScrollClick = thBase + 'cursor:pointer;user-select:none;';
+      var thSubject     = thScrollClick + 'min-width:60px;';
+      var thTotal       = thScrollClick + 'min-width:68px;';
+
+      // データセル
+      var tdBase    = 'padding:9px 6px;border-bottom:1px solid #eee;font-size:13px;text-align:center;white-space:nowrap;';
+      var tdFixed1  = tdBase + 'position:sticky;left:0;z-index:1;width:' + colW1 + 'px;min-width:' + colW1 + 'px;max-width:' + colW1 + 'px;';
+      var tdFixed2  = tdBase + 'position:sticky;left:' + colW1 + 'px;z-index:1;width:' + colW2 + 'px;min-width:' + colW2 + 'px;max-width:' + colW2 + 'px;' + stickyBorder;
+      var tdSubject = tdBase + 'min-width:60px;';
+      var tdTotal   = tdBase + 'min-width:68px;';
+
+      var html = '<table style="width:100%;border-collapse:collapse;min-width:780px;">';
+      html += '<thead style="position:sticky;top:0;z-index:2;"><tr>';
+      html += '<th style="' + thFixed1 + '">No.</th>';
+      html += '<th style="' + thFixed2 + 'text-align:left;">氏名</th>';
+      html += '<th style="' + thScroll + '">校舎</th>';
+      html += '<th onclick="sortGradesList(\'kokugo\')" style="' + thSubject + '">国語' + sortIcon('kokugo') + '</th>';
+      html += '<th onclick="sortGradesList(\'shakai\')" style="' + thSubject + '">社会' + sortIcon('shakai') + '</th>';
+      html += '<th onclick="sortGradesList(\'sugaku\')" style="' + thSubject + '">数学' + sortIcon('sugaku') + '</th>';
+      html += '<th onclick="sortGradesList(\'rika\')"   style="' + thSubject + '">理科' + sortIcon('rika')   + '</th>';
+      html += '<th onclick="sortGradesList(\'eigo\')"   style="' + thSubject + '">英語' + sortIcon('eigo')   + '</th>';
+      html += '<th onclick="sortGradesList(\'total\')"  style="' + thTotal   + 'font-weight:700;">合計' + sortIcon('total') + '</th>';
+      html += '<th style="' + thScroll + '">第1志望</th>';
+      html += '<th style="' + thScroll + '">第2志望</th>';
+      html += '</tr></thead>';
+      html += '<tbody>';
+
+      data.forEach(function(s, idx) {
+        var rowBg = idx % 2 === 0 ? '#fff' : '#fafbff';
+        html += '<tr style="background:' + rowBg + ';">';
+        html += '<td style="' + tdFixed1 + 'background:' + rowBg + ';color:#aaa;font-size:12px;">' + (idx + 1) + '</td>';
+        html += '<td style="' + tdFixed2 + 'background:' + rowBg + ';text-align:left;">'
+              + '<span style="font-size:14px;">' + (s.name || '-') + '</span>'
+              + (s.furigana ? '<br><span style="font-size:11px;color:#999;">' + s.furigana + '</span>' : '')
+              + '</td>';
+        html += '<td style="' + tdBase + '">' + (campusData[s.campus] || s.campus || '-') + '</td>';
+        ['kokugo','shakai','sugaku','rika','eigo'].forEach(function(col) {
+          var v = s[col];
+          var hasVal = (v !== '' && v !== null && v !== undefined);
+          html += '<td style="' + tdSubject + '">' + (hasVal ? v : '<span style="color:#ccc;">-</span>') + '</td>';
+        });
+        var hasTotal = (s.total !== '' && s.total !== null && s.total !== undefined);
+        html += '<td style="' + tdTotal + 'font-weight:700;color:' + (hasTotal ? '#333' : '#ccc') + ';">'
+              + (hasTotal ? s.total : '-') + '</td>';
+        var p1 = (s.passPercent1 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent1 + '%)</span>' : '';
+        var p2 = (s.passPercent2 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent2 + '%)</span>' : '';
+        var s1label = s.shogaku1 ? (s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + p1) : '<span style="color:#ccc;">-</span>';
+        var s2label = s.shogaku2 ? (s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + p2) : '<span style="color:#ccc;">-</span>';
+        html += '<td style="' + tdBase + 'font-size:12px;">' + s1label + '</td>';
+        html += '<td style="' + tdBase + 'font-size:12px;">' + s2label + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+      // テーブル描画後に実際のナビ＋フィルター高さから maxHeight を再計算
+      updateListScrollArea_();
+    }
+
+    /**
+     * スマートフォン向けカード表示
+     * ソート選択はドロップダウン＋昇順/降順ボタンで操作
+     */
+    function renderGradesCards(data) {
+      var SORT_COLS = [
+        { key: 'kokugo', label: '国語' },
+        { key: 'shakai', label: '社会' },
+        { key: 'sugaku', label: '数学' },
+        { key: 'rika',   label: '理科' },
+        { key: 'eigo',   label: '英語' },
+        { key: 'total',  label: '合計' }
+      ];
+
+      // ソート操作バー
+      var sortOptions = SORT_COLS.map(function(c) {
+        return '<option value="' + c.key + '"' + (listSortCol === c.key ? ' selected' : '') + '>' + c.label + '</option>';
+      }).join('');
+
+      var sortBar = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'
+        + '<span style="font-size:13px;color:#555;font-weight:600;">並び替え:</span>'
+        + '<select id="list-sort-select" onchange="onListSortSelectChange()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:80px;">'
+        + '<option value="">選択</option>' + sortOptions
+        + '</select>'
+        + '<button onclick="onListSortDirToggle()" style="padding:6px 14px;border:1px solid #667eea;border-radius:6px;font-size:13px;background:white;color:#667eea;cursor:pointer;white-space:nowrap;font-weight:600;">'
+        + (listSortAsc ? '昇順 ▲' : '降順 ▼')
+        + '</button>'
+        + '</div>';
+
+      // カード一覧
+      var cards = data.map(function(s, idx) {
+        function score(v) {
+          return (v !== '' && v !== null && v !== undefined) ? '<b>' + v + '</b>' : '<span style="color:#ccc;">-</span>';
+        }
+        var campusName = campusData[s.campus] || s.campus || '-';
+        var shogakuLine = '';
+        if (s.shogaku1 || s.shogaku2) {
+          var sp1 = (s.passPercent1 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent1 + '%)</span>' : '';
+          var sp2 = (s.passPercent2 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent2 + '%)</span>' : '';
+          var sl1 = s.shogaku1 ? (s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + sp1) : '';
+          var sl2 = s.shogaku2 ? (s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + sp2) : '';
+          shogakuLine = '<div style="margin-top:6px;font-size:12px;color:#555;">'
+            + (sl1 ? '第1志望: ' + sl1 : '')
+            + (sl1 && sl2 ? ' / ' : '')
+            + (sl2 ? '第2志望: ' + sl2 : '')
+            + '</div>';
+        }
+
+        var hasTotal = (s.total !== '' && s.total !== null && s.total !== undefined);
+        return '<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.08);border:1px solid #e8edf5;">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+          +   '<div>'
+          +     '<div style="font-size:15px;font-weight:700;color:#222;"><span style="font-size:11px;color:#aaa;font-weight:400;margin-right:4px;">' + (idx + 1) + '.</span>' + (s.name || '-') + '</div>'
+          +     (s.furigana ? '<div style="font-size:11px;color:#999;">' + s.furigana + '</div>' : '')
+          +   '</div>'
+          +   '<div style="text-align:right;">'
+          +     '<div style="font-size:11px;color:#888;">' + campusName + '</div>'
+          +     '<div style="font-size:20px;font-weight:700;color:' + (hasTotal ? '#667eea' : '#ccc') + ';line-height:1.2;">'
+          +       (hasTotal ? s.total : '-')
+          +     '</div>'
+          +     '<div style="font-size:10px;color:#aaa;">合計</div>'
+          +   '</div>'
+          + '</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;background:#f8f9ff;border-radius:6px;padding:8px 4px;">'
+          +   ['kokugo','shakai','sugaku','rika','eigo'].map(function(col, i) {
+                var label = ['国','社','数','理','英'][i];
+                return '<div><div style="font-size:10px;color:#888;">' + label + '</div>'
+                     + '<div style="font-size:14px;">' + score(s[col]) + '</div></div>';
+              }).join('')
+          + '</div>'
+          + shogakuLine
+          + '</div>';
+      }).join('');
+
+      var cardsEl = document.getElementById('list-tab-content') || document.getElementById('list-table-container');
+      cardsEl.innerHTML = sortBar + cards;
+      updateListScrollArea_();
+    }
+
+    /** スマートフォン向けソートセレクトの変更ハンドラ */
+    function onListSortSelectChange() {
+      var sel = document.getElementById('list-sort-select');
+      listSortCol = sel ? sel.value || null : null;
+      listSortAsc = false; // 新しい列は降順（高い順）から
+      renderGradesTable();
+    }
+
+    /** スマートフォン向けソート方向トグル */
+    function onListSortDirToggle() {
+      listSortAsc = !listSortAsc;
+      renderGradesTable();
+    }
+
+    /**
+     * 列ヘッダークリック時のソート処理（PC向け）
+     * @param {string} col ソート対象の列キー
+     */
+    function sortGradesList(col) {
+      if (listSortCol === col) {
+        listSortAsc = !listSortAsc;
+      } else {
+        listSortCol = col;
+        listSortAsc = false; // 新しい列は降順（高い順）から
+      }
+      renderGradesTable();
+    }
+
+    // ===== ランキング表 =====
+
+    /**
+     * ひらがな・カタカナの先頭1文字をローマ字大文字イニシャルに変換する
+     * @param {string} sei 姓ふりがな
+     * @param {string} mei 名ふりがな
+     * @return {string} イニシャル（例: "Y.T."）
+     */
+    function toInitial(sei, mei) {
+      var map = {
+        'あ':'A','い':'I','う':'U','え':'E','お':'O',
+        'か':'K','き':'K','く':'K','け':'K','こ':'K',
+        'さ':'S','し':'S','す':'S','せ':'S','そ':'S',
+        'た':'T','ち':'T','つ':'T','て':'T','と':'T',
+        'な':'N','に':'N','ぬ':'N','ね':'N','の':'N',
+        'は':'H','ひ':'H','ふ':'F','へ':'H','ほ':'H',
+        'ま':'M','み':'M','む':'M','め':'M','も':'M',
+        'や':'Y','ゆ':'Y','よ':'Y',
+        'ら':'R','り':'R','る':'R','れ':'R','ろ':'R',
+        'わ':'W','を':'W','ん':'N',
+        'が':'G','ぎ':'G','ぐ':'G','げ':'G','ご':'G',
+        'ざ':'Z','じ':'J','ず':'Z','ぜ':'Z','ぞ':'Z',
+        'だ':'D','ぢ':'D','づ':'D','で':'D','ど':'D',
+        'ば':'B','び':'B','ぶ':'B','べ':'B','ぼ':'B',
+        'ぱ':'P','ぴ':'P','ぷ':'P','ぺ':'P','ぽ':'P',
+        'ア':'A','イ':'I','ウ':'U','エ':'E','オ':'O',
+        'カ':'K','キ':'K','ク':'K','ケ':'K','コ':'K',
+        'サ':'S','シ':'S','ス':'S','セ':'S','ソ':'S',
+        'タ':'T','チ':'T','ツ':'T','テ':'T','ト':'T',
+        'ナ':'N','ニ':'N','ヌ':'N','ネ':'N','ノ':'N',
+        'ハ':'H','ヒ':'H','フ':'F','ヘ':'H','ホ':'H',
+        'マ':'M','ミ':'M','ム':'M','メ':'M','モ':'M',
+        'ヤ':'Y','ユ':'Y','ヨ':'Y',
+        'ラ':'R','リ':'R','ル':'R','レ':'R','ロ':'R',
+        'ワ':'W','ヲ':'W','ン':'N',
+        'ガ':'G','ギ':'G','グ':'G','ゲ':'G','ゴ':'G',
+        'ザ':'Z','ジ':'J','ズ':'Z','ゼ':'Z','ゾ':'Z',
+        'ダ':'D','ヂ':'D','ヅ':'D','デ':'D','ド':'D',
+        'バ':'B','ビ':'B','ブ':'B','ベ':'B','ボ':'B',
+        'パ':'P','ピ':'P','プ':'P','ペ':'P','ポ':'P'
+      };
+      var s1 = sei ? (map[sei[0]] || sei[0].toUpperCase()) : '';
+      var s2 = mei ? (map[mei[0]] || mei[0].toUpperCase()) : '';
+      if (!s1 && !s2) return '';
+      if (!s2) return s1 + '.';
+      return s1 + '.' + s2 + '.';
+    }
+
+    /**
+     * ランキング表PDFメニューを開閉する
+     * @param {Event} event クリックイベント
+     */
+    function toggleRankingPdfMenu(event) {
+      event.stopPropagation();
+      var menu = document.getElementById('rankingPdfMenu');
+      if (menu.style.display === 'none') {
+        menu.style.display = 'block';
+        setTimeout(function() {
+          document.addEventListener('click', closeRankingPdfMenu, { once: true });
+        }, 0);
+      } else {
+        menu.style.display = 'none';
+      }
+    }
+
+    /** ランキング表PDFメニューを閉じる */
+    function closeRankingPdfMenu() {
+      var menu = document.getElementById('rankingPdfMenu');
+      if (menu) menu.style.display = 'none';
+    }
+
+    /**
+     * ランキング表のbodyコンテンツHTMLを生成する（ダウンロード用・html2canvas向け）
+     * @param {number} year 年度
+     * @param {string} testName テスト名
+     * @param {Array} students 全生徒データ（listTableData）
+     * @return {string} ランキング表のHTMLコンテンツ（body内のみ）
+     */
+    function buildRankingBodyHtml(year, testName, students) {
+      var yearLabel = year + '年度';
+
+      var subjects = [
+        { name: '5教科合計', key: 'total' },
+        { name: '国語',     key: 'kokugo' },
+        { name: '社会',     key: 'shakai' },
+        { name: '数学',     key: 'sugaku' },
+        { name: '理科',     key: 'rika' },
+        { name: '英語',     key: 'eigo' }
+      ];
+
+      // 各教科のランキング生成
+      var rankings = subjects.map(function(subject) {
+        var sorted = students
+          .filter(function(s) { return s[subject.key] !== '' && s[subject.key] !== null && s[subject.key] !== undefined; })
+          .slice()
+          .sort(function(a, b) { return (Number(b[subject.key]) || 0) - (Number(a[subject.key]) || 0); });
+
+        var rank = 1;
+        var prevScore = null;
+        var list = [];
+
+        for (var i = 0; i < sorted.length; i++) {
+          var s = sorted[i];
+          var score = Number(s[subject.key]) || 0;
+
+          if (prevScore !== null && score < prevScore) {
+            rank = list.length + 1;
+          }
+
+          list.push({
+            rank: rank,
+            initial: toInitial(s.seiFurigana || '', s.meiFurigana || ''),
+            score: score + '点'
+          });
+          prevScore = score;
+
+          if (list.length >= 10) {
+            var nextScore = sorted[i + 1] ? (Number(sorted[i + 1][subject.key]) || 0) : null;
+            if (nextScore !== score) break;
+          }
+        }
+        return { name: subject.name, data: list };
+      });
+
+      var maxRowsCount = Math.max.apply(null, rankings.map(function(r) { return r.data.length; }).concat([1]));
+
+      var BASE_ROW_COUNT  = 10;
+      var BASE_ROW_HEIGHT = 35;
+      var BASE_FONT_SIZE  = 18;
+      var scale       = BASE_ROW_COUNT / maxRowsCount;
+      var rowHeight   = BASE_ROW_HEIGHT * scale;
+      var fontSize    = BASE_FONT_SIZE * scale;
+      var headerHeight = 36;
+      var tableHeight  = headerHeight + rowHeight * maxRowsCount;
+      var rowGap       = 22;
+      var SUBJECT_FONT_SIZE = 20;
+
+      function makeTable(ranking, maxRows) {
+        var html = '';
+        html += '<table style="width:100%; border-collapse:collapse; table-layout:fixed; height:' + tableHeight + 'px;">';
+        html += '<caption style="font-size:' + SUBJECT_FONT_SIZE + 'px; font-weight:bold; color:#000; padding:6px 0;">' + ranking.name + '</caption>';
+        html += '<tr>';
+        html += '<th style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px;">順位</th>';
+        html += '<th style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px; white-space:nowrap;">イニシャル</th>';
+        html += '<th style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px;">得点</th>';
+        html += '</tr>';
+        for (var i = 0; i < maxRows; i++) {
+          if (i < ranking.data.length) {
+            var r = ranking.data[i];
+            html += '<tr>';
+            html += '<td style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px;">' + r.rank + '</td>';
+            html += '<td style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px; white-space:nowrap;">' + r.initial + '</td>';
+            html += '<td style="border:1px solid #000; text-align:center; vertical-align:middle; padding:2px; font-size:' + fontSize + 'px; height:' + rowHeight + 'px;">' + r.score + '</td>';
+            html += '</tr>';
+          } else {
+            html += '<tr>';
+            html += '<td style="border-color:transparent; height:' + rowHeight + 'px;"></td>';
+            html += '<td style="border-color:transparent; height:' + rowHeight + 'px;"></td>';
+            html += '<td style="border-color:transparent; height:' + rowHeight + 'px;"></td>';
+            html += '</tr>';
+          }
+        }
+        html += '</table>';
+        return html;
+      }
+
+      var html = '';
+      html += '<div style="text-align:center; font-size:22px; font-weight:bold; margin:10px 0 8px; padding-bottom:6px; border-bottom:2px solid #000; font-family:sans-serif;">';
+      html += yearLabel + '\u3000' + testName + '\u3000塾内成績上位者';
+      html += '</div>';
+      html += '<div style="display:flex; flex-direction:column; gap:' + rowGap + 'px; width:100%; font-family:sans-serif;">';
+      html += '<div style="display:flex; gap:14px;">';
+      html += makeTable(rankings[0], maxRowsCount);
+      html += makeTable(rankings[1], maxRowsCount);
+      html += makeTable(rankings[2], maxRowsCount);
+      html += '</div>';
+      html += '<div style="display:flex; gap:14px;">';
+      html += makeTable(rankings[3], maxRowsCount);
+      html += makeTable(rankings[4], maxRowsCount);
+      html += makeTable(rankings[5], maxRowsCount);
+      html += '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * ランキング表PDFを生成する（ダウンロードまたは印刷）
+     * listTableData（全校舎）をもとにランキング表を作成する
+     * @param {string} mode 'download' または 'print'
+     */
+    function generateRankingPdf(mode) {
+      if (!listTableData || listTableData.length === 0) {
+        appAlert('先に「表示する」ボタンを押してデータを読み込んでください。');
+        return;
+      }
+      var testName = document.getElementById('list-test-select').value;
+      if (!testName) {
+        appAlert('テスト名を選択してください。');
+        return;
+      }
+
+      var year = currentFiscalYear;
+      var fileName = year + '年度_' + testName + '_ランキング表.pdf';
+
+      if (mode === 'print') {
+        // 印刷モード: 新ウィンドウを開いてブラウザの印刷ダイアログを表示
+        var bodyContent = buildRankingBodyHtml(year, testName, listTableData);
+        var printHtml = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
+          + '<title>' + year + '年度 ' + testName + ' ランキング表</title>'
+          + '<style>'
+          + '@page { size: A4 portrait; margin: 8mm 6mm; }'
+          + 'body { font-family: sans-serif; margin: 8px; color: #000; }'
+          + '</style>'
+          + '</head><body>'
+          + bodyContent
+          + '<script>window.onload = function() { setTimeout(function() { window.print(); }, 300); };<\/script>'
+          + '</body></html>';
+        var win = window.open('', '_blank');
+        win.document.write(printHtml);
+        win.document.close();
+        return;
+      }
+
+      // ダウンロードモード: html2canvas + jsPDF
+      var renderDiv = document.getElementById('ranking-pdf-render');
+      renderDiv.innerHTML = buildRankingBodyHtml(year, testName, listTableData);
+
+      html2canvas(renderDiv, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false, windowWidth: 595 }).then(function(canvas) {
+        var imgData  = canvas.toDataURL('image/jpeg', 0.95);
+        var pdf      = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var a4W      = 210;
+        var a4H      = 297;
+        var margin   = 8;
+        var drawW    = a4W - margin * 2;
+        var drawH    = drawW * (canvas.height / canvas.width);
+
+        if (drawH > a4H - margin * 2) drawH = a4H - margin * 2;
+
+        pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+        pdf.save(fileName);
+        renderDiv.innerHTML = '';
+      }).catch(function(err) {
+        renderDiv.innerHTML = '';
+        console.error('ランキング表PDF生成エラー:', err);
+        appAlert('PDF生成中にエラーが発生しました。');
+      });
+    }
+
+// ===== 成績表タブ =====
+
+    var reportInitialized      = false;
+    var activeReportStudentId  = null;   // 現在表示中の生徒ID
+    var reportStudentListData  = [];     // 生徒リスト（{studentId, name}[]）
+
+    /**
+     * 成績表フィルターパネルの表示/非表示を切り替える
+     */
+    function toggleReportFilterPanel() {
+      var panel = document.getElementById('report-filter-panel');
+      var icon  = document.getElementById('report-filter-toggle-icon');
+      var desc  = document.getElementById('report-filter-desc');
+      if (panel.style.display === 'none') {
+        panel.style.display = '';
+        desc.style.display  = '';
+        icon.textContent    = '▼';
+      } else {
+        panel.style.display = 'none';
+        desc.style.display  = 'none';
+        icon.textContent    = '▶';
+      }
+    }
+
+    /** 成績表タブを開いたとき呼ばれる（ドロップダウンを初期化する） */
+    function initGradesReport() {
+      if (reportInitialized && document.getElementById('report-campus').options.length > 1) return;
+      var arr = Object.keys(campusData).map(function(code) {
+        return { code: code, name: campusData[code] };
+      });
+      document.getElementById('report-campus').innerHTML = buildCampusOptions(arr);
+      // テスト名ドロップダウンを構築
+      var testSelect = document.getElementById('report-test');
+      var testOpts = '<option value="">校舎を先に選択</option>';
+      if (testNamesData && testNamesData.length > 0) {
+        testOpts = '<option value="">選択してください</option>';
+        testNamesData.forEach(function(name) {
+          testOpts += '<option value="' + name + '">' + name + '</option>';
+        });
+      }
+      testSelect.innerHTML = testOpts;
+      var tabBar = document.getElementById('report-tabs-bar-container');
+      var scroll = document.getElementById('report-scroll-area');
+      if (tabBar) tabBar.innerHTML = '';
+      if (scroll) scroll.innerHTML = '';
+      reportInitialized = true;
+    }
+
+    /** 成績表：校舎が変更されたらリセット */
+    function onReportCampusChanged() {
+      var campusCode = document.getElementById('report-campus').value;
+      // テスト名ドロップダウンのプレースホルダーを校舎選択状態に応じて更新
+      var testSelect = document.getElementById('report-test');
+      if (!campusCode) {
+        var opts = '<option value="">校舎を先に選択</option>';
+        if (testNamesData && testNamesData.length > 0) {
+          testNamesData.forEach(function(name) {
+            opts += '<option value="' + name + '">' + name + '</option>';
+          });
+        }
+        testSelect.innerHTML = opts;
+      } else {
+        if (testSelect.options.length > 0 && testSelect.options[0].value === '') {
+          testSelect.options[0].text = '選択してください';
+        }
+      }
+      testSelect.value = '';
+      var tabBar = document.getElementById('report-tabs-bar-container');
+      var scroll = document.getElementById('report-scroll-area');
+      if (tabBar) tabBar.innerHTML = '';
+      if (scroll) scroll.innerHTML = '';
+      activeReportStudentId = null;
+      reportStudentListData  = [];
+      // PDF ボタンを無効化
+      var rb  = document.getElementById('reportPdfBtn');
+      var ra  = document.getElementById('reportPdfArrowBtn');
+      var rds = document.getElementById('reportDriveSaveBtn');
+      if (rb)  { rb.disabled  = true; rb.style.opacity  = '0.5'; rb.style.cursor  = 'not-allowed'; }
+      if (ra)  { ra.disabled  = true; ra.style.opacity  = '0.5'; ra.style.cursor  = 'not-allowed'; }
+      if (rds) { rds.disabled = true; rds.style.opacity = '0.5'; rds.style.cursor = 'not-allowed'; }
+    }
+
+    /** 成績表：テスト名が変更されたらタブをリセット */
+    function onReportTestChanged() {
+      var tabBar = document.getElementById('report-tabs-bar-container');
+      var scroll = document.getElementById('report-scroll-area');
+      if (tabBar) tabBar.innerHTML = '';
+      if (scroll) scroll.innerHTML = '';
+      activeReportStudentId = null;
+      reportStudentListData  = [];
+      // PDF ボタンを無効化
+      var rb  = document.getElementById('reportPdfBtn');
+      var ra  = document.getElementById('reportPdfArrowBtn');
+      var rds = document.getElementById('reportDriveSaveBtn');
+      if (rb)  { rb.disabled  = true; rb.style.opacity  = '0.5'; rb.style.cursor  = 'not-allowed'; }
+      if (ra)  { ra.disabled  = true; ra.style.opacity  = '0.5'; ra.style.cursor  = 'not-allowed'; }
+      if (rds) { rds.disabled = true; rds.style.opacity = '0.5'; rds.style.cursor = 'not-allowed'; }
+    }
+
+    /**
+     * 「表示する」ボタン：生徒リストを取得して生徒タブを構築する
+     */
+    function loadReportStudentList() {
+      var campusCode = document.getElementById('report-campus').value;
+      var testName   = document.getElementById('report-test').value;
+      var tabBar     = document.getElementById('report-tabs-bar-container');
+      var scrollArea = document.getElementById('report-scroll-area');
+
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+      if (!testName)   { appAlert('テスト名を選択してください。'); return; }
+
+      if (tabBar)     tabBar.innerHTML = '';
+      if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#999;font-size:14px;text-align:center;">読み込み中...</p>';
+      activeReportStudentId = null;
+      reportStudentListData  = [];
+      reportDataCache        = {}; // キャッシュをリセット
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#e53935;">エラー: ' + result.error + '</p>';
+            return;
+          }
+          buildReportStudentTabs(result.students || []);
+        })
+        .withFailureHandler(function(err) {
+          if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#e53935;">通信エラー: ' + err + '</p>';
+        })
+        .getStudentsWithGradesByTest(currentFiscalYear, campusCode, testName);
+    }
+
+    /**
+     * 生徒ごとのループタブを構築して最初の生徒の成績表を表示する
+     * @param {Array} students {studentId, name}[]
+     */
+    function buildReportStudentTabs(students) {
+      reportStudentListData = students;
+      var tabBar     = document.getElementById('report-tabs-bar-container');
+      var scrollArea = document.getElementById('report-scroll-area');
+
+      // PDF ボタンの有効/無効を切り替え
+      var rb  = document.getElementById('reportPdfBtn');
+      var ra  = document.getElementById('reportPdfArrowBtn');
+      var rds = document.getElementById('reportDriveSaveBtn');
+      var hasStudents = students.length > 0;
+      if (rb)  { rb.disabled  = !hasStudents; rb.style.opacity  = hasStudents ? '1' : '0.5'; rb.style.cursor  = hasStudents ? 'pointer' : 'not-allowed'; }
+      if (ra)  { ra.disabled  = !hasStudents; ra.style.opacity  = hasStudents ? '1' : '0.5'; ra.style.cursor  = hasStudents ? 'pointer' : 'not-allowed'; }
+      if (rds) { rds.disabled = !hasStudents; rds.style.opacity = hasStudents ? '1' : '0.5'; rds.style.cursor = hasStudents ? 'pointer' : 'not-allowed'; }
+
+      if (students.length === 0) {
+        if (tabBar)     tabBar.innerHTML = '';
+        if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#999;text-align:center;">成績データがある生徒がいません。</p>';
+        return;
+      }
+
+      activeReportStudentId = students[0].studentId;
+
+      // 生徒タブをフィルターエリア（report-tabs-bar-container）に配置
+      var btnStyle     = 'padding:10px 14px;background:white;border:none;cursor:pointer;font-weight:600;font-size:13px;border-bottom:3px solid transparent;transition:all 0.3s;white-space:nowrap;flex-shrink:0;';
+      var btnActiveAdd = 'color:var(--theme-color);border-bottom:3px solid var(--theme-color);';
+      var btnInactiveAdd = 'color:#666;';
+
+      var tabBtns = students.map(function(s) {
+        var isActive = s.studentId === activeReportStudentId;
+        return '<button onclick="switchReportStudentTab(\'' + s.studentId + '\')" id="report-student-tab-' + s.studentId + '" style="' + btnStyle + (isActive ? btnActiveAdd : btnInactiveAdd) + '">' + s.name + '</button>';
+      }).join('');
+
+      if (tabBar) {
+        tabBar.innerHTML =
+          '<div id="report-student-tabs" style="display:flex;overflow-x:auto;gap:0;padding:0 8px;border-bottom:1px solid #eee;flex-wrap:nowrap;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;">' +
+          tabBtns +
+          '</div>';
+        // ループスクロール初期化（DOMレンダリング後に実行）
+        setTimeout(function() { initSubTabLoop('report-student-tabs'); }, 50);
+      }
+
+      // レポートカードはスクロールエリアに配置（一覧表と同様に maxHeight でスクロール）
+      if (scrollArea) {
+        scrollArea.innerHTML = '<div id="report-card-container"></div>';
+        scrollArea.style.maxHeight = '70vh';
+        scrollArea.style.overflowY = 'auto';
+      }
+
+      // 最初の生徒を表示し、完了後にバックグラウンド先読みを開始
+      loadStudentReport(function() {
+        prefetchReportStudents_(students, 0);
+      });
+    }
+
+    /**
+     * 生徒タブを切り替えて成績表を再描画する
+     * @param {string} studentId 生徒ID
+     */
+    function switchReportStudentTab(studentId) {
+      activeReportStudentId = studentId;
+
+      // 全インスタンス（クローン含む）のスタイルを更新
+      document.querySelectorAll('[id^="report-student-tab-"]').forEach(function(btn) {
+        var tabId = btn.id.replace('report-student-tab-', '');
+        if (tabId === studentId) {
+          btn.style.color = 'var(--theme-color)';
+          btn.style.borderBottom = '3px solid var(--theme-color)';
+        } else {
+          btn.style.color = '#666';
+          btn.style.borderBottom = '3px solid transparent';
+        }
+      });
+
+      loadStudentReport();
+    }
+
+    /**
+     * 選択されたテスト名に対して表示すべきテスト名リストを返す
+     * 基礎学力テストの場合は累積表示（第2回選択→第1回+第2回）
+     * その他のテスト→そのテストのみ
+     */
+    function getDisplayTestNames(selectedTestName, allTestNames) {
+      if (!selectedTestName) return allTestNames;  // 空なら全テストを表示
+      var match = selectedTestName.match(/^第(\d+)回基礎学力テスト$/);
+      if (!match) {
+        return [selectedTestName];
+      }
+      var selectedNum = parseInt(match[1], 10);
+      var result = [];
+      for (var n = 1; n <= selectedNum; n++) {
+        var name = '第' + n + '回基礎学力テスト';
+        if (allTestNames.indexOf(name) !== -1) {
+          result.push(name);
+        }
+      }
+      // 選択されたテスト自体が結果に含まれていない場合（設定名が微妙に異なるケース対策）
+      if (result.indexOf(selectedTestName) === -1) {
+        result.push(selectedTestName);
+      }
+      return result;
+    }
+
+    /**
+     * 成績表：アクティブな生徒のレポートを読み込む
+     * @param {Function} [onComplete] 表示完了後に呼ばれるコールバック（省略可）
+     */
+    function loadStudentReport(onComplete) {
+      var studentId = activeReportStudentId;
+      var container = document.getElementById('report-card-container');
+
+      if (!container) return;
+      if (!studentId) { container.innerHTML = ''; return; }
+
+      var selectedTest = (document.getElementById('report-test') || {}).value || '';
+
+      // キャッシュ確認 → あれば即座に描画
+      if (reportDataCache[studentId]) {
+        var cached = reportDataCache[studentId];
+        var displayTests = getDisplayTestNames(selectedTest, cached.gradeResult.testNames);
+        renderReportCard(cached.gradeResult.student, cached.gradeResult.grades, displayTests, cached.gradeResult.schoolAverages, cached.analysis, cached.gradeResult.deviationValues);
+        if (onComplete) onComplete();
+        return;
+      }
+
+      container.innerHTML = '<p style="padding:20px;color:#999;font-size:14px;text-align:center;">読み込み中...</p>';
+
+      var gradeResult    = null;
+      var analysisResult = null;
+      var loaded         = 0;
+
+      function tryRender() {
+        loaded++;
+        if (loaded < 2) return;
+        if (!gradeResult || !gradeResult.success) {
+          container.innerHTML = '<p style="padding:20px;color:#e53935;">エラー: ' + (gradeResult ? gradeResult.error : '不明') + '</p>';
+          if (onComplete) onComplete();
+          return;
+        }
+        // キャッシュに保存
+        var analysis = (analysisResult && analysisResult.success && analysisResult.exists) ? analysisResult.analysis : null;
+        reportDataCache[studentId] = { gradeResult: gradeResult, analysis: analysis };
+
+        // 現在もこの生徒が選ばれている場合のみ描画（タブを切り替えていた場合はスキップ）
+        if (activeReportStudentId === studentId) {
+          var displayTests = getDisplayTestNames(selectedTest, gradeResult.testNames);
+          renderReportCard(gradeResult.student, gradeResult.grades, displayTests, gradeResult.schoolAverages, analysis, gradeResult.deviationValues);
+        }
+        if (onComplete) onComplete();
+      }
+
+      // 成績データとAI分析を並列で取得
+      google.script.run
+        .withSuccessHandler(function(result) { gradeResult = result; tryRender(); })
+        .withFailureHandler(function(err) { gradeResult = { success: false, error: err }; tryRender(); })
+        .getStudentGradeReport(currentFiscalYear, studentId);
+
+      google.script.run
+        .withSuccessHandler(function(result) { analysisResult = result; tryRender(); })
+        .withFailureHandler(function() { analysisResult = { success: false }; tryRender(); })
+        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+    }
+
+    /**
+     * 残りの生徒データをバックグラウンドで順次先読みしてキャッシュに保存する
+     * 「表示する」直後に最初の生徒の次から実行される
+     * @param {Array} students 生徒リスト
+     * @param {number} doneIdx 処理済みのインデックス（最初の生徒は0）
+     */
+    function prefetchReportStudents_(students, doneIdx) {
+      var nextIdx = doneIdx + 1;
+      if (nextIdx >= students.length) return;
+
+      var studentId    = students[nextIdx].studentId;
+      var selectedTest = (document.getElementById('report-test') || {}).value || '';
+
+      // すでにキャッシュ済みならスキップして次へ
+      if (reportDataCache[studentId]) {
+        prefetchReportStudents_(students, nextIdx);
+        return;
+      }
+
+      var gradeResult    = null;
+      var analysisResult = null;
+      var loaded         = 0;
+
+      function onDone() {
+        loaded++;
+        if (loaded < 2) return;
+        if (gradeResult && gradeResult.success) {
+          var analysis = (analysisResult && analysisResult.success && analysisResult.exists) ? analysisResult.analysis : null;
+          reportDataCache[studentId] = { gradeResult: gradeResult, analysis: analysis };
+        }
+        // 次の生徒を先読み
+        prefetchReportStudents_(students, nextIdx);
+      }
+
+      google.script.run
+        .withSuccessHandler(function(r) { gradeResult = r; onDone(); })
+        .withFailureHandler(function()  { gradeResult = { success: false }; onDone(); })
+        .getStudentGradeReport(currentFiscalYear, studentId);
+
+      google.script.run
+        .withSuccessHandler(function(r) { analysisResult = r; onDone(); })
+        .withFailureHandler(function()  { analysisResult = { success: false }; onDone(); })
+        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+    }
+
+    /**
+     * 成績表：1人分のHTML文字列を生成する内部ヘルパー（印刷ボタンなし）
+     * renderReportCard() と generateAllReportsPdf() の両方から呼ばれる
+     */
+    function buildStudentReportHtmlInner_(student, grades, testNames, schoolAverages, analysisData, deviationMap) {
+      var campusName = campusData[student.campus] || student.campus;
+      var gradeName = gradeData[student.grade] || student.grade;
+
+      // テスト名→成績データのマップ
+      var gradeMap = {};
+      grades.forEach(function(g) { gradeMap[g.testName] = g; });
+
+      var html = '';
+
+      // ---- 生徒情報ヘッダー ----
+      html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;">';
+      html += '<div style="margin-bottom: 12px;">';
+      html += '<h3 style="margin: 0; font-size: 18px; color: #333;">' + student.name + ' <span style="font-size: 13px; color: #999;">(' + student.furigana + ')</span></h3>';
+      html += '</div>';
+      html += '<div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: #666;">';
+      html += '<span>' + campusName + '</span>';
+      html += '<span>' + gradeName + '</span>';
+      if (student.schoolName) html += '<span>' + student.schoolName + '</span>';
+      html += '<span>' + currentFiscalYear + '年度</span>';
+      html += '</div>';
+
+      // 志望校（最新データから取得）+ 合格判定
+      var latestWithSchool = null;
+      for (var i = grades.length - 1; i >= 0; i--) {
+        if (grades[i].shogaku1) { latestWithSchool = grades[i]; break; }
+      }
+      if (latestWithSchool) {
+        html += '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 13px; color: #555;">';
+        html += '<span style="font-weight: 600;">志望校:</span> ';
+        html += '第1 ' + latestWithSchool.shogaku1;
+        if (latestWithSchool.shogaku1_gakka) html += '（' + latestWithSchool.shogaku1_gakka + '）';
+        if (latestWithSchool.shogaku2) {
+          html += ' / 第2 ' + latestWithSchool.shogaku2;
+          if (latestWithSchool.shogaku2_gakka) html += '（' + latestWithSchool.shogaku2_gakka + '）';
+        }
+        html += '</div>';
+      }
+
+      // 合格判定（AI分析から取得）
+      var passAssessment = (analysisData && analysisData.passAssessment) ? analysisData.passAssessment : [];
+      if (passAssessment.length > 0) {
+        html += '<div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">';
+        passAssessment.forEach(function(pa) {
+          if (!pa.probability) return;
+          var gradeColors = { A: '#1b5e20', B: '#2e7d32', 'C+': '#a16207', 'C-': '#b45309', 'D+': '#c2410c', 'D-': '#9a3412', E: '#b91c1c' };
+          var gradeBgs   = { A: '#dcfce7', B: '#dcfce7', 'C+': '#fef9c3', 'C-': '#fef3c7', 'D+': '#ffedd5', 'D-': '#fef2f2', E: '#fee2e2' };
+          var color = gradeColors[pa.probability.grade] || '#555';
+          var bg = gradeBgs[pa.probability.grade] || '#f5f5f5';
+          html += '<div style="padding: 8px 12px; background: ' + bg + '; border-radius: 6px; font-size: 12px; border: 1px solid ' + color + '30;">';
+          html += '<span style="font-weight: 700; color: ' + color + '; font-size: 16px;">' + pa.probability.grade + '</span>';
+          html += '<span style="color: ' + color + '; margin-left: 4px;">(' + pa.probability.percent + '%)</span>';
+          html += '<div style="color: #555; margin-top: 2px;">' + pa.schoolName;
+          if (pa.department) html += ' ' + pa.department;
+          html += '</div></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // ---- 成績テーブル ----
+      html += '<div style="background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow-x: auto; margin-bottom: 16px;">';
+      html += '<table style="width: 100%; border-collapse: collapse; min-width: 500px; font-size: 13px;">';
+
+      // テーブルヘッダー
+      html += '<thead><tr style="background: #f5f7fa;">';
+      html += '<th style="padding: 10px 8px; text-align: left; border-bottom: 2px solid #e0e0e0; font-weight: 700; white-space: nowrap;">テスト</th>';
+      var subjects = ['国語', '社会', '数学', '理科', '英語', '合計'];
+      subjects.forEach(function(subj) {
+        html += '<th style="padding: 10px 6px; text-align: center; border-bottom: 2px solid #e0e0e0; font-weight: 700; min-width: 44px;">' + subj + '</th>';
+      });
+      html += '</tr></thead>';
+
+      // テーブル本体
+      html += '<tbody>';
+      var hasAnyGrade = false;
+      var hasAnyAvg = false;
+      var fields = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+
+      testNames.forEach(function(testName, idx) {
+        var g = gradeMap[testName];
+        var avg = schoolAverages[testName] || null;
+        var dev = deviationMap[testName] || null;
+        var hasSubRow = avg || dev;
+        var bgColor = idx % 2 === 1 ? '#fafbfc' : '#fff';
+
+        // 生徒の成績行
+        html += '<tr style="background: ' + bgColor + ';">';
+        html += '<td style="padding: 10px 8px; border-bottom: ' + (hasSubRow ? 'none' : '1px solid #eee') + '; font-weight: 600; white-space: nowrap;">' + testName + '</td>';
+
+        if (g) {
+          hasAnyGrade = true;
+          fields.forEach(function(f) {
+            var val = g[f];
+            var displayVal = (val !== '' && val !== null && val !== undefined) ? val : '-';
+            var style = 'padding: 10px 6px; text-align: center; border-bottom: ' + (hasSubRow ? 'none' : '1px solid #eee') + ';';
+            if (f === 'total') style += ' font-weight: 700; color: #333;';
+            html += '<td style="' + style + '">' + displayVal + '</td>';
+          });
+        } else {
+          for (var j = 0; j < 6; j++) {
+            html += '<td style="padding: 10px 6px; text-align: center; border-bottom: ' + (hasSubRow ? 'none' : '1px solid #eee') + '; color: #ccc;">-</td>';
+          }
+        }
+        html += '</tr>';
+
+        // 学校平均行（データがある場合のみ）
+        if (avg) {
+          html += '<tr style="background: ' + bgColor + ';">';
+          html += '<td style="padding: 4px 8px; border-bottom: ' + (dev ? 'none' : '1px solid #eee') + '; font-size: 11px; color: #999; white-space: nowrap;">学校平均</td>';
+          hasAnyAvg = true;
+          fields.forEach(function(f) {
+            var avgVal = avg[f];
+            var displayAvg = (avgVal !== '' && avgVal !== null && avgVal !== undefined) ? (typeof avgVal === 'number' ? Math.round(avgVal * 10) / 10 : avgVal) : '-';
+            html += '<td style="padding: 4px 6px; text-align: center; border-bottom: ' + (dev ? 'none' : '1px solid #eee') + '; font-size: 11px; color: #999;">' + displayAvg + '</td>';
+          });
+          html += '</tr>';
+        }
+
+        // 偏差値行（データがある場合のみ）
+        if (dev) {
+          html += '<tr style="background: ' + bgColor + ';">';
+          html += '<td style="padding: 4px 8px 10px; border-bottom: 1px solid #eee; font-size: 11px; color: #7e57c2; white-space: nowrap; font-weight: 600;">偏差値</td>';
+          fields.forEach(function(f) {
+            var devVal = dev[f];
+            var displayDev = (devVal !== null && devVal !== undefined) ? devVal : '-';
+            var devColor = '#7e57c2';
+            if (typeof devVal === 'number') {
+              if (devVal >= 55) devColor = '#1976d2';
+              else if (devVal < 45) devColor = '#e53935';
+            }
+            html += '<td style="padding: 4px 6px 10px; text-align: center; border-bottom: 1px solid #eee; font-size: 11px; color: ' + devColor + '; font-weight: 600;">' + displayDev + '</td>';
+          });
+          html += '</tr>';
+        }
+      });
+
+      if (!hasAnyGrade) {
+        html += '<tr><td colspan="7" style="padding: 30px; text-align: center; color: #999;">成績データがまだ登録されていません。</td></tr>';
+      }
+
+      html += '</tbody></table></div>';
+
+      // 学校平均の注記
+      if (hasAnyAvg) {
+        html += '<div style="text-align: right; font-size: 11px; color: #999; margin-top: 4px; margin-bottom: 12px;">※学校平均はおよその値です。</div>';
+      }
+
+      // ---- AI分析コメント ----
+      if (!analysisData || !analysisData.comment) {
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">';
+        html += '<h4 style="margin: 0 0 8px; font-size: 15px; color: #333;">🤖 AI分析コメント</h4>';
+        html += '<p style="font-size: 13px; color: #999; margin: 0;">まだ生成されていません。管理者へ連絡してください。</p>';
+        html += '</div>';
+      } else {
+        var c = analysisData.comment;
+        html += '<div style="background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">';
+        html += '<h4 style="margin: 0 0 12px; font-size: 15px; color: #333;">🤖 AI分析コメント</h4>';
+
+        if (c.overall) {
+          html += '<div style="margin-bottom: 12px; padding: 10px; background: #f5f7fa; border-radius: 6px;">';
+          html += '<div style="font-weight: 600; font-size: 12px; color: #555; margin-bottom: 4px;">総合評価</div>';
+          html += '<div style="font-size: 13px; color: #333; line-height: 1.6;">' + c.overall + '</div>';
+          html += '</div>';
+        }
+
+        if (c.subjects) {
+          var subjLabels = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語' };
+          var diffBadgeMap = { harder: { label: '難化', color: '#e57373' }, easier: { label: '易化', color: '#66bb6a' } };
+          html += '<div style="margin-bottom: 12px;">';
+          html += '<div style="font-weight: 600; font-size: 12px; color: #555; margin-bottom: 6px;">教科別分析</div>';
+          html += '<div style="display: grid; gap: 6px;">';
+          ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'].forEach(function(subj) {
+            if (!c.subjects[subj]) return;
+            var diff = c.subjectDifficulty && c.subjectDifficulty[subj];
+            var badge = diffBadgeMap[diff];
+            var badgeHtml = badge
+              ? '<span style="display:inline-block;margin-left:4px;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;background:' + badge.color + ';color:white;">' + badge.label + '</span>'
+              : '';
+            html += '<div style="padding: 8px 10px; background: #fafbfc; border-radius: 4px; font-size: 12px; border-left: 3px solid var(--theme-color, #43e97b);">';
+            html += '<span style="font-weight: 600; color: #555;">' + subjLabels[subj] + '</span>' + badgeHtml + '<span style="color: #555;">: </span>';
+            html += '<span style="color: #333;">' + c.subjects[subj] + '</span>';
+            html += '</div>';
+          });
+          html += '</div></div>';
+        }
+
+        if (c.targetSchool) {
+          html += '<div style="margin-bottom: 12px; padding: 10px; background: #fff8e1; border-radius: 6px; border-left: 3px solid #f9a825;">';
+          html += '<div style="font-weight: 600; font-size: 12px; color: #555; margin-bottom: 4px;">志望校分析</div>';
+          html += '<div style="font-size: 13px; color: #333; line-height: 1.6;">' + c.targetSchool + '</div>';
+          html += '</div>';
+        }
+
+        if (c.trend) {
+          html += '<div style="padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #43a047;">';
+          html += '<div style="font-weight: 600; font-size: 12px; color: #555; margin-bottom: 4px;">推移分析</div>';
+          html += '<div style="font-size: 13px; color: #333; line-height: 1.6;">' + c.trend + '</div>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+      }
+
+      return html;
+    }
+
+    /** 成績表：レポートカードを描画する */
+    function renderReportCard(student, grades, testNames, schoolAverages, analysisData, computedDeviations) {
+      var container = document.getElementById('report-card-container');
+      var deviationMap = Object.assign(
+        {},
+        (computedDeviations || {}),
+        (analysisData && analysisData.deviationValues) ? analysisData.deviationValues : {}
+      );
+      container.innerHTML = buildStudentReportHtmlInner_(student, grades, testNames, schoolAverages, analysisData, deviationMap);
+    }
+
+// ===== 平均点管理 =====
+
+    var avgTestNames = [];       // テスト名リスト（ドロップダウン用）
+    var avgCurrentData = {};     // schoolName → {kokugo, shakai, sugaku, rika, eigo}
+    var avgInitialized = false;
+
+    /** 平均点タブを開いたとき呼ばれる（ドロップダウンが空なら再初期化する） */
+    function initGradesAverage() {
+      var select = document.getElementById('avg-test-select');
+      // 既にテスト名がセットされていればスキップ
+      if (avgInitialized && select && select.options.length > 1) return;
+
+      // テスト名ドロップダウンを現在の設定から構築
+      var testSelect = document.getElementById('score-test');
+      if (testSelect && testSelect.options.length > 1) {
+        select.innerHTML = '<option value="">テストを選択してください</option>';
+        avgTestNames = [];
+        for (var i = 1; i < testSelect.options.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = testSelect.options[i].value;
+          opt.textContent = testSelect.options[i].textContent;
+          select.appendChild(opt);
+          avgTestNames.push(testSelect.options[i].value);
+        }
+        avgInitialized = true;
+      } else if (!avgInitialized) {
+        // score-test もまだ空の場合、設定から直接取得
+        avgInitialized = true;
+        google.script.run
+          .withSuccessHandler(function(r) {
+            if (!r.success) return;
+            var sel = document.getElementById('avg-test-select');
+            if (sel && sel.options.length <= 1) {
+              sel.innerHTML = '<option value="">テストを選択してください</option>';
+              avgTestNames = [];
+              (r.testNames || []).forEach(function(name) {
+                var opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                sel.appendChild(opt);
+                avgTestNames.push(name);
+              });
+            }
+          })
+          .withFailureHandler(function() {
+            avgInitialized = false; // 失敗時は次回再試行可能にする
+          })
+          .getGradesConfigForWeb();
+      }
+    }
+
+    /** テスト名が変わったとき／手動で呼んだとき */
+    function loadGradesAverage() {
+      var testName = document.getElementById('avg-test-select').value;
+      var year = currentFiscalYear;
+      var placeholder = '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">テストを選択してください</p>';
+      if (!testName || !year) {
+        document.getElementById('campusAveragesContainer').innerHTML = placeholder;
+        document.getElementById('schoolAveragesDisplay').innerHTML = placeholder;
+        document.getElementById('averagesTableContainer').innerHTML =
+          '<p style="text-align:center;color:#999;padding:30px;">テストを選択すると入力表が表示されます</p>';
+        return;
+      }
+
+      var loading = '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">読み込み中...</p>';
+      document.getElementById('campusAveragesContainer').innerHTML = loading;
+      document.getElementById('schoolAveragesDisplay').innerHTML = loading;
+      document.getElementById('averagesTableContainer').innerHTML = loading;
+
+      // 塾平均（校舎別・自動計算）
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r.success) renderCampusAverages(r.campuses);
+          else document.getElementById('campusAveragesContainer').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + r.error + '</p>';
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('campusAveragesContainer').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + err + '</p>';
+        })
+        .getCampusAverages(year, testName);
+
+      // 学校別平均（入力データ）と入力テーブル
+      google.script.run
+        .withSuccessHandler(function(avgResult) {
+          if (!avgResult.success) {
+            document.getElementById('schoolAveragesDisplay').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + avgResult.error + '</p>';
+            document.getElementById('averagesTableContainer').innerHTML = '<p style="color:red;">❌ ' + avgResult.error + '</p>';
+            return;
+          }
+          avgCurrentData = {};
+          (avgResult.averages || []).forEach(function(a) { avgCurrentData[a.schoolName] = a; });
+          renderSchoolAveragesDisplay(avgResult.averages || []);
+          renderAveragesTable();
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('schoolAveragesDisplay').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + err + '</p>';
+          document.getElementById('averagesTableContainer').innerHTML = '<p style="color:red;">❌ ' + err + '</p>';
+        })
+        .getSchoolAverages(year, testName);
+    }
+
+    /** 塾平均（校舎別）テーブルを描画する（表示のみ） */
+    function renderCampusAverages(campuses) {
+      var container = document.getElementById('campusAveragesContainer');
+      if (!campuses || campuses.length === 0) {
+        container.innerHTML = '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">成績データがありません</p>';
+        return;
+      }
+      var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
+      var labels = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語' };
+      var html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#e8f5e9;">' +
+        '<th style="padding:9px 8px;text-align:left;border-bottom:2px solid #c8e6c9;min-width:56px;">校舎</th>';
+      subjects.forEach(function(s) {
+        html += '<th style="padding:9px 6px;text-align:center;border-bottom:2px solid #c8e6c9;min-width:52px;">' + labels[s] + '</th>';
+      });
+      html += '<th style="padding:9px 6px;text-align:center;border-bottom:2px solid #c8e6c9;min-width:56px;background:#f1f8e9;">合計</th>' +
+        '</tr></thead><tbody>';
+
+      campuses.forEach(function(c, idx) {
+        var isAll = (c.campusCode === 'all');
+        var bg = isAll ? '#f1f8e9' : (idx % 2 === 0 ? 'white' : '#fafafa');
+        var fw = isAll ? '700' : '500';
+        html += '<tr style="background:' + bg + ';border-bottom:1px solid #e8f5e9;">';
+        html += '<td style="padding:8px;font-weight:' + fw + ';">' + c.campusName + '</td>';
+        subjects.forEach(function(s) {
+          var v = (c[s] !== '' && c[s] !== null && c[s] !== undefined) ? Number(c[s]).toFixed(1) : '—';
+          html += '<td style="padding:8px 4px;text-align:center;">' + v + '</td>';
+        });
+        var totalDisp = (c.total !== '' && c.total !== null && c.total !== undefined) ? Number(c.total).toFixed(1) : '—';
+        html += '<td style="padding:8px 4px;text-align:center;background:#f1f8e9;font-weight:' + fw + ';">' + totalDisp + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    }
+
+    /** 学校別平均点（入力済みデータ）を表示のみで描画する */
+    function renderSchoolAveragesDisplay(averages) {
+      var container = document.getElementById('schoolAveragesDisplay');
+      if (!averages || averages.length === 0) {
+        container.innerHTML = '<p style="text-align:center;color:#bbb;padding:20px;font-size:13px;">入力データがありません（下の入力欄から登録してください）</p>';
+        return;
+      }
+      var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
+      var labels = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語' };
+      var html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#f5f5f5;">' +
+        '<th style="padding:9px 8px;text-align:left;border-bottom:2px solid #ddd;min-width:56px;">学校名</th>';
+      subjects.forEach(function(s) {
+        html += '<th style="padding:9px 6px;text-align:center;border-bottom:2px solid #ddd;min-width:52px;">' + labels[s] + '</th>';
+      });
+      html += '<th style="padding:9px 6px;text-align:center;border-bottom:2px solid #ddd;min-width:56px;background:#fffde7;">合計</th></tr></thead><tbody>';
+
+      // 「平均」行を先頭に表示
+      var avgRow = averages.filter(function(a) { return a.schoolName === '平均'; });
+      var others = averages.filter(function(a) { return a.schoolName !== '平均'; });
+      var sorted = avgRow.concat(others);
+
+      sorted.forEach(function(a, idx) {
+        var isAvg = (a.schoolName === '平均');
+        var bg = isAvg ? '#e8f5e9' : (idx % 2 === 0 ? 'white' : '#fafafa');
+        var fw = isAvg ? '700' : '500';
+        html += '<tr style="background:' + bg + ';border-bottom:1px solid #f0f0f0;">';
+        html += '<td style="padding:8px;font-weight:' + fw + ';">' + a.schoolName + '</td>';
+        subjects.forEach(function(s) {
+          var v = (a[s] !== '' && a[s] !== null && a[s] !== undefined) ? Number(a[s]).toFixed(1) : '—';
+          html += '<td style="padding:8px 4px;text-align:center;">' + v + '</td>';
+        });
+        var totalDisp = (a.total !== '' && a.total !== null && a.total !== undefined) ? Number(a.total).toFixed(1) : '—';
+        html += '<td style="padding:8px 4px;text-align:center;background:#fffde7;font-weight:' + fw + ';">' + totalDisp + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    }
+
+    /** 平均点入力テーブルの1行分HTMLを生成する（renderAveragesTable / addAvgRow 共用） */
+    function buildAvgRow(schoolName, existing, rowIdx) {
+      var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
+      var rowId = 'avg-row-' + rowIdx;
+      var html = '<tr style="background:white;border-bottom:1px solid #f0f0f0;" id="' + rowId + '">';
+
+      // 学校名セル
+      var escapedName = (schoolName || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      html += '<td style="padding:4px 6px;">' +
+        '<input type="text" class="avg-school-input" value="' + escapedName + '" placeholder="学校名を入力"' +
+        ' style="width:100%;min-width:100px;padding:6px 4px;border:1px solid #ddd;border-radius:4px;font-size:13px;box-sizing:border-box;">' +
+        '</td>';
+
+      // 教科入力
+      subjects.forEach(function(s) {
+        var val = (existing[s] !== '' && existing[s] !== null && existing[s] !== undefined) ? existing[s] : '';
+        html += '<td style="padding:4px;text-align:center;">' +
+          '<input type="number" class="avg-input" data-row="' + rowId + '" data-subject="' + s + '"' +
+          ' value="' + val + '" oninput="updateAvgTotalRow(\'' + rowId + '\')"' +
+          ' style="width:56px;padding:6px 4px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px;">' +
+          '</td>';
+      });
+
+      // 合計（手動入力欄）
+      var totalVal = (existing.total !== null && existing.total !== undefined) ? existing.total : '';
+      html += '<td style="padding:4px;text-align:center;background:#fffde7;">' +
+        '<input type="number" class="avg-total-input" id="avg-total-' + rowId + '" value="' + totalVal + '"' +
+        ' style="width:64px;padding:6px 4px;border:1px solid #ffe082;border-radius:4px;text-align:center;font-size:13px;background:#fffde7;">' +
+        '</td>';
+      html += '</tr>';
+      return html;
+    }
+
+    /** 平均点入力テーブルを描画する（保存済みデータのみ表示） */
+    function renderAveragesTable() {
+      var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
+      var subjectLabels = { kokugo: '国語', shakai: '社会', sugaku: '数学', rika: '理科', eigo: '英語' };
+
+      // 保存済みデータの学校名のみ使用（「平均」も含む）
+      var schoolKeys = Object.keys(avgCurrentData);
+      // 「平均」を先頭に、残りはソート
+      var avgEntry = schoolKeys.filter(function(s) { return s === '平均'; });
+      var otherEntries = schoolKeys.filter(function(s) { return s !== '平均'; }).sort();
+      var schoolList = avgEntry.concat(otherEntries);
+
+      var html = '<div style="overflow-x:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#f5f5f5;">' +
+        '<th style="padding:10px 8px;text-align:left;border-bottom:2px solid #ddd;min-width:120px;">学校名</th>';
+      subjects.forEach(function(s) {
+        html += '<th style="padding:10px 6px;text-align:center;border-bottom:2px solid #ddd;min-width:60px;">' + subjectLabels[s] + '</th>';
+      });
+      html += '<th style="padding:10px 6px;text-align:center;border-bottom:2px solid #ddd;min-width:68px;background:#fffde7;">合計</th>';
+      html += '</tr></thead><tbody id="averagesInputTbody">';
+
+      schoolList.forEach(function(schoolName, idx) {
+        html += buildAvgRow(schoolName, avgCurrentData[schoolName] || {}, idx);
+      });
+
+      html += '</tbody></table></div>';
+      html += '<div style="margin-top:8px;">' +
+        '<button onclick="addAvgRow()" style="padding:7px 16px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">＋ 行を追加</button>' +
+        '</div>';
+
+      document.getElementById('averagesTableContainer').innerHTML = html;
+    }
+
+    /** 「行を追加」ボタンで空行を1行追加する */
+    function addAvgRow() {
+      var tbody = document.getElementById('averagesInputTbody');
+      if (!tbody) return;
+      var idx = 'new' + tbody.querySelectorAll('tr').length;
+      tbody.insertAdjacentHTML('beforeend', buildAvgRow('', {}, idx));
+    }
+
+    /** 教科入力時、合計欄が空の場合のみ自動補完する */
+    function updateAvgTotalRow(rowId) {
+      var row = document.getElementById(rowId);
+      if (!row) return;
+      var total = 0;
+      var allFilled = true;
+      row.querySelectorAll('.avg-input').forEach(function(inp) {
+        var v = inp.value.trim();
+        if (v === '' || isNaN(parseFloat(v))) { allFilled = false; }
+        else { total += parseFloat(v); }
+      });
+      var totalInput = document.getElementById('avg-total-' + rowId);
+      if (totalInput && totalInput.value.trim() === '' && allFilled) {
+        totalInput.value = total.toFixed(1);
+      }
+    }
+
+    /** 全学校の平均点を一括保存する */
+    function saveAllAverages() {
+      var testName = document.getElementById('avg-test-select').value;
+      var year = currentFiscalYear;
+      if (!testName || !year) {
+        showMessage('avgMessage', '❌ テスト名を選択してください', 'error');
+        return;
+      }
+
+      var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
+      var dataArray = [];
+
+      var rows = document.querySelectorAll('#averagesInputTbody tr');
+      rows.forEach(function(row) {
+        // 学校名：入力欄から取得
+        var schoolInput = row.querySelector('.avg-school-input');
+        var schoolName = schoolInput ? schoolInput.value.trim() : '';
+        if (!schoolName) return;
+        var entry = { schoolName: schoolName };
+        var hasAnyValue = false;
+        subjects.forEach(function(s) {
+          var inp = row.querySelector('.avg-input[data-subject="' + s + '"]');
+          var v = inp ? inp.value.trim() : '';
+          entry[s] = (v !== '' && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+          if (entry[s] !== null) hasAnyValue = true;
+        });
+        // 合計（手動入力）
+        var totalInp = row.querySelector('.avg-total-input');
+        var tv = totalInp ? totalInp.value.trim() : '';
+        entry.total = (tv !== '' && !isNaN(parseFloat(tv))) ? parseFloat(tv) : null;
+        if (entry.total !== null) hasAnyValue = true;
+        if (hasAnyValue) dataArray.push(entry);
+      });
+
+      if (dataArray.length === 0) {
+        showMessage('avgMessage', '⚠️ 入力されているデータがありません', 'error');
+        return;
+      }
+
+      showMessage('avgMessage', '保存中...', 'info');
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('avgMessage',
+              '✅ 保存しました（新規 ' + result.savedCount + '件・更新 ' + result.updatedCount + '件）', 'success');
+            loadGradesAverage(); // 再読み込みで合計を更新
+          } else {
+            showMessage('avgMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('avgMessage', '❌ エラー: ' + err, 'error');
+        })
+        .saveSchoolAverages(year, testName, dataArray, false);
+    }
+
+    /** テキスト貼り付けセクションの表示/非表示切り替え */
+    function toggleAverageTextSection() {
+      var sec = document.getElementById('averageTextSection');
+      var btn = document.getElementById('avgTextToggleBtn');
+      if (sec.style.display === 'none') {
+        sec.style.display = 'block';
+        btn.textContent = '閉じる';
+      } else {
+        sec.style.display = 'none';
+        btn.textContent = '開く';
+      }
+    }
+
+    /** テキストをAIで解析して平均点を取り込む */
+    function runAverageTextParse() {
+      var testName = document.getElementById('avg-test-select').value;
+      var year = currentFiscalYear;
+      if (!testName || !year) {
+        showMessage('avgTextMessage', '❌ テスト名を先に選択してください', 'error');
+        return;
+      }
+      var text = document.getElementById('avgTextInput').value.trim();
+      if (!text) {
+        showMessage('avgTextMessage', '❌ テキストを貼り付けてください', 'error');
+        return;
+      }
+
+      var btn = document.getElementById('avgTextRunBtn');
+      btn.disabled = true;
+      btn.textContent = '解析中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = '🤖 AIで解析して取り込む';
+          if (result.success) {
+            var msg = '✅ ' + result.extracted.length + '校分を読み取りました（新規 ' + result.savedCount + '件・補完 ' + result.updatedCount + '件）';
+            showMessage('avgTextMessage', msg, 'success');
+            loadGradesAverage(); // テーブルを更新
+          } else {
+            showMessage('avgTextMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = '🤖 AIで解析して取り込む';
+          showMessage('avgTextMessage', '❌ エラー: ' + err, 'error');
+        })
+        .parseAndSaveAveragesFromText(text, year, testName, true);
+    }
+
+    /** OCRセクションの表示/非表示切り替え */
+    function toggleAverageOcrSection() {
+      var sec = document.getElementById('averageOcrSection');
+      var btn = document.getElementById('avgOcrToggleBtn');
+      if (sec.style.display === 'none') {
+        sec.style.display = 'block';
+        btn.textContent = '閉じる';
+      } else {
+        sec.style.display = 'none';
+        btn.textContent = '開く';
+      }
+    }
+
+    /** 画像からAIで平均点を読み込む */
+    function runAverageOCR() {
+      var testName = document.getElementById('avg-test-select').value;
+      var year = currentFiscalYear;
+      if (!testName || !year) {
+        showMessage('avgOcrMessage', '❌ テスト名を先に選択してください', 'error');
+        return;
+      }
+      var file = document.getElementById('avgOcrFile').files[0];
+      if (!file) {
+        showMessage('avgOcrMessage', '❌ ファイルを選択してください', 'error');
+        return;
+      }
+
+      var btn = document.getElementById('avgOcrRunBtn');
+      btn.disabled = true;
+      btn.textContent = '読み込み中...';
+
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var base64 = ev.target.result.split(',')[1];
+        var mimeType = file.type || 'image/jpeg';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btn.disabled = false;
+            btn.textContent = '🤖 AI で読み込む';
+            if (result.success) {
+              showMessage('avgOcrMessage',
+                '✅ ' + result.extracted.length + '校分を読み取りました（新規 ' + result.savedCount + '件・補完 ' + result.updatedCount + '件）', 'success');
+              loadGradesAverage(); // テーブルを更新
+            } else {
+              showMessage('avgOcrMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.textContent = '🤖 AI で読み込む';
+            showMessage('avgOcrMessage', '❌ エラー: ' + err, 'error');
+          })
+          .ocrAndExtractAverages(base64, mimeType, year, testName);
+      };
+      reader.readAsDataURL(file);
+    }
+
+</script>

@@ -1,0 +1,779 @@
+<script>
+    // ===== 管理タブ：通常設定 =====
+
+    var normalClassConfigCache_ = null; // 通常授業設定キャッシュ
+
+    /**
+     * 管理タブ：通常設定パネル 初期化（switchAdminTab から呼ばれる）
+     */
+    function initNormalConfigAdmin() {
+      var body = document.getElementById('admin-normal-config-body');
+      if (!body) return;
+      // 初回のみ読み込み（キャッシュがあればスキップ）
+      if (normalClassConfigCache_) {
+        renderNormalClassTable_(normalClassConfigCache_);
+        return;
+      }
+      body.innerHTML = '<div style="color:#999;font-size:14px;padding:10px;">読み込み中...</div>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.data) {
+            normalClassConfigCache_ = result.data;
+            renderNormalClassTable_(result.data);
+          } else {
+            body.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">取得失敗: ' + (result ? result.error : '') + '</div>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          body.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">エラー: ' + err + '</div>';
+        })
+        .getNormalClassConfig();
+    }
+
+    /**
+     * 通常授業設定テーブルを描画する
+     * @param {Array} rows [{grade, duration, count, internal, external}]
+     */
+    function renderNormalClassTable_(rows) {
+      var body = document.getElementById('admin-normal-config-body');
+      if (!body) return;
+
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+               + '<thead><tr style="background:#f0f0f0;">'
+               + '<th style="padding:8px 12px;text-align:left;font-weight:600;color:#444;border-bottom:1px solid #ddd;">学年</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">1コマ（分）</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">回数（月）</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">内部生（税抜き）</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">税込み</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">外部生（税抜き）</th>'
+               + '<th style="padding:8px 12px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;">税込み</th>'
+               + '</tr></thead><tbody>';
+
+      rows.forEach(function(row) {
+        var mins = (row.duration || 0) * 10;
+        var intTax = Math.floor((row.internal || 0) * 1.1);
+        var extTax = Math.floor((row.external || 0) * 1.1);
+        html += '<tr style="border-bottom:1px solid #eee;">'
+              + '<td style="padding:8px 12px;font-weight:500;">' + escapeHtml(String(row.grade)) + '</td>'
+              + '<td style="padding:8px 12px;text-align:center;">'
+              + '<input type="number" data-grade="' + escapeHtml(String(row.grade)) + '" data-field="duration-min" '
+              + 'value="' + mins + '" min="10" max="300" step="10" '
+              + 'style="width:70px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:13px;"></td>'
+              + '<td style="padding:8px 12px;text-align:center;">'
+              + '<input type="number" data-grade="' + escapeHtml(String(row.grade)) + '" data-field="count" '
+              + 'value="' + (row.count || 4) + '" min="1" max="31" '
+              + 'style="width:60px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:13px;"></td>'
+              + '<td style="padding:8px 12px;text-align:center;">'
+              + '<input type="number" data-grade="' + escapeHtml(String(row.grade)) + '" data-field="internal" '
+              + 'value="' + (row.internal || 0) + '" min="0" step="100" oninput="updateNormalClassTax_(this)" '
+              + 'style="width:90px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:13px;"></td>'
+              + '<td style="padding:8px 12px;text-align:center;color:#888;font-size:13px;">' + intTax.toLocaleString() + '</td>'
+              + '<td style="padding:8px 12px;text-align:center;">'
+              + '<input type="number" data-grade="' + escapeHtml(String(row.grade)) + '" data-field="external" '
+              + 'value="' + (row.external || 0) + '" min="0" step="100" oninput="updateNormalClassTax_(this)" '
+              + 'style="width:90px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:13px;"></td>'
+              + '<td style="padding:8px 12px;text-align:center;color:#888;font-size:13px;">' + extTax.toLocaleString() + '</td>'
+              + '</tr>';
+      });
+
+      html += '</tbody></table>'
+            + '<div style="font-size:12px;color:#888;margin-top:8px;">※ 税抜き金額を入力すると税込み（×1.1）が自動計算されます。</div>'
+            + '<div style="margin-top:16px;display:flex;align-items:center;gap:10px;">'
+            + '<button onclick="saveNormalClassConfigAdmin()" '
+            + 'style="padding:8px 20px;background:var(--theme-color);color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">保存</button>'
+            + '<span id="admin-normal-config-status" style="font-size:13px;color:#555;"></span>'
+            + '</div>';
+
+      body.innerHTML = html;
+    }
+
+    /**
+     * 税抜き入力時に税込み表示を更新する（通常設定パネル用）
+     * @param {HTMLInputElement} input 変更された入力要素
+     */
+    function updateNormalClassTax_(input) {
+      var val = parseInt(input.value) || 0;
+      var tax = Math.floor(val * 1.1);
+      // 同じ行の次のtd（税込み表示セル）を更新
+      var td = input.parentElement;
+      var taxTd = td ? td.nextElementSibling : null;
+      if (taxTd) taxTd.textContent = tax.toLocaleString();
+    }
+
+    /**
+     * 通常授業設定をバックエンドに保存する
+     */
+    function saveNormalClassConfigAdmin() {
+      var statusEl = document.getElementById('admin-normal-config-status');
+      var body = document.getElementById('admin-normal-config-body');
+      if (!statusEl || !body) return;
+
+      // 各学年の入力値を収集（行順序を保持）
+      var gradeOrder = [];
+      var gradeInputs = {};
+      body.querySelectorAll('input[data-grade]').forEach(function(input) {
+        var grade = input.dataset.grade;
+        var field = input.dataset.field;
+        if (!gradeInputs[grade]) {
+          gradeInputs[grade] = {};
+          gradeOrder.push(grade);
+        }
+        var val = parseInt(input.value);
+        if (field === 'duration-min') {
+          gradeInputs[grade].duration = Math.round((isNaN(val) ? 50 : val) / 10);
+        } else if (field === 'count') {
+          gradeInputs[grade].count = isNaN(val) ? 4 : val;
+        } else if (field === 'internal') {
+          gradeInputs[grade].internal = isNaN(val) ? 0 : val;
+        } else if (field === 'external') {
+          gradeInputs[grade].external = isNaN(val) ? 0 : val;
+        }
+      });
+
+      var rows = gradeOrder.map(function(grade) {
+        var g = gradeInputs[grade];
+        return {
+          grade: grade,
+          duration: g.duration != null ? g.duration : 5,
+          count: g.count != null ? g.count : 4,
+          internal: g.internal != null ? g.internal : 0,
+          external: g.external != null ? g.external : 0
+        };
+      });
+
+      statusEl.textContent = '保存中...';
+      statusEl.style.color = '#555';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            statusEl.textContent = '✓ 保存しました';
+            statusEl.style.color = '#22c55e';
+            normalClassConfigCache_ = rows;
+          } else {
+            statusEl.textContent = '❌ ' + (result ? result.error : '保存失敗');
+            statusEl.style.color = '#e57373';
+          }
+        })
+        .withFailureHandler(function(err) {
+          statusEl.textContent = '❌ ' + err;
+          statusEl.style.color = '#e57373';
+        })
+        .saveNormalClassConfig(JSON.stringify(rows));
+    }
+
+    // ===== 管理タブ：講習設定 =====
+
+    /**
+     * 管理タブ：講習設定パネル 初期化（switchAdminTab から呼ばれる）
+     */
+    function initLecturesAdmin() {
+      buildAdminLecYearSelect();
+      loadLecturePeriodsAdmin();
+    }
+
+    /**
+     * 管理タブ：年度セレクトを構築する（現在FYと翌FY）
+     */
+    function buildAdminLecYearSelect() {
+      var sel = document.getElementById('admin-lec-year-sel');
+      if (!sel) return;
+      var now = new Date();
+      var month = now.getMonth() + 1;
+      var baseFy = (month >= 4) ? now.getFullYear() : now.getFullYear() - 1;
+      // 春期講習は「fy年の3月〜4月」= fy年度の講習。
+      // 3月〜4月中旬（概ね春期期間中）は翌年度をデフォルト選択にする
+      var defaultFy = (month <= 3) ? baseFy + 1 : baseFy;
+      sel.innerHTML = '';
+      [baseFy, baseFy + 1].forEach(function(y) {
+        var opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y + '年度';
+        if (y === defaultFy) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    /**
+     * 管理タブ：選択年度の講習期間一覧を描画する
+     */
+    function loadLecturePeriodsAdmin() {
+      var listEl = document.getElementById('admin-lec-list');
+      if (!listEl) return;
+      listEl.innerHTML = '<div style="color:#999;font-size:14px;padding:10px;">読み込み中...</div>';
+
+      var sel = document.getElementById('admin-lec-year-sel');
+      var selectedFy = sel ? parseInt(sel.value) : null;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var allPeriods = Array.isArray(result) ? result : [];
+
+          // 選択年度でフィルタ（旧フォーマットIDは year- で始まらないためそのまま表示）
+          var periods = allPeriods.filter(function(lp) {
+            if (!/^\d{4}-/.test(lp.id)) return true; // 旧フォーマットは常に表示
+            if (!selectedFy) return true;
+            return lp.id.startsWith(selectedFy + '-');
+          });
+
+          // 最新の periods を lecturePeriods に反映
+          lecturePeriods = allPeriods;
+
+          if (periods.length === 0) {
+            listEl.innerHTML = '<div style="color:#999;font-size:14px;padding:10px;text-align:center;">表示できる講習がありません</div>'
+              + '<div id="admin-lec-grade-panel" style="display:none;margin-top:20px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:16px;"></div>'
+              + '<div id="admin-lec-pricing-panel" style="display:none;margin-top:20px;background:#fffbf0;border:1px solid #e6d5a0;border-radius:8px;padding:16px;"></div>';
+            return;
+          }
+
+          var html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+                   + '<thead><tr style="background:#f5f5f5;">'
+                   + '<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;">講習名</th>'
+                   + '<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;">開始日</th>'
+                   + '<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;">終了日</th>'
+                   + '<th style="padding:10px 12px;text-align:center;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;"></th>'
+                   + '</tr></thead><tbody>';
+
+          periods.forEach(function(lp) {
+            var isNew = /^\d{4}-/.test(lp.id);
+            var startLabel = lp.startDate + (lp._isOverridden ? '' : ' <span style="font-size:10px;color:#888;background:#f0f0f0;border-radius:3px;padding:1px 4px;">自動</span>');
+            var endLabel   = lp.endDate   + (lp._isOverridden ? '' : ' <span style="font-size:10px;color:#888;background:#f0f0f0;border-radius:3px;padding:1px 4px;">自動</span>');
+            // ID から fiscalYear と typeId を抽出
+            var idParts = lp.id.split('-');
+            var typeId = isNew ? idParts[1] : lp.id;
+            var editBtn = '';
+            if (isNew) {
+              var parts = idParts;
+              var fy = parts[0];
+              editBtn = '<button onclick="editLectureDatesAdmin(\'' + escapeHtml(lp.id) + '\',\'' + lp.startDate + '\',\'' + lp.endDate + '\')" '
+                      + 'style="background:none;border:1px solid #999;color:#555;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px;font-weight:600;margin-right:6px;">📅 日程を編集</button>';
+            }
+            html += '<tr style="border-bottom:1px solid #eee;" id="admin-lec-row-' + escapeHtml(lp.id) + '">'
+                  + '<td style="padding:10px 12px;font-weight:500;">' + escapeHtml(lp.name) + '</td>'
+                  + '<td style="padding:10px 12px;color:#555;">' + startLabel + '</td>'
+                  + '<td style="padding:10px 12px;color:#555;">' + endLabel + '</td>'
+                  + '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'
+                  + editBtn
+                  + '<button onclick="showLecGradeSettingsPanel(\'' + escapeHtml(lp.id) + '\')" style="background:none;border:1px solid #667eea;color:#667eea;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px;font-weight:600;">⚙️ 料金・設定</button>'
+                  + '</td></tr>'
+                  + '<tr id="admin-lec-edit-row-' + escapeHtml(lp.id) + '" style="display:none;"><td colspan="4" style="padding:0;"></td></tr>';
+          });
+
+          html += '</tbody></table>';
+          html += '<div id="admin-lec-grade-panel" style="display:none;margin-top:20px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:16px;"></div>';
+          html += '<div id="admin-lec-pricing-panel" style="display:none;margin-top:20px;background:#fffbf0;border:1px solid #e6d5a0;border-radius:8px;padding:16px;"></div>';
+          listEl.innerHTML = html;
+
+          // 講習管理タブの再ロードフラグをリセット
+          lectureTabInitialized = false;
+        })
+        .withFailureHandler(function(err) {
+          listEl.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">取得失敗: ' + err + '</div>';
+        })
+        .getLecturePeriods();
+    }
+
+    /**
+     * 管理タブ：日程編集インラインUIを表示する
+     * @param {string} lectureId 講習ID（{fy}-{typeId}形式）
+     * @param {string} currentStart 現在の開始日（YYYY-MM-DD）
+     * @param {string} currentEnd 現在の終了日（YYYY-MM-DD）
+     */
+    function editLectureDatesAdmin(lectureId, currentStart, currentEnd) {
+      var editRow = document.getElementById('admin-lec-edit-row-' + lectureId);
+      if (!editRow) return;
+
+      // 既に開いている場合は閉じる
+      if (editRow.style.display !== 'none') {
+        editRow.style.display = 'none';
+        return;
+      }
+
+      // 他の編集行を閉じる
+      document.querySelectorAll('[id^="admin-lec-edit-row-"]').forEach(function(el) {
+        el.style.display = 'none';
+      });
+
+      var parts = lectureId.split('-');
+      var fy = parts[0], typeId = parts[1];
+
+      editRow.querySelector('td').innerHTML =
+        '<div style="padding:12px 16px;background:#fffbf0;border-top:1px solid #ffe082;">'
+        + '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">'
+        + '<div><label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:4px;">開始日</label>'
+        + '<input type="date" id="admin-lec-edit-start-' + escapeHtml(lectureId) + '" value="' + escapeHtml(currentStart) + '" '
+        + 'style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;"></div>'
+        + '<div><label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:4px;">終了日</label>'
+        + '<input type="date" id="admin-lec-edit-end-' + escapeHtml(lectureId) + '" value="' + escapeHtml(currentEnd) + '" '
+        + 'style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;"></div>'
+        + '<button onclick="saveLectureDatesAdmin(' + fy + ',\'' + typeId + '\')" '
+        + 'style="padding:8px 18px;background:var(--theme-color);color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">保存</button>'
+        + '<button onclick="resetLectureDatesAdmin(' + fy + ',\'' + typeId + '\')" '
+        + 'style="padding:8px 14px;background:none;border:1px solid #999;color:#555;border-radius:6px;font-size:14px;cursor:pointer;">デフォルトに戻す</button>'
+        + '<button onclick="document.getElementById(\'admin-lec-edit-row-' + escapeHtml(lectureId) + '\').style.display=\'none\'" '
+        + 'style="padding:8px 14px;background:none;border:1px solid #ccc;color:#888;border-radius:6px;font-size:14px;cursor:pointer;">キャンセル</button>'
+        + '</div>'
+        + '<div id="admin-lec-date-status-' + escapeHtml(lectureId) + '" style="margin-top:6px;font-size:13px;color:#555;"></div>'
+        + '</div>';
+      editRow.style.display = '';
+    }
+
+    /**
+     * 管理タブ：日程を保存する
+     * @param {number} fiscalYear 学年年度
+     * @param {string} typeId タイプキー
+     */
+    function saveLectureDatesAdmin(fiscalYear, typeId) {
+      var lectureId = fiscalYear + '-' + typeId;
+      var startEl = document.getElementById('admin-lec-edit-start-' + lectureId);
+      var endEl   = document.getElementById('admin-lec-edit-end-' + lectureId);
+      var statusEl = document.getElementById('admin-lec-date-status-' + lectureId);
+      if (!startEl || !endEl || !statusEl) return;
+
+      var start = startEl.value.trim();
+      var end   = endEl.value.trim();
+      if (!start || !end) {
+        statusEl.textContent = '❌ 開始日・終了日をどちらも入力してください';
+        statusEl.style.color = '#e57373';
+        return;
+      }
+      if (start > end) {
+        statusEl.textContent = '❌ 終了日は開始日以降を指定してください';
+        statusEl.style.color = '#e57373';
+        return;
+      }
+
+      statusEl.textContent = '保存中...';
+      statusEl.style.color = '#555';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            statusEl.textContent = '✓ 保存しました';
+            statusEl.style.color = '#22c55e';
+            setTimeout(function() { loadLecturePeriodsAdmin(); }, 600);
+          } else {
+            statusEl.textContent = '❌ ' + (result ? result.error : '保存失敗');
+            statusEl.style.color = '#e57373';
+          }
+        })
+        .withFailureHandler(function(err) {
+          statusEl.textContent = '❌ ' + err;
+          statusEl.style.color = '#e57373';
+        })
+        .saveLectureDates(fiscalYear, typeId, start, end);
+    }
+
+    /**
+     * 管理タブ：日程をデフォルト（自動計算）に戻す
+     * @param {number} fiscalYear 学年年度
+     * @param {string} typeId タイプキー
+     */
+    function resetLectureDatesAdmin(fiscalYear, typeId) {
+      appConfirm('日程をデフォルト（自動計算）に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        var lectureId = fiscalYear + '-' + typeId;
+        var statusEl = document.getElementById('admin-lec-date-status-' + lectureId);
+        if (statusEl) { statusEl.textContent = 'リセット中...'; statusEl.style.color = '#555'; }
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success) {
+              loadLecturePeriodsAdmin();
+            } else {
+              if (statusEl) { statusEl.textContent = '❌ ' + (result ? result.error : 'リセット失敗'); statusEl.style.color = '#e57373'; }
+            }
+          })
+          .withFailureHandler(function(err) {
+            if (statusEl) { statusEl.textContent = '❌ ' + err; statusEl.style.color = '#e57373'; }
+          })
+          .resetLectureDates(fiscalYear, typeId);
+      });
+    }
+
+    // --- 講習設定 統合UI（学年別設定 + 料金設定） ---
+
+    var lecPricingCache_ = null; // バックエンドから取得した料金データのキャッシュ
+
+    // 学年キー定義（フロントエンド用）
+    var LEC_GRADE_KEYS_ALL_ = ['sho', 'chu1', 'chu2', 'chu3', 'ko1', 'ko2', 'ko3'];
+    var LEC_GRADE_LABELS_ = { sho: '小学生', chu1: '中1', chu2: '中2', chu3: '中3', ko1: '高1', ko2: '高2', ko3: '高3' };
+    var LEC_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
+
+    /**
+     * 統合設定パネルを表示する（学年別設定 + 料金設定を1テーブルで）
+     * @param {string} lectureId 対象の講習期間ID
+     */
+    function showLecGradeSettingsPanel(lectureId) {
+      var panel = document.getElementById('admin-lec-grade-panel');
+      if (!panel) return;
+
+      var lp = lecturePeriods.find(function(p) { return p.id === lectureId; });
+      if (!lp) return;
+
+      var typeId = lectureId.replace(/^\d{4}-/, '');
+
+      panel.innerHTML = '<div style="color:#999;font-size:14px;padding:10px;">料金データを読み込み中...</div>';
+      panel.dataset.currentLectureId = lectureId;
+      panel.dataset.currentTypeId = typeId;
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.data) {
+            lecPricingCache_ = result.data;
+            var typeData = result.data[typeId] || { rows: [] };
+            renderLecUnifiedPanel_(lectureId, typeId, lp, typeData);
+          } else {
+            panel.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">料金データの取得に失敗しました</div>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          panel.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">エラー: ' + err + '</div>';
+        })
+        .getLecturePricingConfig();
+    }
+
+    /**
+     * 統合設定パネルの中身を描画する（標準料金・勝瑞校料金・追加行の3セクション）
+     * @param {string} lectureId 講習期間ID
+     * @param {string} typeId 講習タイプ
+     * @param {Object} lp 講習期間オブジェクト
+     * @param {Object} typeData {rows:[...]} 形式の料金データ
+     */
+    function renderLecUnifiedPanel_(lectureId, typeId, lp, typeData) {
+      var panel = document.getElementById('admin-lec-grade-panel');
+      if (!panel) return;
+
+      var rows = (typeData && typeData.rows) ? typeData.rows : [];
+      var isChuu3Only = LEC_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var isSpring = lp.name.indexOf('春期') !== -1;
+      var standardGrades = isChuu3Only ? ['chu3'] : LEC_GRADE_KEYS_ALL_;
+      var thStyle = 'padding:7px 8px;text-align:center;font-weight:600;color:#444;border-bottom:1px solid #ddd;font-size:12px;';
+
+      var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:6px;">'
+               + '<strong style="font-size:14px;color:#333;">「' + escapeHtml(lp.name) + '」の設定（年度共通）</strong>'
+               + '<button onclick="document.getElementById(\'admin-lec-grade-panel\').style.display=\'none\'" '
+               + 'style="background:none;border:1px solid #ccc;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;color:#666;">閉じる</button>'
+               + '</div>'
+               + '<div style="font-size:12px;color:#888;margin-bottom:10px;">※ 税抜き金額を入力すると税込み（×1.1）が自動計算されます。設定は年度をまたいで共通で使用されます。</div>';
+
+      // ===== 標準料金セクション =====
+      html += '<div style="margin-bottom:18px;">'
+            + '<div style="font-weight:600;font-size:13px;color:#555;margin-bottom:6px;padding:4px 8px;background:#f0f0f0;border-radius:4px;">【標準料金】</div>'
+            + '<table id="admin-lec-standard-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
+            + '<thead><tr style="background:#f5f5f5;">'
+            + '<th style="' + thStyle + 'text-align:left;width:70px;">学年</th>'
+            + '<th style="' + thStyle + 'width:80px;">1コマ（分）</th>'
+            + '<th style="' + thStyle + 'width:60px;">回数</th>'
+            + '<th style="' + thStyle + '">内部生（税抜き）</th>'
+            + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+            + '<th style="' + thStyle + '">外部生（税抜き）</th>'
+            + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+            + '</tr></thead><tbody>';
+
+      standardGrades.forEach(function(gk) {
+        var existing = rows.find(function(r) { return r.type === 'standard' && r.gradeKey === gk; });
+        var dur = existing ? existing.duration : (gk === 'sho' ? 5 : (['ko1','ko2','ko3'].indexOf(gk) !== -1 ? 9 : 8));
+        var cnt = existing ? existing.count : 2;
+        var internalVal = existing ? (existing.internal || 0) : 0;
+        var externalVal = existing ? (existing.external || 0) : 0;
+        var intTax = Math.floor(internalVal * 1.1);
+        var extTax = Math.floor(externalVal * 1.1);
+        var gradeLabel = (isSpring && gk !== 'sho' ? '新' : '') + (LEC_GRADE_LABELS_[gk] || gk);
+        html += '<tr style="border-bottom:1px solid #eee;" data-row-type="standard" data-grade-key="' + gk + '">'
+              + '<td style="padding:6px 8px;font-weight:500;">' + escapeHtml(gradeLabel) + '</td>'
+              + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="duration-min" value="' + (dur * 10) + '" min="10" max="300" step="10" '
+              + 'style="width:65px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+              + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="count" value="' + cnt + '" min="0" max="20" '
+              + 'style="width:52px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+              + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="internal" value="' + internalVal + '" min="0" step="100" '
+              + 'oninput="updateLecUnifiedTax_(this)" style="width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;"></td>'
+              + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="internal">' + intTax.toLocaleString() + '</td>'
+              + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="external" value="' + externalVal + '" min="0" step="100" '
+              + 'oninput="updateLecUnifiedTax_(this)" style="width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;"></td>'
+              + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="external">' + extTax.toLocaleString() + '</td>'
+              + '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // ===== 勝瑞校料金セクション（中3のみ対象の講習は表示しない）=====
+      if (!isChuu3Only) {
+        html += '<div style="margin-bottom:18px;">'
+              + '<div style="font-weight:600;font-size:13px;color:#555;margin-bottom:6px;padding:4px 8px;background:#e8f4fd;border-radius:4px;">【勝瑞校料金（高校生のみ）】</div>'
+              + '<table id="admin-lec-shozui-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
+              + '<thead><tr style="background:#f0f7fd;">'
+              + '<th style="' + thStyle + 'text-align:left;width:70px;">学年</th>'
+              + '<th style="' + thStyle + 'width:80px;">1コマ（分）</th>'
+              + '<th style="' + thStyle + 'width:60px;">回数</th>'
+              + '<th style="' + thStyle + '">内部生（税抜き）</th>'
+              + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+              + '<th style="' + thStyle + '">外部生（税抜き）</th>'
+              + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+              + '</tr></thead><tbody>';
+
+        ['ko1', 'ko2', 'ko3'].forEach(function(gk) {
+          var existing = rows.find(function(r) { return r.type === 'shozui' && r.gradeKey === gk; });
+          var dur = existing ? existing.duration : 9;
+          var cnt = existing ? existing.count : 2;
+          var internalVal = existing ? (existing.internal || 0) : 0;
+          var externalVal = existing ? (existing.external || 0) : 0;
+          var intTax = Math.floor(internalVal * 1.1);
+          var extTax = Math.floor(externalVal * 1.1);
+          var shozuiLabel = (isSpring ? '新' : '') + (LEC_GRADE_LABELS_[gk] || gk);
+          html += '<tr style="border-bottom:1px solid #eee;" data-row-type="shozui" data-grade-key="' + gk + '">'
+                + '<td style="padding:6px 8px;font-weight:500;">' + escapeHtml(shozuiLabel) + '</td>'
+                + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="duration-min" value="' + (dur * 10) + '" min="10" max="300" step="10" '
+                + 'style="width:65px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+                + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="count" value="' + cnt + '" min="0" max="20" '
+                + 'style="width:52px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+                + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="internal" value="' + internalVal + '" min="0" step="100" '
+                + 'oninput="updateLecUnifiedTax_(this)" style="width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;"></td>'
+                + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="internal">' + intTax.toLocaleString() + '</td>'
+                + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="external" value="' + externalVal + '" min="0" step="100" '
+                + 'oninput="updateLecUnifiedTax_(this)" style="width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;"></td>'
+                + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="external">' + extTax.toLocaleString() + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      // ===== 追加行セクション =====
+      html += '<div style="margin-bottom:18px;">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+            + '<div style="font-weight:600;font-size:13px;color:#555;padding:4px 8px;background:#f5f0e0;border-radius:4px;">【追加行】</div>'
+            + '<button onclick="addLecCustomRow_()" '
+            + 'style="background:none;border:1px solid #22c55e;color:#22c55e;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:600;">＋ 行を追加</button>'
+            + '</div>'
+            + '<table id="admin-lec-custom-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
+            + '<thead><tr style="background:#fdf8ee;">'
+            + '<th style="' + thStyle + 'text-align:left;">ラベル</th>'
+            + '<th style="' + thStyle + 'width:80px;">1コマ（分）</th>'
+            + '<th style="' + thStyle + 'width:60px;">回数</th>'
+            + '<th style="' + thStyle + '">内部生（税抜き）</th>'
+            + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+            + '<th style="' + thStyle + '">外部生（税抜き）</th>'
+            + '<th style="' + thStyle + 'width:70px;">税込み</th>'
+            + '<th style="' + thStyle + 'width:36px;"></th>'
+            + '</tr></thead><tbody id="admin-lec-custom-tbody">';
+
+      var customRows = rows.filter(function(r) { return r.type === 'custom'; });
+      customRows.forEach(function(row, idx) {
+        html += buildLecCustomRowHtml_(idx, row);
+      });
+      html += '</tbody></table></div>';
+
+      // ===== 保存ボタン =====
+      html += '<div style="display:flex;align-items:center;gap:10px;">'
+            + '<button onclick="saveLecGradeSettingsAdmin(\'' + escapeHtml(lectureId) + '\')" '
+            + 'style="padding:8px 22px;background:var(--theme-color);color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">保存</button>'
+            + '<span id="admin-lec-grade-status" style="font-size:13px;color:#555;"></span>'
+            + '</div>';
+
+      panel.innerHTML = html;
+    }
+
+    /**
+     * 追加行の1行分HTMLを生成する
+     * @param {number} idx 行インデックス
+     * @param {Object} row {type:'custom', label, duration, count, internal, external}
+     * @return {string} HTML文字列
+     */
+    function buildLecCustomRowHtml_(idx, row) {
+      var dur = row.duration || 8;
+      var cnt = row.count || 2;
+      var internalVal = row.internal || 0;
+      var externalVal = row.external || 0;
+      var isExtNa = !!row.externalNa;
+      var intTax = Math.floor(internalVal * 1.1);
+      var extTax = Math.floor(externalVal * 1.1);
+      var extInputStyle = 'width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;'
+        + (isExtNa ? 'opacity:0.35;' : '');
+      return '<tr style="border-bottom:1px solid #eee;" data-row-type="custom" data-custom-idx="' + idx + '">'
+        + '<td style="padding:6px 4px;"><input type="text" data-field="label" value="' + escapeHtml(row.label || '') + '" '
+        + 'placeholder="例: 特別コース" style="width:100%;min-width:70px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;font-size:12px;box-sizing:border-box;"></td>'
+        + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="duration-min" value="' + (dur * 10) + '" min="10" max="300" step="10" '
+        + 'style="width:65px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+        + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="count" value="' + cnt + '" min="0" max="20" '
+        + 'style="width:52px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12px;"></td>'
+        + '<td style="padding:6px 4px;text-align:center;"><input type="number" data-field="internal" value="' + internalVal + '" min="0" step="100" '
+        + 'oninput="updateLecUnifiedTax_(this)" style="width:85px;padding:4px 5px;border:1px solid #ccc;border-radius:4px;text-align:right;font-size:12px;"></td>'
+        + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="internal">' + intTax.toLocaleString() + '</td>'
+        + '<td style="padding:6px 4px;text-align:center;">'
+        + '<label style="display:block;font-size:10px;color:#888;white-space:nowrap;">'
+        + '<input type="checkbox" data-field="external-na" onchange="onLecExternalNaChange_(this)"'
+        + (isExtNa ? ' checked' : '') + '> 対象外</label>'
+        + '<input type="number" data-field="external" value="' + externalVal + '" min="0" step="100" '
+        + 'oninput="updateLecUnifiedTax_(this)"'
+        + (isExtNa ? ' disabled' : '')
+        + ' style="' + extInputStyle + '"></td>'
+        + '<td style="padding:6px 4px;text-align:center;color:#888;font-size:12px;" data-tax="external">' + (isExtNa ? '−' : extTax.toLocaleString()) + '</td>'
+        + '<td style="padding:6px 2px;text-align:center;"><button onclick="removeLecCustomRow_(this)" '
+        + 'style="background:none;border:none;color:#e57373;cursor:pointer;font-size:15px;padding:2px 4px;" title="この行を削除">✕</button></td>'
+        + '</tr>';
+    }
+
+    /**
+     * 外部生「対象外」チェックボックス変更時に入力欄の有効/無効を切り替える
+     * @param {HTMLInputElement} cb チェックボックス要素
+     */
+    function onLecExternalNaChange_(cb) {
+      var tr = cb.closest('tr');
+      if (!tr) return;
+      var extInput = tr.querySelector('[data-field="external"]');
+      var taxCell = tr.querySelector('[data-tax="external"]');
+      if (extInput) extInput.disabled = cb.checked;
+      if (extInput) extInput.style.opacity = cb.checked ? '0.35' : '1';
+      if (taxCell) taxCell.textContent = cb.checked ? '−' : Math.floor((parseInt(extInput.value) || 0) * 1.1).toLocaleString();
+    }
+
+    /**
+     * 税抜き入力時に税込み表示を更新する（統合パネル用）
+     * @param {HTMLInputElement} input 変更された入力要素
+     */
+    function updateLecUnifiedTax_(input) {
+      var val = parseInt(input.value) || 0;
+      var tax = Math.floor(val * 1.1);
+      var field = input.dataset.field;
+      var tr = input.closest('tr');
+      if (tr) {
+        var taxCell = tr.querySelector('[data-tax="' + field + '"]');
+        if (taxCell) taxCell.textContent = tax.toLocaleString();
+      }
+    }
+
+    /**
+     * 追加行テーブルに空の行を追加する
+     */
+    function addLecCustomRow_() {
+      var tbody = document.getElementById('admin-lec-custom-tbody');
+      if (!tbody) return;
+      var idx = tbody.querySelectorAll('tr[data-row-type="custom"]').length;
+      var tmp = document.createElement('tbody');
+      tmp.innerHTML = buildLecCustomRowHtml_(idx, { type: 'custom', label: '', duration: 8, count: 2, internal: 0, external: 0 });
+      var newTr = tmp.querySelector('tr');
+      tbody.appendChild(newTr);
+    }
+
+    /**
+     * 追加行を削除する
+     * @param {HTMLElement} btn 削除ボタン
+     */
+    function removeLecCustomRow_(btn) {
+      var tr = btn.closest('tr');
+      if (tr) tr.remove();
+    }
+
+    /**
+     * 統合設定パネルの入力値をバックエンドに保存する
+     * @param {string} lectureId 対象の講習期間ID
+     */
+    function saveLecGradeSettingsAdmin(lectureId) {
+      var panel = document.getElementById('admin-lec-grade-panel');
+      var statusEl = document.getElementById('admin-lec-grade-status');
+      if (!panel || !statusEl) return;
+
+      var typeId = panel.dataset.currentTypeId || lectureId.replace(/^\d{4}-/, '');
+      var rows = [];
+
+      // 標準料金行を収集
+      var standardTbody = document.querySelector('#admin-lec-standard-table tbody');
+      if (standardTbody) {
+        standardTbody.querySelectorAll('tr[data-row-type="standard"]').forEach(function(tr) {
+          var gk = tr.dataset.gradeKey;
+          var durMinRaw = parseInt(tr.querySelector('[data-field="duration-min"]').value);
+          var durMin = isNaN(durMinRaw) ? 50 : durMinRaw;
+          var cntRaw = parseInt(tr.querySelector('[data-field="count"]').value);
+          var cnt = isNaN(cntRaw) ? 0 : cntRaw;
+          var internalRaw = parseInt(tr.querySelector('[data-field="internal"]').value);
+          var internalVal = isNaN(internalRaw) ? 0 : internalRaw;
+          var externalRaw = parseInt(tr.querySelector('[data-field="external"]').value);
+          var externalVal = isNaN(externalRaw) ? 0 : externalRaw;
+          rows.push({ type: 'standard', gradeKey: gk, duration: Math.round(durMin / 10), count: cnt, internal: internalVal, external: externalVal });
+        });
+      }
+
+      // 勝瑞校料金行を収集
+      var shozuiTbody = document.querySelector('#admin-lec-shozui-table tbody');
+      if (shozuiTbody) {
+        shozuiTbody.querySelectorAll('tr[data-row-type="shozui"]').forEach(function(tr) {
+          var gk = tr.dataset.gradeKey;
+          var durMin = parseInt(tr.querySelector('[data-field="duration-min"]').value) || 90;
+          var cnt = parseInt(tr.querySelector('[data-field="count"]').value) || 0;
+          var internalVal = parseInt(tr.querySelector('[data-field="internal"]').value) || 0;
+          var externalVal = parseInt(tr.querySelector('[data-field="external"]').value) || 0;
+          rows.push({ type: 'shozui', gradeKey: gk, duration: Math.round(durMin / 10), count: cnt, internal: internalVal, external: externalVal });
+        });
+      }
+
+      // 追加行を収集
+      var customTbody = document.getElementById('admin-lec-custom-tbody');
+      if (customTbody) {
+        customTbody.querySelectorAll('tr[data-row-type="custom"]').forEach(function(tr) {
+          var label = (tr.querySelector('[data-field="label"]').value || '').trim();
+          var durMin = parseInt(tr.querySelector('[data-field="duration-min"]').value) || 80;
+          var cnt = parseInt(tr.querySelector('[data-field="count"]').value) || 0;
+          var internalVal = parseInt(tr.querySelector('[data-field="internal"]').value) || 0;
+          var externalVal = parseInt(tr.querySelector('[data-field="external"]').value) || 0;
+          var extNaCb = tr.querySelector('[data-field="external-na"]');
+          var extNa = extNaCb ? extNaCb.checked : false;
+          if (label || internalVal || externalVal || extNa) {
+            rows.push({ type: 'custom', label: label, duration: Math.round(durMin / 10), count: cnt, internal: internalVal, external: externalVal, externalNa: extNa });
+          }
+        });
+      }
+
+      statusEl.textContent = '保存中...';
+      statusEl.style.color = '#555';
+
+      // 学年別設定（gradeSettings）も同時に更新（講習管理タブのグリッド用）
+      var newSettings = {};
+      rows.filter(function(r) { return r.type === 'standard'; }).forEach(function(r) {
+        var GRADE_CODE_MAP = { sho: ['07','08','09','10','11','12'], chu1: ['13'], chu2: ['14'], chu3: ['15'], ko1: ['16'], ko2: ['17'], ko3: ['18'] };
+        var codes = GRADE_CODE_MAP[r.gradeKey] || [];
+        // 春期は「新〇〇」表示名で保存されているため、表示名ベースのキーも設定
+        var lp = lecturePeriods.find(function(p) { return p.id === lectureId; });
+        var isSpring = lp && lp.name.indexOf('春期') !== -1;
+        var labelKey = isSpring ? ('新' + (LEC_GRADE_LABELS_[r.gradeKey] || r.gradeKey)) : (LEC_GRADE_LABELS_[r.gradeKey] || r.gradeKey);
+        newSettings[labelKey] = { duration: r.duration, count: r.count };
+      });
+
+      var lecturePricingPayload = JSON.stringify({ rows: rows });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            statusEl.textContent = '❌ ' + (result ? result.error : '料金設定の保存失敗');
+            statusEl.style.color = '#e57373';
+            return;
+          }
+          // lecturePeriods キャッシュを更新
+          var lp = lecturePeriods.find(function(p) { return p.id === lectureId; });
+          if (lp) lp.gradeSettings = newSettings;
+          lectureTabInitialized = false;
+          // 料金キャッシュを更新
+          if (lecPricingCache_) lecPricingCache_[typeId] = { rows: rows };
+          // 配布物タブのキャッシュをリセット
+          if (typeof matLecPricingData !== 'undefined') matLecPricingData = null;
+          // 料金表キャッシュもリセット
+          if (typeof pricingData !== 'undefined') pricingData = null;
+          statusEl.textContent = '✓ 保存しました（料金表に自動反映されます）';
+          statusEl.style.color = '#22c55e';
+        })
+        .withFailureHandler(function(err) {
+          statusEl.textContent = '❌ ' + err;
+          statusEl.style.color = '#e57373';
+        })
+        .saveLecturePricing(typeId, lecturePricingPayload);
+    }
+
+    /**
+     * 税抜き金額入力時に税込み表示を自動更新する（旧パネル互換・使用されていない場合に備え残す）
+     * @param {HTMLInputElement} input 変更された入力要素
+     */
+    function updateLecPricingTax_(input) {
+      updateLecUnifiedTax_(input);
+    }
+</script>
+

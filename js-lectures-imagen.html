@@ -1,0 +1,289 @@
+<script>
+    // ===== 【画像生成サブタブ】 =====
+    // Imagen 4.0 Ultra による AI 画像生成
+
+    var imagenSelectedRatio = '3:4';
+    var imagenInitialized = false;
+    var imagenConversationHistory = [];  // [{role:'user'|'ai', text:string}]
+    var imagenCurrentPromptJa = '';      // 最後に使った日本語プロンプト（修正時の基準）
+
+    /**
+     * 画像生成サブタブ初期化
+     */
+    function initImagenTab() {
+      if (!imagenInitialized) {
+        imagenInitialized = true;
+        loadImagenHistory();
+      }
+    }
+
+    /**
+     * アスペクト比ボタンの選択切り替え
+     */
+    function selectImagenRatio(btn) {
+      imagenSelectedRatio = btn.getAttribute('data-ratio');
+      document.querySelectorAll('.imagen-ratio-btn').forEach(function(b) {
+        b.style.background = 'white';
+        b.style.color = '#333';
+        b.style.borderColor = '#ddd';
+      });
+      btn.style.background = '#667eea';
+      btn.style.color = 'white';
+      btn.style.borderColor = '#667eea';
+    }
+
+    /**
+     * 画像生成を実行（新規生成。会話履歴をリセットする）
+     */
+    function generateImagenImage() {
+      var prompt = document.getElementById('imagen-prompt').value.trim();
+      if (!prompt) {
+        showImagenStatus('どんな画像を作りたいか入力してください', '#fff3e0', '#e65100');
+        return;
+      }
+
+      // 新規生成なので会話履歴をリセット
+      imagenConversationHistory = [];
+      imagenCurrentPromptJa = prompt;
+
+      var btn = document.getElementById('imagen-generate-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ 生成中...（30秒ほどかかります）';
+      btn.style.opacity = '0.7';
+
+      showImagenStatus('AIが画像を生成しています。しばらくお待ちください...', '#e3f2fd', '#1565c0');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = '🎨 画像を生成する';
+          btn.style.opacity = '1';
+
+          if (result.success) {
+            showImagenStatus('画像を生成してチラシ用画像フォルダに保存しました！', '#e8f5e9', '#2e7d32');
+            showImagenResult_(result);
+            loadImagenHistory();
+            if (typeof flyerImageCache !== 'undefined') flyerImageCache = {};
+          } else {
+            showImagenStatus(result.error || '画像の生成に失敗しました', '#ffebee', '#c62828');
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = '🎨 画像を生成する';
+          btn.style.opacity = '1';
+          showImagenStatus('エラー: ' + err, '#ffebee', '#c62828');
+        })
+        .generateImageWithImagen(prompt, imagenSelectedRatio);
+    }
+
+    /**
+     * 生成結果を画面に表示し修正エリアを表示する内部ヘルパー
+     * @param {Object} result バックエンドの戻り値
+     */
+    function showImagenResult_(result) {
+      var previewArea = document.getElementById('imagen-preview-area');
+      var previewImg = document.getElementById('imagen-preview-img');
+      var englishDiv = document.getElementById('imagen-english-prompt');
+
+      previewImg.src = 'data:' + result.mimeType + ';base64,' + result.base64;
+      englishDiv.textContent = 'AI翻訳プロンプト: ' + result.englishPrompt;
+      previewArea.style.display = 'block';
+
+      // 修正エリアを表示（修正コメント入力欄をクリア）
+      document.getElementById('imagen-refine-comment').value = '';
+      updateImagenRefineHistory_();
+    }
+
+    /**
+     * 修正コメントを送信して画像を再生成する
+     */
+    function sendImagenRefineMessage() {
+      var comment = document.getElementById('imagen-refine-comment').value.trim();
+      if (!comment) {
+        showImagenStatus('修正したい内容を入力してください', '#fff3e0', '#e65100');
+        return;
+      }
+      if (!imagenCurrentPromptJa) {
+        showImagenStatus('先に画像を生成してください', '#fff3e0', '#e65100');
+        return;
+      }
+
+      // 会話履歴にユーザーコメントを追加
+      imagenConversationHistory.push({ role: 'user', text: comment });
+
+      var refineBtn = document.querySelector('#imagen-refine-area button');
+      refineBtn.disabled = true;
+      refineBtn.textContent = '⏳ 修正中...';
+      document.getElementById('imagen-generate-btn').disabled = true;
+
+      showImagenStatus('修正内容を反映した画像を生成しています...', '#e3f2fd', '#1565c0');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          refineBtn.disabled = false;
+          refineBtn.textContent = '🔄 修正して生成';
+          document.getElementById('imagen-generate-btn').disabled = false;
+
+          if (result.success) {
+            // AI側の応答を履歴に記録
+            imagenConversationHistory.push({ role: 'ai', text: result.englishPrompt });
+            showImagenStatus('修正した画像を生成・保存しました！', '#e8f5e9', '#2e7d32');
+            showImagenResult_(result);
+            loadImagenHistory();
+            if (typeof flyerImageCache !== 'undefined') flyerImageCache = {};
+          } else {
+            // 失敗した場合は追加したコメントを取り消す
+            imagenConversationHistory.pop();
+            showImagenStatus(result.error || '画像の生成に失敗しました', '#ffebee', '#c62828');
+          }
+        })
+        .withFailureHandler(function(err) {
+          refineBtn.disabled = false;
+          refineBtn.textContent = '🔄 修正して生成';
+          document.getElementById('imagen-generate-btn').disabled = false;
+          imagenConversationHistory.pop();
+          showImagenStatus('エラー: ' + err, '#ffebee', '#c62828');
+        })
+        .generateImageWithImagen(imagenCurrentPromptJa, imagenSelectedRatio, JSON.stringify(imagenConversationHistory));
+    }
+
+    /**
+     * 修正コメント履歴表示を更新する内部ヘルパー
+     */
+    function updateImagenRefineHistory_() {
+      var historyEl = document.getElementById('imagen-refine-history');
+      var userComments = imagenConversationHistory.filter(function(h) { return h.role === 'user'; });
+      if (userComments.length === 0) {
+        historyEl.style.display = 'none';
+        return;
+      }
+      var html = userComments.map(function(h, i) {
+        return '<div style="font-size:12px;color:#555;padding:3px 0;border-bottom:1px solid #f0e8ff;">' +
+          '<span style="color:#9e7de8;font-weight:600;">修正' + (i + 1) + ':</span> ' +
+          escapeHtmlImagen_(h.text) + '</div>';
+      }).join('');
+      historyEl.innerHTML = html;
+      historyEl.style.display = 'block';
+    }
+
+    /**
+     * 会話履歴をリセットして最初から作り直す
+     */
+    function resetImagenConversation() {
+      imagenConversationHistory = [];
+      imagenCurrentPromptJa = '';
+      document.getElementById('imagen-preview-area').style.display = 'none';
+      document.getElementById('imagen-refine-comment').value = '';
+      var historyEl = document.getElementById('imagen-refine-history');
+      historyEl.innerHTML = '';
+      historyEl.style.display = 'none';
+      document.getElementById('imagen-status').style.display = 'none';
+      document.getElementById('imagen-prompt').focus();
+    }
+
+    /**
+     * ステータスメッセージを表示
+     */
+    function showImagenStatus(msg, bgColor, textColor) {
+      var el = document.getElementById('imagen-status');
+      el.textContent = msg;
+      el.style.display = 'block';
+      el.style.background = bgColor;
+      el.style.color = textColor;
+    }
+
+    /**
+     * チラシ用画像フォルダの画像一覧を読み込んで履歴表示
+     */
+    function loadImagenHistory() {
+      var container = document.getElementById('imagen-history');
+      container.innerHTML = '<div style="color:#999;font-size:13px;grid-column:1/-1;text-align:center;padding:20px;">読み込み中...</div>';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success || !result.images || result.images.length === 0) {
+            container.innerHTML = '<div style="color:#999;font-size:13px;grid-column:1/-1;text-align:center;padding:20px;">まだ画像がありません</div>';
+            return;
+          }
+
+          var html = '';
+          result.images.forEach(function(img) {
+            html += '<div style="position:relative;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;background:#f9f9f9;cursor:pointer;" ' +
+              'onclick="previewImagenHistoryItem(\'' + img.id + '\',\'' + escapeHtmlImagen_(img.name) + '\',' + '\'' + escapeHtmlImagen_(img.tags || '') + '\')">' +
+              '<div style="width:100%;padding-top:100%;position:relative;">' +
+              '<div id="imagen-thumb-' + img.id + '" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;color:#ccc;">🖼️</div>' +
+              '</div>' +
+              '<div style="padding:4px 6px;font-size:10px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtmlImagen_(img.name) + '</div>' +
+              '</div>';
+          });
+          container.innerHTML = html;
+
+          // サムネイルを遅延読み込み（最初の12枚のみ）
+          result.images.slice(0, 12).forEach(function(img) {
+            loadImagenThumbnail_(img.id);
+          });
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = '<div style="color:#c62828;font-size:13px;grid-column:1/-1;text-align:center;padding:20px;">読み込みエラー: ' + err + '</div>';
+        })
+        .getFlyerImages();
+    }
+
+    /**
+     * サムネイル画像を非同期で読み込む
+     */
+    function loadImagenThumbnail_(fileId) {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            var thumbEl = document.getElementById('imagen-thumb-' + fileId);
+            if (thumbEl) {
+              thumbEl.innerHTML = '<img src="data:' + result.mimeType + ';base64,' + result.base64 + '" style="width:100%;height:100%;object-fit:cover;">';
+            }
+          }
+        })
+        .getFlyerImageBase64(fileId);
+    }
+
+    /**
+     * 履歴アイテムをクリックしてプレビュー表示（修正エリアは非表示にする）
+     */
+    function previewImagenHistoryItem(fileId, fileName, tags) {
+      var previewArea = document.getElementById('imagen-preview-area');
+      var previewImg = document.getElementById('imagen-preview-img');
+      var englishDiv = document.getElementById('imagen-english-prompt');
+
+      previewImg.src = '';
+      englishDiv.textContent = '読み込み中...';
+      previewArea.style.display = 'block';
+
+      // 履歴プレビューは修正コメント不可（過去の画像のため）
+      document.getElementById('imagen-refine-history').style.display = 'none';
+
+      // プレビューまでスクロール
+      previewArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            previewImg.src = 'data:' + result.mimeType + ';base64,' + result.base64;
+            englishDiv.textContent = fileName + (tags ? '  |  ' + tags : '');
+          } else {
+            englishDiv.textContent = '画像の読み込みに失敗しました';
+          }
+        })
+        .withFailureHandler(function(err) {
+          englishDiv.textContent = 'エラー: ' + err;
+        })
+        .getFlyerImageBase64(fileId);
+    }
+
+    /**
+     * HTML特殊文字をエスケープ（画像生成タブ用）
+     */
+    function escapeHtmlImagen_(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+</script>

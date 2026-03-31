@@ -1,0 +1,1653 @@
+<script>
+    // ===== 【講習管理タブ】 =====
+    // ========================================
+
+    /**
+     * 講習管理タブ サブタブ切り替え（.lecture-sub-content / .lecture-sub-tab にスコープ）
+     */
+    function switchLectureSubTab(event, name) {
+      // 現在のサブタブのスクロール位置を保存
+      document.querySelectorAll('.lecture-sub-content').forEach(function(el) {
+        if (el.style.display !== 'none') saveScrollPosition(el.id);
+      });
+
+      document.querySelectorAll('.lecture-sub-content').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      document.querySelectorAll('.lecture-sub-tab').forEach(function(el) {
+        el.style.borderBottomColor = 'transparent';
+        el.style.color = '#666';
+      });
+      document.getElementById(name).style.display = 'block';
+
+      // ボタンをアクティブ状態に（data-subtab属性で全コピーを同期）
+      var activeKey = (event.target.getAttribute && event.target.getAttribute('data-subtab')) || name;
+      document.querySelectorAll('.lecture-sub-tab[data-subtab="' + activeKey + '"]').forEach(function(el) {
+        el.style.borderBottomColor = '#667eea';
+        el.style.color = '#667eea';
+      });
+
+      // スクロール位置を復元
+      restoreScrollPosition(name);
+      if (name === 'lectures-schedule') {
+        initLecturesSchedule();
+      } else if (name === 'lectures-materials') {
+        initLecturesMaterials();
+      } else if (name === 'lectures-flyer') {
+        initFlyerAi();
+      } else if (name === 'lectures-imagen') {
+        initImagenTab();
+      }
+    }
+
+    /**
+     * 講習タブの状態を localStorage から自動復元する
+     * 2つの非同期処理（GASロード・チェックボックス生成）が両方完了したタイミングで実行される
+     */
+    function tryAutoRestoreLectures() {
+      if (!campusCheckboxesBuilt || !currentLectureId) return;
+      if (pendingAutoRestoreCampuses) {
+        var campuses = pendingAutoRestoreCampuses;
+        pendingAutoRestoreCampuses = null;
+        var allChecked = true;
+        document.querySelectorAll('.lec-campus-cb').forEach(function(cb) {
+          cb.checked = campuses.indexOf(cb.value) !== -1;
+          if (!cb.checked) allChecked = false;
+        });
+        var allCb = document.getElementById('lec-campus-all');
+        if (allCb) allCb.checked = allChecked;
+      }
+      showLectureCampusTabs(); // 常にグリッドを表示（初回・復元ともに）
+    }
+
+    /**
+     * 講習管理タブ 初期化（switchTab('lectures') から呼ばれる）
+     * lecturePeriods をバックエンドから取得し、年度セレクトを構築する
+     */
+    function initLecturesTab() {
+      if (lectureTabInitialized) return;
+      initLecturesSchedule(); // 校舎チェックボックスを初期構築（「日程作成」タブがデフォルト表示のため）
+      var yearSel = document.getElementById('lec-year-select');
+      yearSel.innerHTML = '<option value="">読み込み中...</option>';
+      yearSel.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          lecturePeriods = Array.isArray(result) ? result : [];
+          lectureTabInitialized = true;
+          buildLectureYearSelect();
+        })
+        .withFailureHandler(function(err) {
+          console.error('getLecturePeriods エラー:', err);
+          yearSel.innerHTML = '<option value="">取得失敗</option>';
+        })
+        .getLecturePeriods();
+    }
+
+    /**
+     * 講習の年度（4月始まり）を返す
+     * 春期講習（名前に「春期」を含む）が1〜3月開始の場合は翌年度として扱う
+     * @param {Object} lp 講習期間オブジェクト（startDate, name を持つ）
+     * @return {number} 年度
+     */
+    function getLectureFy_(lp) {
+      var d = new Date(lp.startDate);
+      var isSpring = lp.name && lp.name.indexOf('春期') !== -1;
+      if (isSpring && d.getMonth() < 3) { // getMonth(): 0=Jan, 1=Feb, 2=Mar
+        return d.getFullYear(); // 春期は翌年度扱い
+      }
+      return (d.getMonth() >= 3) ? d.getFullYear() : d.getFullYear() - 1;
+    }
+
+    /**
+     * 直近の未開始講習（startDate >= 今日）を返す
+     * 未来の講習がない場合は null を返す
+     * @return {Object|null} 講習期間オブジェクト
+     */
+    function getNextUpcomingLecture_() {
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var sorted = lecturePeriods.slice().sort(function(a, b) {
+        return new Date(a.startDate) - new Date(b.startDate);
+      });
+      for (var i = 0; i < sorted.length; i++) {
+        var d = new Date(sorted[i].startDate);
+        d.setHours(0, 0, 0, 0);
+        if (d >= today) return sorted[i];
+      }
+      return null; // 未来の講習なし
+    }
+
+    /**
+     * 年度セレクトを構築する
+     * - 常に現在の年度を含める
+     * - 1〜3月は次年度（新年度）も含める
+     * - 登録済み講習の年度も含める（春期は翌年度として扱う）
+     * - 直近の未開始講習の年度をデフォルト選択（なければ最新年度）
+     */
+    function buildLectureYearSelect() {
+      var yearSel = document.getElementById('lec-year-select');
+      yearSel.innerHTML = '';
+
+      var now = new Date();
+      var currentMonth = now.getMonth() + 1; // 1〜12
+      var calYear = now.getFullYear();
+      var currentFy = (currentMonth >= 4) ? calYear : calYear - 1;
+
+      // lecturePeriods から年度を抽出（春期は翌年度扱い）
+      var years = [];
+      lecturePeriods.forEach(function(lp) {
+        var fy = getLectureFy_(lp);
+        if (years.indexOf(fy) === -1) years.push(fy);
+      });
+
+      // 常に現在の年度を含める
+      if (years.indexOf(currentFy) === -1) years.push(currentFy);
+
+      // 1〜3月は次年度も含める（新年度の講習を事前登録できるように）
+      if (currentMonth <= 3) {
+        var nextFy = currentFy + 1;
+        if (years.indexOf(nextFy) === -1) years.push(nextFy);
+      }
+
+      years.sort(function(a, b) { return b - a; }); // 降順（最新年度が先頭）
+
+      years.forEach(function(fy) {
+        var opt = document.createElement('option');
+        opt.value = fy;
+        opt.textContent = fy + '年度';
+        yearSel.appendChild(opt);
+      });
+      yearSel.disabled = false;
+
+      // 直近の未開始講習の年度をデフォルト選択（なければ最新年度）
+      var upcoming = getNextUpcomingLecture_();
+      var defaultFy = upcoming ? getLectureFy_(upcoming) : years[0];
+      if (years.indexOf(defaultFy) === -1) defaultFy = years[0];
+      yearSel.value = defaultFy;
+      currentLectureYear = defaultFy;
+
+      buildLectureNameSelect(currentLectureYear);
+    }
+
+    /**
+     * 年度変更時ハンドラー
+     */
+    function onLectureYearChange() {
+      var sel = document.getElementById('lec-year-select');
+      currentLectureYear = sel.value ? parseInt(sel.value) : null;
+      buildLectureNameSelect(currentLectureYear);
+    }
+
+    /**
+     * 選択年度に合わせた講習セレクトを構築する
+     * @param {number} fy 年度
+     */
+    function buildLectureNameSelect(fy) {
+      var nameSel = document.getElementById('lec-name-select');
+      nameSel.innerHTML = '';
+
+      var filtered = lecturePeriods.filter(function(lp) {
+        if (!lp.startDate) return false;
+        var d = new Date(lp.startDate);
+        if (isNaN(d.getTime())) return false;
+        return getLectureFy_(lp) === fy;
+      });
+
+      // 開始日昇順でソート（時系列順に表示）
+      filtered.sort(function(a, b) { return new Date(a.startDate) - new Date(b.startDate); });
+
+      if (filtered.length === 0) {
+        nameSel.innerHTML = '<option value="">（この年度の講習なし）</option>';
+        document.getElementById('lec-period-label').textContent = '';
+        currentLectureId = null;
+        return;
+      }
+
+      filtered.forEach(function(lp) {
+        var opt = document.createElement('option');
+        opt.value = lp.id;
+        opt.textContent = lp.name;
+        nameSel.appendChild(opt);
+      });
+
+      // 直近の未開始講習（startDate >= 今日）をデフォルト選択、なければ先頭
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var defaultLp = filtered.find(function(lp) {
+        var d = new Date(lp.startDate);
+        d.setHours(0, 0, 0, 0);
+        return d >= today;
+      }) || filtered[0];
+      nameSel.value = defaultLp.id;
+      currentLectureId = defaultLp.id;
+      var selectedLp = defaultLp;
+
+      updateLecturePeriodLabel();
+      // 週を選択した講習の開始週にセット
+      currentLectureWeekStart = getLectureWeekMonday(selectedLp.startDate);
+      currentLectureScrollTop = 0; // 14:00 にリセット
+
+      // 保存済み校舎があれば自動復元リクエストをセット
+      var savedCampuses = JSON.parse(localStorage.getItem('lecLastCampuses') || 'null');
+      if (savedCampuses && savedCampuses.length > 0) {
+        pendingAutoRestoreCampuses = savedCampuses;
+      }
+      currentLectureScrollLeft = 13 * 6 * 20; // 講習変更時は13:00にスクロールをリセット
+      tryAutoRestoreLectures();
+    }
+
+    /**
+     * 講習変更時ハンドラー
+     */
+    function onLectureChange() {
+      var nameSel = document.getElementById('lec-name-select');
+      currentLectureId = nameSel.value || null;
+      updateLecturePeriodLabel();
+      if (currentLectureId) {
+        var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+        if (lp) {
+          currentLectureWeekStart = getLectureWeekMonday(lp.startDate);
+          currentLectureScrollTop = 0;
+        }
+      }
+      // クラス選択をリセット
+      selectedLecClass = null;
+      ['A', 'B', 'C'].forEach(function(c) {
+        var btn = document.getElementById('lec-class-btn-' + c);
+        if (btn) applyLecBtnActive(btn, false);
+      });
+      updateLecRemainingCounter();
+      // 校舎タブが表示中なら再描画
+      if (currentLectureCampus) {
+        updateLectureWeekLabel();
+        renderLectureWeekGrid(currentLectureCampus);
+      }
+      // チラシサブタブが表示中なら自動更新
+      if (typeof initFlyerAi === 'function' &&
+          document.getElementById('lectures-flyer') &&
+          document.getElementById('lectures-flyer').style.display !== 'none') {
+        initFlyerAi();
+      }
+      // 配布物サブタブが表示中なら自動更新（エントリキャッシュをリセットして再取得）
+      if (typeof updateMatPreviewOnCampusChange === 'function' &&
+          document.getElementById('lectures-materials') &&
+          document.getElementById('lectures-materials').style.display !== 'none') {
+        matEntriesCache = {};
+        updateMatPreviewOnCampusChange();
+      }
+    }
+
+    /**
+     * 期間ラベルを更新する（例：2025/03/29 〜 2025/04/06）
+     */
+    function updateLecturePeriodLabel() {
+      var label = document.getElementById('lec-period-label');
+      if (!currentLectureId || !label) return;
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      if (lp) {
+        label.textContent = lp.startDate.replace(/-/g, '/') + ' 〜 ' + lp.endDate.replace(/-/g, '/');
+      } else {
+        label.textContent = '';
+      }
+    }
+
+    /**
+     * 指定日が属する週の月曜日（Dateオブジェクト）を返す
+     * @param {string} dateStr YYYY-MM-DD 形式
+     * @return {Date} その週の月曜日
+     */
+    function getLectureWeekMonday(dateStr) {
+      var d = new Date(dateStr + 'T00:00:00');
+      var day = d.getDay(); // 0=日, 1=月, ...
+      var diff = (day === 0) ? -6 : 1 - day; // 月曜日を基準
+      d.setDate(d.getDate() + diff);
+      return d;
+    }
+
+    /**
+     * 週ナビゲーション：±1週移動
+     * @param {number} dir +1（次週）または -1（前週）
+     */
+    function navigateLectureWeek(dir) {
+      if (!currentLectureWeekStart) return;
+      currentLectureWeekStart = new Date(currentLectureWeekStart);
+      currentLectureWeekStart.setDate(currentLectureWeekStart.getDate() + dir * 7);
+      updateLectureWeekLabel();
+      if (currentLectureCampus) {
+        renderLectureWeekGrid(currentLectureCampus);
+      }
+    }
+
+    /**
+     * 週ラベルを更新する（例：2025/03/29 〜 2025/04/04）
+     */
+    function updateLectureWeekLabel() {
+      var label = document.getElementById('lec-week-label');
+      if (!label || !currentLectureWeekStart) return;
+      var mon = new Date(currentLectureWeekStart);
+      var sun = new Date(mon);
+      sun.setDate(sun.getDate() + 6);
+      label.textContent = formatLecDate(mon) + ' 〜 ' + formatLecDate(sun);
+    }
+
+    /**
+     * Date → YYYY/MM/DD(曜) 形式の文字列
+     */
+    function formatLecDate(d) {
+      var days = ['日','月','火','水','木','金','土'];
+      var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+      var dd = ('0' + d.getDate()).slice(-2);
+      return d.getFullYear() + '/' + mm + '/' + dd + '(' + days[d.getDay()] + ')';
+    }
+
+    /**
+     * YYYY/MM/DD 形式の簡易表示（ヘッダー用）
+     */
+    function formatLecDateShort(d) {
+      var days = ['日','月','火','水','木','金','土'];
+      var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+      var dd = ('0' + d.getDate()).slice(-2);
+      return mm + '/' + dd + '\n(' + days[d.getDay()] + ')';
+    }
+
+    // ===== 日程作成サブタブ =====
+
+    /**
+     * 日程作成サブタブ 初期化
+     */
+    function initLecturesSchedule() {
+      buildLectureCampusCheckboxes();
+      // 全ユーザー：講師名マップを取得（グリッド表示名を常に最新にするため）
+      loadLecTeacherNameMap();
+      // 管理者の場合は講師選択エリアを表示してリストを読み込む
+      if (isAdminUser) {
+        var area = document.getElementById('lec-admin-teacher-area');
+        if (area) area.style.display = 'flex';
+        loadLectureTeachers();
+      }
+    }
+
+    /**
+     * teacherId → { email, name } マップをバックエンドから取得してキャッシュする（全ユーザー）
+     * グリッド上の講師名表示を常に最新の表示名で行うために使用
+     */
+    function loadLecTeacherNameMap() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            lecTeacherNameMap = result.map || {};
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('getTeacherNamesMap エラー:', err);
+        })
+        .getTeacherNamesMap();
+    }
+
+    /**
+     * 管理者用：アクセス許可ユーザー一覧を取得してドロップダウンに設定する
+     * getAllowedUsers() をベースにするため、講習入力実績のない講師も表示される
+     */
+    function loadLectureTeachers() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var sel = document.getElementById('lec-teacher-select');
+          if (!sel) return;
+          if (!result || !result.success || !result.users || !result.users.length) {
+            sel.innerHTML = '<option value="">（ユーザーなし）</option>';
+            return;
+          }
+          var myEmailLower = (myTeacherEmail || '').toLowerCase();
+          var html = '<option value="">-- 自分として入力 (' + (myTeacherName || 'あなた') + ') --</option>';
+          result.users.forEach(function(u) {
+            if (!u.email) return;
+            var emailLower = u.email.toLowerCase();
+            if (emailLower === myEmailLower) return; // 自分はデフォルト選択肢に表示
+            var tid = u.teacherId || '';
+            html += '<option value="' + u.email + '" data-name="' + (u.name || u.email) + '" data-teacherid="' + tid + '">'
+                  + (u.name || u.email) + '</option>';
+          });
+          sel.innerHTML = html;
+          // 初期値：未選択（＝自分自身）
+          lecAdminTeacherEmail = '';
+          lecAdminTeacherName  = '';
+          lecAdminTeacherId    = '';
+        })
+        .withFailureHandler(function(err) {
+          console.error('getAllowedUsers エラー:', err);
+        })
+        .getAllowedUsers();
+    }
+
+    /**
+     * 管理者用：講師選択ドロップダウン変更時のハンドラー
+     */
+    function onLecTeacherChange() {
+      var sel = document.getElementById('lec-teacher-select');
+      if (!sel) return;
+      var badge = document.getElementById('lec-admin-teacher-badge');
+      if (sel.value) {
+        var opt = sel.options[sel.selectedIndex];
+        lecAdminTeacherEmail = sel.value;
+        lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value;
+        lecAdminTeacherId    = opt.getAttribute('data-teacherid') || '';
+        if (badge) badge.textContent = '「' + lecAdminTeacherName + '」として入力・編集します';
+      } else {
+        lecAdminTeacherEmail = '';
+        lecAdminTeacherName  = '';
+        lecAdminTeacherId    = '';
+        if (badge) badge.textContent = '';
+      }
+    }
+
+    /**
+     * 校舎チェックボックスを構築する（preferredCampuses を先頭にチェック済みで表示）
+     */
+    function buildLectureCampusCheckboxes() {
+      var container = document.getElementById('lec-campus-checkboxes');
+      if (!container) return;
+
+      var arr = Object.keys(campusData).map(function(code) {
+        return { code: code, name: campusData[code] };
+      });
+      if (arr.length === 0) {
+        container.innerHTML = '<div style="color:#999;font-size:13px;">校舎データがありません</div>';
+        return;
+      }
+
+      // 配属校舎はチェック済みにする（並び順はデフォルトのまま）
+      var pref = preferredCampuses || [];
+
+      var html = '';
+      // 全校舎チェックボックス
+      html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+            + '<input type="checkbox" id="lec-campus-all" onchange="onLecCampusAllChange()" checked style="width:16px;height:16px;cursor:pointer;"> 全校舎</label>';
+
+      arr.forEach(function(c) {
+        var isChecked = pref.indexOf(c.code) !== -1 || pref.length === 0;
+        html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+              + '<input type="checkbox" class="lec-campus-cb" value="' + c.code + '" onchange="onLecCampusChange()" '
+              + (isChecked ? 'checked' : '') + ' style="width:16px;height:16px;cursor:pointer;"> '
+              + c.name + '</label>';
+      });
+      container.innerHTML = html;
+
+      // 全校舎チェックの整合性確認
+      onLecCampusChange();
+
+      // 自動復元処理：チェックボックスが準備できたことを記録して tryAutoRestoreLectures を呼ぶ
+      campusCheckboxesBuilt = true;
+      tryAutoRestoreLectures();
+    }
+
+    /** 全校舎チェックボックス変更 */
+    function onLecCampusAllChange() {
+      var allCb = document.getElementById('lec-campus-all');
+      var checked = allCb ? allCb.checked : true;
+      document.querySelectorAll('.lec-campus-cb').forEach(function(cb) {
+        cb.checked = checked;
+      });
+      showLectureCampusTabs();
+    }
+
+    /** 個別校舎チェックボックス変更 */
+    function onLecCampusChange() {
+      var cbs = document.querySelectorAll('.lec-campus-cb');
+      var allCb = document.getElementById('lec-campus-all');
+      var allChecked = true;
+      cbs.forEach(function(cb) { if (!cb.checked) allChecked = false; });
+      if (allCb) allCb.checked = allChecked;
+      showLectureCampusTabs();
+    }
+
+    /**
+     * 講習管理 操作方法モーダルを表示する
+     */
+    function showLecHelpModal() {
+      document.getElementById('lecHelpOverlay').style.display = 'block';
+      document.getElementById('lecHelpModal').style.display = 'block';
+    }
+
+    /**
+     * 講習管理 操作方法モーダルを閉じる
+     */
+    function closeLecHelpModal() {
+      document.getElementById('lecHelpOverlay').style.display = 'none';
+      document.getElementById('lecHelpModal').style.display = 'none';
+    }
+
+    /**
+     * 表示ボタン押下時：チェック済み校舎のタブを生成してグリッドを表示する
+     */
+    function showLectureCampusTabs() {
+      var checked = [];
+      document.querySelectorAll('.lec-campus-cb:checked').forEach(function(cb) {
+        checked.push(cb.value);
+      });
+
+      if (checked.length === 0) {
+        document.getElementById('lec-schedule-main').style.display = 'none';
+        return;
+      }
+
+      // 講習が選択されていない場合（初期化中にチェックボックス変更が呼ばれる場合も含む）
+      if (!currentLectureId) return;
+
+      // 校舎選択を localStorage に保存（次回アプリ起動時に自動復元する）
+      localStorage.setItem('lecLastCampuses', JSON.stringify(checked));
+
+      // 開始週が未設定なら初期化
+      if (!currentLectureWeekStart) {
+        var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+        if (lp) currentLectureWeekStart = getLectureWeekMonday(lp.startDate);
+      }
+
+      // 校舎タブボタンを構築
+      var tabContainer = document.getElementById('lec-campus-tabs');
+      var html = '';
+      checked.forEach(function(code, i) {
+        var name = campusData[code] || code;
+        var isFirst = (i === 0);
+        var activeStyle = isFirst
+          ? 'color:#667eea;border-bottom:3px solid #667eea;'
+          : 'color:#666;border-bottom:3px solid transparent;';
+        html += '<button class="lecture-campus-tab-btn" data-campus="' + code + '" onclick="switchLectureCampusTab(\'' + code + '\')" '
+              + 'style="padding:10px 15px;background:white;border:none;cursor:pointer;font-weight:600;font-size:13px;transition:all 0.3s;white-space:nowrap;flex-shrink:0;' + activeStyle + '">'
+              + name + '</button>';
+      });
+      tabContainer.innerHTML = html;
+
+      // メインエリアを表示
+      document.getElementById('lec-schedule-main').style.display = 'block';
+
+      // 教科・学年ボタンを構築して表示
+      buildLecSubjectButtons();
+      buildLecGradeButtons();
+      document.getElementById('lec-subject-area').style.display = 'block';
+      document.getElementById('lec-class-area').style.display = 'block';
+      document.getElementById('lec-grade-area').style.display = 'block';
+      document.getElementById('lec-weekly-area').style.display = 'block';
+      document.getElementById('lec-toolbar').style.display = 'flex';
+      // クラス選択をリセット
+      selectedLecClass = null;
+      ['A', 'B', 'C'].forEach(function(c) {
+        var btn = document.getElementById('lec-class-btn-' + c);
+        if (btn) applyLecBtnActive(btn, false);
+      });
+
+      // 現在表示中の校舎を維持（チェックが外れた場合は先頭校舎を表示）
+      var campusToShow = (checked.indexOf(currentLectureCampus) !== -1)
+        ? currentLectureCampus : checked[0];
+      switchLectureCampusTab(campusToShow);
+
+      // 自動更新タイマーをリセット・開始（30秒ごとに全校舎を静かに再取得）
+      if (lecAutoRefreshTimer) { clearInterval(lecAutoRefreshTimer); }
+      lecAutoRefreshTimer = setInterval(function() {
+        // 日程作成サブタブが非表示なら何もしない
+        var schedEl = document.getElementById('lectures-schedule');
+        if (!schedEl || schedEl.style.display === 'none') return;
+        // 現在表示中の校舎を取得してサイレント更新
+        silentRefreshLecEntries(currentLectureCampus);
+      }, 30000);
+    }
+
+    /**
+     * バックグラウンドで講習エントリを静かに再取得・再描画する（自動更新用）
+     * ステータスメッセージを表示しない。未保存の変更がある校舎はスキップする。
+     * @param {string} campusCode 対象校舎コード
+     */
+    function silentRefreshLecEntries(campusCode) {
+      if (!currentLectureId || !campusCode) return;
+      // 未保存の変更がある場合はスキップ（ユーザーの作業を上書きしない）
+      if (dirtyCampuses[campusCode]) return;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          // コールバック時点でまだ変更がなく、同じ校舎を表示中の場合のみ更新
+          if (dirtyCampuses[campusCode]) return;
+          var newEntries = Array.isArray(result) ? result : [];
+          var old = JSON.stringify(lectureEntries[campusCode] || []);
+          var updated = JSON.stringify(newEntries);
+          if (old === updated) return; // 変更なしなら描画不要
+          lectureEntries[campusCode] = newEntries;
+          if (campusCode === currentLectureCampus) {
+            renderLecEntries(campusCode);
+          }
+        })
+        .withFailureHandler(function(err) {
+          // サイレント更新なのでエラーも表示しない
+          console.error('[AutoRefresh] getLectureScheduleEntries エラー:', err);
+        })
+        .getLectureScheduleEntries(currentLectureId, campusCode);
+    }
+
+    /**
+     * 校舎タブ切り替え（週・スクロール位置は維持）
+     * @param {string} campusCode 校舎コード
+     */
+    function switchLectureCampusTab(campusCode) {
+      // 前の校舎のスクロール位置を保存
+      var container = document.getElementById('lec-grid-container');
+      if (container && currentLectureCampus) {
+        currentLectureScrollLeft = container.scrollLeft;
+      }
+
+      currentLectureCampus = campusCode;
+
+      // タブボタンのアクティブ状態を更新
+      document.querySelectorAll('.lecture-campus-tab-btn').forEach(function(btn) {
+        if (btn.dataset.campus === campusCode) {
+          btn.style.color = '#667eea';
+          btn.style.borderBottomColor = '#667eea';
+        } else {
+          btn.style.color = '#666';
+          btn.style.borderBottomColor = 'transparent';
+        }
+      });
+
+      // 週ラベル更新
+      updateLectureWeekLabel();
+
+      // グリッド描画
+      renderLectureWeekGrid(campusCode);
+
+      // エントリ未取得なら取得（キャッシュ済みならスキップ）
+      if (!lectureEntries[campusCode]) {
+        refreshLecEntries();
+      }
+
+      updateLecRemainingCounter();
+    }
+
+    /**
+     * 週間タイムグリッドを描画する（横スクロール版：時間軸＝X、曜日＝Y）
+     * @param {string} campusCode 校舎コード
+     */
+    function renderLectureWeekGrid(campusCode) {
+      var container = document.getElementById('lec-grid-container');
+      if (!container || !currentLectureWeekStart) return;
+
+      var lp = currentLectureId ? lecturePeriods.find(function(p) { return p.id === currentLectureId; }) : null;
+      var startDate = lp ? new Date(lp.startDate + 'T00:00:00') : null;
+      var endDate   = lp ? new Date(lp.endDate   + 'T00:00:00') : null;
+
+      // 週の7日を生成
+      var weekDays = [];
+      for (var i = 0; i < 7; i++) {
+        var d = new Date(currentLectureWeekStart);
+        d.setDate(d.getDate() + i);
+        weekDays.push(d);
+      }
+
+      var dayNames = ['月','火','水','木','金','土','日'];
+
+      // レイアウト定数（10分刻み）
+      var START_HOUR = 0;            // 表示開始時刻（0:00から）
+      var END_HOUR   = 24;           // 表示終了時刻（24:00まで）
+      var SLOTS      = END_HOUR * 6; // 10分スロット数 = 144
+      var SLOT_W     = 20;           // 1スロット（10分）の幅 px（元の縦版と同じ比率）
+      var DAY_W      = 52;           // 曜日ラベル列の幅 px
+      var BASE_ROW_H = 56;           // 1行（1日）の基本高さ px（エントリ追加で伸びる）
+      var HEAD_H     = 36;           // ヘッダー行（時刻ラベル）の高さ px
+      var START_SLOT = 0;            // 表示開始スロット番号（0=0:00）
+      var TOTAL_W    = DAY_W + SLOTS * SLOT_W;  // 52 + 144*20 = 2932px
+
+      // 休校日マップ（管理タブの上書き設定も反映）
+      var lecFy = (function() {
+        if (lp && lp.startDate) {
+          var _d = new Date(lp.startDate + 'T00:00:00');
+          return _d.getMonth() >= 3 ? _d.getFullYear() : _d.getFullYear() - 1;
+        }
+        var _d = currentLectureWeekStart;
+        return _d.getMonth() >= 3 ? _d.getFullYear() : _d.getFullYear() - 1;
+      })();
+      var lecClosedDays = getClosedDays(lecFy);
+      if (closedDayOverrides) {
+        (closedDayOverrides.del || []).forEach(function(dk) { delete lecClosedDays[dk]; });
+        (closedDayOverrides.add || []).forEach(function(dk) { lecClosedDays[dk] = true; });
+      }
+
+      // ── ヘッダー行（時刻ラベル）──
+      var headerHtml = '<div style="display:flex;height:' + HEAD_H + 'px;'
+                     + 'border-bottom:2px solid #ccc;background:#f8fafc;'
+                     + 'min-width:' + TOTAL_W + 'px;'
+                     + 'position:sticky;top:0;z-index:20;">';
+      // 左上コーナー（横スクロール時も左上に固定）
+      headerHtml += '<div style="width:' + DAY_W + 'px;flex-shrink:0;border-right:1px solid #ddd;'
+                  + 'box-sizing:border-box;'
+                  + 'position:sticky;left:0;z-index:21;background:#f8fafc;"></div>';
+      // 10分ごとのスロット（9:00〜20:50）
+      for (var s = 0; s < SLOTS; s++) {
+        var slotMin   = s * 10;
+        var hh        = START_HOUR + Math.floor(slotMin / 60);
+        var mmMin     = slotMin % 60;
+        var isHour    = (mmMin === 0);
+        var isHalf    = (mmMin === 30);
+        // 境界線の強さは「このスロットの右端 = 次のスロットの開始時刻」で決める
+        // こうすると HH:00 の太線がスロット90の左端（=右端より1スロット手前）に来て
+        // タップした位置と保存される時刻が視覚的に一致する
+        var nextMm    = (slotMin + 10) % 60;
+        var borderCol = (nextMm === 0) ? '#bbb' : (nextMm === 30) ? '#ddd' : '#eee';
+        var labelHtml = '';
+        if (isHour) {
+          labelHtml = '<span style="position:absolute;left:1px;top:50%;transform:translateY(-50%);'
+                    + 'font-size:10px;font-weight:600;color:#555;white-space:nowrap;">'
+                    + ('0' + hh).slice(-2) + ':00</span>';
+        } else if (isHalf) {
+          labelHtml = '<span style="position:absolute;left:1px;top:50%;transform:translateY(-50%);'
+                    + 'font-size:9px;color:#aaa;white-space:nowrap;">:30</span>';
+        }
+        headerHtml += '<div style="width:' + SLOT_W + 'px;flex-shrink:0;position:relative;'
+                    + 'box-sizing:border-box;border-right:1px solid ' + borderCol + ';">'
+                    + labelHtml + '</div>';
+      }
+      // 21:00 終端ラベル
+      headerHtml += '<div style="width:0;position:relative;">'
+                  + '<span style="position:absolute;right:1px;top:50%;transform:translateY(-50%);'
+                  + 'font-size:10px;font-weight:600;color:#555;white-space:nowrap;">24:00</span></div>';
+      headerHtml += '</div>';
+
+      // ── 7日分の行 ──
+      var rowsHtml = '';
+      weekDays.forEach(function(d, idx) {
+        var mm2 = ('0' + (d.getMonth() + 1)).slice(-2);
+        var dd2 = ('0' + d.getDate()).slice(-2);
+        var dateStr = d.getFullYear() + '-' + mm2 + '-' + dd2;
+        var isSat = (d.getDay() === 6), isSun = (d.getDay() === 0);
+        var rowBg = isSun ? '#fff8f8' : isSat ? '#f0f8ff' : '#fff';
+        var dayBg = isSun ? '#fee2e2' : isSat ? '#eff6ff' : '#f8fafc';
+        var dayTxtCol = isSun ? '#dc2626' : isSat ? '#2563eb' : '#333';
+
+        // 開始日・終了日バッジ
+        var badge = '';
+        if (startDate && dateStr === formatDateKey(startDate)) {
+          badge = '<div style="font-size:9px;background:#22c55e;color:white;padding:1px 3px;border-radius:3px;margin-top:2px;white-space:nowrap;">開始</div>';
+        } else if (endDate && dateStr === formatDateKey(endDate)) {
+          badge = '<div style="font-size:9px;background:#f97316;color:white;padding:1px 3px;border-radius:3px;margin-top:2px;white-space:nowrap;">終了</div>';
+        }
+        // 休校日バッジ（入力は可能、表示のみ）
+        var closedBadge = lecClosedDays[dateStr]
+          ? '<div style="font-size:8px;background:#94a3b8;color:white;padding:1px 3px;border-radius:3px;margin-top:1px;white-space:nowrap;">休校日</div>'
+          : '';
+
+        // 行ラッパー（data-date-row でエントリ追加時に高さを更新する）
+        rowsHtml += '<div data-date-row="' + dateStr + '" '
+                  + 'style="display:flex;height:' + BASE_ROW_H + 'px;'
+                  + 'min-width:' + TOTAL_W + 'px;">';
+
+        // 曜日ラベル（sticky left）— data-date-label で高さを同期更新する
+        rowsHtml += '<div data-date-label="' + dateStr + '" '
+                  + 'style="width:' + DAY_W + 'px;flex-shrink:0;position:sticky;left:0;z-index:10;'
+                  + 'background:' + dayBg + ';border-right:1px solid #ddd;border-bottom:1px solid #ccc;'
+                  + 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+                  + 'padding:2px 0;box-sizing:border-box;height:' + BASE_ROW_H + 'px;">'
+                  + '<span style="font-size:11px;font-weight:600;color:' + dayTxtCol + ';">'
+                  + mm2 + '/' + dd2 + '</span>'
+                  + '<span style="font-size:11px;color:' + dayTxtCol + ';">(' + dayNames[idx] + ')</span>'
+                  + badge
+                  + closedBadge
+                  + '</div>';
+
+        // コンテンツエリア（タイムセル群 + エントリの絶対配置基盤）
+        rowsHtml += '<div class="lec-day-row" data-date="' + dateStr + '" '
+                  + 'style="position:relative;height:' + BASE_ROW_H + 'px;background:' + rowBg + ';'
+                  + 'border-bottom:1px solid #ccc;'
+                  + 'width:' + (SLOTS * SLOT_W) + 'px;flex-shrink:0;'
+                  + '-webkit-tap-highlight-color:transparent;'
+                  + '-webkit-touch-callout:none;'
+                  + '-webkit-user-select:none;user-select:none;">';
+
+        // 10分ごとのタイムセル（クリック/タップ判定用）
+        for (var s2 = 0; s2 < SLOTS; s2++) {
+          var cellSlot  = START_SLOT + s2;          // 絶対スロット番号（0〜143）
+          var cellMm     = s2 * 10 % 60;
+          // ヘッダーと同じロジック：右境界の強さは「次のスロットの開始時刻」で決める
+          var nextCellMm = (s2 * 10 + 10) % 60;
+          var cellBorder = (nextCellMm === 0) ? '#ddd' : (nextCellMm === 30) ? '#e8e8e8' : '#f0f0f0';
+          rowsHtml += '<div class="lec-time-cell" data-date="' + dateStr + '" data-slot="' + cellSlot + '" '
+                    + 'style="position:absolute;left:' + (s2 * SLOT_W) + 'px;top:0;'
+                    + 'width:' + SLOT_W + 'px;height:100%;'
+                    + 'border-right:1px solid ' + cellBorder + ';'
+                    + 'box-sizing:border-box;cursor:pointer;"></div>';
+        }
+
+        rowsHtml += '</div>';  // .lec-day-row
+        rowsHtml += '</div>';  // [data-date-row]
+      });
+
+      // DOM に書き込み
+      container.innerHTML = '<div style="display:flex;flex-direction:column;">'
+                          + headerHtml + rowsHtml + '</div>';
+
+      // 横・縦スクロール位置復元（DOM描画完了後に設定するためrAFを使用）
+      var _sl = currentLectureScrollLeft;
+      var _st = currentLectureScrollTop;
+      requestAnimationFrame(function() {
+        container.scrollLeft = _sl;
+        container.scrollTop  = _st;
+      });
+      container.onscroll = function() {
+        currentLectureScrollLeft = container.scrollLeft;
+        currentLectureScrollTop  = container.scrollTop;
+      };
+
+      // クリック/タップでエントリ作成（座標から10分単位のスロットに自動スナップ）
+      // getBoundingClientRect を使うことで CSS zoom やスクロール位置にも自動対応する
+      var touchStartX = 0, touchStartY = 0;
+      container.querySelectorAll('.lec-day-row').forEach(function(row) {
+        var dateKey = row.dataset.date;
+
+        // X座標（viewport基準）からスロット番号を計算する（10分単位に自動スナップ）
+        function calcSlotFromX(clientX) {
+          var rect = row.getBoundingClientRect();
+          var x    = clientX - rect.left;
+          var slot = Math.floor(x / (rect.width / SLOTS));
+          return Math.max(0, Math.min(slot, SLOTS - 1));
+        }
+
+        // デスクトップ：クリックで即時作成
+        row.addEventListener('click', function(ev) {
+          // エントリ自体のクリックは onEntryClick で stopPropagation されるのでここには届かないが念のため
+          if (ev.target.closest('.lec-entry')) return;
+          ev.stopPropagation();
+          handleLecGridAction(dateKey, calcSlotFromX(ev.clientX));
+        });
+
+        // モバイル：touchstart で座標記録、touchend で判定
+        row.addEventListener('touchstart', function(ev) {
+          var t = ev.touches[0];
+          touchStartX = t.clientX;
+          touchStartY = t.clientY;
+        }, { passive: true });
+
+        row.addEventListener('touchend', function(ev) {
+          var t = ev.changedTouches[0];
+          var dx = Math.abs(t.clientX - touchStartX);
+          var dy = Math.abs(t.clientY - touchStartY);
+          ev.preventDefault(); // 合成clickを常にブロック（指ズレによる誤操作防止）
+          if (dx < 10 && dy < 10) {
+            handleLecGridAction(dateKey, calcSlotFromX(t.clientX));
+          }
+        }, { passive: false });
+      });
+
+      // エントリ描画
+      renderLecEntries(campusCode);
+    }
+
+    /**
+     * Date を 'YYYY-MM-DD' 形式の文字列に変換する
+     * @param {Date} d
+     * @return {string}
+     */
+    function formatDateKey(d) {
+      var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+      var dd = ('0' + d.getDate()).slice(-2);
+      return d.getFullYear() + '-' + mm + '-' + dd;
+    }
+
+    // ===== 講習エントリ操作 =====
+
+    /**
+     * 現在選択中の講習名に「春期」が含まれるか判定する
+     * @return {boolean}
+     */
+    function isSpringLecture() {
+      if (!currentLectureId) return false;
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      return lp ? lp.name.indexOf('春期') !== -1 : false;
+    }
+
+    /**
+     * 講習名と学年コードからデフォルトのコマ設定を返す（フロントエンド版）
+     * @param {string} lectureName 講習名
+     * @param {string} grade 学年コード
+     * @return {{duration: number, count: number}}
+     */
+    function getDefaultGradeSettingsJS(lectureName, grade) {
+      var spring     = lectureName.indexOf('春期') !== -1;
+      var isKiso     = lectureName.indexOf('基礎学力テスト対策') !== -1;
+      var isNyushi   = lectureName.indexOf('入試直前') !== -1;
+      var multiCount = lectureName.indexOf('夏期') !== -1
+                    || lectureName.indexOf('冬期') !== -1;
+      // 基礎学力テスト対策・入試直前は中3のみ有効
+      if (isKiso || isNyushi) {
+        if (grade === '中3') {
+          return { duration: 8, count: isNyushi ? 6 : 4 };
+        }
+        return { duration: 0, count: 0 };
+      }
+      var dMap = {
+        '小':5, '中1':8, '中2':8, '中3':8, '高1':9, '高2':9, '高3':12,
+        '新中1': spring ? 5 : 8, '新中2':8, '新中3':8, '新高1':9, '新高2':9, '新高3':12
+      };
+      var cMap = {
+        '小':4, '中1':4, '中2':4, '中3': multiCount ? 6 : 4, '高1':4, '高2':4, '高3':4,
+        '新中1': spring ? 2 : 4, '新中2':4, '新中3':4, '新高1':4, '新高2':4, '新高3':4
+      };
+      return { duration: dMap[grade] || 9, count: cMap[grade] || 4 };
+    }
+
+    /**
+     * 現在選択中の講習の学年別設定を取得する
+     * 講習に gradeSettings があればそちらを使い、なければ名前から計算したデフォルトを返す
+     * @param {string} grade 学年コード
+     * @return {{duration: number, count: number}}
+     */
+    function getLecGradeSettings(grade) {
+      var lp = currentLectureId
+        ? lecturePeriods.find(function(p) { return p.id === currentLectureId; })
+        : null;
+      if (lp && lp.gradeSettings && lp.gradeSettings[grade]) {
+        return lp.gradeSettings[grade];
+      }
+      return getDefaultGradeSettingsJS(lp ? lp.name : '', grade);
+    }
+
+    /**
+     * 教科ボタン群を構築する（selectedSubjects から生成。1教科なら自動選択）
+     */
+    function buildLecSubjectButtons() {
+      var container = document.getElementById('lec-subject-buttons');
+      if (!container) return;
+      var subjects = selectedSubjects.length > 0 ? selectedSubjects : [];
+      if (subjects.length === 0) {
+        container.innerHTML = '<span style="font-size:13px;color:#999;">設定タブで担当教科を登録してください</span>';
+        return;
+      }
+      var html = '';
+      subjects.forEach(function(s) {
+        html += '<button class="lec-subject-btn" data-subject="' + escapeHtml(s) + '" '
+              + 'onclick="toggleLecSubjectBtn(\'' + escapeHtml(s) + '\')" '
+              + 'style="padding:6px 14px;border:1px solid #ccc;border-radius:16px;background:white;font-size:13px;cursor:pointer;">'
+              + escapeHtml(s) + '</button>';
+      });
+      container.innerHTML = html;
+      // 先頭の教科を自動選択
+      if (subjects.length > 0) {
+        selectedSubjectForEntry = subjects[0];
+        var btn = container.querySelector('.lec-subject-btn');
+        if (btn) applyLecBtnActive(btn, true);
+      } else {
+        selectedSubjectForEntry = null;
+      }
+    }
+
+    /**
+     * 学年ボタン群を構築する（春期なら「新」付与）
+     */
+    function buildLecGradeButtons() {
+      var container = document.getElementById('lec-grade-buttons');
+      if (!container) return;
+      var spring = isSpringLecture();
+      // code と label を一致させる（春期かどうかでコードも変える）
+      var grades = spring
+        ? ['小','新中1','新中2','新中3','新高1','新高2','新高3']
+        : ['小','中1','中2','中3','高1','高2','高3'];
+      var html = '';
+      grades.forEach(function(grade) {
+        var cfg = getLecGradeSettings(grade);
+        var mins = cfg.duration * 10;
+        var sub  = mins + '分 × ' + cfg.count + '回';
+        html += '<button class="lec-grade-btn" data-grade="' + escapeHtml(grade) + '" '
+              + 'onclick="toggleLecGradeBtn(\'' + escapeHtml(grade) + '\')" '
+              + 'style="padding:5px 12px;border:1px solid #ccc;border-radius:16px;background:white;font-size:13px;cursor:pointer;line-height:1.3;text-align:center;">'
+              + escapeHtml(grade)
+              + '<br><span style="font-size:10px;color:#888;">' + sub + '</span></button>';
+      });
+      container.innerHTML = html;
+      // 先頭の学年を自動選択
+      if (grades.length > 0) {
+        selectedGradeForEntry = null; // toggleLecGradeBtn が正しく設定できるようにリセット
+        toggleLecGradeBtn(grades[0]);
+      } else {
+        selectedGradeForEntry = null;
+      }
+    }
+
+    /**
+     * ボタンのアクティブスタイルを適用・解除する
+     */
+    function applyLecBtnActive(btn, active) {
+      if (active) {
+        btn.style.background    = 'var(--theme-color)';
+        btn.style.color         = 'white';
+        btn.style.borderColor   = 'var(--theme-color)';
+        btn.style.fontWeight    = '600';
+      } else {
+        btn.style.background    = 'white';
+        btn.style.color         = '';
+        btn.style.borderColor   = '#ccc';
+        btn.style.fontWeight    = '';
+      }
+    }
+
+    /**
+     * 教科ボタンを排他選択する（同ボタン再押しで解除）
+     * @param {string} subject
+     */
+    function toggleLecSubjectBtn(subject) {
+      document.querySelectorAll('.lec-subject-btn').forEach(function(btn) {
+        applyLecBtnActive(btn, btn.dataset.subject === subject && selectedSubjectForEntry !== subject);
+      });
+      selectedSubjectForEntry = (selectedSubjectForEntry === subject) ? null : subject;
+      updateLecRemainingCounter();
+    }
+
+    /**
+     * 学年ボタンを排他選択する（同ボタン再押しで解除）
+     * @param {string} grade
+     */
+    function toggleLecGradeBtn(grade) {
+      document.querySelectorAll('.lec-grade-btn').forEach(function(btn) {
+        applyLecBtnActive(btn, btn.dataset.grade === grade && selectedGradeForEntry !== grade);
+      });
+      selectedGradeForEntry = (selectedGradeForEntry === grade) ? null : grade;
+      updateLecRemainingCounter();
+    }
+
+    /**
+     * A/B/Cクラスボタンの排他選択（同ボタン再押しで解除）
+     * @param {string} cls 'A'/'B'/'C'
+     */
+    function toggleLecClassBtn(cls) {
+      selectedLecClass = (selectedLecClass === cls) ? null : cls;
+      ['A', 'B', 'C'].forEach(function(c) {
+        var btn = document.getElementById('lec-class-btn-' + c);
+        if (!btn) return;
+        applyLecBtnActive(btn, selectedLecClass === c);
+      });
+      updateLecRemainingCounter();
+    }
+
+    /**
+     * 現在選択中の学年・教科・クラスの入力済み件数と残り回数を表示する
+     */
+    function updateLecRemainingCounter() {
+      var el = document.getElementById('lec-remaining-counter');
+      if (!el) return;
+      if (!selectedGradeForEntry || !selectedSubjectForEntry) {
+        el.textContent = '';
+        return;
+      }
+      var settings = getLecGradeSettings(selectedGradeForEntry);
+      var total = settings ? settings.count : 0;
+      var entries = lectureEntries[currentLectureCampus] || [];
+      var count = entries.filter(function(e) {
+        return e.lectureId === currentLectureId &&
+               e.grade === selectedGradeForEntry &&
+               e.subject === selectedSubjectForEntry &&
+               (e.classLabel || null) === selectedLecClass;
+      }).length;
+      var label = selectedGradeForEntry + ' ' + selectedSubjectForEntry + (selectedLecClass || '');
+      var remaining = total - count;
+      if (remaining > 0) {
+        el.innerHTML = '<span style="color:#555;">' + label + ': ' + count + '件 / ' + total + '回設定（<b>あと' + remaining + '回</b>）</span>';
+      } else if (remaining === 0) {
+        el.innerHTML = '<span style="color:#22c55e;">✓ ' + label + ': ' + count + '件 / ' + total + '回（完了）</span>';
+      } else {
+        el.innerHTML = '<span style="color:#f97316;">' + label + ': ' + count + '件 / ' + total + '回設定（+' + (-remaining) + '超過）</span>';
+      }
+    }
+
+    /**
+     * 時刻文字列をスロット番号に変換する（HH:MM → slot）
+     * @param {string} timeStr
+     * @return {number}
+     */
+    function timeToSlot(timeStr) {
+      var parts = timeStr.split(':');
+      return Math.round((parseInt(parts[0]) * 60 + parseInt(parts[1])) / 10);
+    }
+
+    /**
+     * スロット番号を時刻文字列に変換する
+     * @param {number} slot
+     * @return {string} HH:MM
+     */
+    function slotToTimeStr(slot) {
+      var totalMin = slot * 10;
+      var h = Math.floor(totalMin / 60);
+      var m = totalMin % 60;
+      return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+    }
+
+    /**
+     * 教科・学年から HSL カラーセットを返す
+     * @param {string} subject 教科名
+     * @param {string} grade 学年コード
+     * @return {{solid:string, bg:string, text:string}}
+     */
+    function getEntryColors(subject, grade) {
+      var hueMap = {
+        '国語':355,'現代文':355,'古文':355,'漢文':355,
+        '英語':28,'英会話':28,
+        '数学':215,'算数':215,
+        '理科':145,'物理':145,'化学':145,'生物':145,'地学':145,
+        '社会':280,'地理':280,'歴史':280,'公民':280,'政治経済':280
+      };
+      var lightMap = {
+        '小':75,
+        '中1':67,'新中1':67,
+        '中2':60,'新中2':60,
+        '中3':53,'新中3':53,
+        '高1':46,'新高1':46,
+        '高2':40,'新高2':40,
+        '高3':34,'新高3':34
+      };
+      var hue = (hueMap[subject]  !== undefined) ? hueMap[subject]  : 215;
+      var l   = (lightMap[grade] !== undefined) ? lightMap[grade] : 53;
+      return {
+        solid : 'hsl('  + hue + ',70%,' + l + '%)',
+        bg    : 'hsla(' + hue + ',70%,' + l + '%,0.22)',
+        text  : l < 50 ? 'white' : 'hsl(' + hue + ',60%,20%)'
+      };
+    }
+
+    /**
+     * 先生ごとの色を取得する（未割当なら自動割当）
+     * @param {string} email
+     * @return {string} 16進数カラーコード
+     */
+    function getTeacherColor(teacherId) {
+      if (!teacherId) return teacherColorPalette[0];
+      if (!teacherColorMap[teacherId]) {
+        var idx = Object.keys(teacherColorMap).length % teacherColorPalette.length;
+        teacherColorMap[teacherId] = teacherColorPalette[idx];
+      }
+      return teacherColorMap[teacherId];
+    }
+
+    /**
+     * ツールバーの削除ボタン有効/無効を更新する
+     */
+    function updateLecToolbarState() {
+      var deleteBtn = document.getElementById('lec-delete-btn');
+      if (!deleteBtn) return;
+      if (selectedEntryId) {
+        deleteBtn.disabled       = false;
+        deleteBtn.style.cursor   = 'pointer';
+        deleteBtn.style.color    = '#e57373';
+        deleteBtn.style.borderColor = '#e57373';
+      } else {
+        deleteBtn.disabled       = true;
+        deleteBtn.style.cursor   = 'not-allowed';
+        deleteBtn.style.color    = '#ccc';
+        deleteBtn.style.borderColor = '#ccc';
+      }
+    }
+
+    /**
+     * 変更後に呼び出す。2.5秒後にすべての未保存校舎を自動保存する。
+     * @param {string} campusCode
+     */
+    function scheduleAutoSave(campusCode) {
+      dirtyCampuses[campusCode] = true;
+      lectureSaveVersion[campusCode] = (lectureSaveVersion[campusCode] || 0) + 1;
+      showLecStatusMsg('● 変更あり', '#f97316');
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(function() {
+        autoSaveTimer = null;
+        var campuses = Object.keys(dirtyCampuses).filter(function(cc) { return dirtyCampuses[cc]; });
+        campuses.forEach(function(cc) {
+          if (lectureEntries[cc] && currentLectureId) {
+            autoSaveCampus(cc);
+          }
+        });
+      }, AUTO_SAVE_DELAY);
+    }
+
+    /**
+     * 1校舎分のエントリをバックグラウンドで保存し、保存後にサーバーから再取得する
+     * @param {string} campusCode
+     */
+    function autoSaveCampus(campusCode) {
+      // 保存開始時のバージョンを記憶（保存中に新たな変更があったか判定するため）
+      var savedVersion = lectureSaveVersion[campusCode] || 0;
+      var entries = lectureEntries[campusCode] || [];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            var noNewChanges = ((lectureSaveVersion[campusCode] || 0) === savedVersion);
+            if (noNewChanges) {
+              // 保存中に新たな変更がなかった → サーバーデータで安全に更新
+              dirtyCampuses[campusCode] = false;
+              if (Array.isArray(result.entries)) {
+                lectureEntries[campusCode] = result.entries;
+                if (campusCode === currentLectureCampus) {
+                  renderLecEntries(campusCode);
+                }
+              }
+            }
+            // noNewChanges が false の場合: dirtyCampuses はそのまま（次のタイマーで再保存される）
+            var anyDirty = Object.keys(dirtyCampuses).some(function(cc) { return dirtyCampuses[cc]; });
+            if (!anyDirty) {
+              showLecStatusMsg('✓ 保存しました', '#22c55e');
+              showToast('✓ 保存しました', 'success');
+            }
+          } else {
+            showLecStatusMsg('❌ 保存失敗', '#e57373');
+            showToast('❌ 保存失敗', 'error');
+          }
+        })
+        .withFailureHandler(function() {
+          showLecStatusMsg('❌ 保存失敗', '#e57373');
+          showToast('❌ 保存失敗', 'error');
+        })
+        .saveLectureScheduleEntries(currentLectureId, campusCode, JSON.stringify(entries));
+    }
+
+    /**
+     * ステータスメッセージを一時表示する
+     * @param {string} msg
+     * @param {string} color
+     */
+    function showLecStatusMsg(msg, color) {
+      var el = document.getElementById('lec-status-msg');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.color = color || '#555';
+      setTimeout(function() { if (el.textContent === msg) el.textContent = ''; }, 3000);
+    }
+
+    /**
+     * 重なりグループを計算する（同日内の時間が重なるエントリ群）
+     * @param {Array} entries 同日のエントリ配列
+     * @return {Object} {entryId: {index, total}}
+     */
+    function computeOverlapGroups(entries) {
+      var result = {};
+      entries.forEach(function(entry) {
+        var startA = timeToSlot(entry.startTime);
+        var endA   = startA + entry.durationSlots;
+        var overlapping = entries.filter(function(other) {
+          var startB = timeToSlot(other.startTime);
+          var endB   = startB + other.durationSlots;
+          return startA < endB && endA > startB;
+        });
+        overlapping.sort(function(a, b) { return a.id.localeCompare(b.id); });
+        var idx = overlapping.findIndex(function(e) { return e.id === entry.id; });
+        result[entry.id] = { index: idx, total: overlapping.length };
+      });
+      return result;
+    }
+
+    /**
+     * 現在の校舎のエントリを横レイアウトで絶対配置描画する。
+     * コマが重なる日は行の縦幅を自動拡張してレーンを分ける。
+     * @param {string} campusCode
+     */
+    function renderLecEntries(campusCode) {
+      // 既存エントリをクリア
+      document.querySelectorAll('.lec-day-row .lec-entry').forEach(function(el) { el.remove(); });
+
+      // レイアウト定数（renderLectureWeekGrid と揃える）
+      var START_SLOT   = 0;        // 0（0:00）
+      var END_SLOT     = 24 * 6;   // 144（24:00）
+      var SLOT_W       = 20;       // 10分スロット = 20px
+      var BASE_ROW_H   = 56;       // エントリなし or 1レーンの基本行高さ
+      var ENTRY_H      = 48;       // 1レーンあたりの高さ px（重なりがあると増える）
+      var ENTRY_PAD    = 4;        // 行内の上下余白 px
+
+      // ── すべての行をいったん基本高さにリセット ──
+      document.querySelectorAll('[data-date-row]').forEach(function(wrapper) {
+        wrapper.style.height = BASE_ROW_H + 'px';
+      });
+      document.querySelectorAll('[data-date-label]').forEach(function(label) {
+        label.style.height = BASE_ROW_H + 'px';
+      });
+      document.querySelectorAll('.lec-day-row').forEach(function(row) {
+        row.style.height = BASE_ROW_H + 'px';
+      });
+
+      var entries = (lectureEntries[campusCode] || []).filter(function(e) {
+        return e.lectureId === currentLectureId;
+      });
+      if (entries.length === 0) return;
+
+      // 日付ごとにグループ化
+      var byDate = {};
+      entries.forEach(function(e) {
+        if (!byDate[e.date]) byDate[e.date] = [];
+        byDate[e.date].push(e);
+      });
+
+      Object.keys(byDate).forEach(function(date) {
+        var row = document.querySelector('.lec-day-row[data-date="' + date + '"]');
+        if (!row) return;
+
+        var dayEntries = byDate[date];
+        var groups     = computeOverlapGroups(dayEntries);
+
+        // この日の最大同時重なり数 → 必要なレーン数
+        var maxLanes = 1;
+        dayEntries.forEach(function(e) {
+          var g = groups[e.id];
+          if (g && g.total > maxLanes) maxLanes = g.total;
+        });
+
+        // 行の高さをレーン数に合わせて拡張
+        // コマがある日は常に「使用中レーン＋1の空きレーン」を確保する
+        // → 既存コマと同じ時間帯にも新たなコマを追加できる
+        var rowH = ENTRY_H * (maxLanes + 1) + ENTRY_PAD * 2;
+        row.style.height = rowH + 'px';
+        var wrapper = document.querySelector('[data-date-row="' + date + '"]');
+        if (wrapper) wrapper.style.height = rowH + 'px';
+        var label = document.querySelector('[data-date-label="' + date + '"]');
+        if (label) label.style.height = rowH + 'px';
+
+        // エントリを描画
+        dayEntries.forEach(function(entry) {
+          var g         = groups[entry.id] || { index: 0, total: 1 };
+          var startSlot = timeToSlot(entry.startTime);
+          var endSlot   = startSlot + entry.durationSlots;
+
+          // 表示範囲外は完全スキップ
+          if (endSlot <= START_SLOT || startSlot >= END_SLOT) return;
+
+          // 表示範囲にクリップ
+          var clippedStart = Math.max(startSlot, START_SLOT);
+          var clippedEnd   = Math.min(endSlot, END_SLOT);
+
+          // 水平位置・幅（10分スロット×20px）
+          var leftPx  = (clippedStart - START_SLOT) * SLOT_W;
+          var widthPx = (clippedEnd - clippedStart) * SLOT_W - 2;
+          if (widthPx < 4) return;
+
+          // 縦位置（各レーン ENTRY_H px ずつ）
+          var entryH = ENTRY_H - 2;
+          var topPx  = ENTRY_PAD + g.index * ENTRY_H;
+
+          var c = getEntryColors(entry.subject, entry.grade);
+          var selected = (selectedEntryId === entry.id);
+          var borderStyle = selected
+            ? 'border:2px solid ' + c.solid + ';box-shadow:0 4px 12px rgba(0,0,0,0.35), 0 0 0 2px ' + c.solid + '55;transform:scale(1.04) translateY(-2px);'
+            : 'border-top:3px solid ' + c.solid + ';';
+          var bgColor = selected
+            ? c.solid.replace('hsl(', 'hsla(').replace('%)', '%,0.40)')
+            : c.bg;
+
+          // 所有者判定（自分のエントリか、管理者か）
+          var isOwnEntry = !entry.teacherId || entry.teacherId === myTeacherId || isAdminUser;
+
+          var div = document.createElement('div');
+          div.className = 'lec-entry' + (isOwnEntry ? '' : ' lec-entry-readonly');
+          div.dataset.entryId = entry.id;
+          div.style.cssText = 'position:absolute;'
+            + 'left:' + leftPx + 'px;'
+            + 'width:' + widthPx + 'px;'
+            + 'top:' + topPx + 'px;'
+            + 'height:' + entryH + 'px;'
+            + 'background:' + bgColor + ';'
+            + borderStyle
+            + 'border-radius:3px;padding:1px 4px;'
+            + 'cursor:' + (isOwnEntry ? 'pointer' : 'default') + ';'
+            + 'font-size:10px;overflow:hidden;'
+            + 'box-sizing:border-box;z-index:' + (selected ? '10' : '2') + ';line-height:1.3;color:' + c.text + ';'
+            + 'white-space:nowrap;text-overflow:ellipsis;transition:transform 0.15s,box-shadow 0.15s;';
+          // 表示名を teacherId → lecTeacherNameMap で動的解決（表示名変更に追従）
+          var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
+            ? lecTeacherNameMap[entry.teacherId].name
+            : (entry.teacherName || entry.teacherEmail || '');
+          div.textContent = entry.grade + ' ' + entry.subject + (entry.classLabel || '') + ' ' + resolvedName;
+
+          if (isOwnEntry) {
+            (function(eid) {
+              div.addEventListener('click', function(ev) { onEntryClick(ev, eid); });
+            })(entry.id);
+          }
+
+          row.appendChild(div);
+        });
+      });
+      updateLecRemainingCounter();
+    }
+
+    /**
+     * グリッド列クリック時のハンドラー（エントリ作成 or 移動）
+     * @param {Event} event
+     * @param {string} date YYYY-MM-DD
+     */
+    function onLecColClick(event, date) {
+      // エントリクリックのバブリングは無視
+      if (event.target.classList.contains('lec-entry') || event.target.closest('.lec-entry')) return;
+
+      var col = event.currentTarget || event.target.closest('.lec-day-col');
+      if (!col) return;
+      var rect = col.getBoundingClientRect();
+      // タッチイベントと通常クリックの両方に対応
+      var clientY = (event.clientY !== undefined)
+        ? event.clientY
+        : (event.changedTouches && event.changedTouches[0] ? event.changedTouches[0].clientY : 0);
+      var y = clientY - rect.top;
+      var slot = Math.floor(y / 20);
+      slot = Math.max(0, Math.min(slot, 143));
+
+      if (selectedEntryId) {
+        // 選択中エントリを移動
+        moveLecEntry(selectedEntryId, date, slot);
+      } else if (selectedSubjectForEntry && selectedGradeForEntry) {
+        // 新規エントリ作成（毎週チェック時は一括作成）
+        var weeklyCb = document.getElementById('lec-weekly-cb');
+        if (weeklyCb && weeklyCb.checked) {
+          createWeeklyLecEntries(date, slot);
+        } else {
+          createLecEntry(date, slot);
+        }
+      } else {
+        // 教科または学年が未選択 → メッセージ表示
+        if (!selectedSubjectForEntry) {
+          showLecStatusMsg('教科ボタンを選んでからタップしてください', '#f97316');
+        } else {
+          showLecStatusMsg('学年ボタンを選んでからタップしてください', '#f97316');
+        }
+      }
+    }
+
+    /**
+     * グリッド上の指定日時にコマ操作を実行する（長押しタッチ用の共通ロジック）
+     * @param {string} date  YYYY-MM-DD 形式の日付
+     * @param {number} slot  スロット番号（0〜143）
+     */
+    function handleLecGridAction(date, slot) {
+      if (selectedEntryId) {
+        moveLecEntry(selectedEntryId, date, slot);
+      } else if (selectedSubjectForEntry && selectedGradeForEntry) {
+        var weeklyCb = document.getElementById('lec-weekly-cb');
+        if (weeklyCb && weeklyCb.checked) {
+          createWeeklyLecEntries(date, slot);
+        } else {
+          createLecEntry(date, slot);
+        }
+      } else {
+        if (!selectedSubjectForEntry) {
+          showLecStatusMsg('教科ボタンを選んでからタップしてください', '#f97316');
+        } else {
+          showLecStatusMsg('学年ボタンを選んでからタップしてください', '#f97316');
+        }
+      }
+    }
+
+    /**
+     * エントリクリック時のハンドラー（選択 or 解除）
+     * @param {Event} event
+     * @param {string} entryId
+     */
+    function onEntryClick(event, entryId) {
+      event.stopPropagation();
+      // 所有者チェック（管理者以外は自分のエントリのみ選択可能）
+      if (!isAdminUser) {
+        var entries = lectureEntries[currentLectureCampus] || [];
+        var entry = entries.find(function(e) { return e.id === entryId; });
+        if (entry && entry.teacherId && entry.teacherId !== myTeacherId) {
+          return;
+        }
+      }
+      selectedEntryId = (selectedEntryId === entryId) ? null : entryId;
+      updateLecToolbarState();
+      renderLecEntries(currentLectureCampus);
+    }
+
+    /**
+     * 選択中の教科・学年でエントリを新規作成する
+     * @param {string} date YYYY-MM-DD
+     * @param {number} startSlot
+     */
+    function createLecEntry(date, startSlot) {
+      if (!currentLectureId || !currentLectureCampus) return;
+      var id = 'e_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      var entry = {
+        id:            id,
+        lectureId:     currentLectureId,
+        campusCode:    currentLectureCampus,
+        date:          date,
+        startTime:     slotToTimeStr(startSlot),
+        durationSlots: getLecGradeSettings(selectedGradeForEntry).duration,
+        subject:       selectedSubjectForEntry,
+        grade:         selectedGradeForEntry,
+        classLabel:    selectedLecClass,
+        teacherName:   (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherName : (myTeacherName || 'Unknown'),
+        teacherEmail:  (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherEmail : (myTeacherEmail || ''),
+        teacherId:     (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : (myTeacherId || '')
+      };
+      if (!lectureEntries[currentLectureCampus]) lectureEntries[currentLectureCampus] = [];
+      lectureEntries[currentLectureCampus].push(entry);
+      pendingChanges = true;
+      renderLecEntries(currentLectureCampus);
+      scheduleAutoSave(currentLectureCampus);
+    }
+
+    /**
+     * 毎週同じ曜日・時刻にエントリを一括作成する（休校日を除く）
+     * @param {string} date YYYY-MM-DD（タップした日）
+     * @param {number} startSlot
+     */
+    function createWeeklyLecEntries(date, startSlot) {
+      if (!currentLectureId || !currentLectureCampus) return;
+      var cfg   = getLecGradeSettings(selectedGradeForEntry);
+      var count = cfg.count;
+
+      // 年度を算出
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      var fy = currentLectureYear || (lp ? (function() {
+        var d = new Date(lp.startDate + 'T00:00:00');
+        return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+      })() : new Date().getFullYear());
+
+      var closedDays = getClosedDays(fy);
+      var cur = new Date(date + 'T00:00:00');
+      var created = 0;
+      while (created < count) {
+        var dateKey = formatDateKey(cur);
+        if (!closedDays[dateKey]) {
+          createLecEntry(dateKey, startSlot);
+          created++;
+        }
+        cur.setDate(cur.getDate() + 7);
+        if (created < count && cur.getFullYear() > fy + 2) break; // 安全ガード
+      }
+      showLecStatusMsg(count + '件の授業コマを作成しました（休校日除く）', '#22c55e');
+    }
+
+    /**
+     * 選択中のエントリを指定の日時に移動する
+     * @param {string} entryId
+     * @param {string} date YYYY-MM-DD
+     * @param {number} startSlot
+     */
+    function moveLecEntry(entryId, date, startSlot) {
+      var entries = lectureEntries[currentLectureCampus] || [];
+      var entry = entries.find(function(e) { return e.id === entryId; });
+      if (!entry) return;
+      // 所有者チェック（防御的ガード）
+      if (!isAdminUser && entry.teacherId && entry.teacherId !== myTeacherId) return;
+      entry.date      = date;
+      entry.startTime = slotToTimeStr(startSlot);
+      pendingChanges  = true;
+      selectedEntryId = null;
+      updateLecToolbarState();
+      renderLecEntries(currentLectureCampus);
+      scheduleAutoSave(currentLectureCampus);
+    }
+
+    /**
+     * 選択中のエントリを削除する（内部ヘルパー）
+     */
+    function deleteLecEntry() {
+      if (!selectedEntryId || !currentLectureCampus) return;
+      // 所有者チェック（防御的ガード）
+      var entries = lectureEntries[currentLectureCampus] || [];
+      var target = entries.find(function(e) { return e.id === selectedEntryId; });
+      if (target && !isAdminUser && target.teacherId && target.teacherId !== myTeacherId) return;
+      lectureEntries[currentLectureCampus] = entries.filter(function(e) { return e.id !== selectedEntryId; });
+      selectedEntryId = null;
+      pendingChanges  = true;
+      updateLecToolbarState();
+      renderLecEntries(currentLectureCampus);
+      scheduleAutoSave(currentLectureCampus);
+    }
+
+    /**
+     * バックエンドからエントリを再取得して描画する
+     */
+    function refreshLecEntries() {
+      if (!currentLectureId || !currentLectureCampus) return;
+      // 呼び出し時点の校舎コードをキャプチャ（非同期コールバック内で変化しないようにする）
+      var campusCode = currentLectureCampus;
+      var statusEl = document.getElementById('lec-status-msg');
+      if (statusEl) { statusEl.textContent = '読み込み中...'; statusEl.style.color = '#555'; }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          // ユーザーが変更中（未保存）の場合は上書きしない（レース条件対策）
+          // refreshLecEntries が遅延して返ってきてもユーザーの作業内容を消さないための安全弁
+          if (dirtyCampuses[campusCode]) return;
+          // キャプチャした校舎コードに保存（途中で別校舎に切り替わっても上書きしない）
+          lectureEntries[campusCode] = Array.isArray(result) ? result : [];
+          dirtyCampuses[campusCode] = false;
+          // 今も同じ校舎を表示中の場合のみ描画・フラグ更新
+          if (campusCode === currentLectureCampus) {
+            pendingChanges = false;
+            renderLecEntries(currentLectureCampus);
+            showLecStatusMsg('');
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('getLectureScheduleEntries エラー:', err);
+          if (campusCode === currentLectureCampus) {
+            showLecStatusMsg('❌ 取得失敗', '#e57373');
+          }
+        })
+        .getLectureScheduleEntries(currentLectureId, campusCode);
+    }
+
+    /**
+     * 現在の校舎のエントリをバックエンドに保存する
+     */
+    function saveLecEntries() {
+      if (!currentLectureId || !currentLectureCampus) return;
+      var btn = document.getElementById('lec-save-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+
+      var entries = lectureEntries[currentLectureCampus] || [];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (btn) btn.disabled = false;
+          if (result && result.success) {
+            pendingChanges = false;
+            updateSaveButtonLabel();
+            showLecStatusMsg('✓ 保存しました', '#22c55e');
+          } else {
+            showLecStatusMsg('❌ ' + (result ? result.error : '保存失敗'), '#e57373');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) btn.disabled = false;
+          console.error('saveLectureScheduleEntries エラー:', err);
+          showLecStatusMsg('❌ 保存失敗: ' + err, '#e57373');
+        })
+        .saveLectureScheduleEntries(currentLectureId, currentLectureCampus, JSON.stringify(entries));
+    }
+
+</script>

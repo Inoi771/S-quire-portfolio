@@ -1,0 +1,980 @@
+<script>
+    // ========================================
+    // 【配布物サブタブ】
+    // ========================================
+    // 講習管理 > 配布物タブ：年度・講習・校舎を選択して保護者向け講習案内PDFを生成する
+
+    var matLecPricingData = null;  // 講習別料金データのキャッシュ（typeId → {rows:[{type,gradeKey,duration,count,internal,external}]}）
+    var matEntriesCache = {};  // プレビュー用エントリキャッシュ: "lectureId_campusCode" → entries[]
+
+    // 学年グループ定義（PDFページ単位・申込欄の isHigh で高校生フォームに切替）
+    var MAT_GRADE_GROUPS_ = [
+      { key: 'sho',  label: '小学生', codes: ['07','08','09','10','11','12'], isHigh: false },
+      { key: 'chu1', label: '中1',    codes: ['13'], isHigh: false },
+      { key: 'chu2', label: '中2',    codes: ['14'], isHigh: false },
+      { key: 'chu3', label: '中3',    codes: ['15'], isHigh: false },
+      { key: 'ko1',  label: '高1',    codes: ['16'], isHigh: true  },
+      { key: 'ko2',  label: '高2',    codes: ['17'], isHigh: true  },
+      { key: 'ko3',  label: '高3',    codes: ['18'], isHigh: true  }
+    ];
+
+    // 日程表での科目表示順
+    var MAT_SUBJECT_ORDER_ = ['英語', '数学', '国語', '理科', '社会'];
+
+    // 学年別デフォルト挨拶文（夏期講習用。ユーザーがtextareaで上書き可能）
+    var MAT_DEFAULT_GREETINGS_ = {
+      sho:  'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，今年も下記の日程で夏期講習を実施いたします。小学生において基本的・基礎的な内容の定着を怠ると，学習内容が難しくなるにつれて，応用問題だけでなく基本問題さえ解けないという状態になってしまう場合があります。学習内容をその都度習得するために，是非とも受講をご検討下さいますようお願い申し上げます。',
+      chu1: 'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，1学期も終わり，中学校生活にも慣れてきたことと存じます。中学内容の基礎を学ぶ1年生において，テストの点数で何点取っているから安心というラインはありません。最初のつまずきをなくすために，また学校では触れることのない応用問題に取り組むためにも，夏期講習の受講を是非ともご検討下さいますようお願い申し上げます。',
+      chu2: 'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，1学期も終わり，テストの結果はいかがだったでしょうか。学習内容をその都度復習し定着させることが必要であり，また学校では触れることのない応用問題に取り組むことが重要です。1学期の学習内容の定着を図るために，夏期講習の受講を是非ともご検討下さいますようお願い申し上げます。',
+      chu3: 'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，10月には，志望校を決定する際に最重視される第一回目の基礎学力テストが行われます。スクエアの夏期講習では，各教科の講師陣が出題傾向を分析し，基本問題から応用問題までポイントをおさえたテキストを独自に作成致しました。基礎学力テスト及び高校受験対策として，夏期講習の受講を是非ともご検討下さいますようお願い申し上げます。',
+      ko1:  'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，1学期も終わり，高校生活にも慣れてきたことと存じます。しかし中学校の時と違い，高校の勉強は格段に難しくなっています。早いうちに最初のつまづきをなくすために，夏期特別時間割を組ませていただきました。受講をご検討下さいますようお願い申し上げます。',
+      ko2:  'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，1学期も終わり，高校生活も半分近く過ぎました。来年度にはいよいよ大学受験です。今までに学んだことを復習するために，夏期特別時間割を組ませていただきました。受講をご検討下さいますようお願い申し上げます。',
+      ko3:  'スクエアの教育活動にご理解，ご配慮を賜りまして御礼申し上げます。\n　さて，1学期も終わり，高校生活も残り半年余りとなりました。2学期に入ると，志望校別に受験が始まります。受験へのラストスパートをかけるために，夏期講習の受講を是非ともご検討下さいますようお願い申し上げます。'
+    };
+
+    /**
+     * 配布物サブタブを初期化する
+     * switchLectureSubTab から呼ばれる。lecturePeriods は initLecturesTab() 済みで利用可能。
+     */
+    function initLecturesMaterials() {
+      // 校舎セレクト: campusData が利用可能なら即時、そうでなければフェッチ
+      if (campusData && Object.keys(campusData).length > 0) {
+        buildMatCampusSelect();
+        buildMatGreetingTextareas_();
+        updateMatPreview();
+      } else {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.campuses) {
+              result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
+            }
+            buildMatCampusSelect();
+            buildMatGreetingTextareas_();
+            updateMatPreview();
+          })
+          .withFailureHandler(function(err) { console.error('配布物 校舎取得失敗:', err); })
+          .getGradesConfigForWeb();
+      }
+
+      // 講習別料金データのキャッシュ（1回のみフェッチ。ロード後にプレビュー再描画）
+      if (!matLecPricingData) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success && result.data) {
+              matLecPricingData = result.data;
+              updateMatPreview();
+            }
+          })
+          .withFailureHandler(function(err) { console.error('配布物 講習別料金取得失敗:', err); })
+          .getLecturePricingConfig();
+      }
+
+      // 保存済みファイル一覧を初期化
+      loadDistributionFilesList();
+
+      // リサイズリスナー（1回のみ登録）
+      if (!window._matResizeListenerAdded) {
+        window.addEventListener('resize', resizeMatPreview);
+        window._matResizeListenerAdded = true;
+      }
+    }
+
+    /**
+     * 校舎セレクトを buildCampusOptions を使って構築する（配属校舎が先頭）
+     */
+    function buildMatCampusSelect() {
+      var campuses = Object.keys(campusData || {}).map(function(code) {
+        return { code: code, name: campusData[code] };
+      });
+      var html = buildCampusOptions(campuses, '校舎');
+      document.getElementById('mat-campus-select').innerHTML = html;
+    }
+
+    /**
+     * 校舎変更時：スケジュールエントリを取得（キャッシュ優先）してプレビューとファイル一覧を更新する
+     */
+    function updateMatPreviewOnCampusChange() {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-campus-select').value;
+
+      // ファイル一覧を更新（校舎変更のたびに再取得）
+      loadDistributionFilesList();
+
+      if (!lectureId || !campusCode) {
+        updateMatPreview();
+        return;
+      }
+
+      var cacheKey = lectureId + '_' + campusCode;
+      if (matEntriesCache[cacheKey]) {
+        updateMatPreview();
+        return;
+      }
+
+      // キャッシュなし → バックエンドから取得
+      var inner = document.getElementById('mat-preview-inner');
+      if (inner) {
+        inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#bbb;font-size:14px;">⏳ 日程データを読み込み中...</div>';
+        resizeMatPreview();
+      }
+
+      google.script.run
+        .withSuccessHandler(function(entries) {
+          matEntriesCache[cacheKey] = entries || [];
+          updateMatPreview();
+        })
+        .withFailureHandler(function(err) {
+          console.error('配布物プレビュー エントリ取得失敗:', err);
+          updateMatPreview();
+        })
+        .getLectureScheduleEntries(lectureId, campusCode);
+    }
+
+    /**
+     * 配布物プレビューを更新する（キャッシュ利用・同期的）
+     */
+    function updateMatPreview() {
+      var inner = document.getElementById('mat-preview-inner');
+      if (!inner) return;
+
+      var lectureId = currentLectureId;
+      if (!lectureId) {
+        inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">講習を選択するとプレビューが表示されます</div>';
+        resizeMatPreview();
+        return;
+      }
+
+      var campusCode = document.getElementById('mat-campus-select') ? document.getElementById('mat-campus-select').value : '';
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var campusName = (campusData && campusCode && campusData[campusCode])
+        ? campusData[campusCode] : (campusCode || '（校舎未選択）');
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+      var cacheKey = lectureId + '_' + campusCode;
+      var entries = (campusCode && matEntriesCache[cacheKey]) ? matEntriesCache[cacheKey] : [];
+      var typeId = (lectureId || '').replace(/^\d{4}-/, '');
+      var typeData = (matLecPricingData && matLecPricingData[typeId]) ? matLecPricingData[typeId] : null;
+      var isSpring = lecName.indexOf('春') !== -1;
+
+      inner.innerHTML = buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring);
+      resizeMatPreview();
+    }
+
+    /**
+     * 配布物プレビューをコンテナ幅に合わせてスケーリングする（794px基準）
+     */
+    function resizeMatPreview() {
+      var container = document.getElementById('mat-preview-container');
+      var inner = document.getElementById('mat-preview-inner');
+      if (!container || !inner) return;
+      var containerW = container.offsetWidth;
+      if (containerW < 10) return;
+      var scale = containerW / 794;
+      inner.style.transform = 'scale(' + scale + ')';
+      inner.style.transformOrigin = 'top left';
+      container.style.height = Math.round(inner.scrollHeight * scale) + 'px';
+    }
+
+    /**
+     * 配布物PDFを生成してダウンロードまたは印刷する
+     * @param {string} mode 'download' または 'print'
+     */
+    function generateMaterialsPDF(mode) {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-campus-select').value;
+
+      if (!lectureId) { appAlert('上部で講習を選択してください。'); return; }
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+
+      var btn = document.getElementById('matPdfBtn');
+      var arrowBtn = document.getElementById('matPdfArrowBtn');
+      var origText = btn.textContent;
+      btn.textContent = '⏳ 生成中...';
+      btn.disabled = true;
+      arrowBtn.disabled = true;
+
+      function restoreBtn() {
+        btn.textContent = origText;
+        btn.disabled = false;
+        arrowBtn.disabled = false;
+      }
+
+      // 印刷モードは同期的にウィンドウを開いておく（ポップアップブロック回避）
+      var printWindow = null;
+      if (mode === 'print') {
+        printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write('<html><body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;color:#555;font-size:16px;">⏳ 講習案内を生成中...</body></html>');
+        }
+      }
+
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+      var typeId = (lectureId || '').replace(/^\d{4}-/, '');
+      var typeData = (matLecPricingData && matLecPricingData[typeId]) ? matLecPricingData[typeId] : null;
+      var isSpring = lecName.indexOf('春') !== -1;
+
+      function proceed(entries) {
+        // 学年グループ別に仕分け
+        var gradePages = [];
+        MAT_GRADE_GROUPS_.forEach(function(grp) {
+          var grpEntries = (entries || []).filter(function(e) {
+            var gc = String(e.grade || '').trim();
+            if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
+            return grp.codes.indexOf(gc) !== -1;
+          });
+          if (grpEntries.length > 0) gradePages.push({ gradeGroup: grp, entries: grpEntries });
+        });
+
+        if (gradePages.length === 0) {
+          restoreBtn();
+          if (printWindow) printWindow.close();
+          appAlert('選択した校舎にデータがありません。\n日程作成タブでエントリを追加してください。');
+          return;
+        }
+
+        var canvases = [];
+        var pageIdx = 0;
+
+        function renderNextPage_() {
+          if (pageIdx >= gradePages.length) {
+            restoreBtn();
+            var docTitle = fy + '年度 ' + lecName + 'のご案内';
+            finalizeMaterialsPdf_(mode, canvases, printWindow, docTitle);
+            return;
+          }
+
+          var pg = gradePages[pageIdx];
+          pageIdx++;
+
+          var greeting = getMatGreeting_(pg.gradeGroup.key);
+          var pageHtml = buildMatOnePage_(pg.gradeGroup, pg.entries, campusName, campusCode, lecName, greeting, typeData, isSpring);
+
+          var container = document.createElement('div');
+          container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
+          document.body.appendChild(container);
+          container.innerHTML = pageHtml;
+
+          html2canvas(container, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            windowWidth: 840,
+            useCORS: true
+          }).then(function(canvas) {
+            document.body.removeChild(container);
+            canvases.push(canvas);
+            renderNextPage_();
+          }).catch(function(e) {
+            document.body.removeChild(container);
+            restoreBtn();
+            if (printWindow) printWindow.close();
+            console.error('配布物PDF生成エラー:', e);
+            appAlert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+          });
+        }
+
+        renderNextPage_();
+      }
+
+      var cacheKey = lectureId + '_' + campusCode;
+      if (matEntriesCache[cacheKey]) {
+        proceed(matEntriesCache[cacheKey]);
+      } else {
+        google.script.run
+          .withSuccessHandler(function(entries) {
+            matEntriesCache[cacheKey] = entries || [];
+            proceed(entries || []);
+          })
+          .withFailureHandler(function(err) {
+            restoreBtn();
+            if (printWindow) printWindow.close();
+            console.error('エントリ取得失敗:', err);
+            appAlert('日程データの取得に失敗しました。');
+          })
+          .getLectureScheduleEntries(lectureId, campusCode);
+      }
+    }
+
+    /**
+     * 配布物PDF/印刷出力を実行する（finalizePdf の配布物専用版・タイトルを引数で受け取る）
+     * @param {string} mode 'download' または 'print'
+     * @param {Array} canvases canvas配列
+     * @param {Window} printWindow 印刷ウィンドウ（printモード時）
+     * @param {string} docTitle ドキュメントタイトル（ファイル名・ウィンドウタイトルに使用）
+     */
+    function finalizeMaterialsPdf_(mode, canvases, printWindow, docTitle) {
+      var safeTitle = docTitle || '講習案内';
+
+      if (mode === 'print') {
+        var imgsHtml = '';
+        canvases.forEach(function(c, idx) {
+          var imgDataPng = c.toDataURL('image/png');
+          var pageBreak = idx < canvases.length - 1 ? 'page-break-after: always;' : '';
+          var onloadAttr = idx === canvases.length - 1 ? ' onload="window.print();"' : '';
+          imgsHtml += '<img src="' + imgDataPng + '" style="width:100%;height:auto;display:block;' + pageBreak + '"' + onloadAttr + '>';
+        });
+        if (printWindow) {
+          printWindow.document.open();
+          printWindow.document.write(
+            '<!DOCTYPE html><html><head>' +
+            '<title>' + safeTitle + '</title>' +
+            '<style>* { margin: 0; padding: 0; box-sizing: border-box; } body { background: #fff; } @page { size: A4 portrait; margin: 7mm; }</style>' +
+            '</head><body>' + imgsHtml + '</body></html>'
+          );
+          printWindow.document.close();
+        } else {
+          appAlert('ポップアップがブロックされました。\nブラウザのポップアップ許可設定を確認してください。');
+        }
+      } else {
+        var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var pageW = pdf.internal.pageSize.getWidth();
+        var pageH = pdf.internal.pageSize.getHeight();
+        var margin = 7;
+        var maxW = pageW - margin * 2;
+        var maxH = pageH - margin * 2;
+
+        canvases.forEach(function(c, idx) {
+          if (idx > 0) pdf.addPage();
+          var imgData = c.toDataURL('image/jpeg', 0.92);
+          var ratio = c.width / c.height;
+          var drawW = maxW;
+          var drawH = drawW / ratio;
+          if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
+          pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+        });
+        pdf.save(safeTitle + '.pdf');
+      }
+    }
+
+    // ========== 配布物 HTML 生成ヘルパー ==========
+
+    /**
+     * 学年別挨拶文textareaを #mat-greetings-container に動的生成する
+     * 既に子要素があればスキップ（再生成防止・ユーザーの編集内容を保持）
+     */
+    function buildMatGreetingTextareas_() {
+      var container = document.getElementById('mat-greetings-container');
+      if (!container || container.children.length > 0) return;
+
+      MAT_GRADE_GROUPS_.forEach(function(grp) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;';
+
+        var lbl = document.createElement('div');
+        lbl.style.cssText = 'background:#f5f5f5;padding:4px 10px;font-size:12px;font-weight:600;color:#555;border-bottom:1px solid #e0e0e0;';
+        lbl.textContent = grp.label;
+        wrap.appendChild(lbl);
+
+        var ta = document.createElement('textarea');
+        ta.id = 'mat-greeting-' + grp.key;
+        ta.rows = 4;
+        ta.setAttribute('oninput', 'updateMatPreview()');
+        ta.style.cssText = 'width:100%;padding:8px 10px;border:none;border-radius:0;font-size:12px;resize:vertical;box-sizing:border-box;line-height:1.6;font-family:inherit;display:block;';
+        ta.value = MAT_DEFAULT_GREETINGS_[grp.key] || '';
+        wrap.appendChild(ta);
+
+        container.appendChild(wrap);
+      });
+    }
+
+    /**
+     * 指定学年グループの挨拶文を返す（textareaの値 → デフォルト文の順でフォールバック）
+     * @param {string} gradeKey MAT_GRADE_GROUPS_ の key（例: 'chu1'）
+     * @return {string} 挨拶文
+     */
+    function getMatGreeting_(gradeKey) {
+      var ta = document.getElementById('mat-greeting-' + gradeKey);
+      return ta ? ta.value : (MAT_DEFAULT_GREETINGS_[gradeKey] || '');
+    }
+
+    /**
+     * 配布物PDF用のドキュメントHTMLを生成して返す（学年ごとに1ページ）
+     * @param {Array} entries 講習エントリ一覧
+     * @param {string} campusName 校舎名
+     * @param {string} campusCode 校舎コード（勝瑞校判定用）
+     * @param {number} fy 年度（西暦）
+     * @param {string} lecName 講習名
+     * @param {Object|null} typeData 講習別料金データ {rows:[...]}
+     * @param {boolean} isSpring 春期講習か
+     * @return {string} HTML文字列（学年数分のページを区切り線で連結）
+     */
+    function buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring) {
+      var pages = [];
+      MAT_GRADE_GROUPS_.forEach(function(grp) {
+        var grpEntries = (entries || []).filter(function(e) {
+          var gc = String(e.grade || '').trim();
+          if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
+          return grp.codes.indexOf(gc) !== -1;
+        });
+        if (grpEntries.length > 0) {
+          var greeting = getMatGreeting_(grp.key);
+          pages.push(buildMatOnePage_(grp, grpEntries, campusName, campusCode, lecName, greeting, typeData, isSpring));
+        }
+      });
+
+      if (pages.length === 0) {
+        return '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">（選択した校舎にデータがありません）</div>';
+      }
+      return pages.join('<div style="height:20px;background:#eee;"></div>');
+    }
+
+    /**
+     * 1学年分のA4ページHTMLを生成する
+     * @param {Object} gradeGroup MAT_GRADE_GROUPS_ の1要素
+     * @param {Array} entries その学年のエントリ一覧
+     * @param {string} campusName 校舎名
+     * @param {string} campusCode 校舎コード
+     * @param {string} lecName 講習名
+     * @param {string} greeting 挨拶文（pre-wrap表示）
+     * @param {Object|null} typeData 講習別料金データ
+     * @param {boolean} isSpring 春期講習か
+     * @return {string} HTML文字列
+     */
+    function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring) {
+      // 科目一覧を抽出（MAT_SUBJECT_ORDER_ 順）
+      var subjectSet = {};
+      (entries || []).forEach(function(e) { if (e.subject) subjectSet[e.subject] = true; });
+      var subjects = MAT_SUBJECT_ORDER_.filter(function(s) { return subjectSet[s]; });
+      Object.keys(subjectSet).forEach(function(s) { if (MAT_SUBJECT_ORDER_.indexOf(s) === -1) subjects.push(s); });
+
+      // 料金行を学年グループでフィルタ（空の場合は全行を使用）
+      var allRows = (typeData && typeData.rows) ? typeData.rows : [];
+      var gradeRows = allRows.filter(function(r) { return r.gradeKey === gradeGroup.key; });
+      if (gradeRows.length === 0) gradeRows = allRows;
+
+      var html = '<div style="width:794px;min-height:1122px;padding:22px 30px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
+
+      // 1. ヘッダー
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;font-size:10.5pt;">';
+      html += '<div>保護者各位</div>';
+      html += '<div>スクエア　' + escapeHtmlMat_(campusName) + '校</div>';
+      html += '</div>';
+
+      // 2. タイトル
+      html += '<div style="text-align:center;font-size:16pt;font-weight:bold;margin:4px 0 10px;letter-spacing:0.05em;">';
+      html += escapeHtmlMat_(lecName) + 'のお知らせ（' + escapeHtmlMat_(gradeGroup.label) + '）';
+      html += '</div>';
+
+      // 3. 挨拶文
+      if (greeting) {
+        html += '<div style="font-size:10pt;line-height:1.8;white-space:pre-wrap;margin-bottom:6px;">' + escapeHtmlMat_(greeting) + '</div>';
+      }
+
+      // 4. 敬具
+      html += '<div style="text-align:right;font-size:10pt;margin-bottom:10px;">敬具</div>';
+
+      // 5. 日程表
+      html += buildMatScheduleTable_(entries);
+
+      // スペーサー（日程表と料金枠の間を広げる）
+      html += '<div style="flex:1;min-height:8px;"></div>';
+
+      // 6. 料金枠
+      if (gradeRows.length > 0) {
+        html += '<div style="margin-bottom:6px;">';
+        html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:3px;">○時間・回数・料金</div>';
+        html += buildMatLecPricingTable_(gradeRows, campusCode, isSpring);
+        html += '</div>';
+      }
+
+      // 7. 切り取り線
+      html += '<div style="margin:8px 0 4px;padding-top:4px;border-top:1px dashed #555;">';
+      html += '<div style="text-align:center;font-size:9pt;color:#444;">✄ きりとりせん ✄</div>';
+      html += '</div>';
+
+      // 8. 申込欄
+      html += buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName);
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * 講習日程テーブルを生成する（科目×日付をグルーピングして1行に集約）
+     * @param {Array} entries エントリ一覧
+     * @return {string} HTML文字列
+     */
+    function buildMatScheduleTable_(entries) {
+      var rowMap = {};
+      (entries || []).forEach(function(e) {
+        var key = (e.subject || '') + '|' + (e.startTime || '') + '|' + (e.durationSlots || 0);
+        if (!rowMap[key]) {
+          rowMap[key] = { subject: e.subject || '', startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+        }
+        if (e.date) rowMap[key].dates.push(e.date);
+      });
+
+      var rows = Object.keys(rowMap).map(function(k) { return rowMap[k]; });
+      rows.forEach(function(r) { r.dates.sort(); });
+      rows.sort(function(a, b) {
+        var ai = MAT_SUBJECT_ORDER_.indexOf(a.subject);
+        var bi = MAT_SUBJECT_ORDER_.indexOf(b.subject);
+        if (ai === -1) ai = 999;
+        if (bi === -1) bi = 999;
+        if (ai !== bi) return ai - bi;
+        return a.startTime < b.startTime ? -1 : 1;
+      });
+
+      if (rows.length === 0) {
+        return '<p style="color:#888;font-size:9.5pt;margin-bottom:8px;">（日程データがありません）</p>';
+      }
+
+      var html = '<div style="margin-bottom:8px;">';
+      html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:4px;">○講習日時</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">';
+      html += '<tr>';
+      ['科目', '日程', '時間'].forEach(function(h) {
+        html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + h + '</th>';
+      });
+      html += '</tr>';
+      rows.forEach(function(r) {
+        var dateStr = r.dates.map(function(d) { return matFormatDate_(d); }).join('・');
+        var endTime = matCalcEndTime_(r.startTime, r.durationSlots);
+        var timeStr = (r.startTime && endTime) ? (r.startTime + ' 〜 ' + endTime) : (r.startTime || '');
+        html += '<tr>';
+        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;white-space:nowrap;">' + escapeHtmlMat_(r.subject) + '</td>';
+        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;">' + escapeHtmlMat_(dateStr) + '</td>';
+        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;white-space:nowrap;">' + escapeHtmlMat_(timeStr) + '</td>';
+        html += '</tr>';
+      });
+      html += '</table></div>';
+      return html;
+    }
+
+    /**
+     * 申込欄HTMLを生成する（中学生/小学生 vs 高校生でフォームが異なる）
+     * @param {Array} subjects 科目名配列（MAT_SUBJECT_ORDER_ 順）
+     * @param {string} campusName 校舎名
+     * @param {Object} gradeGroup MAT_GRADE_GROUPS_ の1要素
+     * @param {string} lecName 講習名
+     * @return {string} HTML文字列
+     */
+    function buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName) {
+      var header = escapeHtmlMat_(lecName) + '　' + escapeHtmlMat_(campusName) + '　' + escapeHtmlMat_(gradeGroup.label) + '　生徒氏名________　印';
+      var html = '<div style="font-size:9.5pt;">';
+
+      if (!gradeGroup.isHigh) {
+        // 中学生・小学生: 科目に○をつける形式
+        html += '<div style="margin-bottom:5px;">' + header + '</div>';
+        if (subjects.length > 0) {
+          html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">';
+          html += '<tr>';
+          subjects.forEach(function(s) {
+            html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + escapeHtmlMat_(s) + '</th>';
+          });
+          html += '</tr><tr>';
+          subjects.forEach(function() {
+            html += '<td style="border:1px solid #555;padding:14px 6px;text-align:center;">&nbsp;</td>';
+          });
+          html += '</tr></table>';
+        }
+        html += '<div style="margin-top:4px;font-size:9pt;">受講する科目に○をつけ、各講師にお渡しください。</div>';
+      } else {
+        // 高校生: 科目・希望回数・希望日程の3列テーブル
+        html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:5px;">';
+        html += '<tr>';
+        ['科目', '希望回数', '希望日程'].forEach(function(h) {
+          html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + h + '</th>';
+        });
+        html += '</tr>';
+        subjects.forEach(function(s) {
+          html += '<tr>';
+          html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;">' + escapeHtmlMat_(s) + '</td>';
+          html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;">　　回</td>';
+          html += '<td style="border:1px solid #555;padding:4px 6px;">&nbsp;</td>';
+          html += '</tr>';
+        });
+        html += '</table>';
+        html += '<div style="margin-bottom:4px;">' + header + '</div>';
+        html += '<div style="font-size:9pt;">受講する科目の回数・日程を記入し、各講師にお渡しください。</div>';
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * 講習別料金データ（新構造）からHTMLテーブルを生成する
+     * 勝瑞校（コード08）かつ高校生の場合は shozui 行の料金を使用する
+     * 連続する学年で時間・回数・料金がすべて同じ場合は「中1・中2」のように1行にまとめる
+     * @param {Array} rows [{type,gradeKey,duration,count,internal,external,label}]
+     * @param {string} campusCode 校舎コード
+     * @return {string} HTML文字列
+     */
+    function buildMatLecPricingTable_(rows, campusCode, isSpring) {
+      var MAT_GRADE_LABELS = isSpring
+        ? { sho: '小学生', chu1: '新中1', chu2: '新中2', chu3: '新中3', ko1: '新高1', ko2: '新高2', ko3: '新高3' }
+        : { sho: '小学生', chu1: '中1', chu2: '中2', chu3: '中3', ko1: '高1', ko2: '高2', ko3: '高3' };
+      var MAT_HS_KEYS = ['ko1', 'ko2', 'ko3'];
+      var isShozui = (String(campusCode) === '08');
+
+      // 価格フォーマット: 0 → 「無料」、正の値 → 「税抜き (税込み)」
+      function fmtPrice_(val) {
+        if (val <= 0) return '無料';
+        return val.toLocaleString() + ' (' + Math.floor(val * 1.1).toLocaleString() + ')';
+      }
+
+      // standard 行を元の順序で取得し、実効料金（勝瑞校高校生はshozui行）に解決する
+      var standardRows = rows.filter(function(r) { return r.type === 'standard'; });
+      var resolvedRows = standardRows.map(function(row) {
+        var displayRow = row;
+        if (isShozui && MAT_HS_KEYS.indexOf(row.gradeKey) !== -1) {
+          var shozuiRow = rows.find(function(r) { return r.type === 'shozui' && r.gradeKey === row.gradeKey; });
+          if (shozuiRow) displayRow = shozuiRow;
+        }
+        return {
+          gradeKey: row.gradeKey,
+          duration: displayRow.duration || 0,
+          count: displayRow.count || 0,
+          internal: displayRow.internal || 0,
+          external: displayRow.external || 0
+        };
+      });
+
+      // 内部生・外部生ともに 0 の標準行は非表示（未設定の学年）
+      // 連続する学年で時間・回数・内部生料金・外部生料金がすべて同じなら1グループにまとめる
+      var groups = [];
+      resolvedRows.filter(function(r) { return r.internal > 0 || r.external > 0; }).forEach(function(r) {
+        var last = groups.length > 0 ? groups[groups.length - 1] : null;
+        if (last && last.duration === r.duration && last.count === r.count && last.internal === r.internal && last.external === r.external) {
+          last.gradeLabels.push(MAT_GRADE_LABELS[r.gradeKey] || r.gradeKey);
+        } else {
+          groups.push({
+            gradeLabels: [MAT_GRADE_LABELS[r.gradeKey] || r.gradeKey],
+            duration: r.duration,
+            count: r.count,
+            internal: r.internal,
+            external: r.external
+          });
+        }
+      });
+
+      var html = '<table style="width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-bottom: 6px;">';
+      html += '<tr>';
+      ['学年', '時間', '回数', '内部生', '外部生'].forEach(function(h) {
+        html += '<th style="border: 1px solid #555; padding: 4px 6px; background: #f0f0f0; text-align: center; font-weight: bold;">' + h + '</th>';
+      });
+      html += '</tr>';
+
+      // グループ行を描画（同一設定は「中1・中2」のようにまとめて表示）
+      groups.forEach(function(g) {
+        var gradeLabel = g.gradeLabels.join('・');
+        var mins = g.duration * 10;
+        var intStr = fmtPrice_(g.internal);
+        var extStr = fmtPrice_(g.external);
+        html += '<tr>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center; font-weight: bold;">' + escapeHtmlMat_(gradeLabel) + '</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + mins + '分</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + g.count + '回</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + escapeHtmlMat_(intStr) + '</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + escapeHtmlMat_(extStr) + '</td>';
+        html += '</tr>';
+      });
+
+      // custom 行（追加行）を続けて表示（externalNa: true の行は外部生欄を空欄）
+      var customRows = rows.filter(function(r) { return r.type === 'custom'; });
+      customRows.forEach(function(row) {
+        var mins = (row.duration || 0) * 10;
+        var cnt = row.count || 0;
+        var intStr = fmtPrice_(row.internal || 0);
+        var extStr = row.externalNa ? '' : fmtPrice_(row.external || 0);
+        html += '<tr>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center; font-weight: bold;">' + escapeHtmlMat_(row.label || '') + '</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + mins + '分</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + cnt + '回</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + escapeHtmlMat_(intStr) + '</td>';
+        html += '<td style="border: 1px solid #555; padding: 4px 6px; text-align: center;">' + escapeHtmlMat_(extStr) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</table>';
+      return html;
+    }
+
+    /**
+     * gradeSettings から時間・回数のみのテーブルを生成する（料金表がない場合のフォールバック）
+     * @param {Object} gradeSettings {gradeCode: {duration, count}}
+     * @return {string} HTML文字列
+     */
+    function buildMatGradeSettingsTable(gradeSettings) {
+      var GRADE_NAMES = { '07':'小1','08':'小2','09':'小3','10':'小4','11':'小5','12':'小6','13':'中1','14':'中2','15':'中3','16':'高1','17':'高2','18':'高3' };
+      var html = '<table style="width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-bottom: 6px;">';
+      html += '<tr>';
+      ['学年','時間','回数'].forEach(function(h) {
+        html += '<th style="border: 1px solid #555; padding: 4px 8px; background: #f0f0f0; text-align: center;">' + h + '</th>';
+      });
+      html += '</tr>';
+
+      Object.keys(gradeSettings || {}).sort().forEach(function(code) {
+        var s = gradeSettings[code];
+        if (!s || (!s.duration && !s.count)) return;
+        html += '<tr>';
+        html += '<td style="border:1px solid #555;padding:4px 8px;text-align:center;">' + (GRADE_NAMES[code] || code) + '</td>';
+        html += '<td style="border:1px solid #555;padding:4px 8px;text-align:center;">' + (s.duration || '-') + '分</td>';
+        html += '<td style="border:1px solid #555;padding:4px 8px;text-align:center;">' + (s.count || '-') + '回</td>';
+        html += '</tr>';
+      });
+
+      html += '</table>';
+      return html;
+    }
+
+
+    /**
+     * YYYY-MM-DD 形式の日付を "M/D(曜)" 形式に変換する
+     * @param {string} dateStr YYYY-MM-DD
+     * @return {string} 例: "12/24(火)"
+     */
+    function matFormatDate_(dateStr) {
+      if (!dateStr) return '';
+      var parts = dateStr.split('-');
+      if (parts.length < 3) return dateStr;
+      var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      var dows = ['日','月','火','水','木','金','土'];
+      return (d.getMonth() + 1) + '/' + d.getDate() + '(' + dows[d.getDay()] + ')';
+    }
+
+    /**
+     * 開始時刻とスロット数から終了時刻を計算する（1スロット = 10分）
+     * @param {string} startTime "HH:MM" 形式
+     * @param {number} durationSlots スロット数
+     * @return {string} "HH:MM" 形式の終了時刻
+     */
+    function matCalcEndTime_(startTime, durationSlots) {
+      var parts = (startTime || '').split(':');
+      if (parts.length < 2) return '';
+      var h = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      var totalMin = h * 60 + m + (durationSlots || 0) * 10;
+      var eh = Math.floor(totalMin / 60);
+      var em = totalMin % 60;
+      return eh + ':' + (em < 10 ? '0' : '') + em;
+    }
+
+    /**
+     * HTML特殊文字をエスケープする（配布物内部用）
+     * @param {string} str 対象文字列
+     * @return {string} エスケープ済み文字列
+     */
+    function escapeHtmlMat_(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ========== 配布物 Drive 保存・一覧 ==========
+
+    /**
+     * 現在のPDFをDriveに保存する
+     * jsPDFでPDFを生成してbase64でバックエンドに送信し、Drive に保存する
+     */
+    function saveMatPDFToDrive() {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-campus-select').value;
+
+      if (!lectureId) { appAlert('上部で講習を選択してください。'); return; }
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+
+      var saveBtn = document.getElementById('matSaveToCloudBtn');
+      var origText = saveBtn.textContent;
+      saveBtn.textContent = '⏳ 保存中...';
+      saveBtn.disabled = true;
+
+      function restoreBtn() {
+        saveBtn.textContent = origText;
+        saveBtn.disabled = false;
+      }
+
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+      var typeId = (lectureId || '').replace(/^\d{4}-/, '');
+      var typeData = (matLecPricingData && matLecPricingData[typeId]) ? matLecPricingData[typeId] : null;
+      var isSpring = lecName.indexOf('春') !== -1;
+
+      function proceed(entries) {
+        var gradePages = [];
+        MAT_GRADE_GROUPS_.forEach(function(grp) {
+          var grpEntries = (entries || []).filter(function(e) {
+            var gc = String(e.grade || '').trim();
+            if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
+            return grp.codes.indexOf(gc) !== -1;
+          });
+          if (grpEntries.length > 0) gradePages.push({ gradeGroup: grp, entries: grpEntries });
+        });
+
+        if (gradePages.length === 0) {
+          restoreBtn();
+          appAlert('選択した校舎にデータがありません。');
+          return;
+        }
+
+        var canvases = [];
+        var pageIdx = 0;
+
+        function renderNextPage_() {
+          if (pageIdx >= gradePages.length) {
+            // 全ページ描画完了 → PDF生成
+            var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            var pageW = pdf.internal.pageSize.getWidth();
+            var pageH = pdf.internal.pageSize.getHeight();
+            var margin = 7;
+            var maxW = pageW - margin * 2;
+            var maxH = pageH - margin * 2;
+            canvases.forEach(function(c, idx) {
+              if (idx > 0) pdf.addPage();
+              var imgData = c.toDataURL('image/jpeg', 0.92);
+              var ratio = c.width / c.height;
+              var drawW = maxW;
+              var drawH = drawW / ratio;
+              if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
+              pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+            });
+            var pdfBase64 = pdf.output('datauristring').split(',')[1];
+            var now = new Date();
+            var dateStr = now.getFullYear() + ('0' + (now.getMonth() + 1)).slice(-2) + ('0' + now.getDate()).slice(-2);
+            var fileName = fy + '年度_' + lecName + '_' + campusName + '_' + dateStr + '.pdf';
+            google.script.run
+              .withSuccessHandler(function(result) {
+                restoreBtn();
+                if (result && result.success) {
+                  showToast('Driveに保存しました', 'success');
+                  loadDistributionFilesList();
+                } else {
+                  appAlert('保存に失敗しました。\n' + (result ? result.error : ''));
+                }
+              })
+              .withFailureHandler(function(err) {
+                restoreBtn();
+                console.error('Drive保存失敗:', err);
+                appAlert('保存に失敗しました。');
+              })
+              .saveDistributionFile(lectureId, campusCode, fileName, pdfBase64);
+            return;
+          }
+
+          var pg = gradePages[pageIdx];
+          pageIdx++;
+          var greeting = getMatGreeting_(pg.gradeGroup.key);
+          var pageHtml = buildMatOnePage_(pg.gradeGroup, pg.entries, campusName, campusCode, lecName, greeting, typeData, isSpring);
+          var container = document.createElement('div');
+          container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
+          document.body.appendChild(container);
+          container.innerHTML = pageHtml;
+          html2canvas(container, { scale: 2, backgroundColor: '#ffffff', windowWidth: 840, useCORS: true }).then(function(canvas) {
+            document.body.removeChild(container);
+            canvases.push(canvas);
+            renderNextPage_();
+          }).catch(function(e) {
+            document.body.removeChild(container);
+            restoreBtn();
+            console.error('Drive保存PDF生成エラー:', e);
+            appAlert('PDF生成に失敗しました。');
+          });
+        }
+
+        renderNextPage_();
+      }
+
+      var cacheKey = lectureId + '_' + campusCode;
+      if (matEntriesCache[cacheKey]) {
+        proceed(matEntriesCache[cacheKey]);
+      } else {
+        google.script.run
+          .withSuccessHandler(function(entries) {
+            matEntriesCache[cacheKey] = entries || [];
+            proceed(entries || []);
+          })
+          .withFailureHandler(function(err) {
+            restoreBtn();
+            console.error('エントリ取得失敗:', err);
+            appAlert('日程データの取得に失敗しました。');
+          })
+          .getLectureScheduleEntries(lectureId, campusCode);
+      }
+    }
+
+    /**
+     * 保存済み配布物ファイルの一覧をDriveから取得して表示する
+     */
+    function loadDistributionFilesList() {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-campus-select') ? document.getElementById('mat-campus-select').value : '';
+      var listEl = document.getElementById('mat-files-list');
+      if (!listEl) return;
+
+      if (!lectureId || !campusCode) {
+        listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">講習と校舎を選択するとリストが表示されます</div>';
+        return;
+      }
+
+      listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">⏳ 読み込み中...</div>';
+
+      google.script.run
+        .withSuccessHandler(function(files) {
+          renderDistributionFilesList(files || []);
+        })
+        .withFailureHandler(function(err) {
+          console.error('配布物一覧取得失敗:', err);
+          listEl.innerHTML = '<div style="color:#e57373;font-size:12px;">読み込みに失敗しました</div>';
+        })
+        .listDistributionFiles(lectureId, campusCode);
+    }
+
+    /**
+     * 保存済み配布物ファイルの一覧をHTMLで描画する
+     * @param {Array} files [{id, name, createdDate, size}]
+     */
+    function renderDistributionFilesList(files) {
+      var listEl = document.getElementById('mat-files-list');
+      if (!listEl) return;
+
+      if (!files || files.length === 0) {
+        listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">保存済みファイルはありません</div>';
+        return;
+      }
+
+      var html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+      files.forEach(function(f) {
+        var date = f.createdDate ? new Date(f.createdDate) : null;
+        var dateLabel = date ? (date.getFullYear() + '/' + ('0' + (date.getMonth() + 1)).slice(-2) + '/' + ('0' + date.getDate()).slice(-2)) : '';
+        var sizeKb = f.size ? Math.round(f.size / 1024) + 'KB' : '';
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8f9fa;border-radius:6px;border:1px solid #e0e0e0;">';
+        html += '<span style="font-size:16px;">📄</span>';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:12px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtmlMat_(f.name) + '">' + escapeHtmlMat_(f.name) + '</div>';
+        html += '<div style="font-size:11px;color:#888;">' + dateLabel + (sizeKb ? '　' + sizeKb : '') + '</div>';
+        html += '</div>';
+        html += '<a href="https://drive.google.com/file/d/' + escapeHtmlMat_(f.id) + '/view" target="_blank" style="padding:4px 10px;background:#667eea;color:white;border-radius:4px;font-size:11px;text-decoration:none;white-space:nowrap;">開く</a>';
+        html += '<button onclick="deleteDistributionFileUI(\'' + escapeHtmlMat_(f.id) + '\')" style="padding:4px 8px;background:#fff;border:1px solid #e57373;color:#e57373;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap;">削除</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+      listEl.innerHTML = html;
+    }
+
+    /**
+     * 配布物ファイルを削除する（確認ダイアログ付き）
+     * @param {string} fileId Drive ファイルID
+     */
+    function deleteDistributionFileUI(fileId) {
+      appConfirm('このファイルをDriveから削除しますか？\n（ゴミ箱に移動されます）').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success) {
+              showToast('ファイルを削除しました', 'success');
+              loadDistributionFilesList();
+            } else {
+              appAlert('削除に失敗しました。\n' + (result ? result.error : ''));
+            }
+          })
+          .withFailureHandler(function(err) {
+            console.error('削除失敗:', err);
+            appAlert('削除に失敗しました。');
+          })
+          .deleteDistributionFile(fileId);
+      });
+    }
+</script>
