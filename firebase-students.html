@@ -252,4 +252,254 @@ function fbGetStudentListWithGrades(year, testName) {
     return { success: false, error: err.message || String(err), students: [] };
   });
 }
+
+/**
+ * 内部ヘルパー: テスト名からFirestore docID用のsafe文字列を生成
+ * @param {string} testName テスト名
+ * @return {string} safe文字列
+ */
+function fbSafeTestName_(testName) {
+  return String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+}
+
+/**
+ * 偏差値計算（クライアントサイド）
+ * @param {number|string} score 得点
+ * @param {number|string} average 平均点
+ * @param {number} sigma 標準偏差
+ * @return {number|null} 偏差値
+ */
+function fbCalcDeviation_(score, average, sigma) {
+  if (!sigma || sigma <= 0) return null;
+  if (average === '' || average == null || isNaN(Number(average))) return null;
+  if (score  === '' || score  == null || isNaN(Number(score)))   return null;
+  return Math.round((50 + 10 * (Number(score) - Number(average)) / sigma) * 10) / 10;
+}
+
+/**
+ * 成績データ1件を取得（Firebase SDK）
+ * google.script.run.getGradeDataByStudentAndTest の代替
+ * @param {number} year 学年年度
+ * @param {string} studentId 生徒ID
+ * @param {string} testName テスト名
+ * @return {Promise<Object>} { success, found, data, error }
+ */
+function fbGetGradeDataByStudentAndTest(year, studentId, testName) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+  var docId = sid + '_' + fbSafeTestName_(testName) + '_' + String(year);
+
+  return fbDb.collection('grades').doc(docId).get()
+    .then(function(docSnap) {
+      if (!docSnap.exists) return { success: true, found: false };
+      var doc = docSnap.data();
+      return {
+        success: true,
+        found: true,
+        data: {
+          kokugo:         doc.kokugo  != null ? doc.kokugo  : '',
+          shakai:         doc.shakai  != null ? doc.shakai  : '',
+          sugaku:         doc.sugaku  != null ? doc.sugaku  : '',
+          rika:           doc.rika    != null ? doc.rika    : '',
+          eigo:           doc.eigo    != null ? doc.eigo    : '',
+          gokei:          doc.total   != null ? doc.total   : '',
+          shogaku1:       String(doc.shogaku1       || ''),
+          shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+          shogaku2:       String(doc.shogaku2       || ''),
+          shogaku2_gakka: String(doc.shogaku2_gakka || '')
+        }
+      };
+    })
+    .catch(function(err) {
+      console.error('fbGetGradeDataByStudentAndTestエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
+
+/**
+ * 指定テストの成績がある生徒一覧を校舎でフィルタして返す（Firebase SDK）
+ * google.script.run.getStudentsWithGradesByTest の代替
+ * @param {number} year 年度
+ * @param {string} campusCode 校舎コード
+ * @param {string} testName テスト名
+ * @return {Promise<Object>} { success, students, error }
+ */
+function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
+  var targetTest  = String(testName || '').trim();
+  var yearInt     = parseInt(year, 10);
+
+  if (!targetTest || !campusCode) {
+    return Promise.resolve({ success: true, students: [] });
+  }
+
+  return Promise.all([
+    fbGetMasterData(year),
+    fbDb.collection('grades')
+      .where('fiscalYear', '==', yearInt)
+      .where('testName',   '==', targetTest)
+      .get()
+  ]).then(function(results) {
+    var masterData = results[0];
+    var gradesSnap = results[1];
+
+    // 成績があるstudentIdのセット
+    var studentIdSet = {};
+    gradesSnap.forEach(function(docSnap) {
+      var sid = String(docSnap.data().studentId || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      if (sid) studentIdSet[sid] = true;
+    });
+
+    var targetCampus = String(campusCode).padStart(2, '0');
+    var students = masterData.filter(function(s) {
+      return s.campus === targetCampus && studentIdSet[s.studentId];
+    }).map(function(s) {
+      return { studentId: s.studentId, name: s.name, furigana: s.furigana, schoolName: s.schoolName };
+    });
+
+    students.sort(function(a, b) {
+      return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
+    });
+
+    return { success: true, students: students };
+  }).catch(function(err) {
+    console.error('fbGetStudentsWithGradesByTestエラー:', err);
+    return { success: false, error: err.message || String(err), students: [] };
+  });
+}
+
+/**
+ * 成績表用：指定生徒の全テスト成績と学校別平均を取得する（Firebase SDK）
+ * google.script.run.getStudentGradeReport の代替
+ * sigma値はデフォルト値を使用（カスタム設定がある場合は getStudentGradeReport(GAS)を使用）
+ * @param {number} year 学年年度
+ * @param {string} studentId 生徒ID
+ * @return {Promise<Object>} { success, student, grades, testNames, schoolAverages, deviationValues, error }
+ */
+function fbGetStudentGradeReport(year, studentId) {
+  if (!studentId) {
+    return Promise.resolve({ success: false, error: '生徒IDが指定されていません' });
+  }
+
+  var targetId = String(studentId).trim();
+  var yearInt  = parseInt(year, 10);
+  var sigmaDefaults = { kokugo: 15, shakai: 18, sugaku: 23, rika: 20, eigo: 20, total: 100 };
+
+  return Promise.all([
+    fbGetMasterData(year),
+    fbDb.collection('grades')
+      .where('studentId',  '==', targetId)
+      .where('fiscalYear', '==', yearInt)
+      .get()
+  ]).then(function(results) {
+    var masterData = results[0];
+    var gradesSnap = results[1];
+
+    // 生徒情報を検索
+    var student = null;
+    for (var i = 0; i < masterData.length; i++) {
+      if (masterData[i].studentId === targetId) { student = masterData[i]; break; }
+    }
+    if (!student) {
+      return { success: false, error: '生徒が見つかりません（ID: ' + studentId + '）' };
+    }
+
+    // 成績データを収集
+    var studentGrades = [];
+    gradesSnap.forEach(function(docSnap) {
+      var doc = docSnap.data();
+      studentGrades.push({
+        testName:       String(doc.testName || ''),
+        kokugo:         doc.kokugo  != null ? doc.kokugo  : '',
+        shakai:         doc.shakai  != null ? doc.shakai  : '',
+        sugaku:         doc.sugaku  != null ? doc.sugaku  : '',
+        rika:           doc.rika    != null ? doc.rika    : '',
+        eigo:           doc.eigo    != null ? doc.eigo    : '',
+        total:          doc.total   != null ? doc.total   : '',
+        average:        doc.average != null ? doc.average : '',
+        shogaku1:       String(doc.shogaku1       || ''),
+        shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+        shogaku2:       String(doc.shogaku2       || ''),
+        shogaku2_gakka: String(doc.shogaku2_gakka || '')
+      });
+    });
+
+    // テスト名設定順にソート（testNamesData グローバルを使用）
+    var configTestNames = (typeof testNamesData !== 'undefined' && testNamesData.length > 0)
+      ? testNamesData : [];
+    var testOrder = {};
+    configTestNames.forEach(function(name, idx) { testOrder[name] = idx; });
+    studentGrades.sort(function(a, b) {
+      var orderA = testOrder[a.testName] !== undefined ? testOrder[a.testName] : 9999;
+      var orderB = testOrder[b.testName] !== undefined ? testOrder[b.testName] : 9999;
+      return orderA - orderB;
+    });
+
+    // 各テストの学校別平均を並列取得
+    var uniqueTests = [];
+    studentGrades.forEach(function(g) {
+      if (uniqueTests.indexOf(g.testName) === -1) uniqueTests.push(g.testName);
+    });
+
+    var avgPromises = uniqueTests.map(function(tname) {
+      var docId = String(yearInt) + '_' + fbSafeTestName_(tname);
+      return fbDb.collection('schoolAverages').doc(docId).get()
+        .then(function(docSnap) {
+          return { testName: tname, averages: (docSnap.exists && docSnap.data().averages) ? docSnap.data().averages : [] };
+        })
+        .catch(function() { return { testName: tname, averages: [] }; });
+    });
+
+    return Promise.all(avgPromises).then(function(avgResults) {
+      var schoolAverages = {};
+      var studentSchool = (student.schoolName || '').trim();
+
+      avgResults.forEach(function(ar) {
+        var fallback = null;
+        for (var j = 0; j < ar.averages.length; j++) {
+          var sn = (ar.averages[j].schoolName || '').trim();
+          if (studentSchool && sn === studentSchool) {
+            schoolAverages[ar.testName] = ar.averages[j];
+            fallback = null;
+            break;
+          }
+          if (!fallback && sn.indexOf('平均') !== -1) fallback = ar.averages[j];
+        }
+        if (fallback && !schoolAverages[ar.testName]) schoolAverages[ar.testName] = fallback;
+      });
+
+      // 偏差値を計算
+      var deviationValues = {};
+      var subjKeys = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+      studentGrades.forEach(function(g) {
+        var avg = schoolAverages[g.testName];
+        if (!avg) return;
+        var devs = {};
+        subjKeys.forEach(function(subj) {
+          devs[subj] = fbCalcDeviation_(g[subj], avg[subj], sigmaDefaults[subj]);
+        });
+        deviationValues[g.testName] = devs;
+      });
+
+      return {
+        success: true,
+        student: {
+          studentId:  student.studentId,
+          name:       student.name,
+          furigana:   student.furigana,
+          campus:     student.campus,
+          grade:      student.grade,
+          schoolName: student.schoolName
+        },
+        grades:          studentGrades,
+        testNames:       configTestNames,
+        schoolAverages:  schoolAverages,
+        deviationValues: deviationValues
+      };
+    });
+  }).catch(function(err) {
+    console.error('fbGetStudentGradeReportエラー:', err);
+    return { success: false, error: err.message || String(err) };
+  });
+}
 </script>

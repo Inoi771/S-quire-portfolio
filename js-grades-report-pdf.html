@@ -615,10 +615,9 @@
         fetchAllReportData_(students, idx + 1, results, selectedTest, callback);
       }
 
-      google.script.run
-        .withSuccessHandler(function(result) { gradeResult = result; onBothLoaded(); })
-        .withFailureHandler(function() { gradeResult = null; onBothLoaded(); })
-        .getStudentGradeReport(currentFiscalYear, studentId);
+      fbGetStudentGradeReport(currentFiscalYear, studentId)
+        .then(function(result) { gradeResult = result; onBothLoaded(); })
+        .catch(function() { gradeResult = null; onBothLoaded(); });
 
       google.script.run
         .withSuccessHandler(function(result) { analysisResult = result; onBothLoaded(); })

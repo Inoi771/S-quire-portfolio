@@ -1633,8 +1633,8 @@ function onScoreFormChanged() {
 
   showMessage('score-message', '📥 データを読み込んでいます...', 'info');
 
-  google.script.run
-    .withSuccessHandler(function(result) {
+  fbGetGradeDataByStudentAndTest(currentFiscalYear, studentId, testName)
+    .then(function(result) {
       if (!result.success) {
         showMessage('score-message', 'エラー: ' + result.error, 'error');
         return;
@@ -1650,8 +1650,8 @@ function onScoreFormChanged() {
         var testNum = basicMatch ? parseInt(basicMatch[1], 10) : 0;
         if (testNum >= 2) {
           var prevTestName = '第' + (testNum - 1) + '回基礎学力テスト';
-          google.script.run
-            .withSuccessHandler(function(prevResult) {
+          fbGetGradeDataByStudentAndTest(currentFiscalYear, studentId, prevTestName)
+            .then(function(prevResult) {
               if (prevResult.success && prevResult.found &&
                   (prevResult.data.shogaku1 || prevResult.data.shogaku2)) {
                 setSchoolField(1, prevResult.data.shogaku1, prevResult.data.shogaku1_gakka);
@@ -1665,22 +1665,20 @@ function onScoreFormChanged() {
               }
               updateScoreSubmitBtn(false);
             })
-            .withFailureHandler(function() {
+            .catch(function() {
               showMessage('score-message',
                 '📝 新規入力モードです。点数を入力して「保存」を押してください。', 'info');
               updateScoreSubmitBtn(false);
-            })
-            .getGradeDataByStudentAndTest(currentFiscalYear, studentId, prevTestName);
+            });
         } else {
           showMessage('score-message', '📝 新規入力モードです。点数を入力して「保存」を押してください。', 'info');
           updateScoreSubmitBtn(false);
         }
       }
     })
-    .withFailureHandler(function(err) {
+    .catch(function(err) {
       showMessage('score-message', 'エラー: ' + err, 'error');
-    })
-    .getGradeDataByStudentAndTest(currentFiscalYear, studentId, testName);
+    });
 }
 
 /** 点数・志望校フィールドをすべてクリア */
