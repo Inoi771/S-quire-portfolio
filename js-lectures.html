@@ -1205,8 +1205,8 @@
       // 保存開始時のバージョンを記憶（保存中に新たな変更があったか判定するため）
       var savedVersion = lectureSaveVersion[campusCode] || 0;
       var entries = lectureEntries[campusCode] || [];
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbSaveLectureScheduleEntries(currentLectureId, campusCode, entries)
+        .then(function(result) {
           if (result && result.success) {
             var noNewChanges = ((lectureSaveVersion[campusCode] || 0) === savedVersion);
             if (noNewChanges) {
@@ -1230,11 +1230,10 @@
             showToast('❌ 保存失敗', 'error');
           }
         })
-        .withFailureHandler(function() {
+        .catch(function() {
           showLecStatusMsg('❌ 保存失敗', '#e57373');
           showToast('❌ 保存失敗', 'error');
-        })
-        .saveLectureScheduleEntries(currentLectureId, campusCode, JSON.stringify(entries));
+        });
     }
 
     /**
@@ -1629,8 +1628,8 @@
       if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
 
       var entries = lectureEntries[currentLectureCampus] || [];
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbSaveLectureScheduleEntries(currentLectureId, currentLectureCampus, entries)
+        .then(function(result) {
           if (btn) btn.disabled = false;
           if (result && result.success) {
             pendingChanges = false;
@@ -1640,12 +1639,11 @@
             showLecStatusMsg('❌ ' + (result ? result.error : '保存失敗'), '#e57373');
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           if (btn) btn.disabled = false;
-          console.error('saveLectureScheduleEntries エラー:', err);
+          console.error('fbSaveLectureScheduleEntries エラー:', err);
           showLecStatusMsg('❌ 保存失敗: ' + err, '#e57373');
-        })
-        .saveLectureScheduleEntries(currentLectureId, currentLectureCampus, JSON.stringify(entries));
+        });
     }
 
 </script>

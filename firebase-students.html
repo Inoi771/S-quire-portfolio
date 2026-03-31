@@ -502,4 +502,126 @@ function fbGetStudentGradeReport(year, studentId) {
     return { success: false, error: err.message || String(err) };
   });
 }
+
+/**
+ * 生徒情報を更新（Firebase SDK）
+ * google.script.run.updateStudentInfo の代替
+ * @param {string} studentId 生徒ID
+ * @param {string} campusCode 校舎コード
+ * @param {string} sei 姓（漢字）
+ * @param {string} mei 名（漢字）
+ * @param {string} seiFurigana 姓ふりがな
+ * @param {string} meiFurigana 名ふりがな
+ * @param {string} schoolName 学校名
+ * @return {Promise<Object>} { success, message, error }
+ */
+function fbUpdateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+  return fbDb.collection('students').doc(sid).update({
+    campus:      String(campusCode || '').padStart(2, '0'),
+    sei:         String(sei         || '').trim(),
+    mei:         String(mei         || '').trim(),
+    seiFurigana: String(seiFurigana || '').trim(),
+    meiFurigana: String(meiFurigana || '').trim(),
+    schoolName:  String(schoolName  || '').trim()
+  })
+  .then(function() {
+    return { success: true, message: '生徒情報を更新しました' };
+  })
+  .catch(function(err) {
+    console.error('fbUpdateStudentInfoエラー:', err);
+    return { success: false, error: err.message || String(err) };
+  });
+}
+
+/**
+ * 生徒を削除（ソフトデリート）（Firebase SDK）
+ * google.script.run.deleteStudent の代替
+ * @param {string} studentId 生徒ID
+ * @return {Promise<Object>} { success, message, error }
+ */
+function fbDeleteStudent(studentId) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+  return fbDb.collection('students').doc(sid).update({ isDeleted: true })
+    .then(function() { return { success: true, message: '生徒を削除しました' }; })
+    .catch(function(err) {
+      console.error('fbDeleteStudentエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
+
+/**
+ * 削除済み生徒を復元（Firebase SDK）
+ * google.script.run.restoreStudent の代替
+ * @param {string} studentId 生徒ID
+ * @return {Promise<Object>} { success, message, error }
+ */
+function fbRestoreStudent(studentId) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+  return fbDb.collection('students').doc(sid).update({ isDeleted: false })
+    .then(function() { return { success: true, message: '生徒情報を復元しました' }; })
+    .catch(function(err) {
+      console.error('fbRestoreStudentエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
+
+/**
+ * 成績データを保存（Firebase SDK）
+ * google.script.run.submitGradeData の代替
+ * @param {number} year 学年年度
+ * @param {string} studentId 生徒ID
+ * @param {string} testName テスト名
+ * @param {Object} scores スコアオブジェクト { kokugo, shakai, sugaku, rika, eigo, gokei, shogaku1, ... }
+ * @param {string} studentName 生徒氏名（表示用・省略可）
+ * @return {Promise<Object>} { success, message, error }
+ */
+function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+  var kokugo = parseInt(scores.kokugo, 10); if (isNaN(kokugo)) kokugo = 0;
+  var shakai = parseInt(scores.shakai, 10); if (isNaN(shakai)) shakai = 0;
+  var sugaku = parseInt(scores.sugaku, 10); if (isNaN(sugaku)) sugaku = 0;
+  var rika   = parseInt(scores.rika,   10); if (isNaN(rika))   rika   = 0;
+  var eigo   = parseInt(scores.eigo,   10); if (isNaN(eigo))   eigo   = 0;
+  var calcTotal = kokugo + shakai + sugaku + rika + eigo;
+  var gokei = parseInt(scores.gokei, 10);
+  var total   = (!isNaN(gokei) && gokei > 0) ? gokei : calcTotal;
+  var average = total > 0 ? parseFloat((total / 5).toFixed(1)) : 0;
+
+  var docId = sid + '_' + fbSafeTestName_(testName) + '_' + String(year);
+
+  return fbDb.collection('grades').doc(docId).set({
+    studentId:      sid,
+    testName:       String(testName).trim(),
+    fiscalYear:     parseInt(year, 10),
+    kokugo:         kokugo,
+    shakai:         shakai,
+    sugaku:         sugaku,
+    rika:           rika,
+    eigo:           eigo,
+    total:          total,
+    average:        average,
+    shogaku1:       scores.shogaku1       || '',
+    shogaku1_gakka: scores.shogaku1_gakka || '',
+    shogaku2:       scores.shogaku2       || '',
+    shogaku2_gakka: scores.shogaku2_gakka || '',
+    recordedAt:     new Date().toISOString(),
+    studentName:    String(studentName || '')
+  })
+  .then(function() {
+    return { success: true, message: '成績データを保存しました' };
+  })
+  .catch(function(err) {
+    console.error('fbSubmitGradeDataエラー:', err);
+    return { success: false, error: err.message || String(err) };
+  });
+}
 </script>

@@ -380,8 +380,8 @@ function loadDropdownData(onComplete) {
         return;
       }
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      fbUpdateStudentInfo(selectedStudentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName)
+        .then(function(result) {
           if (result.success) {
             showMessage('input-message', '✓ ' + result.message, 'success');
             // オレンジ枠をリセットし、編集モードを解除してからリロード
@@ -393,10 +393,9 @@ function loadDropdownData(onComplete) {
             showMessage('input-message', 'エラー: ' + result.error, 'error');
           }
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           showMessage('input-message', 'エラー: ' + err, 'error');
-        })
-        .updateStudentInfo(selectedStudentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName);
+        });
     }
 
     function deleteStudentConfirm() {
@@ -404,8 +403,8 @@ function loadDropdownData(onComplete) {
       var name = document.getElementById('input-sei').value + document.getElementById('input-mei').value;
       appConfirm('「' + name + '」を削除しますか？\n（削除後もデータは保持されます）').then(function(ok) {
         if (!ok) return;
-        google.script.run
-          .withSuccessHandler(function(result) {
+        fbDeleteStudent(selectedStudentId)
+          .then(function(result) {
             if (result.success) {
               showMessage('input-message', '✓ ' + result.message, 'success');
               clearInputForm();
@@ -414,10 +413,9 @@ function loadDropdownData(onComplete) {
               showMessage('input-message', 'エラー: ' + result.error, 'error');
             }
           })
-          .withFailureHandler(function(err) {
+          .catch(function(err) {
             showMessage('input-message', 'エラー: ' + err, 'error');
-          })
-          .deleteStudent(selectedStudentId);
+          });
       });
     }
 
@@ -767,22 +765,21 @@ function loadDropdownData(onComplete) {
     function doRestoreStudent(studentId, name) {
       appConfirm('「' + name + '」を復元します。よろしいですか？').then(function(ok) {
         if (!ok) return;
-        google.script.run
-          .withSuccessHandler(function(result) {
+        fbRestoreStudent(studentId)
+          .then(function(result) {
             var msg = document.getElementById('deleted-message');
             if (result.success) {
               msg.innerHTML = '<p style="color:#388e3c; font-size:13px;">✓ ' + result.message + '</p>';
-              loadDeletedStudents();       // リストを再読み込み
+              loadDeletedStudents();         // リストを再読み込み
               onInputCampusOrGradeChanged(); // 通常の生徒一覧も更新
             } else {
               msg.innerHTML = '<p style="color:#e53935; font-size:13px;">エラー: ' + result.error + '</p>';
             }
           })
-          .withFailureHandler(function(err) {
+          .catch(function(err) {
             document.getElementById('deleted-message').innerHTML =
               '<p style="color:#e53935; font-size:13px;">エラー: ' + err + '</p>';
-          })
-          .restoreStudent(studentId);
+          });
       });
     }
 
@@ -1832,8 +1829,13 @@ document.addEventListener('DOMContentLoaded', function() {
         shogaku2_gakka: getDeptValue(2)
       };
 
-      google.script.run
-        .withSuccessHandler(function(result) {
+      // 生徒氏名を選択肢テキストから取得（studentName として保存）
+      var studentSelect = document.getElementById('score-student');
+      var selectedOpt = studentSelect.options[studentSelect.selectedIndex];
+      var studentName = selectedOpt ? selectedOpt.textContent : '';
+
+      fbSubmitGradeData(currentFiscalYear, studentId, testName, scores, studentName)
+        .then(function(result) {
           if (result.success) {
             showMessage('score-message', '✓ ' + result.message, 'success');
             // 点数・志望校フィールドのみクリア（校舎・学年・テスト名は維持）
@@ -1858,7 +1860,9 @@ document.addEventListener('DOMContentLoaded', function() {
             showMessage('score-message', 'エラー: ' + result.error, 'error');
           }
         })
-        .submitGradeData(currentFiscalYear, studentId, testName, scores);
+        .catch(function(err) {
+          showMessage('score-message', 'エラー: ' + err, 'error');
+        });
     });
   }
 });
