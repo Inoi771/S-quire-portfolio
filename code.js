@@ -1,1007 +1,345 @@
+// ========================================
+// 【S-quire - Google Apps Script】
+// 個別指導スクエア向けダッシュボード バックエンド
+// バージョン: 1.0.3
+// 最終更新: 2026年3月19日
+// ========================================
+
+// ========================================
+// 【セクション1】定数・初期化
+// ========================================
+// スクリプトプロパティのキー定義とデフォルト設定
+
 /**
- * code.js — メインバックエンド・エントリポイント
- * 役割: doGet ルーティング / 階層データ取得 / レッスンデータ保存 / Script Properties 管理
- * 主要関数: doGet, getEditorYears, getEditorLessons, saveLessonData, getAllWordsAndSentences
+ * スクリプトプロパティで使用するキー定数
+ * Admin が設定画面から管理できる項目
  */
-function doGet(e) {
-  const accessKey = getScriptProperty('TEACHER_ACCESS_KEY');
-  if (accessKey && e && e.parameter && e.parameter.key === accessKey) {
-    return HtmlService
-      .createHtmlOutputFromFile('editor')
-      .setTitle('単語帳作成アプリ');
-  }
+var PROP_KEYS = {
+  GEMINI_API_KEY: 'GEMINI_API_KEY',           // AI機能用（Gemini API キー）
+  APP_FOLDER_ID: 'APP_FOLDER_ID',             // Google Drive アプリフォルダID
+  THEME_COLOR: 'THEME_COLOR',                 // UI テーマカラー
+  ADMIN_EMAILS: 'ADMIN_EMAILS',               // Admin メール（カンマ区切り）
+  HOLIDAY_CACHE: 'HOLIDAY_CACHE',             // 祝日キャッシュ（Googleカレンダーから取得・JSON）
+  ACCESS_FOLDER_ID: 'ACCESS_FOLDER_ID',       // アクセス許可フォルダID（このフォルダの共有者がアプリ利用可能）
+  LINE_CHANNEL_ACCESS_TOKEN: 'LINE_CHANNEL_ACCESS_TOKEN',          // LINE Messaging API チャンネルアクセストークン
+  LINE_USER_MAPPING: 'LINE_USER_MAPPING',                          // JSON: { "teacherId": "LINE_USER_ID" }
+  NOTIFICATION_METHODS: 'NOTIFICATION_METHODS',                    // JSON: { "teacherId": "gmail"/"line"/"both"/"none" }
+  CAMPUS_NOTIFICATION_ROUTING: 'CAMPUS_NOTIFICATION_ROUTING',             // JSON: { "campusCode": ["teacherId1", "teacherId2"] } 校舎別通知振り分け設定
+  LINE_SCHEDULER_SETTINGS: 'LINE_SCHEDULER_SETTINGS',                     // JSON: LINEスケジューラーの種別ごとデフォルト設定
+  LINE_SCHEDULER_NOTIF_PREFS: 'LINE_SCHEDULER_NOTIF_PREFS',               // JSON: { "teacherId": { "meeting": "line"/"gmail"/"both"/"none", ... } } 種別ごと通知方法設定
+  TEACHER_ID_MAP: 'TEACHER_ID_MAP',                                        // JSON: { teacherId: { emails:[], name } } 講師ID→情報マッピング（全ユーザー共有）
+  NOTIFICATION_EMAILS: 'NOTIFICATION_EMAILS',                               // JSON: { "teacherId": "email@..." } Gmail通知先の個別メール設定
+  AI_KNOWLEDGE_BASE: 'AI_KNOWLEDGE_BASE',                                   // JSON: [{id, category, content, updatedAt}] AIナレッジベース
+  LECTURE_DEADLINE_OVERRIDES: 'LECTURE_DEADLINE_OVERRIDES'                  // JSON: { "lectureId": "YYYY-MM-DD" } 講習日程締切の手動上書き設定
+};
+
+/**
+ * 成績管理用のマスター設定キー
+ * テスト名、校舎、学年をグローバルで管理
+ */
+var CONFIG_PROP_KEYS = {
+  TEST_NAMES_CONFIG: 'GRADES_TEST_NAMES_CONFIG',      // JSON: テスト名リスト
+  CAMPUS_CODES_CONFIG: 'GRADES_CAMPUS_CODES_CONFIG',  // JSON: 校舎コード・名前
+  GRADE_CODES_CONFIG: 'GRADES_GRADE_CODES_CONFIG',    // JSON: 学年コード・名前
+  SCHOOL_CONFIG: 'GRADES_SCHOOL_CONFIG',              // JSON: [{name, departments:[]}]
+  SIGMA_CONFIG:  'GRADES_SIGMA_CONFIG',                 // JSON: 成績分析の標準偏差設定
+  PRICING_CONFIG: 'PRICING_TABLE_CONFIG',               // JSON: 料金表データ
+  LECTURE_PERIODS_CONFIG: 'LECTURE_PERIODS_CONFIG',      // JSON: 講習期間設定 [{id, name, startDate, endDate}]
+  LECTURE_PRICING_CONFIG: 'LECTURE_PRICING_CONFIG',      // JSON: 講習別料金設定 {typeId: [{label, internal, external}]}
+  GRADE_VISIBLE_CONFIG: 'GRADES_VISIBLE_CONFIG',         // JSON: 表示する学年コードの配列（例: ["13","14","15"]）
+  NORMAL_CLASS_CONFIG: 'NORMAL_CLASS_CONFIG'             // JSON: 通常授業設定 [{grade, duration, count, internal, external}]
+};
+
+/**
+ * デフォルトのテスト名（初期化時のみ使用）
+ */
+var TEST_NAMES = ['4月実力', '5月実力', '6月実力', '期末テスト', '実力テスト'];
+
+/**
+ * デフォルトの校舎マップ（初期化時のみ使用）
+ * コードは01始まりの2桁数字
+ */
+var CAMPUSES = {
+  '01': '校舎A',
+  '02': '校舎B',
+  '03': '校舎C'
+};
+
+/**
+ * 学年マップ（固定値・アプリから変更不可）
+ * コードはその学年の年齢（2桁）。生徒IDの一部として使用される
+ * 小1=07, 小2=08, ..., 小6=12, 中1=13, 中2=14, 中3=15, 高1=16, 高2=17, 高3=18
+ * 管理画面ではどの学年をドロップダウンに表示するかのみ設定可能（GRADES_VISIBLE_CONFIG）
+ */
+var GRADES = {
+  '07': '小1',
+  '08': '小2',
+  '09': '小3',
+  '10': '小4',
+  '11': '小5',
+  '12': '小6',
+  '13': '中1',
+  '14': '中2',
+  '15': '中3',
+  '16': '高1',
+  '17': '高2',
+  '18': '高3'
+};
+
+/**
+ * 抽出対象の予定種類
+ * 「スケジュール更新」で PDF から抽出される予定タイプ
+ */
+var EVENT_TYPES = [
+  '定期テスト', '中間テスト', '期末テスト', '実力テスト', '基礎学力テスト',
+  '体育祭', '文化祭', '修学旅行', '合唱コンクール',
+  '卒業式', '入学式', '始業式', '終業式'
+];
+
+/**
+ * HTMLテンプレートのインクルード用ヘルパー
+ * index.html 内で <?!= include('filename') ?> として使用する
+ * @param {string} filename 読み込むHTMLファイル名（拡張子なし）
+ * @return {string} ファイルの内容（HTMLとして展開される）
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * JSON.parse の安全なラッパー。パース失敗時はデフォルト値を返す
+ * @param {string} str パース対象の文字列
+ * @param {*} defaultValue パース失敗時に返す値（デフォルト: null）
+ * @return {*} パース結果またはデフォルト値
+ */
+function safeJsonParse_(str, defaultValue) {
+  if (defaultValue === undefined) defaultValue = null;
+  if (!str) return defaultValue;
   try {
-    const template = HtmlService.createTemplateFromFile('index');
-    const yearsData = getStudentYears();
-    template.years = yearsData.years;
-    template.yearsJson = JSON.stringify(yearsData.years);
-    return template.evaluate()
-      .setTitle('スクエア英単語音声アプリ')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (err) {
-    Logger.log('doGet student error: ' + err);
-    return HtmlService.createHtmlOutput('エラーが発生しました。');
-  }
-}
-
-// ════════════════════════════════════════════════════════
-// ユーティリティ関数（基本的なヘルパー）
-// ════════════════════════════════════════════════════════
-/**
- * Script Propertiesから値を取得
- * @param {string} key - プロパティキー
- * @returns {string} プロパティ値
- */
-function getScriptProperty(key) {
-  return PropertiesService.getScriptProperties().getProperty(key);
-}
-
-/**
- * セルIDを検証
- * cellIdが1～48の有効な範囲内か確認
- * @param {*} cellId - 検証対象のセルID
- * @returns {number|null} 有効ならcellId、無効ならnull
- */
-function validateCellId(cellId) {
-  const id = parseInt(cellId);
-  
-  // NaNまたは整数でない場合
-  if (isNaN(id)) {
-    return null;
-  }
-  
-  // 範囲チェック（1～48）
-  if (id < 1 || id > 48) {
-    Logger.log(`警告: cellId ${id} は有効な範囲 (1-48) 外です`);
-    return null;
-  }
-  
-  return id;
-}
-
-/**
- * Google DriveからロゴPNG画像を取得
- * Base64エンコードしてData URLで返す
- * @returns {string|null} Data URL形式のロゴ画像、またはnull
- */
-function getEditorLogoUrl() {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const folder = DriveApp.getFolderById(englishwordsFolderId);
-    const files = folder.getFilesByName('logo.png');
-    
-    if (files.hasNext()) {
-      const file = files.next();
-      // ファイルをBlob取得 → Base64に変換
-      const blob = file.getBlob();
-      const base64 = Utilities.base64Encode(blob.getBytes());
-      const mimeType = blob.getContentType();
-      
-      // Data URLフォーマットで返す
-      return `data:${mimeType};base64,${base64}`;
-    } else {
-      Logger.log('logo.png not found');
-      return null;
-    }
+    return JSON.parse(str);
   } catch (e) {
-    Logger.log('Error getLogoPngUrl: ' + e);
-    return null;
+    Logger.log('⚠ JSON.parseエラー: ' + e + ' (入力先頭: ' + String(str).substring(0, 50) + ')');
+    return defaultValue;
   }
 }
 
-// ════════════════════════════════════════════════════════
-// 年度・教科書・学年・レッスン情報取得（階層的）
-// ════════════════════════════════════════════════════════
+// 【セクション3】Web APP エントリーポイント
+// ========================================
+// HTML UI の配信、アプリケーション初期化、ページタイトル設定
+
 /**
- * 利用可能な年度一覧を取得
- * @returns {Object} { years: [年度文字列の配列] }
+ * Web App のエントリーポイント
+ * ユーザーがアプリにアクセスしたときに最初に実行される
+ * HTML ファイル（index.html）を返す
+ * 
+ * ⚠️ 注意：フォルダ・シート初期化は doGet() から削除
+ * 理由：毎回のアクセスで 17秒程度のオーバーヘッドが発生
+ * 解決策：時間トリガー（24時間ごと）で initializeAllSheets() を実行する
+ * @return {HtmlOutput} index.html のコンテンツ
  */
-function getEditorYears() {
+function doGet() {
   try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const folder = DriveApp.getFolderById(englishwordsFolderId);
-    const folders = folder.getFolders();
-    const years = [];
-    
-    while (folders.hasNext()) {
-      const f = folders.next();
-      const name = f.getName();
-      if (name.match(/\d{4}年度版/)) {
-        years.push(name);
+    // アクセス制限なし：URLを知っている全員がアクセス可能
+    // 初回アクセス時の名前入力・TEACHER_IDマッピングはフロントエンド側で処理する
+    var html = HtmlService.createTemplateFromFile('index').evaluate();
+
+    // ブックマーク時にアプリ名「S-quire」が正しく表示されるよう setTitle で設定
+    html.setTitle("S-quire");
+    html.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+    return html;
+
+  } catch (error) {
+    Logger.log('❌ doGetエラー: ' + error);
+    return HtmlService.createHtmlOutput('<p>エラーが発生しました: ' + error + '</p>');
+  }
+}
+
+/**
+ * LINE Messaging API の Webhook を受け取る（POST リクエスト）
+ * ユーザーがLINE公式アカウントにメールアドレスを送ると、LINE User IDを自動登録する
+ * @param {Object} e GAS のイベントオブジェクト（e.postData.contents に JSON が入る）
+ * @return {TextOutput} JSON レスポンス
+ */
+function doPost(e) {
+  try {
+    Logger.log('=== doPost 開始 ===');
+    Logger.log('postData あり: ' + !!(e && e.postData));
+
+    var body = JSON.parse(e.postData.contents);
+    var events = body.events || [];
+    Logger.log('受信イベント数: ' + events.length);
+
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
+      Logger.log('イベント[' + i + '] type=' + event.type);
+
+      if (event.type !== 'message') {
+        Logger.log('→ message以外のイベントのためスキップ');
+        continue;
       }
-    }
-    
-    return { years: years.sort().reverse() };
-  } catch (e) {
-    Logger.log('Error getYears: ' + e);
-    return { years: [] };
-  }
-}
+      if (!event.message || event.message.type !== 'text') {
+        Logger.log('→ テキストメッセージ以外のためスキップ (messageType=' + (event.message ? event.message.type : 'なし') + ')');
+        continue;
+      }
 
-/**
- * 指定年度の教科書一覧を取得
- * @param {string} year - 年度
- * @returns {Object} { textbooks: [教科書名の配列] }
- */
-function getEditorTextbooks(year) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    const textbooks = [];
-    
-    while (files.hasNext()) {
-      const file = files.next();
-      textbooks.push(file.getName());
-    }
-    
-    return { textbooks: textbooks.sort() };
-  } catch (e) {
-    Logger.log('Error getTextbooks: ' + e);
-    return { textbooks: [] };
-  }
-}
+      var lineUserId = event.source.userId;
+      var rawText = (event.message.text || '').trim();
+      var replyToken = event.replyToken;
+      Logger.log('受信テキスト: "' + rawText + '"');
+      Logger.log('LINE User ID: ' + lineUserId);
+      Logger.log('replyToken あり: ' + !!replyToken);
 
-/**
- * 指定教科書の学年一覧を取得
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @returns {Object} { grades: [学年の配列] }
- */
-function getEditorGrades(year, textbook) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    const gradesSet = new Set();
-    
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getName() === textbook) {
-        const ss = SpreadsheetApp.open(file);
-        const sheets = ss.getSheets();
-        sheets.forEach(sheet => {
-          // ✅ 修正：「レッスン順序」シートを除外
-          if (sheet.getName() !== 'レッスン順序') {
-            gradesSet.add(sheet.getName());
-          }
+      // 半角・全角スペースで分割し、メールアドレスと表示名を識別（順序不問）
+      var parts = rawText.split(/[\s　]+/);
+      var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      var emailPart = null;
+      var nameParts = [];
+      for (var j = 0; j < parts.length; j++) {
+        var p = parts[j];
+        if (!emailPart && emailPattern.test(p.toLowerCase())) {
+          emailPart = p.toLowerCase();
+        } else if (p) {
+          nameParts.push(p);
+        }
+      }
+      var text = emailPart;
+      var displayName = nameParts.join(' ');
+      var isEmail = !!text;
+      Logger.log('メールアドレス判定: ' + isEmail + ' (email=' + text + ', name=' + displayName + ')');
+
+      if (isEmail) {
+        // 重複チェック（メールアドレスまたは名前が既に登録されていないか確認）
+        var existingMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+        var dupEmail = false;
+        var dupName = false;
+        Object.keys(existingMap).forEach(function(tid) {
+          var en = normalizeTeacherEntry_(existingMap[tid]);
+          if (en.emails.indexOf(text) !== -1) dupEmail = true;
+          if (displayName && en.name && en.name.trim() === displayName.trim()) dupName = true;
         });
-        break;
-      }
-    }
-    
-    const grades = Array.from(gradesSet);
-    return { grades: grades };
-  } catch (e) {
-    Logger.log('Error getGrades: ' + e);
-    return { grades: [] };
-  }
-}
+        Logger.log('重複チェック: dupEmail=' + dupEmail + ', dupName=' + dupName);
 
-/**
- * 指定学年のレッスン一覧を取得
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年
- * @returns {Object} { lessons: [レッスン名の配列] }
- */
-function getEditorLessons(year, textbook, grade) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    let lessons = [];
-    
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getName() === textbook) {
-        const ss = SpreadsheetApp.open(file);
-        const sheet = ss.getSheetByName(grade);
-        
-        if (sheet) {
-          const lastRow = sheet.getLastRow();
-          if (lastRow > 1) {
-            // 新しい列順序: word_id(0), english(1), pronunciation(2), japanese(3), audio(4), lesson(5), cell_id(6)
-            const data = sheet.getRange(1, 6, lastRow, 1).getValues();
-            lessons = data.slice(1).map(row => row[0]).filter(val => val && typeof val === 'string').filter((v, i, a) => a.indexOf(v) === i);
+        if (dupEmail || dupName) {
+          var dupMsg = '⚠ 登録されている情報と重複しています。管理者にご連絡ください。\n';
+          if (dupEmail) dupMsg += '（理由：このメールアドレスは既に登録済みです）';
+          if (dupName && !dupEmail) dupMsg += '（理由：この名前は既に登録済みです）';
+          sendLineMessage(lineUserId, dupMsg);
+          Logger.log('⚠ doPost: 重複のため登録スキップ: email=' + text + ' name=' + displayName);
+        } else {
+          // teacherId を TEACHER_ID_MAP に登録（LINE登録時点でIDを確定）
+          var teacherId;
+          try {
+            teacherId = getOrCreateTeacherIdForEmail_(text, displayName || '');
+            Logger.log('teacherId 発行: ' + teacherId);
+          } catch (tidErr) {
+            Logger.log('⚠ doPost: teacherId 登録失敗: ' + tidErr);
+            teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
           }
-        }
-        break;
-      }
-    }
-    
-    return { lessons: lessons };
-  } catch (e) {
-    Logger.log('Error getLessons: ' + e);
-    return { lessons: [] };
-  }
-}
 
-// ════════════════════════════════════════════════════════
-// マスターデータ取得
-// ════════════════════════════════════════════════════════
-/**
- * マスター単語・文データを取得
- * 英単語シートと英文シートから全データを読み込む
- * @returns {Object} { words: 単語配列, sentences: 文配列 }
- */
-function getAllWordsAndSentences() {
-  try {
-    const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
-    const ss = SpreadsheetApp.openById(englishwordsSheetId);
-    let words = [];
-    let sentences = [];
-    
-    const wordSheet = ss.getSheetByName("英単語");
-    if (wordSheet) {
-      const lastRow = wordSheet.getLastRow();
-      if (lastRow > 1) {
-        try {
-          // ✅ 修正：5列目（audio）まで取得
-          const data = wordSheet.getRange(2, 1, lastRow - 1, 5).getValues();
-          data.forEach((row, index) => {
-            if (row[1] && row[1] !== '') {
-              words.push({
-                id: row[0] ? parseInt(row[0]) : index + 1,
-                english: row[1].toString().trim(),
-                pronunciation: row[2] ? row[2].toString().trim() : '',
-                japanese: row[3] ? row[3].toString().trim() : '',
-                audio: row[4] ? row[4].toString().trim() : ''  // ✅ 新規：audio列を追加
-              });
+          // LINE User ID マッピングを取得（teacherId → LINE User ID）
+          var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
+          var mapping = safeJsonParse_(mappingRaw, {});
+
+          // すでに同じ teacherId・同じ LINE ID で登録済みなら案内のみ
+          if (mapping[teacherId] === lineUserId) {
+            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\n🔑 講師ID: ' + teacherId + '\n\nアプリURL:\nhttps://script.google.com/macros/s/AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ/exec');
+            Logger.log('⚠ LINE登録済みのため案内のみ: ' + text + ' (teacherId: ' + teacherId + ')');
+          } else {
+            var isNew = !mapping[teacherId];
+
+            // LINE User ID を保存（teacherId をキーに）
+            mapping[teacherId] = lineUserId;
+            try {
+              setProperty(PROP_KEYS.LINE_USER_MAPPING, JSON.stringify(mapping));
+              Logger.log('✓ LINE_USER_MAPPING 保存完了');
+            } catch (mapErr) {
+              Logger.log('⚠ doPost: LINE_USER_MAPPING 保存失敗（返信は継続）: ' + mapErr);
             }
-          });
-          
-          // ✅ デバッグログを追加
-          Logger.log('✅ 英単語取得完了: ' + words.length + '件');
-          
-          // 最初の5件をログ出力
-          Logger.log('📌 最初の5件:');
-          for (let i = 0; i < Math.min(5, words.length); i++) {
-            Logger.log(`  [${i}] english="${words[i].english}", pronunciation="${words[i].pronunciation}"`);
-          }
-          
-          // 「I」が含まれているか確認
-          const iWord = words.find(w => w.english === 'I');
-          Logger.log('📌 「I」の検索結果: ' + (iWord ? `発音="${iWord.pronunciation}"` : '見つかりません'));
-          
-          // 「my」が含まれているか確認
-          const myWord = words.find(w => w.english === 'my');
-          Logger.log('📌 「my」の検索結果: ' + (myWord ? `発音="${myWord.pronunciation}"` : '見つかりません'));
-          
-          // 「me」が含まれているか確認
-          const meWord = words.find(w => w.english === 'me');
-          Logger.log('📌 「me」の検索結果: ' + (meWord ? `発音="${meWord.pronunciation}"` : '見つかりません'));
-          
-        } catch (err) {
-          Logger.log('英単語データ取得エラー: ' + err);
-        }
-      }
-    }
-    
-    const sentenceSheet = ss.getSheetByName("英文");
-    if (sentenceSheet) {
-      const lastRow = sentenceSheet.getLastRow();
-      if (lastRow > 1) {
-        // ✅ 修正：5列目（audio）まで取得
-        const data = sentenceSheet.getRange(2, 1, lastRow - 1, 5).getValues();
-        sentences = data.map((row, index) => ({
-          id: 10001 + index,
-          text: row[1] ? row[1].toString().trim() : '',
-          pronunciation: row[2] ? row[2].toString().trim() : '',
-          japanese: row[3] ? row[3].toString().trim() : '',  // ✅ 修正：日本語列を追加
-          audio: row[4] ? row[4].toString().trim() : ''  // ✅ 新規：audio列を追加
-        })).filter(s => s.text && s.text !== '');
-      }
-    }
-    
-    return { words, sentences };
-  } catch (e) {
-    Logger.log('Error getAllWordsAndSentences: ' + e);
-    return { words: [], sentences: [] };
-  }
-}
 
-// ════════════════════════════════════════════════════════
-// レッスンデータ取得・処理
-// ════════════════════════════════════════════════════════
+            // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
+            var replyMsg = '✅ 登録が完了しました！';
+            if (displayName) replyMsg += '\n表示名: ' + displayName;
+            replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
+            replyMsg += '\n\n※ 別のGoogleアカウントでアプリにアクセスするときに講師IDを入力してください（事前にメールアドレスを設定タブで登録しておくと次回から入力不要です）';
+            replyMsg += '\n\nアプリURL:\nhttps://script.google.com/macros/s/AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ/exec';
+            Logger.log('プッシュ送信開始...');
+            var sent = sendLineMessage(lineUserId, replyMsg);
+            Logger.log('sendLineMessage 結果: ' + sent);
 
-/**
- * ✅ 修正版：入試対策編のすべてのレッスン一覧を取得（ソート済み）
- * 3つのシート（通常・不規則動詞①②）から全レッスンを取得
- * 
- * @param {string} year - 年度
- * @returns {Object} { lessons: [ソート済みレッスン名の配列] }
- */
-function getExamPrepLessons(year) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    let lessons = [];
-
-    while (files.hasNext()) {
-      const file = files.next();
-      
-      // ✅ 修正：「入試対策編」のみを処理
-      if (file.getName() === '入試対策編') {
-        const ss = SpreadsheetApp.open(file);
-        
-        // ✅ 修正：3つのシートすべてから取得
-        const sheetNames = ['通常', '不規則動詞①', '不規則動詞②'];
-        
-        sheetNames.forEach(sheetName => {
-          const sheet = ss.getSheetByName(sheetName);
-          
-          if (sheet) {
-            const lastRow = sheet.getLastRow();
-            if (lastRow > 1) {
-              // カラムF（lesson列）を取得
-              const data = sheet.getRange(1, 6, lastRow, 1).getValues();
-              
-              const sheetLessons = data.slice(1)
-                .map(row => row[0])
-                .filter(val => val && typeof val === 'string')
-                .map(val => val.trim());
-
-              lessons = lessons.concat(sheetLessons);
-            }
-          }
-        });
-
-        break;
-      }
-    }
-
-    // 重複除外＆ソート
-    lessons = lessons
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .sort();
-
-    return { lessons: lessons };
-  } catch (e) {
-    Logger.log('Error getExamPrepLessons: ' + e);
-    return { lessons: [] };
-  }
-}
-
-/**
- * ✅ 修正版：指定レッスンの既存データを取得
- * 入試対策編の3シート対応
- * 
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年（入試対策編の場合は「通常」「不規則動詞①」「不規則動詞②」）
- * @param {string} lesson - レッスン名
- * @returns {Object} { tableData: テーブルデータの配列 }
- */
-function getExistingData(year, textbook, grade, lesson) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    let tableData = [];
-
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getName() === textbook) {
-        const ss = SpreadsheetApp.open(file);
-        
-        // ✅ 修正：grade はシート名として使用
-        // 通常教科書：学年名（「中学1年」など）
-        // 入試対策編：「通常」「不規則動詞①」「不規則動詞②」
-        const sheet = ss.getSheetByName(grade);
-
-        if (sheet) {
-          const lastRow = sheet.getLastRow();
-          if (lastRow > 1) {
-            // ✅ 修正：入試対策編の拡張カラムに対応
-            // 通常シート（7列）と拡張シート（10列または13列）の両方に対応
-            const maxCols = getMaxColumnsForSheet(textbook, grade);
-            const data = sheet.getRange(2, 1, lastRow - 1, maxCols).getValues();
-
-            // レッスンが一致するデータのみをフィルタリング
-            const lessonData = data.filter(row => {
-              // カラムF（lesson列）の値を確認
-              const lessonCell = row[5] ? row[5].toString().trim() : '';
-              return lessonCell === lesson;
-            });
-
-            // レッスンデータを tableData 形式に変換
-            tableData = lessonData.map((row, index) => ({
-              cellId: row[6] ? parseInt(row[6]) : null,
-              lesson: row[5] ? row[5].toString().trim() : '',
-              japanese: row[3] ? row[3].toString().trim() : '',
-              english: row[1] ? row[1].toString().trim() : '',
-              pronunciation: row[2] ? row[2].toString().trim() : '',
-              audio: row[4] ? row[4].toString().trim() : '',
-              masterWordId: row[0] ? parseInt(row[0]) : null,
-              // ✅ 新規：不規則動詞①②の拡張カラムを取得
-              pastEnglish: row[7] ? row[7].toString().trim() : '',
-              pastPronunciation: row[8] ? row[8].toString().trim() : '',
-              pastAudio: row[9] ? row[9].toString().trim() : '',
-              pastMasterId: row[7] ? null : null,  // プレースホルダ
-              pastParticipleEnglish: row[10] ? row[10].toString().trim() : '',
-              pastParticiplePronunciation: row[11] ? row[11].toString().trim() : '',
-              pastParticipleAudio: row[12] ? row[12].toString().trim() : '',
-              pastParticipleWordId: row[10] ? null : null  // プレースホルダ
-            }));
-
-            Logger.log(`読み込み完了: ${tableData.length} 件のレッスンデータ`);
-          }
-        }
-        break;
-      }
-    }
-
-    return { tableData };
-  } catch (e) {
-    Logger.log('Error getExistingData: ' + e);
-    return { tableData: [] };
-  }
-}
-
-/**
- * ✅ 新規関数：シートのカラム数を取得
- * 通常シート（7列）か拡張シート（10列または13列）かを判定
- * 
- * @param {string} textbook - 教科書名
- * @param {string} grade - シート名
- * @returns {number} カラム数
- */
-function getMaxColumnsForSheet(textbook, grade) {
-  // 入試対策編の不規則動詞②は18列（7基本 + past 4列 + pastPart 4列 + 空3列）
-  if (textbook === '入試対策編' && grade === '不規則動詞②') {
-    return 18;
-  }
-  // 入試対策編の不規則動詞①は14列（7基本 + past 4列 + 空3列）
-  if (textbook === '入試対策編' && grade === '不規則動詞①') {
-    return 14;
-  }
-  // その他（通常シート）は7列
-  return 7;
-}
-
-
-// ════════════════════════════════════════════════════════
-// データ保存
-// ════════════════════════════════════════════════════════
-/**
- * マスター単語を英単語シートに保存
- * @param {Array} words - 保存する単語配列
- * @returns {Object} { success: boolean, error?: string }
- */
-function saveWords(words) {
-  try {
-    const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
-    const ss = SpreadsheetApp.openById(englishwordsSheetId);
-    const wordSheet = ss.getSheetByName("英単語");
-    
-    if (!wordSheet) {
-      throw new Error('「英単語」シートが見つかりません');
-    }
-
-    const lastRow = wordSheet.getLastRow();
-    if (lastRow > 1) {
-      wordSheet.deleteRows(2, lastRow - 1);
-    }
-
-    if (words.length > 0) {
-      // ✅ 修正：5列目にaudio列を含める
-      const rowsToAdd = words.map(word => [
-        word.id,
-        word.english,
-        word.pronunciation,
-        word.japanese,
-        word.audio  // ✅ 新規：audio列を保存
-      ]);
-      wordSheet.getRange(2, 1, rowsToAdd.length, 5).setValues(rowsToAdd);
-    }
-
-    return { success: true };
-  } catch (e) {
-    Logger.log('Error saveWords: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * マスター文を英文シートに保存
- * @param {Array} sentences - 保存する文配列
- * @returns {Object} { success: boolean, error?: string }
- */
-function saveSentences(sentences) {
-  try {
-    const englishwordsSheetId = getScriptProperty('ENGLISHWORDS_SHEET_ID');
-    const ss = SpreadsheetApp.openById(englishwordsSheetId);
-    const sentenceSheet = ss.getSheetByName("英文");
-    
-    if (!sentenceSheet) {
-      throw new Error('「英文」シートが見つかりません');
-    }
-
-    const lastRow = sentenceSheet.getLastRow();
-    if (lastRow > 1) {
-      sentenceSheet.deleteRows(2, lastRow - 1);
-    }
-
-    if (sentences.length > 0) {
-      // ✅ 修正：5列目にaudio列を含める
-      const rowsToAdd = sentences.map(sentence => [
-        sentence.id,
-        sentence.text,
-        sentence.pronunciation,
-        sentence.japanese || '',  // ✅ 修正：日本語列を保存
-        sentence.audio || ''       // ✅ 新規：audio列を保存
-      ]);
-      sentenceSheet.getRange(2, 1, rowsToAdd.length, 5).setValues(rowsToAdd);
-    }
-
-    return { success: true };
-  } catch (e) {
-    Logger.log('Error saveSentences: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * 新規追加：指定年度のすべてのレッスンデータを更新
- * マスターID に紐づくデータを検索して、すべての箇所で更新
- * @param {string} year - 年度（例：「2024年度版」）
- * @param {number} masterId - 更新対象のマスターID
- * @param {string} newField1 - 新しい英語または文テキスト
- * @param {string} newField2 - 新しい発音
- * @param {string} newField3 - 新しい日本語
- * @param {string} itemType - アイテムタイプ（'word' または 'sentence'）
- * @returns {Object} { success: boolean, error?: string }
- */
-function updateAllLessonDataInYear(year, masterId, newField1, newField2, newField3, itemType, allWords, allSentences) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    
-    // 指定年度のフォルダを取得
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    
-    let updatedCount = 0;
-    const updateLog = []; // 更新ログ
-    
-    // 年度内のすべての教科書を処理
-    while (files.hasNext()) {
-      const file = files.next();
-      const ss = SpreadsheetApp.open(file);
-      const sheets = ss.getSheets();
-      const textbookName = file.getName();
-      
-      // すべてのシート（学年）を処理
-      sheets.forEach(sheet => {
-        const lastRow = sheet.getLastRow();
-        
-        if (lastRow > 1) {
-          // 行データを取得：word_id(0), english(1), pronunciation(2), japanese(3), audio(4), lesson(5), cell_id(6)
-          const data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-          
-          // マスターIDが一致する行を検索
-          data.forEach((row, idx) => {
-            const cellMasterId = row[0] ? parseInt(row[0]) : null;
-            
-            if (cellMasterId === masterId) {
-              // シート上の実際の行番号を計算（データ範囲の開始は2行目）
-              const actualRow = idx + 2;
-              
-              // ログに記録（どの行を更新するかを明確にする）
-              updateLog.push({
-                file: textbookName,
-                sheet: sheet.getName(),
-                actualRow: actualRow,
-                masterId: masterId,
-                lesson: row[5] // lesson列の値
-              });
-              
-              // 対応する列を更新
-              if (itemType === 'word') {
-                // 単語：列2（english）、列3（pronunciation）、列4（japanese）を更新
-                sheet.getRange(actualRow, 2).setValue(newField1);  // english
-                sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
-                sheet.getRange(actualRow, 4).setValue(newField3);  // japanese
-                
-                // ✅ 修正：マスターから音声ファイル名を取得して更新
-                const masterWord = allWords.find(w => w.id === masterId);
-                if (masterWord && masterWord.audio) {
-                  sheet.getRange(actualRow, 5).setValue(masterWord.audio);  // audio
-                }
-              } else if (itemType === 'sentence') {
-                // 文：列2（text）、列3（pronunciation）、列4（japanese）を更新
-                sheet.getRange(actualRow, 2).setValue(newField1);  // text（文）
-                sheet.getRange(actualRow, 3).setValue(newField2);  // pronunciation
-                sheet.getRange(actualRow, 4).setValue(newField3);  // ✅ 修正：日本語も更新
-                
-                // ✅ 修正：マスターから音声ファイル名を取得して更新
-                const masterSentence = allSentences.find(s => s.id === masterId);
-                if (masterSentence && masterSentence.audio) {
-                  sheet.getRange(actualRow, 5).setValue(masterSentence.audio);  // audio
-                }
+            // 返信後に時間のかかる処理（Drive権限付与・管理者メール）を実行
+            var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+            Logger.log('Driveフォルダ付与: folderId=' + (folderId || 'なし'));
+            if (folderId) {
+              try {
+                DriveApp.getFolderById(folderId).addEditor(text);
+                Logger.log('✓ Drive Editor 権限付与完了');
+              } catch (folderErr) {
+                Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
               }
-              
-              updatedCount++;
             }
-          });
-        }
-      });
-    }
-    
-    // ログを出力（デバッグ用）
-    if (updateLog.length > 0) {
-      Logger.log('=== 更新ログ ===');
-      updateLog.forEach(log => {
-        Logger.log(`✅ ${log.file} > ${log.sheet} > 行${log.actualRow} (レッスン: ${log.lesson}, ID: ${log.masterId})`);
-      });
-    }
-    
-    Logger.log(`✅ 合計 ${updatedCount}件のレッスンデータを更新しました (ID: ${masterId})`);
-    return { success: true, updatedCount: updatedCount };
-    
-  } catch (e) {
-    Logger.log('Error updateAllLessonDataInYear: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
 
-/**
- * ✅ 完全修正版：レッスンデータ保存
- * 入試対策編の拡張カラムに対応
- * 既存レッスンデータの正確な削除と新規データの追加
- * 
- * ✅ 修正：現在のレッスン名で削除（既に updateLessonName() で名前が変更されている）
- * 
- * @param {string} year - 年度
- * @param {string} textbook - 教科書名
- * @param {string} grade - 学年（またはシート名）
- * @param {string} lesson - レッスン名
- * @param {Array} tableData - テーブルデータ
- * @param {Array} allWords - マスター単語配列
- * @param {Array} allSentences - マスター文配列
- * @returns {Object} { success: boolean, error?: string }
- */
-function saveLessonData(year, textbook, grade, lesson, tableData, allWords, allSentences) {
-  try {
-    const englishwordsFolderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    const englishwordsFolder = DriveApp.getFolderById(englishwordsFolderId);
-    const yearFolder = englishwordsFolder.getFoldersByName(year).next();
-    const files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-
-    let targetFile = null;
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getName() === textbook) {
-        targetFile = file;
-        break;
-      }
-    }
-
-    if (!targetFile) {
-      throw new Error("スプレッドシートが見つかりません");
-    }
-
-    const ss = SpreadsheetApp.open(targetFile);
-    const sheet = ss.getSheetByName(grade);
-
-    if (!sheet) {
-      throw new Error(`シート「${grade}」が見つかりません`);
-    }
-
-    // ✅ 修正：入試対策編かどうかで処理を分岐
-    const isExamPrep = textbook === '入試対策編';
-    const isFukisoku1 = isExamPrep && grade === '不規則動詞①';
-    const isFukisoku2 = isExamPrep && grade === '不規則動詞②';
-
-    // 新しいデータを整形
-    const rowsToAdd = [];
-
-    tableData.forEach((row, rowIdx) => {
-      row.forEach((cell, colIdx) => {
-        if (!cell) {
-          return;
-        }
-
-        const cellId = cell.cellId || (rowIdx * 3 + colIdx + 1);
-
-        if (cell.type === 'word') {
-          const masterWord = allWords.find(w => w.id === cell.masterWordId);
-          const audioFileName = masterWord ? masterWord.audio : '';
-
-          if (isFukisoku1) {
-            // 不規則動詞①：10列
-            const pastWord = allWords.find(w => w.japanese === `${masterWord.japanese}の過去形`);
-            rowsToAdd.push([
-              cell.masterWordId || '',
-              cell.english,
-              cell.pronunciation || '',
-              cell.japanese,
-              audioFileName,
-              lesson,
-              cellId,
-              pastWord ? pastWord.english : '',
-              pastWord ? pastWord.pronunciation : '',
-              pastWord ? pastWord.audio : ''
-            ]);
-          } else if (isFukisoku2) {
-            // 不規則動詞②：13列
-            const pastWord = allWords.find(w => w.japanese === `${masterWord.japanese}の過去形`);
-            const pastPartWord = allWords.find(w => w.japanese === `${masterWord.japanese}の過去分詞`);
-            rowsToAdd.push([
-              cell.masterWordId || '',
-              cell.english,
-              cell.pronunciation || '',
-              cell.japanese,
-              audioFileName,
-              lesson,
-              cellId,
-              pastWord ? pastWord.english : '',
-              pastWord ? pastWord.pronunciation : '',
-              pastWord ? pastWord.audio : '',
-              pastPartWord ? pastPartWord.english : '',
-              pastPartWord ? pastPartWord.pronunciation : '',
-              pastPartWord ? pastPartWord.audio : ''
-            ]);
-          } else {
-            // 通常シート：7列
-            rowsToAdd.push([
-              cell.masterWordId || '',
-              cell.english,
-              cell.pronunciation || '',
-              cell.japanese,
-              audioFileName,
-              lesson,
-              cellId
-            ]);
-          }
-        } else if (cell.type === 'sentence') {
-          const masterSentence = allSentences.find(s => s.id === cell.masterSentenceId);
-          const audioFileName = masterSentence ? masterSentence.audio : '';
-
-          if (isFukisoku1) {
-            // 不規則動詞①：10列
-            rowsToAdd.push([
-              cell.masterSentenceId || '',
-              cell.text,
-              cell.pronunciation || '',
-              cell.japanese || '',
-              audioFileName,
-              lesson,
-              cellId,
-              '',
-              '',
-              ''
-            ]);
-          } else if (isFukisoku2) {
-            // 不規則動詞②：13列
-            rowsToAdd.push([
-              cell.masterSentenceId || '',
-              cell.text,
-              cell.pronunciation || '',
-              cell.japanese || '',
-              audioFileName,
-              lesson,
-              cellId,
-              '',
-              '',
-              '',
-              '',
-              '',
-              ''
-            ]);
-          } else {
-            // 通常シート：7列
-            rowsToAdd.push([
-              cell.masterSentenceId || '',
-              cell.text,
-              cell.pronunciation || '',
-              cell.japanese || '',
-              audioFileName,
-              lesson,
-              cellId
-            ]);
+            if (isNew) {
+              try {
+                var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+                if (adminEmails.length > 0) {
+                  var adminBody = '以下のメールアドレスが LINE 経由で自己登録しました。\n\nメール: ' + text;
+                  if (displayName) adminBody += '\n表示名: ' + displayName;
+                  adminBody += '\n講師ID: ' + teacherId;
+                  adminBody += '\n\n不審な登録の場合は管理タブ → ユーザー管理から削除してください。';
+                  GmailApp.sendEmail(adminEmails[0], '[S-quire] 新しいスタッフが自己登録しました', adminBody);
+                  Logger.log('✓ 管理者通知メール送信完了');
+                }
+              } catch (mailErr) {
+                Logger.log('⚠ doPost: 管理者通知メール送信失敗: ' + mailErr);
+              }
+            }
           }
         }
-      });
-    });
-
-    const lastRow = sheet.getLastRow();
-    const maxCols = getMaxColumnsForSheet(textbook, grade);
-
-    Logger.log(`=== saveLessonData 処理開始 ===`);
-    Logger.log(`lastRow: ${lastRow}, maxCols: ${maxCols}`);
-    Logger.log(`保存対象レッスン: "${lesson}"`);
-    Logger.log(`新規データ行数: ${rowsToAdd.length}`);
-
-    // ════════════════════════════════════════════════════════
-    // ✅ 修正：既存レッスンデータを削除
-    // 現在のレッスン名（lesson）で検索・削除
-    // ════════════════════════════════════════════════════════
-    if (lastRow > 1) {
-      const allData = sheet.getRange(2, 1, lastRow - 1, maxCols).getValues();
-
-      // ✅ 修正：現在のレッスン名で検索（updateLessonName() で既に名前が変更されている）
-      const lessonRowIndices = [];
-      allData.forEach((row, idx) => {
-        const cellLesson = row[5] ? row[5].toString().trim() : '';
-        if (cellLesson === lesson) {
-          lessonRowIndices.push(idx);
-        }
-      });
-
-      Logger.log(`削除対象行数: ${lessonRowIndices.length}`);
-      Logger.log(`検索レッスン名: "${lesson}"`);
-
-      // ✅ 修正：逆順でループして行を削除（行番号がずれないように）
-      for (let i = lessonRowIndices.length - 1; i >= 0; i--) {
-        const deleteIdx = lessonRowIndices[i];
-        const deleteRow = deleteIdx + 2; // データ範囲の開始は2行目
-
-        Logger.log(`削除: 行${deleteRow}`);
-        sheet.deleteRow(deleteRow);
+      } else {
+        // メールアドレス以外のメッセージへの案内
+        Logger.log('メールアドレスなし → 案内メッセージを送信');
+        sendLineMessage(lineUserId, '📧 登録するには、このアカウントにメールアドレスを送信してください。\n表示名も一緒に送ると管理画面に名前が表示されます。\n\n例（メールのみ）:\ntanaka@example.com\n\n例（表示名あり）:\ntanaka@example.com 田中花子\n田中花子 tanaka@example.com');
       }
     }
 
-    // ════════════════════════════════════════════════════════
-    // ✅ 修正：新規データを追加（最後の行の後に）
-    // ════════════════════════════════════════════════════════
-    if (rowsToAdd.length > 0) {
-      const newLastRow = sheet.getLastRow();
-      const insertRow = newLastRow + 1;
+    Logger.log('=== doPost 正常終了 ===');
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'OK' }))
+      .setMimeType(ContentService.MimeType.JSON);
 
-      Logger.log(`挿入開始行: ${insertRow}`);
-      Logger.log(`挿入データ行数: ${rowsToAdd.length}`);
-      Logger.log(`挿入カラム数: ${maxCols}`);
-
-      // ✅ 修正：各行のカラム数をチェック
-      for (let i = 0; i < rowsToAdd.length; i++) {
-        if (rowsToAdd[i].length !== maxCols) {
-          Logger.log(`⚠️ 警告：行${i}のカラム数が不正: ${rowsToAdd[i].length}（期待値: ${maxCols}）`);
-          
-          // 不足分を空文字で埋める
-          while (rowsToAdd[i].length < maxCols) {
-            rowsToAdd[i].push('');
-          }
-          
-          // 余分な列を削除
-          rowsToAdd[i] = rowsToAdd[i].slice(0, maxCols);
-        }
-      }
-
-      // データを挿入
-      sheet.getRange(insertRow, 1, rowsToAdd.length, maxCols).setValues(rowsToAdd);
-
-      Logger.log(`✅ ${rowsToAdd.length}件のデータを行${insertRow}に保存しました`);
-    } else {
-      Logger.log(`⚠️ 保存対象データが空です`);
-    }
-
-    Logger.log(`=== saveLessonData 処理完了 ===`);
-    return { success: true };
-
-  } catch (e) {
-    Logger.log('Error saveLessonData: ' + e);
-    Logger.log(e.stack);
-    return { success: false, error: e.toString() };
-  }
-}
-
-
-// ────────────────────────────────────────────
-// 設定タブ用バックエンド関数
-// ────────────────────────────────────────────
-
-/**
- * 設定タブ用の Script Properties 値を返す
- * @returns {Object} { success, ENGLISHWORDS_FOLDER_ID, ENGLISHWORDS_SHEET_ID, ... }
- */
-function getScriptPropertiesForSettings() {
-  try {
-    const keys = [
-      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
-      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'
-    ];
-    const result = { success: true };
-    keys.forEach(k => { result[k] = getScriptProperty(k) || ''; });
-    return result;
-  } catch (e) {
-    Logger.log('Error getScriptPropertiesForSettings: ' + e);
-    return { success: false, error: e.toString() };
+  } catch (error) {
+    Logger.log('❌ doPostエラー: ' + error);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 /**
- * 設定タブからの保存処理
- * ENGLISHWORDS_FOLDER_ID 保存時は VOCABULARY_FOLDER_ID も自動同期する
- * @param {Object} settings - キーと値のマップ
- * @returns {Object} { success }
+ * Web App のタイトルを取得（メタ情報用）
+ * ブックマーク表示時に使用される情報を返す
+ * @return {Object} { appName, version, description }
  */
-function saveScriptProperties(settings) {
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const keys = [
-      'ENGLISHWORDS_FOLDER_ID', 'ENGLISHWORDS_SHEET_ID',
-      'GITHUB_BASE_URL', 'GITHUB_TOKEN',
-      'GOOGLE_CLOUD_TTS_API_KEY', 'HOMEPAGE_URL', 'STUDENT_HOMEPAGE_URL'
-    ];
-    keys.forEach(k => {
-      if (settings[k] !== undefined && settings[k] !== '') {
-        props.setProperty(k, settings[k]);
-        if (k === 'ENGLISHWORDS_FOLDER_ID') {
-          props.setProperty('VOCABULARY_FOLDER_ID', settings[k]);
-        }
-      }
-    });
-    Logger.log('✅ Script Properties を設定タブから更新しました');
-    return { success: true };
-  } catch (e) {
-    Logger.log('Error saveScriptProperties: ' + e);
-    return { success: false, error: e.toString() };
-  }
+function getAppMetadata() {
+  return {
+    appName: 'S-quire',
+    version: '1.0.0',
+    description: '教育機関向けダッシュボード',
+    lastUpdated: new Date().toISOString()
+  };
 }
 
-/**
- * QRコード画像を Google Drive に保存する
- * @param {string} base64DataUrl - data:image/png;base64,... 形式
- * @returns {Object} { success }
- */
-function saveQrCodeImage(base64DataUrl) {
-  try {
-    const folderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    if (!folderId) return { success: false, error: 'ENGLISHWORDS_FOLDER_ID が未設定です' };
-    const match = base64DataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
-    if (!match) return { success: false, error: '無効なデータ形式です' };
-    const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), match[1], 'qrcode.png');
-    const folder = DriveApp.getFolderById(folderId);
-    const existing = folder.getFilesByName('qrcode.png');
-    while (existing.hasNext()) existing.next().setTrashed(true);
-    folder.createFile(blob);
-    Logger.log('✅ QRコード画像を保存しました');
-    return { success: true };
-  } catch (e) {
-    Logger.log('Error saveQrCodeImage: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * Google Drive から QRコード画像を base64 DataURL で返す
- * @returns {Object} { success, data: string|null }
- */
-function getQrCodeImage() {
-  try {
-    const folderId = getScriptProperty('ENGLISHWORDS_FOLDER_ID');
-    if (!folderId) return { success: true, data: null };
-    const folder = DriveApp.getFolderById(folderId);
-    const files = folder.getFilesByName('qrcode.png');
-    if (!files.hasNext()) return { success: true, data: null };
-    const file = files.next();
-    const blob = file.getBlob();
-    const base64 = Utilities.base64Encode(blob.getBytes());
-    return { success: true, data: 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + base64 };
-  } catch (e) {
-    Logger.log('Error getQrCodeImage: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * Drive リソース自動作成（code_init.js の setupScriptProperties を呼び出す）
- * @returns {Object} { success, created, existing, manualRequired }
- */
-function runSetupScriptProperties() {
-  try {
-    return setupScriptProperties();
-  } catch (e) {
-    Logger.log('Error runSetupScriptProperties: ' + e);
-    return { success: false, error: e.toString() };
-  }
+// ========================================
+// テスト用エクスポート（GAS環境では無視される）
+// ========================================
+if (typeof module !== 'undefined') {
+  module.exports = {
+    PROP_KEYS: PROP_KEYS,
+    CONFIG_PROP_KEYS: CONFIG_PROP_KEYS,
+    TEST_NAMES: TEST_NAMES,
+    CAMPUSES: CAMPUSES,
+    GRADES: GRADES,
+    EVENT_TYPES: EVENT_TYPES
+  };
 }

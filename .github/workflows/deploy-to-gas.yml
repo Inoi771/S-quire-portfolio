@@ -1,0 +1,96 @@
+name: GASへ自動デプロイ
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    paths:
+      - '*.js'
+      - '*.html'
+      - 'appsscript.json'
+      - '.github/workflows/*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: テストを実行
+        run: |
+          npm install
+          npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: clasp をインストール
+        run: npm install -g @google/clasp
+
+      - name: 認証情報を作成
+        run: |
+          cat > ~/.clasprc.json << 'CLASPRC'
+          {
+            "tokens": {
+              "default": {
+                "type": "authorized_user",
+                "client_id": "REDACTED_CLIENT_ID",
+                "client_secret": "REDACTED_CLIENT_SECRET",
+                "refresh_token": "${{ secrets.CLASP_REFRESH_TOKEN }}"
+              }
+            }
+          }
+          CLASPRC
+
+      - name: GASへプッシュ
+        run: clasp push --force
+
+      - name: デプロイバージョンを更新（/exec URLに反映）
+        run: |
+          DEPLOY_ID="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
+          echo "デプロイ($DEPLOY_ID)を更新します"
+          clasp deploy --deploymentId "$DEPLOY_ID" -d "Auto deploy $(date '+%Y-%m-%d %H:%M')"
+          # LINE Webhook用デプロイ(AKfycbx94J2E...)は「Head」設定のため clasp deploy 不要
+          # clasp deploy を実行するとアクセス設定が「全員→Googleアカウント必須」に上書きされるため実行しない
+
+      - name: 古いデプロイを自動削除（上限対策）
+        run: |
+          APP_DEPLOY_ID="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
+          LINE_DEPLOY_ID="AKfycbx94J2E8Oiruh27j8X9hLctfLIkZmgVeTkD0cdTRqg4MKrzCDuog92d_VqsR2cRN56CuQ"
+          echo "=== 削除前のデプロイ一覧 ==="
+          clasp deployments
+          echo "=== 固定ID以外のデプロイを削除 ==="
+          clasp deployments 2>&1 | grep -oE 'AKfyc[A-Za-z0-9_-]+' | while IFS= read -r id; do
+            if [ "$id" = "$APP_DEPLOY_ID" ] || [ "$id" = "$LINE_DEPLOY_ID" ]; then
+              echo "保持（固定デプロイ）: $id"
+            else
+              echo "削除対象: $id"
+              clasp undeploy "$id" && echo "✓ 削除完了: $id" || echo "⚠ 削除スキップ: $id"
+            fi
+          done
+          echo "=== 削除後のデプロイ一覧 ==="
+          clasp deployments
+

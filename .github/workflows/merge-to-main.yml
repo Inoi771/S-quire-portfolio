@@ -1,0 +1,30 @@
+name: mainへ自動マージ
+
+# paths フィルターなし → .js/.html 以外（README.md/CLAUDE.md等）の変更でも起動する
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: mainへマージ
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          git merge -X theirs --no-ff --allow-unrelated-histories \
+            origin/${{ github.ref_name }} \
+            -m "自動マージ: ${{ github.ref_name }} → main"
+          git push --force-with-lease origin main

@@ -1,0 +1,1550 @@
+<script>
+  // ===== 【8】Admin管理 =====
+
+    /** HTML特殊文字をエスケープ（XSS対策） */
+    function escapeHtml_(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function loadUsersList() {
+      loadAllowedUsers();
+      loadCampusNotificationRouting();
+      loadFormEmailTriggerStatus();
+      loadFormEmailFilterSettings();
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            displayAdminsList(result.emails);
+          }
+        })
+        .getAdminEmails();
+    }
+
+    function loadAllowedUsers() {
+      document.getElementById('allowedUsersList').innerHTML = '<p style="text-align:center;color:#999;font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            document.getElementById('allowedUsersList').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + result.error + '</p>';
+            return;
+          }
+          if (result.users.length === 0) {
+            document.getElementById('allowedUsersList').innerHTML = '<p style="text-align:center;color:#999;font-size:13px;">' + (result.note || 'ユーザーがいません') + '</p>';
+            return;
+          }
+          var html = '';
+          result.users.forEach(function(user) {
+            var isOwner = user.role === 'オーナー';
+            var roleColor = isOwner ? '#e65100' : (user.role.indexOf('Admin') !== -1 ? '#6a1b9a' : '#2e7d32');
+            var roleBg = isOwner ? '#fff3e0' : (user.role.indexOf('Admin') !== -1 ? '#f3e5f5' : '#e8f5e9');
+            var eName = escapeHtml_(user.name || '（名前未登録）');
+            var eRole = escapeHtml_(user.role);
+            var eEmailAttr = escapeHtml_(user.email);
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 6px;border-bottom:1px solid #f0f0f0;">' +
+              '<div style="overflow:hidden;">' +
+              '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + eName + '</div>' +
+              '</div>' +
+              '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:8px;">' +
+              '<span style="font-size:10px;background:' + roleBg + ';color:' + roleColor + ';padding:2px 7px;border-radius:10px;white-space:nowrap;">' + eRole + '</span>' +
+              (!isOwner ? '<button onclick="removeAllowedUser(\'' + eEmailAttr + '\')" style="padding:4px 8px;background:#dc3545;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;min-height:32px;">削除</button>' : '') +
+              '</div>' +
+              '</div>';
+          });
+          document.getElementById('allowedUsersList').innerHTML = html;
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('allowedUsersList').innerHTML = '<p style="color:red;font-size:13px;">❌ エラー: ' + err + '</p>';
+        })
+        .getAllowedUsers();
+    }
+
+    function removeAllowedUser(email) {
+      appConfirm(email + ' のアクセスを削除しますか？\n\n※ GoogleDriveフォルダの共有も解除されます').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('allowedUsersMessage', '✅ ' + result.message, 'success');
+              loadAllowedUsers();
+              loadCampusNotificationRouting();
+            } else {
+              showMessage('allowedUsersMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('allowedUsersMessage', '❌ エラー: ' + err, 'error');
+          })
+          .removeUserAccess(email);
+      });
+    }
+    
+    function displayAdminsList(emails) {
+      var container = document.getElementById('adminsList');
+      var html = '';
+      
+      emails.forEach(function(email) {
+        html += '<div class="user-item">' +
+                '<div>🔐 ' + escapeHtml_(email) + '</div>' +
+                '</div>';
+      });
+      
+      container.innerHTML = html || '<p style="text-align: center; color: #999;">Admin がいません</p>';
+    }
+    
+    function addAdmin() {
+      var email = document.getElementById('newAdminEmail').value.trim();
+      
+      if (!email) {
+        showMessage('adminMessage', '❌ メールアドレスを入力してください', 'error');
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            showMessage('adminMessage', '✓ Admin を追加しました', 'success');
+            document.getElementById('newAdminEmail').value = '';
+            loadUsersList();
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ エラーが発生しました: ' + err, 'error');
+        })
+        .addAdminEmail(email);
+    }
+    
+    function removeAdmin(email) {
+      appConfirm('この Admin を削除しますか？\n' + email).then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('adminMessage', '✓ Admin を削除しました', 'success');
+              loadUsersList();
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ エラーが発生しました: ' + err, 'error');
+          })
+          .removeAdminEmail(email);
+      });
+    }
+
+    // ===== 📬 通知設定（ユーザー設定画面用） =====
+
+    function loadNotificationSettings() {
+      // 事前取得済みのキャッシュがあれば即時表示（通信なし）
+      if (preloadedNotificationSettings !== null) {
+        applyNotificationSettingsUI(preloadedNotificationSettings);
+        return;
+      }
+      // キャッシュ未取得の場合はバックエンドから取得
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedNotificationSettings = result;
+          applyNotificationSettingsUI(result);
+        })
+        .withFailureHandler(function(err) {
+          console.error('通知設定読み込みエラー:', err);
+        })
+        .getNotificationSettings();
+    }
+
+    function applyNotificationSettingsUI(result) {
+      if (!result || !result.success) return;
+      var section = document.getElementById('notificationSettingsSection');
+      if (!section) return;
+
+      // セクションを常に表示する
+      section.style.display = '';
+
+      // LINE登録状態を表示
+      var statusBox = document.getElementById('lineRegistrationStatus');
+      if (statusBox) {
+        if (result.lineRegistered) {
+          statusBox.style.background = '#e8f5e9';
+          statusBox.innerHTML = '<p style="margin:0;font-size:13px;color:#2e7d32;"><strong>✅ LINE登録済み</strong>（ID: ' + result.lineUserIdMasked + '）<br><small style="opacity:0.8;">LINEでの通知を受け取る準備ができています</small></p>';
+        } else {
+          statusBox.style.background = '#fff3e0';
+          statusBox.innerHTML = '<p style="margin:0;font-size:13px;color:#e65100;"><strong>⏳ LINE未登録</strong><br><small style="opacity:0.8;">LINEで通知を受け取るには、下の手順でID登録が必要です</small></p>';
+        }
+      }
+
+      // お問い合わせ転送通知行：isEligible の人のみ表示
+      var inquiryRow = document.getElementById('inquiryNotifRow');
+      if (inquiryRow) {
+        inquiryRow.style.display = result.isEligible ? '' : 'none';
+        if (result.isEligible) {
+          // 通知方法ラジオボタンを設定
+          var method = result.method || 'gmail';
+          var radio = document.querySelector('input[name="notificationMethod"][value="' + method + '"]');
+          if (radio) radio.checked = true;
+          // Gmail通知先メール選択を設定
+          updateNotifEmailSelect_(result.emails || [], result.notificationEmail || '', method);
+        }
+      }
+
+      // LINE未登録かつLINE選択時はガイドを表示
+      updateLineGuideVisibility(result.lineRegistered);
+
+      // メールアドレスのヒントを設定
+      var emailHint = document.getElementById('notifEmailHint');
+      if (emailHint) emailHint.textContent = result.registeredEmail || 'your@email.com';
+    }
+
+    // Gmail通知先メール選択欄を更新する
+    function updateNotifEmailSelect_(emails, currentEmail, method) {
+      var row = document.getElementById('notifEmailSelectRow');
+      if (!row) return;
+      // メールが1件以下 or Gmail以外の方法ならセレクトを非表示
+      var showSelect = (method === 'gmail' || method === 'both') && emails.length > 1;
+      row.style.display = showSelect ? '' : 'none';
+      if (!showSelect) return;
+      var sel = document.getElementById('notifEmailSelect');
+      if (!sel) return;
+      sel.innerHTML = '';
+      emails.forEach(function(e) {
+        var opt = document.createElement('option');
+        opt.value = e;
+        opt.textContent = e;
+        if (e === currentEmail) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    function updateLineGuideVisibility(lineRegistered) {
+      // 通知方法の選択に応じてLINE登録ガイドを表示/非表示
+      var selected = document.querySelector('input[name="notificationMethod"]:checked');
+      var method = selected ? selected.value : 'gmail';
+      var guide = document.getElementById('lineRegistrationGuide');
+      if (!guide) return;
+      var needsLine = (method === 'line' || method === 'both');
+      guide.style.display = (!lineRegistered && needsLine) ? '' : 'none';
+    }
+
+    // 通知方法のラジオボタン変更時にガイド・メール選択欄を更新
+    document.addEventListener('change', function(e) {
+      if (e.target && e.target.name === 'notificationMethod') {
+        var lineStatusBox = document.getElementById('lineRegistrationStatus');
+        var isRegistered = lineStatusBox && lineStatusBox.style.background === 'rgb(232, 245, 233)';
+        updateLineGuideVisibility(isRegistered);
+        // メール選択欄の表示切り替え
+        if (preloadedNotificationSettings && preloadedNotificationSettings.emails) {
+          var sel = document.getElementById('notifEmailSelect');
+          var currentEmail = sel ? sel.value : (preloadedNotificationSettings.notificationEmail || '');
+          updateNotifEmailSelect_(preloadedNotificationSettings.emails, currentEmail, e.target.value);
+        }
+      }
+    });
+
+    function saveNotificationSettings() {
+      var selected = document.querySelector('input[name="notificationMethod"]:checked');
+      if (!selected) return;
+      var method = selected.value;
+      var msgSpan = document.getElementById('notificationMessage');
+      if (msgSpan) { msgSpan.style.color = '#888'; msgSpan.textContent = '保存中...'; }
+      // Gmail通知先メールアドレス（複数登録時のみ選択可能）
+      var sel = document.getElementById('notifEmailSelect');
+      var notifEmail = sel && sel.style.display !== 'none' ? sel.value : '';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (msgSpan) {
+            if (result.success) {
+              preloadedNotificationSettings = null; // キャッシュクリア
+              msgSpan.style.color = '#2e7d32';
+              msgSpan.textContent = '✓ 保存しました';
+              setTimeout(function() { msgSpan.style.color = '#888'; msgSpan.textContent = '変更は自動で保存されます'; }, 1800);
+            } else {
+              msgSpan.style.color = '#c62828';
+              msgSpan.textContent = '❌ ' + result.error;
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (msgSpan) { msgSpan.style.color = '#c62828'; msgSpan.textContent = '❌ 保存失敗'; }
+        })
+        .updateNotificationSettings(method, notifEmail);
+    }
+
+    // ===== 📩 LINEスケジューラー通知設定 =====
+
+    var preloadedLineSchedulerNotifPrefs = null;
+
+    function loadLineSchedulerNotifPrefs() {
+      if (preloadedLineSchedulerNotifPrefs !== null) {
+        applyLineSchedulerNotifUI(preloadedLineSchedulerNotifPrefs);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          preloadedLineSchedulerNotifPrefs = result;
+          applyLineSchedulerNotifUI(result);
+        })
+        .withFailureHandler(function(err) { console.error('LINE通知設定読み込みエラー:', err); })
+        .getLineSchedulerNotifPrefs();
+    }
+
+    function applyLineSchedulerNotifUI(result) {
+      if (!result || !result.success) return;
+      var eligible = result.eligible || {};
+      var prefs = result.prefs || {};
+      var anyEligible = eligible.meeting || eligible.report || eligible.shitsucho;
+
+      // LINEスケジューラーブロックの表示
+      var block = document.getElementById('lineNotifSchedulerBlock');
+      if (block) block.style.display = anyEligible ? '' : 'none';
+
+      // 各種別行の表示とラジオ設定
+      var rowIds = { meeting: 'lineNotifMeetingRow', report: 'lineNotifReportRow', shitsucho: 'lineNotifShitsuchoRow' };
+      ['meeting', 'report', 'shitsucho'].forEach(function(type) {
+        var rowEl = document.getElementById(rowIds[type]);
+        if (!rowEl) return;
+        rowEl.style.display = eligible[type] ? '' : 'none';
+        if (eligible[type]) {
+          var val = prefs[type] || 'line';
+          var radio = document.querySelector('input[name="notifPref_' + type + '"][value="' + val + '"]');
+          if (radio) radio.checked = true;
+        }
+      });
+    }
+
+    function saveLineSchedulerNotifPref(type) {
+      var selected = document.querySelector('input[name="notifPref_' + type + '"]:checked');
+      if (!selected) return;
+      var method = selected.value;
+      var msgSpan = document.getElementById('lineNotifMsg_' + type);
+      if (msgSpan) { msgSpan.style.color = '#888'; msgSpan.textContent = '保存中...'; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (msgSpan) {
+            if (result.success) {
+              msgSpan.style.color = '#2e7d32';
+              msgSpan.textContent = '✓ 保存しました';
+              preloadedLineSchedulerNotifPrefs = null;
+              setTimeout(function() { msgSpan.style.color = '#888'; msgSpan.textContent = '変更は自動で保存されます'; }, 1800);
+            } else {
+              msgSpan.style.color = '#c62828';
+              msgSpan.textContent = '❌ ' + result.error;
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (msgSpan) { msgSpan.style.color = '#c62828'; msgSpan.textContent = '❌ 保存失敗'; }
+        })
+        .updateLineSchedulerNotifPref(type, method);
+    }
+
+    // 校舎ごとの通知振り分け設定を読み込んで表示する
+    function loadCampusNotificationRouting() {
+      var container = document.getElementById('campusRoutingList');
+      if (!container) return;
+      container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">読み込み中...</p>';
+
+      // 振り分け設定と LINE 登録済みユーザーを並行取得
+      var routingData = null;
+      var registeredData = null;
+
+      function tryRender() {
+        if (routingData === null || registeredData === null) return;
+
+        // LINE 登録済みユーザーの一覧（teacherId → 表示情報 のマップを作成）
+        var registeredIds = registeredData.success ? registeredData.users.map(function(u) { return u.teacherId; }) : [];
+        var registeredInfoMap = {};
+        if (registeredData.success) {
+          registeredData.users.forEach(function(u) {
+            registeredInfoMap[u.teacherId] = { name: u.name || '', email: u.email || '' };
+          });
+        }
+
+        if (!routingData.success || !routingData.routing || routingData.routing.length === 0) {
+          container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">校舎が登録されていません</p>';
+          return;
+        }
+
+        var html = '';
+        routingData.routing.forEach(function(campus) {
+          var eCampusName = escapeHtml_(campus.name);
+          var eCampusCode = escapeHtml_(campus.code);
+          html += '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:12px;">' +
+            '<div style="font-weight:600;font-size:14px;margin-bottom:10px;">🏫 ' + eCampusName + ' <span style="color:#999;font-size:11px;">（コード: ' + eCampusCode + '）</span></div>';
+
+          // 現在の担当者一覧（teacherIds）
+          var ids = campus.teacherIds || [];
+          if (ids.length === 0) {
+            html += '<p style="font-size:12px;color:#bbb;margin:0 0 10px 0;">担当者未設定</p>';
+          } else {
+            ids.forEach(function(tid) {
+              var info = registeredInfoMap[tid] || {};
+              var userLabel = info.name ? escapeHtml_(info.name) : '（名前未登録）';
+              html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:6px 8px;background:#f5f5f5;border-radius:6px;">' +
+                '<span style="flex:1;font-size:13px;">👤 ' + userLabel + '</span>' +
+                '<button onclick="removeCampusRoutingMember(\'' + eCampusCode + '\',\'' + escapeHtml_(tid) + '\')" ' +
+                'style="padding:3px 8px;background:#dc3545;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;min-height:28px;">削除</button>' +
+                '</div>';
+            });
+          }
+
+          // 追加フォーム（LINE登録済みのうち未追加の人のみ表示）
+          var candidates = registeredIds.filter(function(tid) {
+            return ids.indexOf(tid) === -1;
+          });
+
+          if (candidates.length > 0) {
+            html += '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;">' +
+              '<select id="addMember_' + eCampusCode + '" style="flex:1;padding:7px;border:1px solid #ccc;border-radius:6px;font-size:13px;">';
+            candidates.forEach(function(tid) {
+              var info = registeredInfoMap[tid] || {};
+              var optLabel = info.name ? escapeHtml_(info.name) : '（名前未登録）';
+              html += '<option value="' + escapeHtml_(tid) + '">' + optLabel + '</option>';
+            });
+            html += '</select>' +
+              '<button onclick="addCampusRoutingMember(\'' + eCampusCode + '\')" ' +
+              'style="padding:7px 12px;background:var(--theme-color);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">➕ 追加</button>' +
+              '</div>';
+          } else {
+            html += '<p style="font-size:11px;color:#aaa;margin:8px 0 0 0;">追加できる担当者がいません（すべてのスタッフが追加済みです）</p>';
+          }
+
+          html += '</div>';
+        });
+
+        container.innerHTML = html;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) { routingData = result; tryRender(); })
+        .withFailureHandler(function(err) { routingData = { success: false, error: err }; tryRender(); })
+        .getCampusNotificationRouting();
+
+      google.script.run
+        .withSuccessHandler(function(result) { registeredData = result; tryRender(); })
+        .withFailureHandler(function(err) { registeredData = { success: false, users: [] }; tryRender(); })
+        .getLineRegisteredUsers();
+    }
+
+    // 指定校舎に担当者を追加する
+    function addCampusRoutingMember(campusCode) {
+      var select = document.getElementById('addMember_' + campusCode);
+      if (!select || !select.value) return;
+      var teacherId = select.value;
+
+      // 現在の設定を読み込んでから追加する
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) { appAlert('❌ 読み込みに失敗しました: ' + result.error); return; }
+          var campus = result.routing.find(function(c) { return c.code === campusCode; });
+          if (!campus) { appAlert('❌ 校舎が見つかりませんでした'); return; }
+          var newIds = (campus.teacherIds || []).concat([teacherId]);
+          google.script.run
+            .withSuccessHandler(function(r) {
+              if (r.success) { loadCampusNotificationRouting(); }
+              else { appAlert('❌ ' + r.error); }
+            })
+            .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+            .updateCampusNotificationRouting(campusCode, newIds);
+        })
+        .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+        .getCampusNotificationRouting();
+    }
+
+    // 指定校舎から担当者を削除する
+    function removeCampusRoutingMember(campusCode, teacherId) {
+      appConfirm('この担当者を通知先から外しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (!result.success) { appAlert('❌ 読み込みに失敗しました: ' + result.error); return; }
+            var campus = result.routing.find(function(c) { return c.code === campusCode; });
+            if (!campus) { appAlert('❌ 校舎が見つかりませんでした'); return; }
+            var newIds = (campus.teacherIds || []).filter(function(tid) { return tid !== teacherId; });
+            google.script.run
+              .withSuccessHandler(function(r) {
+                if (r.success) { loadCampusNotificationRouting(); }
+                else { appAlert('❌ ' + r.error); }
+              })
+              .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+              .updateCampusNotificationRouting(campusCode, newIds);
+          })
+          .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+          .getCampusNotificationRouting();
+      });
+    }
+
+    // 権限の再承認URLを取得して新しいタブで開く
+    function reauthorizeApp() {
+      var btn = document.getElementById('btnReAuth');
+      if (btn) btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (btn) btn.disabled = false;
+          if (result.success && result.url) {
+            window.open(result.url, '_blank');
+            document.getElementById('formEmailTriggerMessage').innerHTML =
+              '<span style="color:#1565C0">🔑 承認ページを新しいタブで開きました。「許可」を押した後、このページに戻って「▶ 自動転送を開始する」を押してください。</span>';
+          } else {
+            document.getElementById('formEmailTriggerMessage').innerHTML =
+              '<span style="color:#c62828">❌ URLの取得に失敗しました: ' + (result.error || '') + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) btn.disabled = false;
+          document.getElementById('formEmailTriggerMessage').innerHTML =
+            '<span style="color:#c62828">❌ エラー: ' + err + '</span>';
+        })
+        .getReAuthorizationUrl();
+    }
+
+    // フォームメールフィルター設定を読み込んで入力欄にセットする
+    function loadFormEmailFilterSettings() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            var senderInput = document.getElementById('formEmailSender');
+            if (senderInput) senderInput.value = result.sender || '';
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('フィルター設定読み込みエラー:', err);
+        })
+        .getFormEmailFilterSettings();
+    }
+
+    // フォームメールフィルター設定を保存する
+    function saveFormEmailFilter() {
+      var sender = (document.getElementById('formEmailSender').value || '').trim();
+      var msgSpan = document.getElementById('formEmailFilterMessage');
+      msgSpan.innerHTML = '<span style="color:#1565C0">保存中...</span>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            msgSpan.innerHTML = '<span style="color:#2e7d32">✅ ' + result.message + '</span>';
+            // ステータス表示も更新
+            loadFormEmailTriggerStatus();
+          } else {
+            msgSpan.innerHTML = '<span style="color:#c62828">❌ ' + (result.error || '保存失敗') + '</span>';
+          }
+          setTimeout(function() { msgSpan.innerHTML = ''; }, 3000);
+        })
+        .withFailureHandler(function(err) {
+          msgSpan.innerHTML = '<span style="color:#c62828">❌ エラー: ' + err + '</span>';
+        })
+        .saveFormEmailFilterSettings(sender);
+    }
+
+    // フォームメール自動転送のトリガー状態を読み込んで表示する（権限バナーも表示判定）
+    function loadFormEmailTriggerStatus() {
+      var statusDiv = document.getElementById('formEmailTriggerStatus');
+      if (!statusDiv) return;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            // 権限バナーを非表示（正常動作時）
+            var banner = document.getElementById('reAuthBanner');
+            if (banner) banner.style.display = 'none';
+            if (result.active) {
+              statusDiv.style.background = '#e8f5e9';
+              statusDiv.style.color = '#2e7d32';
+              var senderVal = (document.getElementById('formEmailSender') || {}).value || 'noreply@web-cms.jp';
+              statusDiv.innerHTML = '✅ <strong>稼働中</strong> — 5分ごとに ' + (senderVal || 'noreply@web-cms.jp') + ' からのメールを自動チェックしています';
+            } else {
+              statusDiv.style.background = '#fff3e0';
+              statusDiv.style.color = '#e65100';
+              statusDiv.innerHTML = '⏸ <strong>停止中</strong> — 「自動転送を開始する」ボタンで有効にしてください';
+            }
+          } else {
+            // result.success=false（権限エラーをtry/catchで捕まえた場合）もバナーを表示
+            var banner = document.getElementById('reAuthBanner');
+            if (banner) banner.style.display = 'block';
+            statusDiv.innerHTML = '⚠️ 権限の承認が必要です（上の「🔑 権限を承認する」ボタンを押してください）';
+            statusDiv.style.background = '#fff3e0';
+            statusDiv.style.color = '#e65100';
+          }
+        })
+        .withFailureHandler(function(err) {
+          // 権限エラーの場合はバナーを表示
+          var banner = document.getElementById('reAuthBanner');
+          if (banner) banner.style.display = 'block';
+          statusDiv.innerHTML = '⚠️ 権限の承認が必要です（上の「🔑 権限を承認する」ボタンを押してください）';
+          statusDiv.style.background = '#fff3e0';
+          statusDiv.style.color = '#e65100';
+        })
+        .getFormEmailTriggerStatus();
+    }
+
+    // 自動転送を開始する
+    function startFormEmailTrigger() {
+      document.getElementById('btnStartTrigger').disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          document.getElementById('btnStartTrigger').disabled = false;
+          if (result.success) {
+            document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#2e7d32">✅ ' + result.message + '</span>';
+            loadFormEmailTriggerStatus();
+          } else {
+            document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('btnStartTrigger').disabled = false;
+          document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#c62828">❌ エラー: ' + err + '</span>';
+        })
+        .setupFormEmailTrigger();
+    }
+
+    // 自動転送を停止する
+    function stopFormEmailTrigger() {
+      appConfirm('自動転送を停止しますか？').then(function(ok) {
+        if (!ok) return;
+        document.getElementById('btnStopTrigger').disabled = true;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            document.getElementById('btnStopTrigger').disabled = false;
+            if (result.success) {
+              document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#e65100">⏸ ' + result.message + '</span>';
+              loadFormEmailTriggerStatus();
+            } else {
+              document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+            }
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('btnStopTrigger').disabled = false;
+            document.getElementById('formEmailTriggerMessage').innerHTML = '<span style="color:#c62828">❌ エラー: ' + err + '</span>';
+          })
+          .deleteFormEmailTrigger();
+      });
+    }
+
+    // 今すぐ手動でメールをチェックして振り分ける
+    function runFormEmailCheckNow() {
+      var msgDiv = document.getElementById('formEmailTriggerMessage');
+      msgDiv.innerHTML = '<span style="color:#1565C0">🔍 チェック中...</span>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            if (result.processed === 0) {
+              msgDiv.innerHTML = '<span style="color:#666">📭 未処理のフォームメールはありませんでした</span>';
+            } else {
+              msgDiv.innerHTML = '<span style="color:#2e7d32">✅ ' + result.processed + '件を振り分け送信しました（エラー: ' + result.errors + '件）</span>';
+            }
+          } else {
+            msgDiv.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          msgDiv.innerHTML = '<span style="color:#c62828">❌ エラー: ' + err + '</span>';
+        })
+        .checkAndForwardFormEmails();
+    }
+
+    // ===== 【LINE通知スケジューラー】 =====
+
+    var schedulerLineUsers = []; // LINE登録ユーザーキャッシュ
+    var schedulerInitialized = false;
+
+    // LINEスケジューラータブの初期化（初回のみ実行）
+    function initLineScheduler() {
+      var now = new Date();
+      var cy = now.getFullYear();
+      var cm = now.getMonth() + 1;
+      // スケジュール一覧の年月ドロップダウン初期化
+      var yearSel = document.getElementById('schedulerYear');
+      var monthSel = document.getElementById('schedulerMonth');
+      if (yearSel && yearSel.options.length === 0) {
+        for (var y = cy - 1; y <= cy + 1; y++) {
+          var opt = document.createElement('option');
+          opt.value = y; opt.textContent = y + '年';
+          if (y === cy) opt.selected = true;
+          yearSel.appendChild(opt);
+        }
+        for (var m = 1; m <= 12; m++) {
+          var opt2 = document.createElement('option');
+          opt2.value = m; opt2.textContent = m + '月';
+          if (m === cm) opt2.selected = true;
+          monthSel.appendChild(opt2);
+        }
+      }
+      // デフォルト設定の年月ドロップダウン初期化
+      var defYearSel = document.getElementById('defaultYear');
+      var defMonthSel = document.getElementById('defaultMonth');
+      if (defYearSel && defYearSel.options.length === 0) {
+        for (var dy = cy - 1; dy <= cy + 1; dy++) {
+          var dopt = document.createElement('option');
+          dopt.value = dy; dopt.textContent = dy + '年';
+          if (dy === cy) dopt.selected = true;
+          defYearSel.appendChild(dopt);
+        }
+        for (var dm = 1; dm <= 12; dm++) {
+          var dopt2 = document.createElement('option');
+          dopt2.value = dm; dopt2.textContent = dm + '月';
+          if (dm === cm) dopt2.selected = true;
+          defMonthSel.appendChild(dopt2);
+        }
+      }
+      loadSchedulerTriggerStatus();
+      loadSchedulerDefaultSettings();
+      loadScheduledMessages();
+    }
+
+    // トリガー状態を取得・表示する
+    function loadSchedulerTriggerStatus() {
+      var statusDiv = document.getElementById('schedulerTriggerStatus');
+      if (!statusDiv) return;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            if (result.active) {
+              statusDiv.style.background = '#e8f5e9';
+              statusDiv.innerHTML = '✅ <strong>稼働中</strong> — 1時間ごとに送信スケジュールを確認しています';
+            } else {
+              statusDiv.style.background = '#fff3e0';
+              statusDiv.innerHTML = '⏸ <strong>停止中</strong> — 自動送信は行われません';
+            }
+          } else {
+            statusDiv.innerHTML = '⚠️ 状態の取得に失敗しました';
+          }
+        })
+        .withFailureHandler(function(err) {
+          statusDiv.innerHTML = '❌ エラー: ' + err;
+        })
+        .getScheduledLineTriggerStatus();
+    }
+
+    // トリガーを開始する
+    function startSchedulerLineTrigger() {
+      document.getElementById('btnStartScheduler').disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          document.getElementById('btnStartScheduler').disabled = false;
+          var msg = document.getElementById('schedulerTriggerMessage');
+          if (result.success) {
+            msg.innerHTML = '<span style="color:#2e7d32">✅ ' + result.message + '</span>';
+            loadSchedulerTriggerStatus();
+          } else {
+            msg.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('btnStartScheduler').disabled = false;
+          document.getElementById('schedulerTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
+        })
+        .setupScheduledLineTrigger();
+    }
+
+    // トリガーを停止する
+    function stopSchedulerLineTrigger() {
+      appConfirm('自動送信を停止しますか？').then(function(ok) {
+        if (!ok) return;
+        document.getElementById('btnStopScheduler').disabled = true;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            document.getElementById('btnStopScheduler').disabled = false;
+            var msg = document.getElementById('schedulerTriggerMessage');
+            if (result.success) {
+              msg.innerHTML = '<span style="color:#e65100">⏸ ' + result.message + '</span>';
+              loadSchedulerTriggerStatus();
+            } else {
+              msg.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+            }
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('btnStopScheduler').disabled = false;
+            document.getElementById('schedulerTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
+          })
+          .deleteScheduledLineTrigger();
+      });
+    }
+
+    // デフォルト設定をロード・描画する（選択月のスケジュールデータを表示）
+    function loadSchedulerDefaultSettings() {
+      var container = document.getElementById('schedulerDefaultSettings');
+      if (!container) return;
+      container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">読み込み中...</p>';
+      var defYearSel = document.getElementById('defaultYear');
+      var defMonthSel = document.getElementById('defaultMonth');
+      var year = defYearSel ? parseInt(defYearSel.value) : new Date().getFullYear();
+      var month = defMonthSel ? parseInt(defMonthSel.value) : new Date().getMonth() + 1;
+      var messagesData = null;
+      var usersData = null;
+      function tryRender() {
+        if (messagesData === null || usersData === null) return;
+        schedulerLineUsers = usersData.success ? (usersData.users || []) : [];
+        renderSchedulerDefaults(messagesData.messages || [], schedulerLineUsers);
+      }
+      google.script.run
+        .withSuccessHandler(function(r) { messagesData = r; tryRender(); })
+        .withFailureHandler(function(e) { messagesData = { messages: [] }; tryRender(); })
+        .getScheduledLineMessages(year, month);
+      google.script.run
+        .withSuccessHandler(function(r) { usersData = r; tryRender(); })
+        .withFailureHandler(function(e) { usersData = { success: false, users: [] }; tryRender(); })
+        .getLineRegisteredUsers();
+    }
+
+    // デフォルト設定UIを種別ごとに描画する（選択月の実際のスケジュールデータを表示）
+    function renderSchedulerDefaults(messages, users) {
+      var container = document.getElementById('schedulerDefaultSettings');
+      if (!container) return;
+      var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡' };
+      // 種別ごとにインデックス化
+      var byType = {};
+      (messages || []).forEach(function(m) { byType[m.type] = m; });
+      var html = '';
+      ['shitsucho', 'meeting', 'report'].forEach(function(type) {
+        var m = byType[type];
+        var recipientsArr = m ? (m.recipients || []) : [];
+        var msgText = m ? (m.message || '') : '';
+        var existingId = m ? (m.id || '') : '';
+        var isSent = m && m.sent;
+        var sentBadge = isSent ? '<span style="font-size:11px;background:#e0e0e0;color:#757575;padding:2px 8px;border-radius:10px;margin-left:8px;">送信済み</span>' : '';
+        // 宛先チェックボックス
+        var chkHtml = '';
+        if (type === 'meeting' || type === 'report') {
+          chkHtml = '<p style="font-size:12px;color:#43a047;margin:0;">🌐 LINE登録済みユーザー全員に送信されます（個別選択不可）</p>';
+        } else if (users.length === 0) {
+          chkHtml = '<p style="font-size:12px;color:#bbb;margin:0;">LINE登録済みユーザーがいません</p>';
+        } else {
+          users.forEach(function(u) {
+            var checked = recipientsArr.indexOf(u.teacherId) >= 0 ? 'checked' : '';
+            var label = u.name ? escapeHtml_(u.name) + '（' + escapeHtml_(u.email) + '）' : escapeHtml_(u.email);
+            chkHtml += '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer;"><input type="checkbox" data-dtype="' + escapeHtml_(type) + '" data-teacherid="' + escapeHtml_(u.teacherId) + '" ' + checked + ' style="width:16px;height:16px;"> ' + label + '</label>';
+          });
+        }
+        html += '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:12px;">' +
+          '<div style="font-weight:600;font-size:14px;margin-bottom:10px;">' + typeLabels[type] + sentBadge + '</div>' +
+          (m ? '' : '<p style="font-size:12px;color:#f57c00;margin:0 0 10px 0;">⚠ このメッセージは8月にはありません</p>') +
+          '<div style="margin-bottom:10px;">' +
+          '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">宛先</label>' +
+          '<div style="max-height:100px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px;">' + chkHtml + '</div>' +
+          '</div>' +
+          '<div style="margin-bottom:10px;">' +
+          '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">メッセージ本文</label>' +
+          '<textarea id="defaultMsg_' + type + '" rows="4" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;">' + msgText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>' +
+          '</div>' +
+          (m ? '<button onclick="saveDefaultCard(\'' + type + '\', \'' + existingId + '\')" style="padding:6px 14px;background:var(--theme-color);color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">💾 保存</button>' : '') +
+          '<span id="schedulerDefaultMsg_' + type + '" style="margin-left:10px;font-size:12px;"></span>' +
+          '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    // デフォルト設定カードを保存する（指定月のスケジュールを更新）
+    function saveDefaultCard(type, existingId) {
+      var msgTextarea = document.getElementById('defaultMsg_' + type);
+      var recipients;
+      if (type === 'meeting' || type === 'report') {
+        recipients = ['__ALL__'];
+      } else {
+        var checkboxes = document.querySelectorAll('input[data-dtype="' + type + '"][data-teacherid]');
+        recipients = [];
+        checkboxes.forEach(function(cb) { if (cb.checked) recipients.push(cb.getAttribute('data-teacherid')); });
+      }
+      var message = msgTextarea ? msgTextarea.value : '';
+      var defYearSel = document.getElementById('defaultYear');
+      var defMonthSel = document.getElementById('defaultMonth');
+      var year = defYearSel ? parseInt(defYearSel.value) : new Date().getFullYear();
+      var month = defMonthSel ? parseInt(defMonthSel.value) : new Date().getMonth() + 1;
+      var mm = month < 10 ? '0' + month : '' + month;
+      var data = {
+        id: existingId || ('sch_' + year + mm + '_' + type),
+        type: type,
+        yearMonth: '' + year + mm,
+        recipients: recipients,
+        scheduledAt: '',  // 送信日時はバックエンドで管理（空の場合は上書きしない）
+        message: message
+      };
+      var msgSpan = document.getElementById('schedulerDefaultMsg_' + type);
+      if (msgSpan) msgSpan.textContent = '保存中...';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (msgSpan) msgSpan.innerHTML = result.success
+            ? '<span style="color:#2e7d32">✅ 保存しました</span>'
+            : '<span style="color:#c62828">❌ ' + result.error + '</span>';
+        })
+        .withFailureHandler(function(err) {
+          if (msgSpan) msgSpan.innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
+        })
+        .saveScheduledLineMessage(data);
+    }
+
+    // 選択年月のスケジュール一覧を読み込む
+    function loadScheduledMessages() {
+      var year = parseInt(document.getElementById('schedulerYear').value);
+      var month = parseInt(document.getElementById('schedulerMonth').value);
+      if (!year || !month) return;
+      var container = document.getElementById('scheduledMessagesTable');
+      container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            renderScheduledMessagesTable(result.messages);
+          } else {
+            container.innerHTML = '<p style="color:#c62828;font-size:13px;">❌ ' + result.error + '</p>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = '<p style="color:#c62828;font-size:13px;">❌ ' + err + '</p>';
+        })
+        .getScheduledLineMessages(year, month);
+    }
+
+    // スケジュールを再生成する（既存データを全削除して再作成）
+    function regenerateSchedule() {
+      var year = parseInt(document.getElementById('schedulerYear').value);
+      var month = parseInt(document.getElementById('schedulerMonth').value);
+      if (!year || !month) return;
+      appConfirm(year + '年' + month + '月のスケジュールを削除して再生成します。手動で編集した内容は失われます。よろしいですか？').then(function(ok) {
+        if (!ok) return;
+        var container = document.getElementById('scheduledMessagesTable');
+        container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">再生成中...</p>';
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              loadScheduledMessages();
+            } else {
+              container.innerHTML = '<p style="color:#c62828;font-size:13px;">❌ ' + result.error + '</p>';
+            }
+          })
+          .withFailureHandler(function(err) {
+            container.innerHTML = '<p style="color:#c62828;font-size:13px;">❌ ' + err + '</p>';
+          })
+          .resetAndRegenerateSchedule(year, month);
+      });
+    }
+
+    // スケジュール一覧テーブルを描画する
+    function renderScheduledMessagesTable(messages) {
+      var container = document.getElementById('scheduledMessagesTable');
+      if (!messages || messages.length === 0) {
+        container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">この月のスケジュールがありません</p>';
+        return;
+      }
+      var typeLabels = { shitsucho: '👔 室長用', shimurocho: '👔 室長用', meeting: '📢 全体ミーティング', report: '📝 回数報告書' };
+      var html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<tr style="background:#f5f5f5;font-weight:600;">' +
+        '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">種別</th>' +
+        '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">送信予定日時</th>' +
+        '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">宛先</th>' +
+        '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">メッセージ</th>' +
+        '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">状態</th>' +
+        '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">操作</th>' +
+        '</tr>';
+      messages.forEach(function(m) {
+        var typeLabel = typeLabels[m.type] || m.type;
+        var dtStr = '未設定';
+        if (m.scheduledAt) {
+          var s = m.scheduledAt.replace('T', ' ');
+          var dp = (s.split(' ')[0] || '').split('-');
+          var tp = (s.split(' ')[1] || '').split(':');
+          if (dp.length >= 3) {
+            var y = parseInt(dp[0]), mo = parseInt(dp[1]), d = parseInt(dp[2]);
+            var h = parseInt(tp[0] || '0'), mi = parseInt(tp[1] || '0');
+            var dow = ['日','月','火','水','木','金','土'][new Date(y, mo - 1, d).getDay()];
+            dtStr = y + '年' + mo + '月' + d + '日(' + dow + ') ' + h + ':' + (mi < 10 ? '0' + mi : mi);
+          }
+        }
+        var recipCount = (m.recipients || []).length;
+        var msgPreview = m.message ? escapeHtml_(m.message.slice(0, 30) + (m.message.length > 30 ? '…' : '')) : '（未設定）';
+        var sentBadge = m.sent
+          ? '<span style="padding:3px 8px;background:#e0e0e0;color:#666;border-radius:12px;font-size:11px;">✅ 送信済</span>'
+          : '<span style="padding:3px 8px;background:#e8f5e9;color:#2e7d32;border-radius:12px;font-size:11px;">⏳ 未送信</span>';
+        var ops = m.sent
+          ? '<span style="font-size:11px;color:#aaa;">—</span>'
+          : '<button onclick="openSchedulerEditModal(\'' + m.id + '\')" style="padding:4px 8px;background:#e8f0fe;color:#3c4f8a;border:1px solid #c5d0e6;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">編集</button>' +
+            '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
+            '<button onclick="deleteScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#fce4ec;color:#c62828;border:1px solid #ffab91;border-radius:4px;cursor:pointer;font-size:11px;">削除</button>';
+        html += '<tr style="border-bottom:1px solid #eee;">' +
+          '<td style="padding:10px;">' + typeLabel + '</td>' +
+          '<td style="padding:10px;white-space:nowrap;">' + dtStr + '</td>' +
+          '<td style="padding:10px;text-align:center;">' + recipCount + '人</td>' +
+          '<td style="padding:10px;max-width:200px;">' + msgPreview.replace(/\n/g, '↵') + '</td>' +
+          '<td style="padding:10px;text-align:center;">' + sentBadge + '</td>' +
+          '<td style="padding:10px;text-align:center;white-space:nowrap;">' + ops + '</td>' +
+          '</tr>';
+      });
+      html += '</table></div>';
+      container.innerHTML = html;
+    }
+
+    // 編集モーダルを開く
+    var schedulerEditMessages = []; // 現在表示中のスケジュールリスト
+    function openSchedulerEditModal(id) {
+      // 現在のスケジュールをリロードしてモーダルに反映
+      var year = parseInt(document.getElementById('schedulerYear').value);
+      var month = parseInt(document.getElementById('schedulerMonth').value);
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) return;
+          var m = result.messages.find(function(x) { return x.id === id; });
+          if (!m) return;
+          document.getElementById('schedulerEditId').value = m.id;
+          var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡' };
+          var msgType = m.type;
+          document.getElementById('schedulerEditTypeLabel').textContent = typeLabels[msgType] || msgType;
+          document.getElementById('schedulerEditTypeLabel').setAttribute('data-type', msgType);
+          // 日時セット（datetime-local形式: YYYY-MM-DDTHH:mm）
+          var dt = m.scheduledAt ? String(m.scheduledAt).slice(0, 16) : '';
+          document.getElementById('schedulerEditDatetime').value = dt;
+          // メッセージセット
+          document.getElementById('schedulerEditMessage').value = m.message || '';
+          // 宛先チェックボックス
+          var recipDiv = document.getElementById('schedulerEditRecipients');
+          if (msgType === 'meeting' || msgType === 'report') {
+            recipDiv.innerHTML = '<p style="font-size:12px;color:#43a047;margin:0;padding:4px 0;">🌐 LINE登録済みユーザー全員に送信されます（変更不可）</p>';
+          } else if (schedulerLineUsers.length === 0) {
+            recipDiv.innerHTML = '<p style="font-size:12px;color:#bbb;margin:0;">LINE登録済みユーザーがいません</p>';
+          } else {
+            var chkHtml = '';
+            schedulerLineUsers.forEach(function(u) {
+              var checked = (m.recipients || []).indexOf(u.teacherId) >= 0 ? 'checked' : '';
+              var label = u.name ? escapeHtml_(u.name) + '（' + escapeHtml_(u.email) + '）' : escapeHtml_(u.email);
+              chkHtml += '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;cursor:pointer;"><input type="checkbox" class="scheduler-edit-recip" data-teacherid="' + escapeHtml_(u.teacherId) + '" ' + checked + ' style="width:16px;height:16px;"> ' + label + '</label>';
+            });
+            recipDiv.innerHTML = chkHtml;
+          }
+          document.getElementById('schedulerEditMessage2').textContent = '';
+          document.getElementById('schedulerEditOverlay').style.display = 'block';
+          document.getElementById('schedulerEditModal').style.display = 'block';
+        })
+        .withFailureHandler(function(err) { appAlert('読み込みエラー: ' + err); })
+        .getScheduledLineMessages(year, month);
+    }
+
+    // 編集モーダルを閉じる
+    function closeSchedulerEditModal() {
+      document.getElementById('schedulerEditOverlay').style.display = 'none';
+      document.getElementById('schedulerEditModal').style.display = 'none';
+    }
+
+    // 編集モーダルから保存する
+    function saveSchedulerEditModal() {
+      var id = document.getElementById('schedulerEditId').value;
+      var dt = document.getElementById('schedulerEditDatetime').value;
+      var msg = document.getElementById('schedulerEditMessage').value;
+      if (!dt) { document.getElementById('schedulerEditMessage2').innerHTML = '<span style="color:#c62828">送信日時を設定してください</span>'; return; }
+      var msgDiv = document.getElementById('schedulerEditMessage2');
+      msgDiv.textContent = '保存中...';
+      // 年月・種別を id から取得
+      var yearMonth = id.replace('sch_','').slice(0,6);
+      var typeMatch = id.match(/_([a-z]+)$/);
+      var type = typeMatch ? typeMatch[1] : '';
+      var savedType = document.getElementById('schedulerEditTypeLabel').getAttribute('data-type') || type;
+      var recipients;
+      if (savedType === 'meeting' || savedType === 'report') {
+        recipients = ['__ALL__'];
+      } else {
+        var checkboxes = document.querySelectorAll('.scheduler-edit-recip');
+        recipients = [];
+        checkboxes.forEach(function(cb) { if (cb.checked) recipients.push(cb.getAttribute('data-teacherid')); });
+      }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            msgDiv.innerHTML = '<span style="color:#2e7d32">✅ 保存しました</span>';
+            setTimeout(function() { closeSchedulerEditModal(); loadScheduledMessages(); }, 800);
+          } else {
+            msgDiv.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          msgDiv.innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
+        })
+        .saveScheduledLineMessage({ id: id, type: type, yearMonth: yearMonth, recipients: recipients, scheduledAt: dt, message: msg });
+    }
+
+    // スケジュールを削除する
+    function deleteScheduledMsg(id) {
+      appConfirm('このスケジュールを削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) { loadScheduledMessages(); }
+            else { appAlert('❌ ' + result.error); }
+          })
+          .withFailureHandler(function(err) { appAlert('❌ ' + err); })
+          .deleteScheduledLineMessage(id);
+      });
+    }
+
+    // スケジュールを今すぐ送信する
+    function sendScheduledMsgNow(id) {
+      appConfirm('このメッセージを今すぐ送信しますか？送信済みとして記録されます。').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              appAlert('✅ ' + result.sentCount + '人に送信しました' + (result.failedRecipients && result.failedRecipients.length > 0 ? '\n⚠ 未送信: ' + result.failedRecipients.join(', ') : ''));
+              loadScheduledMessages();
+            } else {
+              appAlert('❌ ' + result.error);
+            }
+          })
+          .withFailureHandler(function(err) { appAlert('❌ ' + err); })
+          .sendScheduledLineMessageNow(id);
+      });
+    }
+
+    // ===== 【LINE通知スケジューラーここまで】 =====
+  // ===== 【11】ユーティリティ関数 =====
+/**
+ * メッセージ表示（統合版）
+ * @param {string} elementId - メッセージを表示するElement ID
+ * @param {string} message - メッセージテキスト
+ * @param {string} type - メッセージタイプ: 'success', 'error', 'info'
+ */
+function showMessage(elementId, message, type) {
+  var element = document.getElementById(elementId);
+  if (!element) return;
+  
+  var msgEl = document.createElement('div');
+  
+  // CSSクラスを使う場合（推奨）
+  msgEl.className = 'message ' + type;
+  msgEl.textContent = message;
+  
+  element.innerHTML = '';
+  element.appendChild(msgEl);
+  
+  // 5秒後に自動削除
+  setTimeout(function() {
+    if (msgEl.parentNode) {
+      msgEl.remove();
+    }
+  }, 5000);
+}
+
+    function formatDateForGoogle(date) {
+      var year = date.getFullYear();
+      var month = String(date.getMonth() + 1).padStart(2, '0');
+      var day = String(date.getDate()).padStart(2, '0');
+      return year + month + day;
+    }
+
+    function formatDateForICS(date) {
+      var year = date.getFullYear();
+      var month = String(date.getMonth() + 1).padStart(2, '0');
+      var day = String(date.getDate()).padStart(2, '0');
+      return year + month + day;
+    }
+
+    function parseDateString(dateStr) {
+      var match = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+      if (match) {
+        return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+      }
+      return null;
+    }
+
+    function formatDateTime(date) {
+      return date.getFullYear() + '年' + 
+             (date.getMonth() + 1) + '月' + 
+             date.getDate() + '日 ' +
+             date.getHours() + ':' + 
+             String(date.getMinutes()).padStart(2, '0');
+    }
+
+    function onError(error) {
+      console.error('エラー:', error);
+      showMessage('scheduleLoading', '❌ エラーが発生しました: ' + error, 'error');
+      // エラー時もスプラッシュを非表示にする
+      hideSplashScreen();
+    }
+
+    // ===== 【生徒一括インポート】 =====
+
+    // 学年名 → 学年コード変換マッピング
+    var GRADE_NAME_MAP = {
+      // 短縮形
+      '小1': '07', '小2': '08', '小3': '09', '小4': '10', '小5': '11', '小6': '12',
+      '中1': '13', '中2': '14', '中3': '15',
+      '高1': '16', '高2': '17', '高3': '18',
+      // 「小学○年」「中学○年」「高校○年」形式
+      '小学1年': '07', '小学2年': '08', '小学3年': '09', '小学4年': '10', '小学5年': '11', '小学6年': '12',
+      '中学1年': '13', '中学2年': '14', '中学3年': '15',
+      '高校1年': '16', '高校2年': '17', '高校3年': '18',
+      // 「小学○年生」「中学○年生」「高校○年生」形式
+      '小学1年生': '07', '小学2年生': '08', '小学3年生': '09', '小学4年生': '10', '小学5年生': '11', '小学6年生': '12',
+      '中学1年生': '13', '中学2年生': '14', '中学3年生': '15',
+      '高校1年生': '16', '高校2年生': '17', '高校3年生': '18',
+      // コード直接入力
+      '07':'07','08':'08','09':'09','10':'10','11':'11','12':'12',
+      '13':'13','14':'14','15':'15','16':'16','17':'17','18':'18'
+    };
+
+    /**
+     * 校舎名（またはコード）を校舎コードに変換する
+     * campusData（js-grades.html のグローバル変数）を逆引きして使用
+     */
+    function resolveCampusCode(campusStr) {
+      campusStr = campusStr.trim();
+      // 数字2桁のコードとして直接使えるか確認
+      if (/^\d{1,2}$/.test(campusStr)) {
+        var padded = campusStr.padStart(2, '0');
+        if (campusData && campusData[padded]) return padded;
+      }
+      // 名前で逆引き
+      if (campusData) {
+        var codes = Object.keys(campusData);
+        for (var i = 0; i < codes.length; i++) {
+          if (campusData[codes[i]] === campusStr) return codes[i];
+        }
+      }
+      return null;
+    }
+
+    /**
+     * 学年名（例: 中1）を学年コード（例: 13）に変換する
+     */
+    function resolveGradeCode(gradeStr) {
+      return GRADE_NAME_MAP[gradeStr.trim()] || null;
+    }
+
+    /**
+     * TSVテキストを生徒データ配列に変換する
+     * 各行: 校舎[TAB]学年[TAB]氏名
+     * @return {Array} [{campusCode, gradeCode, sei, mei, campusName, gradeName, raw, error}]
+     */
+    function parseTsvToStudents(tsv) {
+      var lines = tsv.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+      var results = [];
+      lines.forEach(function(line, idx) {
+        var cols = line.split('\t');
+        if (cols.length < 3) {
+          results.push({ raw: line, error: '列数が足りません（3列必要）' });
+          return;
+        }
+        var campusStr = cols[0].trim();
+        var gradeStr  = cols[1].trim();
+        var nameStr   = cols[2].trim();
+
+        var campusCode = resolveCampusCode(campusStr);
+        var gradeCode  = resolveGradeCode(gradeStr);
+
+        var nameParts = nameStr.split(/\s+/);
+        var sei = nameParts[0] || '';
+        var mei = nameParts.slice(1).join('') || '';
+
+        var error = null;
+        if (!campusCode) error = '校舎名「' + campusStr + '」が見つかりません';
+        else if (!gradeCode) error = '学年「' + gradeStr + '」が認識できません';
+        else if (!sei) error = '氏名が空です';
+
+        results.push({
+          raw: line,
+          campusStr: campusStr,
+          gradeStr: gradeStr,
+          campusCode: campusCode,
+          gradeCode: gradeCode,
+          campusName: campusCode ? (campusData[campusCode] || campusCode) : campusStr,
+          sei: sei,
+          mei: mei,
+          error: error
+        });
+      });
+      return results;
+    }
+
+    /**
+     * テキストエリアのTSVを解析してプレビューテーブルを表示する
+     */
+    function previewStudentImport() {
+      var tsv = document.getElementById('studentImportTextarea').value.trim();
+      var previewDiv = document.getElementById('studentImportPreview');
+      var resultDiv  = document.getElementById('studentImportResult');
+      var execBtn    = document.getElementById('studentImportExecBtn');
+      resultDiv.innerHTML = '';
+
+      if (!tsv) {
+        previewDiv.innerHTML = '<p style="color:#e53935;">データを貼り付けてください。</p>';
+        execBtn.style.display = 'none';
+        return;
+      }
+
+      var students = parseTsvToStudents(tsv);
+      var okCount  = students.filter(function(s) { return !s.error; }).length;
+      var ngCount  = students.length - okCount;
+
+      var html = '<p style="margin-bottom:8px; font-size:13px; color:#333;">'
+               + '<strong>' + students.length + '件</strong>のデータを読み込みました。'
+               + '登録可能: <strong style="color:#43a047;">' + okCount + '件</strong>'
+               + (ngCount > 0 ? '、スキップ（エラー）: <strong style="color:#e53935;">' + ngCount + '件</strong>' : '')
+               + '</p>';
+
+      html += '<div style="overflow-x:auto;">'
+            + '<table style="width:100%; border-collapse:collapse; font-size:13px;">'
+            + '<thead><tr style="background:#f0f4f8; text-align:left;">'
+            + '<th style="padding:6px 10px; border-bottom:2px solid #ddd;">校舎</th>'
+            + '<th style="padding:6px 10px; border-bottom:2px solid #ddd;">学年</th>'
+            + '<th style="padding:6px 10px; border-bottom:2px solid #ddd;">姓</th>'
+            + '<th style="padding:6px 10px; border-bottom:2px solid #ddd;">名</th>'
+            + '<th style="padding:6px 10px; border-bottom:2px solid #ddd;">状態</th>'
+            + '</tr></thead><tbody>';
+
+      students.forEach(function(s) {
+        var rowBg = s.error ? '#fff8f8' : 'white';
+        var statusHtml = s.error
+          ? '<span style="color:#e53935;">⚠️ ' + s.error + '</span>'
+          : '<span style="color:#43a047;">✓ 登録予定</span>';
+        html += '<tr style="background:' + rowBg + '; border-bottom:1px solid #eee;">'
+              + '<td style="padding:6px 10px;">' + (s.campusName || s.campusStr || '') + '</td>'
+              + '<td style="padding:6px 10px;">' + (s.gradeStr || '') + '</td>'
+              + '<td style="padding:6px 10px;">' + (s.sei || '') + '</td>'
+              + '<td style="padding:6px 10px;">' + (s.mei || '') + '</td>'
+              + '<td style="padding:6px 10px;">' + statusHtml + '</td>'
+              + '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+      previewDiv.innerHTML = html;
+      execBtn.style.display = okCount > 0 ? 'inline-block' : 'none';
+    }
+
+    /**
+     * インポートを実行してバックエンドに送信する
+     */
+    function executeStudentImport() {
+      var tsv = document.getElementById('studentImportTextarea').value.trim();
+      var resultDiv = document.getElementById('studentImportResult');
+      var execBtn   = document.getElementById('studentImportExecBtn');
+
+      if (!tsv) return;
+
+      var students = parseTsvToStudents(tsv).filter(function(s) { return !s.error; });
+      if (students.length === 0) {
+        resultDiv.innerHTML = '<p style="color:#e53935;">登録可能なデータがありません。</p>';
+        return;
+      }
+
+      var importYear = parseInt(document.getElementById('studentImportYear').value, 10) || null;
+
+      var payload = students.map(function(s) {
+        return { campusCode: s.campusCode, gradeCode: s.gradeCode, sei: s.sei, mei: s.mei };
+      });
+
+      execBtn.disabled = true;
+      execBtn.textContent = '⏳ 登録中…';
+      resultDiv.innerHTML = '<p style="color:#666; font-size:13px;">登録処理中です。少々お待ちください…</p>';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          execBtn.disabled = false;
+          execBtn.textContent = '✅ インポート実行';
+          if (!res.success) {
+            resultDiv.innerHTML = '<p style="color:#e53935;">❌ エラー: ' + res.error + '</p>';
+            return;
+          }
+          var msg = '<div style="background:#e8f5e9; border-radius:8px; padding:15px; border-left:4px solid #43a047;">'
+                  + '<strong>✅ インポート完了！</strong><br>'
+                  + '登録: <strong>' + res.savedCount + '件</strong>'
+                  + '　スキップ（重複）: ' + res.skippedCount + '件';
+          if (res.errors && res.errors.length > 0) {
+            msg += '<ul style="margin-top:8px; font-size:12px; color:#e53935;">';
+            res.errors.forEach(function(e) {
+              msg += '<li>' + e.name + ': ' + e.reason + '</li>';
+            });
+            msg += '</ul>';
+          }
+          msg += '</div>';
+          resultDiv.innerHTML = msg;
+          // テキストエリアとプレビューをリセット
+          document.getElementById('studentImportTextarea').value = '';
+          document.getElementById('studentImportPreview').innerHTML = '';
+          document.getElementById('studentImportExecBtn').style.display = 'none';
+        })
+        .withFailureHandler(function(err) {
+          execBtn.disabled = false;
+          execBtn.textContent = '✅ インポート実行';
+          resultDiv.innerHTML = '<p style="color:#e53935;">❌ エラーが発生しました: ' + err + '</p>';
+        })
+        .bulkImportStudents(JSON.stringify(payload), importYear);
+    }
+
+    // ===== 【成績一括インポート】 =====
+
+    /**
+     * TSVテキストを成績データ配列に変換する
+     * 各行: テスト名[TAB]校舎[TAB]学年[TAB]氏名[TAB]国語[TAB]社会[TAB]数学[TAB]理科[TAB]英語[TAB]合計点
+     */
+    function parseTsvToGrades(tsv) {
+      var lines = tsv.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+      var results = [];
+      lines.forEach(function(line) {
+        var cols = line.split('\t');
+        if (cols.length < 9) {
+          results.push({ raw: line, error: '列数が足りません（10列必要）' });
+          return;
+        }
+        var testName   = cols[0].trim();
+        var campusStr  = cols[1].trim();
+        var gradeStr   = cols[2].trim();
+        var nameStr    = cols[3].trim();
+        var kokugo     = cols[4].trim();
+        var shakai     = cols[5].trim();
+        var sugaku     = cols[6].trim();
+        var rika       = cols[7].trim();
+        var eigo       = cols[8].trim();
+        var gokei      = cols[9] ? cols[9].trim() : '';
+
+        var campusCode = resolveCampusCode(campusStr);
+        var gradeCode  = resolveGradeCode(gradeStr);
+        var fullName   = nameStr.replace(/\s+/g, '');
+
+        var error = null;
+        if (!testName)    error = 'テスト名が空です';
+        else if (!campusCode) error = '校舎名「' + campusStr + '」が見つかりません';
+        else if (!gradeCode)  error = '学年「' + gradeStr + '」が認識できません';
+        else if (!fullName)   error = '氏名が空です';
+
+        results.push({
+          raw: line,
+          testName: testName,
+          campusStr: campusStr,
+          gradeStr: gradeStr,
+          campusCode: campusCode,
+          gradeCode: gradeCode,
+          campusName: campusCode ? (campusData[campusCode] || campusCode) : campusStr,
+          name: fullName,
+          kokugo: kokugo, shakai: shakai, sugaku: sugaku, rika: rika, eigo: eigo, gokei: gokei,
+          error: error
+        });
+      });
+      return results;
+    }
+
+    /**
+     * 成績データのプレビューを表示する
+     */
+    function previewGradeImport() {
+      var tsv = document.getElementById('gradeImportTextarea').value.trim();
+      var previewDiv = document.getElementById('gradeImportPreview');
+      var resultDiv  = document.getElementById('gradeImportResult');
+      var execBtn    = document.getElementById('gradeImportExecBtn');
+      resultDiv.innerHTML = '';
+
+      if (!tsv) {
+        previewDiv.innerHTML = '<p style="color:#e53935;">データを貼り付けてください。</p>';
+        execBtn.style.display = 'none';
+        return;
+      }
+
+      var grades = parseTsvToGrades(tsv);
+      var okCount = grades.filter(function(g) { return !g.error; }).length;
+      var ngCount = grades.length - okCount;
+
+      var html = '<p style="margin-bottom:8px; font-size:13px; color:#333;">'
+               + '<strong>' + grades.length + '件</strong>のデータを読み込みました。'
+               + '登録予定: <strong style="color:#43a047;">' + okCount + '件</strong>'
+               + (ngCount > 0 ? '、スキップ（エラー）: <strong style="color:#e53935;">' + ngCount + '件</strong>' : '')
+               + '</p>';
+
+      html += '<div style="overflow-x:auto;">'
+            + '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+            + '<thead><tr style="background:#f0f4f8; text-align:left;">'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">テスト名</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">校舎</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">学年</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">氏名</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">国</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">社</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">数</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">理</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">英</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">合計</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">状態</th>'
+            + '</tr></thead><tbody>';
+
+      grades.forEach(function(g) {
+        var rowBg = g.error ? '#fff8f8' : 'white';
+        var statusHtml = g.error
+          ? '<span style="color:#e53935; font-size:11px;">⚠️ ' + g.error + '</span>'
+          : '<span style="color:#43a047;">✓ 登録予定</span>';
+        html += '<tr style="background:' + rowBg + '; border-bottom:1px solid #eee;">'
+              + '<td style="padding:5px 8px;">' + (g.testName || '') + '</td>'
+              + '<td style="padding:5px 8px;">' + (g.campusName || g.campusStr || '') + '</td>'
+              + '<td style="padding:5px 8px;">' + (g.gradeStr || '') + '</td>'
+              + '<td style="padding:5px 8px;">' + (g.name || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.kokugo || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.shakai || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.sugaku || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.rika || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.eigo || '') + '</td>'
+              + '<td style="padding:5px 8px; text-align:right;">' + (g.gokei || '') + '</td>'
+              + '<td style="padding:5px 8px;">' + statusHtml + '</td>'
+              + '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+      previewDiv.innerHTML = html;
+      execBtn.style.display = okCount > 0 ? 'inline-block' : 'none';
+    }
+
+    /**
+     * 成績インポートを実行してバックエンドに送信する
+     */
+    function executeGradeImport() {
+      var tsv = document.getElementById('gradeImportTextarea').value.trim();
+      var resultDiv = document.getElementById('gradeImportResult');
+      var execBtn   = document.getElementById('gradeImportExecBtn');
+
+      if (!tsv) return;
+
+      var grades = parseTsvToGrades(tsv).filter(function(g) { return !g.error; });
+      if (grades.length === 0) {
+        resultDiv.innerHTML = '<p style="color:#e53935;">登録可能なデータがありません。</p>';
+        return;
+      }
+
+      var importYear = parseInt(document.getElementById('gradeImportYear').value, 10) || null;
+
+      var payload = grades.map(function(g) {
+        return {
+          testName: g.testName,
+          campusCode: g.campusCode,
+          gradeCode: g.gradeCode,
+          name: g.name,
+          kokugo: g.kokugo, shakai: g.shakai, sugaku: g.sugaku,
+          rika: g.rika, eigo: g.eigo, gokei: g.gokei
+        };
+      });
+
+      execBtn.disabled = true;
+      execBtn.textContent = '⏳ 登録中…';
+      resultDiv.innerHTML = '<p style="color:#666; font-size:13px;">登録処理中です。少々お待ちください…</p>';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          execBtn.disabled = false;
+          execBtn.textContent = '✅ インポート実行';
+          if (!res.success) {
+            resultDiv.innerHTML = '<p style="color:#e53935;">❌ エラー: ' + res.error + '</p>';
+            return;
+          }
+          var msg = '<div style="background:#e8f5e9; border-radius:8px; padding:15px; border-left:4px solid #43a047;">'
+                  + '<strong>✅ インポート完了！</strong><br>'
+                  + '登録: <strong>' + res.savedCount + '件</strong>'
+                  + '　スキップ: ' + res.skippedCount + '件';
+          if (res.errors && res.errors.length > 0) {
+            msg += '<ul style="margin-top:8px; font-size:12px; color:#e53935;">';
+            res.errors.forEach(function(e) {
+              msg += '<li>' + e.name + ': ' + e.reason + '</li>';
+            });
+            msg += '</ul>';
+          }
+          msg += '</div>';
+          resultDiv.innerHTML = msg;
+          document.getElementById('gradeImportTextarea').value = '';
+          document.getElementById('gradeImportPreview').innerHTML = '';
+          document.getElementById('gradeImportExecBtn').style.display = 'none';
+        })
+        .withFailureHandler(function(err) {
+          execBtn.disabled = false;
+          execBtn.textContent = '✅ インポート実行';
+          resultDiv.innerHTML = '<p style="color:#e53935;">❌ エラーが発生しました: ' + err + '</p>';
+        })
+        .bulkImportGrades(JSON.stringify(payload), importYear);
+    }
+</script>

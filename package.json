@@ -1,0 +1,14 @@
+{
+  "name": "s-quire-tests",
+  "private": true,
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "testMatch": ["**/__tests__/**/*.test.js"],
+    "testPathIgnorePatterns": ["/node_modules/", "__tests__/helpers/"]
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

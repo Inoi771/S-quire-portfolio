@@ -1,0 +1,1198 @@
+<script>
+    // ========================================
+    // 【外部チラシサブタブ（AI生成方式）】
+    // ========================================
+    // 講習管理 > 外部チラシタブ：Gemini AIでA4チラシHTML生成・プレビュー・PDF出力
+
+    // デバッグモード（trueで画面にトースト表示。調査完了後にfalseにする）
+    var FLYER_DEBUG = false;
+    function flyerDebug_(label, msg) {
+      if (!FLYER_DEBUG) return;
+      var text = '[' + label + '] ' + msg;
+      console.log(text);
+      if (typeof showToast === 'function') showToast(text, 'success');
+    }
+
+    // チラシ用カラーテーマ（講習種別ごと・バッジ色に使用）
+    var FLYER_THEMES = {
+      'spring': { main: '#E91E8C', label: '春期' },
+      'summer': { main: '#FF6B00', label: '夏期' },
+      'kiso1':  { main: '#0DAF6E', label: '基礎' },
+      'kiso2':  { main: '#0DAF6E', label: '基礎' },
+      'winter': { main: '#1565C0', label: '冬期' },
+      'nyushi': { main: '#4A148C', label: '入試' }
+    };
+
+    var flyerImageBase64 = null;      // 選択中の画像（base64 data URL）
+    var flyerImageCache  = {};        // fileId → base64 のキャッシュ
+    var flyerImageTags   = {};        // fileId → 説明タグ文字列のキャッシュ
+    var flyerImageList   = [];        // [{id, name, mimeType, tags}] 画像一覧キャッシュ
+
+    // 季節→画像タグ マッチングキーワード
+    var FLYER_SEASON_KEYWORDS = {
+      spring:  ['春', '桜', 'さくら', '新学期', '新生活', 'フレッシュ', '花', 'spring'],
+      summer:  ['夏', '海', '青空', 'ひまわり', '花火', '太陽', 'サマー', 'summer'],
+      winter:  ['冬', '雪', 'クリスマス', '受験', '年末', 'ウィンター', 'winter'],
+      general: ['塾', '勉強', '学習', '教室', '授業', 'テスト', '成績']
+    };
+    var flyerAiChatHistory = [];      // [{role:'user'|'assistant', text:'...'}]
+    var flyerAiCurrentHtml = null;    // 現在プレビュー中のHTML
+    var flyerAiSending = false;       // 送信中フラグ
+    var flyerEditModeActive = false;  // 直接編集モード
+
+    // 講習typeId → 季節キーのマッピング（seasonKey算出・画像自動選択に使用）
+    var TYPE_TEMPLATE_MAP = {
+      spring: 'spring', summer: 'summer', winter: 'winter',
+      kiso1: 'general', kiso2: 'general', nyushi: 'winter'
+    };
+
+    // ========== 操作方法モーダル ==========
+
+    /**
+     * チラシ操作方法モーダルを表示する
+     */
+    function showFlyerHelpModal() {
+      document.getElementById('flyerHelpOverlay').style.display = 'block';
+      document.getElementById('flyerHelpModal').style.display = 'flex';
+    }
+
+    /**
+     * チラシ操作方法モーダルを閉じる
+     */
+    function closeFlyerHelpModal() {
+      document.getElementById('flyerHelpOverlay').style.display = 'none';
+      document.getElementById('flyerHelpModal').style.display = 'none';
+    }
+
+    // ========== 初期化 ==========
+
+    /**
+     * AIチラシサブタブを初期化する
+     */
+    function initFlyerAi() {
+      // 講習バッジ更新
+      var badge = document.getElementById('flyer-lecture-badge-name');
+      if (badge) {
+        if (currentLectureId) {
+          var period = (lecturePeriods || []).find(function(lp) { return lp.id === currentLectureId; });
+          badge.textContent = period ? period.name : currentLectureId;
+          var typeId = currentLectureId.split('-').slice(1).join('-');
+          var theme = FLYER_THEMES[typeId];
+          var badgeEl = document.getElementById('flyer-lecture-badge');
+          if (theme && badgeEl) {
+            badgeEl.style.background = theme.main + '15';
+            badgeEl.style.borderColor = theme.main + '40';
+            badgeEl.style.color = theme.main;
+            badge.style.color = theme.main;
+          }
+        } else {
+          badge.textContent = '（未選択）';
+        }
+      }
+
+      // 校舎セレクト構築
+      buildFlyerAiCampusSelect();
+      // 画像リスト読み込み
+      loadFlyerImageList();
+    }
+
+    /**
+     * 校舎セレクトを構築する（「共通」選択肢 + buildCampusOptions）
+     */
+    function buildFlyerAiCampusSelect() {
+      var sel = document.getElementById('flyerAiCampusSelect');
+      if (!sel || !campusData) return;
+      var arr = Object.keys(campusData).map(function(code) {
+        return { code: code, name: campusData[code] };
+      });
+      var commonOpt = '<option value="">校舎を選択</option><option value="common">📋 共通</option>';
+      sel.innerHTML = commonOpt + buildCampusOptions(arr);
+    }
+
+    /**
+     * 校舎変更時：保存データをロードする
+     */
+    function onFlyerAiCampusChange() {
+      var campusCode = document.getElementById('flyerAiCampusSelect').value;
+      if (!campusCode || !currentLectureId) return;
+
+      // チャット・プレビューをクリア
+      flyerAiChatHistory = [];
+      flyerAiCurrentHtml = null;
+      var chatEl = document.getElementById('flyerAiChatMessages');
+      if (chatEl) chatEl.innerHTML = '';
+      var previewInner = document.getElementById('flyerAiPreviewInner');
+      if (previewInner) {
+        previewInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">⏳ 読み込み中...</div>';
+      }
+
+      // 保存データをロード
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success && result.html) {
+            flyerAiCurrentHtml = sanitizeFlyerHtml_(result.html);
+            flyerAiChatHistory = result.chatHistory || [];
+            // プレビュー表示
+            flyerDebug_('loadFlyerAiData', 'injectFlyerImage_呼び出し前 html長さ=' + (flyerAiCurrentHtml ? flyerAiCurrentHtml.length : 0));
+            if (previewInner) {
+              previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+              flyerDebug_('loadFlyerAiData', 'innerHTML設定完了');
+            } else {
+              flyerDebug_('loadFlyerAiData', '⚠ previewInner が見つかりません');
+            }
+            resizeFlyerAiPreview();
+            // チャット履歴復元
+            flyerAiChatHistory.forEach(function(item) {
+              renderFlyerAiChat_(item.role, item.text);
+            });
+          } else {
+            // 保存データなし
+            if (previewInner) {
+              previewInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;text-align:center;padding:20px;">AIに指示を送るとチラシが表示されます<br><span style="font-size:12px;color:#ccc;margin-top:8px;display:block;">例：「夏期講習のチラシを作って」</span></div>';
+            }
+            resizeFlyerAiPreview();
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('チラシAIデータ読み込み失敗:', err);
+          if (previewInner) {
+            previewInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;text-align:center;padding:20px;">AIに指示を送るとチラシが表示されます</div>';
+          }
+          resizeFlyerAiPreview();
+        })
+        .loadFlyerAiData(currentLectureId, campusCode);
+    }
+
+    // ========== チャット・AI生成 ==========
+
+    /**
+     * チャット入力をGeminiに送信してチラシHTMLを生成する
+     */
+    function sendFlyerAiMessage() {
+      if (flyerAiSending) return;
+      var input = document.getElementById('flyerAiChatInput');
+      var message = (input.value || '').trim();
+      if (!message) return;
+
+      if (!currentLectureId) { appAlert('講習が選択されていません。\n講習管理タブで講習を選択してください。'); return; }
+      var campusCode = document.getElementById('flyerAiCampusSelect').value;
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+
+      // 編集モード中なら手動変更を同期
+      if (flyerEditModeActive) { syncFlyerEdits_(); }
+
+      // 送信中UI
+      flyerAiSending = true;
+      input.value = '';
+      var sendBtn = document.getElementById('flyerAiSendBtn');
+      sendBtn.textContent = '⏳';
+      sendBtn.disabled = true;
+
+      // ユーザーバブル表示
+      renderFlyerAiChat_('user', message);
+
+      // コンテキスト収集
+      var typeId = currentLectureId ? currentLectureId.split('-').slice(1).join('-') : '';
+      var seasonKey = TYPE_TEMPLATE_MAP[typeId] || 'general';
+
+      collectFlyerAiContext_(campusCode, function(systemContext) {
+        // 画像未選択なら季節に合った画像を自動選択してから続行
+        autoSelectFlyerImage_(seasonKey, function() {
+          var hasImage = !!flyerImageBase64;
+          var selFileId = document.getElementById('flyer-image-select').value;
+          var params = {
+            userMessage: message,
+            chatHistory: flyerAiChatHistory.slice(-6).map(function(h) { return { role: h.role, text: h.text }; }),
+            systemContext: systemContext,
+            hasImage: hasImage,
+            imageTags: hasImage ? (flyerImageTags[selFileId] || '') : '',
+            currentHtml: flyerAiCurrentHtml || '',
+            seasonKey: seasonKey
+          };
+
+          // チャット履歴にユーザーメッセージ追加（メモリ上限50件）
+          flyerAiChatHistory.push({ role: 'user', text: message });
+          if (flyerAiChatHistory.length > 50) flyerAiChatHistory = flyerAiChatHistory.slice(-50);
+
+          google.script.run
+          .withSuccessHandler(function(result) {
+            flyerAiSending = false;
+            sendBtn.textContent = '送信';
+            sendBtn.disabled = false;
+            flyerDebug_('sendFlyerAiMessage', 'AI応答受信 success=' + result.success + ' html長さ=' + (result.html ? result.html.length : 0));
+
+            if (!result.success) {
+              renderFlyerAiChat_('error', result.error || 'エラーが発生しました');
+              return;
+            }
+
+            onFlyerAiResponse_(result);
+          })
+          .withFailureHandler(function(err) {
+            flyerAiSending = false;
+            sendBtn.textContent = '送信';
+            sendBtn.disabled = false;
+            renderFlyerAiChat_('error', 'エラーが発生しました。もう一度お試しください。');
+            console.error('チラシAI生成失敗:', err);
+          })
+          .generateFlyerWithAI(params);
+        }); // autoSelectFlyerImage_ callback
+      }); // collectFlyerAiContext_ callback
+    }
+
+    /**
+     * チェックボックスに応じて日程・料金データをテキスト化してコールバックに渡す
+     * @param {string} campusCode 校舎コード
+     * @param {Function} callback systemContextテキストを受け取るコールバック
+     */
+    function collectFlyerAiContext_(campusCode, callback) {
+      var includeSchedule = document.getElementById('flyerAiIncludeSchedule').checked;
+      var includePricing = document.getElementById('flyerAiIncludePricing').checked;
+
+      var context = '';
+
+      // 季節テーマはバックエンドが params.seasonKey から構築するため、ここでは注入しない
+
+      // 講習基本情報
+      if (currentLectureId) {
+        var period = (lecturePeriods || []).find(function(lp) { return lp.id === currentLectureId; });
+        if (period) {
+          context += '\n\n【講習情報】\n';
+          context += '講習名: ' + period.name + '\n';
+          if (period.startDate) context += '開始日: ' + period.startDate + '\n';
+          if (period.endDate) context += '終了日: ' + period.endDate + '\n';
+        }
+      }
+
+      // 校舎情報
+      if (campusCode === 'common') {
+        context += '対象: 全校舎共通\n';
+      } else if (campusData && campusData[campusCode]) {
+        context += '校舎: ' + campusData[campusCode] + '\n';
+      }
+
+      var remaining = 0;
+      var scheduleText = '';
+      var pricingText = '';
+
+      function finish() {
+        if (remaining > 0) return;
+        callback(context + scheduleText + pricingText);
+      }
+
+      // 日程データ（マークダウンテーブル形式）
+      if (includeSchedule && currentLectureId && campusCode !== 'common') {
+        remaining++;
+        google.script.run
+          .withSuccessHandler(function(entries) {
+            if (entries && entries.length > 0) {
+              scheduleText = '\n\n【講習日程データ】\n';
+              scheduleText += '以下のデータを見やすいテーブルでチラシに組み込んでください。\n';
+              // 学年でグルーピング → マークダウンテーブル
+              var byGrade = {};
+              entries.forEach(function(e) {
+                var key = e.grade || '不明';
+                if (!byGrade[key]) byGrade[key] = [];
+                byGrade[key].push({ date: e.date, time: e.startTime + '-' + e.endTime, subject: e.subject || '' });
+              });
+              Object.keys(byGrade).forEach(function(g) {
+                scheduleText += '\n' + g + ':\n';
+                scheduleText += '| 日付 | 時間 | 教科 |\n';
+                scheduleText += '|------|------|------|\n';
+                byGrade[g].forEach(function(item) {
+                  scheduleText += '| ' + item.date + ' | ' + item.time + ' | ' + item.subject + ' |\n';
+                });
+              });
+            }
+            remaining--;
+            finish();
+          })
+          .withFailureHandler(function() { remaining--; finish(); })
+          .getLectureScheduleEntries(currentLectureId, campusCode);
+      }
+
+      // 料金データ（マークダウンテーブル形式）
+      if (includePricing) {
+        remaining++;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success && result.data) {
+              var typeId = currentLectureId ? currentLectureId.split('-').slice(1).join('-') : '';
+              if (typeId && result.data[typeId]) {
+                var rows = result.data[typeId];
+                if (Array.isArray(rows) && rows.length > 0) {
+                  pricingText = '\n\n【講習別料金データ】\n';
+                  pricingText += '以下の料金データを見やすいテーブルでチラシに組み込んでください。\n';
+                  pricingText += '| 学年 | 内部生（税抜） | 外部生（税抜） |\n';
+                  pricingText += '|------|--------------|--------------|\n';
+                  rows.forEach(function(r) {
+                    pricingText += '| ' + (r.label || r.gradeKey || '') + ' | ¥' + (r.internal || 0).toLocaleString() + ' | ¥' + (r.external || 0).toLocaleString() + ' |\n';
+                  });
+                }
+              }
+            }
+            remaining--;
+            finish();
+          })
+          .withFailureHandler(function() { remaining--; finish(); })
+          .getLecturePricingConfig();
+      }
+
+      if (remaining === 0) finish();
+    }
+
+    /**
+     * Geminiレスポンスを処理してプレビュー・チャットを更新する
+     * @param {Object} result { success, html, explanation }
+     */
+    function onFlyerAiResponse_(result) {
+      var html = result.html;
+
+      // HTMLバリデーション（危険なタグ・属性を除去）
+      html = sanitizeFlyerHtml_(html);
+
+      // 画像プレースホルダー置換
+      flyerDebug_('onFlyerAiResponse_', 'injectFlyerImage_呼び出し前 html長さ=' + (html ? html.length : 0));
+      html = injectFlyerImage_(html);
+
+      // プレビュー更新
+      flyerAiCurrentHtml = sanitizeFlyerHtml_(result.html);  // サニタイズ済みオリジナル（プレースホルダー付き）を保持
+      var previewInner = document.getElementById('flyerAiPreviewInner');
+      if (previewInner) {
+        previewInner.innerHTML = html;
+        flyerDebug_('onFlyerAiResponse_', 'innerHTML設定完了 長さ=' + html.length);
+      } else {
+        flyerDebug_('onFlyerAiResponse_', '⚠ flyerAiPreviewInner が見つかりません');
+      }
+      resizeFlyerAiPreview();
+
+      // AIバブル表示
+      var explanation = result.explanation || 'チラシを生成しました。';
+      renderFlyerAiChat_('assistant', explanation);
+
+      // チャット履歴に追加
+      flyerAiChatHistory.push({ role: 'assistant', text: explanation });
+    }
+
+    /**
+     * AIが生成したHTMLから危険なタグ・属性を除去する（ホワイトリスト方式）
+     * @param {string} html 生のHTML文字列
+     * @return {string} サニタイズ済みHTML
+     */
+    function sanitizeFlyerHtml_(html) {
+      if (!html) return html;
+      var SAFE_TAGS = [
+        'div','span','p','br','hr','h1','h2','h3','h4','h5','h6',
+        'table','thead','tbody','tfoot','tr','th','td','caption','colgroup','col',
+        'ul','ol','li','dl','dt','dd',
+        'strong','em','b','i','u','s','sub','sup','small','mark',
+        'img','figure','figcaption','a',
+        'section','article','header','footer','main','nav','aside',
+        'blockquote','pre','code','abbr','cite','q'
+      ];
+      var SAFE_ATTRS = [
+        'style','class','id','src','alt','title','width','height',
+        'colspan','rowspan','align','valign','border','cellpadding','cellspacing',
+        'href','target','rel','data-placeholder'
+      ];
+      try {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        // 危険なタグを除去（script, iframe, object, embed, form, input, textarea, button, link, meta, base, svg内script）
+        var dangerous = doc.querySelectorAll('script,iframe,object,embed,form,input,textarea,button,link,meta,base,noscript,style');
+        for (var i = dangerous.length - 1; i >= 0; i--) {
+          // style タグは中身をインラインに移行不可のためそのまま許可（チラシレイアウトに必要）
+          if (dangerous[i].tagName === 'STYLE') continue;
+          dangerous[i].parentNode.removeChild(dangerous[i]);
+        }
+        // 全要素を走査してon*イベントハンドラー属性を除去
+        var allEls = doc.body.querySelectorAll('*');
+        for (var j = 0; j < allEls.length; j++) {
+          var el = allEls[j];
+          var attrs = el.attributes;
+          var toRemove = [];
+          for (var k = attrs.length - 1; k >= 0; k--) {
+            var attrName = attrs[k].name.toLowerCase();
+            // on* イベントハンドラーを除去
+            if (attrName.indexOf('on') === 0) {
+              toRemove.push(attrs[k].name);
+            }
+            // javascript: URLを除去
+            if ((attrName === 'href' || attrName === 'src') && /^\s*javascript:/i.test(attrs[k].value)) {
+              toRemove.push(attrs[k].name);
+            }
+          }
+          for (var r = 0; r < toRemove.length; r++) {
+            el.removeAttribute(toRemove[r]);
+          }
+        }
+        return doc.body.innerHTML;
+      } catch (e) {
+        console.error('sanitizeFlyerHtml_ エラー:', e);
+        return html;  // パース失敗時は元のHTMLを返す
+      }
+    }
+
+    /**
+     * {{IMAGE_PLACEHOLDER}} を実際のbase64画像に置換する
+     * @param {string} html チラシHTML
+     * @return {string} 画像置換済みHTML
+     */
+    function injectFlyerImage_(html) {
+      if (!html) return html;
+      var hadPlaceholder = /\{\{IMAGE_PLACEHOLDER\}\}/.test(html);
+      var result;
+      if (flyerImageBase64) {
+        result = html.replace(/\{\{IMAGE_PLACEHOLDER\}\}/g, flyerImageBase64);
+      } else {
+        // 画像なしの場合はプレースホルダーを空画像に
+        result = html.replace(/\{\{IMAGE_PLACEHOLDER\}\}/g, 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==');
+      }
+      // デバッグログ
+      var remainCheck = /\{\{IMAGE_PLACEHOLDER\}\}/.test(result) ? '残存あり（未置換）' : '残存なし（正常）';
+      flyerDebug_('injectFlyerImage_', 'PH検出=' + hadPlaceholder + ' base64=' + (flyerImageBase64 ? '有' : '無') + ' ' + remainCheck);
+      return result;
+    }
+
+    /**
+     * チャットバブルを追加する
+     * @param {string} role 'user' | 'assistant' | 'error'
+     * @param {string} text 表示テキスト
+     */
+    function renderFlyerAiChat_(role, text) {
+      var chatEl = document.getElementById('flyerAiChatMessages');
+      if (!chatEl) return;
+
+      var bubble = document.createElement('div');
+      var cssClass = role === 'user' ? 'flyer-ai-bubble-user' :
+                     role === 'error' ? 'flyer-ai-bubble-error' : 'flyer-ai-bubble-ai';
+      bubble.className = cssClass;
+      bubble.textContent = text;
+      chatEl.appendChild(bubble);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    /**
+     * プレビューをコンテナ幅に合わせてスケールする
+     */
+    function resizeFlyerAiPreview() {
+      var container = document.getElementById('flyerAiPreviewContainer');
+      var inner = document.getElementById('flyerAiPreviewInner');
+      if (!container || !inner) return;
+      var cw = container.clientWidth;
+      if (cw <= 0) return;
+      var scale = cw / 794;
+      inner.style.transform = 'scale(' + scale + ')';
+      container.style.height = (1123 * scale) + 'px';
+    }
+
+    // ========== 保存・読み込み ==========
+
+    /**
+     * 現在のチラシHTML＋会話履歴をバックエンドに保存する
+     */
+    function saveFlyerAiUI() {
+      if (!currentLectureId) { appAlert('講習が選択されていません。'); return; }
+      var campusCode = document.getElementById('flyerAiCampusSelect').value;
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+      if (!flyerAiCurrentHtml) { appAlert('まだチラシが生成されていません。'); return; }
+
+      // 編集モード中なら手動変更を同期
+      if (flyerEditModeActive) { syncFlyerEdits_(); }
+
+      var btn = document.getElementById('flyerAiSaveBtn');
+      btn.textContent = '⏳';
+      btn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.textContent = '💾 保存';
+          btn.disabled = false;
+          if (result.success) {
+            showToast('チラシを保存しました', 'success');
+          } else {
+            showToast('保存に失敗しました: ' + (result.error || ''), 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.textContent = '💾 保存';
+          btn.disabled = false;
+          showToast('保存に失敗しました', 'error');
+          console.error('チラシAI保存失敗:', err);
+        })
+        .saveFlyerAiData(currentLectureId, campusCode, flyerAiCurrentHtml, JSON.stringify(
+          flyerAiChatHistory.slice(-20).map(function(h) { return { role: h.role, text: h.text }; })
+        ));
+    }
+
+    /**
+     * チャット履歴とプレビューをリセットする（確認ダイアログ付き）
+     */
+    function clearFlyerAiChat() {
+      appConfirm('チャット履歴とプレビューをリセットしますか？\n（保存済みデータは消えません）').then(function(ok) {
+        if (!ok) return;
+        flyerAiChatHistory = [];
+        flyerAiCurrentHtml = null;
+        var chatEl = document.getElementById('flyerAiChatMessages');
+        if (chatEl) chatEl.innerHTML = '';
+        var previewInner = document.getElementById('flyerAiPreviewInner');
+        if (previewInner) {
+          previewInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;text-align:center;padding:20px;">AIに指示を送るとチラシが表示されます</div>';
+        }
+        resizeFlyerAiPreview();
+      });
+    }
+
+    // ========== 画像管理（既存関数を維持） ==========
+
+    /**
+     * Drive上のチラシ画像一覧を読み込んでセレクトを更新する
+     */
+    function loadFlyerImageList() {
+      var sel = document.getElementById('flyer-image-select');
+      sel.innerHTML = '<option value="">⏳ 読み込み中...</option>';
+      sel.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          sel.disabled = false;
+          if (!result.success || !result.images || result.images.length === 0) {
+            sel.innerHTML = '<option value="">画像なし</option>';
+            flyerImageList = [];
+            return;
+          }
+          flyerImageTags = {};
+          flyerImageList = result.images;
+          result.images.forEach(function(img) { flyerImageTags[img.id] = img.tags || ''; });
+          sel.innerHTML = '<option value="">画像なし</option>' +
+            result.images.map(function(img) {
+              return '<option value="' + img.id + '">' + img.name + '</option>';
+            }).join('');
+        })
+        .withFailureHandler(function(err) {
+          sel.disabled = false;
+          sel.innerHTML = '<option value="">(画像の取得に失敗しました)</option>';
+          console.error('チラシ画像取得失敗:', err);
+        })
+        .getFlyerImages();
+    }
+
+    /**
+     * チラシ画像をアップロードする（複数ファイル対応）
+     */
+    function uploadFlyerImageUI() {
+      var input = document.getElementById('flyer-upload-input');
+      if (!input || !input.files || input.files.length === 0) {
+        appAlert('アップロードする画像ファイルを選んでください。'); return;
+      }
+
+      // 画像ファイルのみ抽出
+      var files = [];
+      for (var i = 0; i < input.files.length; i++) {
+        if (input.files[i].type.match(/^image\//)) files.push(input.files[i]);
+      }
+      if (files.length === 0) {
+        appAlert('画像ファイル（JPEG/PNG/GIF/WebP）を選択してください。'); return;
+      }
+      var MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
+      var oversized = files.filter(function(f) { return f.size > MAX_IMAGE_SIZE; });
+      if (oversized.length > 0) {
+        appAlert('画像のサイズが大きすぎます（上限: 2MB）。\n対象: ' + oversized.map(function(f) { return f.name; }).join(', '));
+        return;
+      }
+
+      var btn = document.getElementById('flyer-upload-btn');
+      var origText = btn.textContent;
+      btn.disabled = true;
+
+      var lastUploadedId = null;
+      var uploaded = 0;
+      var total = files.length;
+
+      function uploadNext(idx) {
+        if (idx >= total) {
+          // 全ファイルアップロード完了 → 一覧リロード
+          btn.textContent = origText;
+          btn.disabled = false;
+          input.value = '';
+          var sel = document.getElementById('flyer-image-select');
+          sel.innerHTML = '<option value="">⏳ 更新中...</option>';
+          sel.disabled = true;
+          google.script.run
+            .withSuccessHandler(function(res) {
+              sel.disabled = false;
+              if (!res.success || !res.images || res.images.length === 0) {
+                sel.innerHTML = '<option value="">画像なし</option>';
+                return;
+              }
+              sel.innerHTML = '<option value="">画像なし</option>' +
+                res.images.map(function(img) {
+                  return '<option value="' + img.id + '">' + img.name + '</option>';
+                }).join('');
+              if (lastUploadedId) { sel.value = lastUploadedId; }
+              onFlyerImageChange();
+              if (total > 1) showToast(uploaded + '枚の画像をアップロードしました', 'success');
+            })
+            .withFailureHandler(function() {
+              sel.disabled = false;
+              sel.innerHTML = '<option value="">(再読み込みしてください)</option>';
+            })
+            .getFlyerImages();
+          return;
+        }
+
+        btn.textContent = total > 1 ? '⏳ ' + (idx + 1) + '/' + total : '⏳...';
+        var file = files[idx];
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var base64 = e.target.result.split(',')[1];
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                lastUploadedId = result.fileId;
+                uploaded++;
+              }
+              uploadNext(idx + 1);
+            })
+            .withFailureHandler(function(err) {
+              console.error('チラシ画像アップロード失敗:', err, file.name);
+              uploadNext(idx + 1);
+            })
+            .uploadFlyerImage(base64, file.name, file.type);
+        };
+        reader.readAsDataURL(file);
+      }
+
+      uploadNext(0);
+    }
+
+    /**
+     * 選択中のチラシ画像を削除する（確認ダイアログ付き）
+     */
+    function deleteFlyerImageUI() {
+      var sel = document.getElementById('flyer-image-select');
+      var fileId = sel.value;
+      if (!fileId) { appAlert('削除する画像を選択してください。'); return; }
+      var fileName = sel.options[sel.selectedIndex].text;
+
+      appConfirm('「' + fileName + '」を削除しますか？\n（Drive のゴミ箱に移動されます）').then(function(ok) {
+        if (!ok) return;
+        var btn = document.getElementById('flyer-delete-btn');
+        btn.textContent = '⏳';
+        btn.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btn.textContent = '🗑️';
+            btn.disabled = true;
+            if (!result.success) { appAlert('削除に失敗しました。\n' + (result.error || '')); return; }
+            flyerImageBase64 = null;
+            var preview = document.getElementById('flyer-image-preview');
+            if (preview) preview.style.display = 'none';
+            loadFlyerImageList();
+          })
+          .withFailureHandler(function(err) {
+            btn.textContent = '🗑️';
+            btn.disabled = false;
+            appAlert('削除に失敗しました。');
+          })
+          .deleteFlyerImage(fileId);
+      });
+    }
+
+    /**
+     * 画像選択変更時：選択画像を base64 でプリロードしてプレビューに反映する
+     */
+    function onFlyerImageChange() {
+      var fileId = document.getElementById('flyer-image-select').value;
+      flyerImageBase64 = null;
+      var preview = document.getElementById('flyer-image-preview');
+      var deleteBtn = document.getElementById('flyer-delete-btn');
+      var tagsRow = document.getElementById('flyer-tags-row');
+      var tagInput = document.getElementById('flyer-image-tags');
+      if (deleteBtn) {
+        deleteBtn.disabled = !fileId;
+        deleteBtn.style.color = fileId ? '#d32f2f' : '#bbb';
+      }
+      // タグ入力欄の表示切替
+      if (tagsRow) tagsRow.style.display = fileId ? 'block' : 'none';
+      if (tagInput) tagInput.value = fileId ? (flyerImageTags[fileId] || '') : '';
+      if (!fileId) {
+        if (preview) preview.style.display = 'none';
+        return;
+      }
+      if (flyerImageCache[fileId]) {
+        flyerImageBase64 = flyerImageCache[fileId];
+        if (preview) { preview.src = flyerImageBase64; preview.style.display = 'block'; }
+        return;
+      }
+      if (preview) { preview.style.display = 'none'; }
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success && result.base64) {
+            var dataUrl = 'data:' + result.mimeType + ';base64,' + result.base64;
+            flyerImageCache[fileId] = dataUrl;
+            flyerImageBase64 = dataUrl;
+            if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+          }
+        })
+        .withFailureHandler(function(err) { console.error('画像取得失敗:', err); })
+        .getFlyerImageBase64(fileId);
+    }
+
+    /**
+     * 画像未選択時に季節キーワードで最適な画像を自動選択してbase64をロードする
+     * 選択済みの場合はそのままcallbackを呼ぶ
+     * @param {string} seasonKey 季節キー（spring/summer/winter/general）
+     * @param {Function} callback 選択完了後に呼ばれるコールバック
+     */
+    function autoSelectFlyerImage_(seasonKey, callback) {
+      // 既に画像が選択されている場合はスキップ
+      if (flyerImageBase64) { callback(); return; }
+      // 画像一覧がない場合はスキップ
+      if (!flyerImageList || flyerImageList.length === 0) { callback(); return; }
+
+      // 季節キーワードでスコアリング
+      var keywords = FLYER_SEASON_KEYWORDS[seasonKey] || [];
+      var scored = flyerImageList.map(function(img) {
+        var tags = (img.tags || '').toLowerCase();
+        var name = (img.name || '').toLowerCase();
+        var text = tags + ' ' + name;
+        var score = 0;
+        keywords.forEach(function(kw) {
+          if (text.indexOf(kw.toLowerCase()) !== -1) score++;
+        });
+        return { id: img.id, score: score };
+      });
+
+      // スコア降順でソート
+      scored.sort(function(a, b) { return b.score - a.score; });
+
+      // スコアが0でない最高スコアの画像を選択、全て0なら最初の画像を選択
+      var bestId = scored[0].score > 0 ? scored[0].id : flyerImageList[0].id;
+
+      // ドロップダウンを選択状態にする
+      var sel = document.getElementById('flyer-image-select');
+      if (sel) sel.value = bestId;
+
+      // base64をロード
+      if (flyerImageCache[bestId]) {
+        flyerImageBase64 = flyerImageCache[bestId];
+        var preview = document.getElementById('flyer-image-preview');
+        if (preview) { preview.src = flyerImageBase64; preview.style.display = 'block'; }
+        var tagsRow = document.getElementById('flyer-tags-row');
+        if (tagsRow) tagsRow.style.display = 'block';
+        var tagInput = document.getElementById('flyer-image-tags');
+        if (tagInput) tagInput.value = flyerImageTags[bestId] || '';
+        var deleteBtn = document.getElementById('flyer-delete-btn');
+        if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.style.color = '#d32f2f'; }
+        callback();
+      } else {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success && result.base64) {
+              var dataUrl = 'data:' + result.mimeType + ';base64,' + result.base64;
+              flyerImageCache[bestId] = dataUrl;
+              flyerImageBase64 = dataUrl;
+              var preview = document.getElementById('flyer-image-preview');
+              if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+              var tagsRow = document.getElementById('flyer-tags-row');
+              if (tagsRow) tagsRow.style.display = 'block';
+              var tagInput = document.getElementById('flyer-image-tags');
+              if (tagInput) tagInput.value = flyerImageTags[bestId] || '';
+              var deleteBtn = document.getElementById('flyer-delete-btn');
+              if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.style.color = '#d32f2f'; }
+            }
+            callback();
+          })
+          .withFailureHandler(function(err) {
+            console.error('画像自動選択 base64取得失敗:', err);
+            callback(); // エラーでも続行（画像なしで生成）
+          })
+          .getFlyerImageBase64(bestId);
+      }
+    }
+
+    /**
+     * 画像の説明タグをバックエンドに保存する
+     */
+    function saveFlyerImageTagsUI() {
+      var fileId = document.getElementById('flyer-image-select').value;
+      if (!fileId) return;
+      var tagInput = document.getElementById('flyer-image-tags');
+      var tags = (tagInput ? tagInput.value : '').trim();
+      flyerImageTags[fileId] = tags;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (r && r.success) showToast('タグを保存しました', 'success');
+        })
+        .withFailureHandler(function(err) { console.error('タグ保存失敗:', err); })
+        .saveFlyerImageTags(fileId, tags);
+    }
+
+    // ========== 直接編集モード ==========
+
+    /** 現在フォーカス中の編集対象要素 */
+    var flyerEditTarget_ = null;
+
+    /**
+     * 編集モードのON/OFF切り替え
+     */
+    function toggleFlyerEditMode() {
+      if (flyerEditModeActive) {
+        disableFlyerEditMode_();
+      } else {
+        enableFlyerEditMode_();
+      }
+    }
+
+    /**
+     * 編集モードを有効にする
+     */
+    function enableFlyerEditMode_() {
+      var inner = document.getElementById('flyerAiPreviewInner');
+      if (!inner || !flyerAiCurrentHtml) {
+        appAlert('チラシが表示されていません。\nまずテンプレートを選ぶか、AIに指示を送ってください。');
+        return;
+      }
+
+      flyerEditModeActive = true;
+      inner.classList.add('flyer-edit-mode');
+
+      // テキスト要素をeditableにする
+      var editables = inner.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,td,th,li,div');
+      editables.forEach(function(el) {
+        if (hasDirectText_(el)) {
+          el.setAttribute('contenteditable', 'true');
+          el.classList.add('flyer-editable');
+          el.addEventListener('focus', onFlyerEditFocus_);
+          el.addEventListener('blur', onFlyerEditBlur_);
+        }
+      });
+
+      // UIを更新
+      var btn = document.getElementById('flyerEditToggleBtn');
+      if (btn) btn.classList.add('active');
+      var hint = document.getElementById('flyerEditHint');
+      if (hint) hint.style.display = 'inline';
+    }
+
+    /**
+     * 編集モードを無効にする
+     */
+    function disableFlyerEditMode_() {
+      flyerEditModeActive = false;
+      var inner = document.getElementById('flyerAiPreviewInner');
+      if (inner) {
+        inner.classList.remove('flyer-edit-mode');
+        var editables = inner.querySelectorAll('.flyer-editable');
+        editables.forEach(function(el) {
+          el.removeAttribute('contenteditable');
+          el.classList.remove('flyer-editable');
+          el.removeEventListener('focus', onFlyerEditFocus_);
+          el.removeEventListener('blur', onFlyerEditBlur_);
+        });
+      }
+
+      // ツールバー非表示
+      hideFlyerEditToolbar_();
+      flyerEditTarget_ = null;
+
+      // 変更をHTMLに同期
+      syncFlyerEdits_();
+
+      // UIを更新
+      var btn = document.getElementById('flyerEditToggleBtn');
+      if (btn) btn.classList.remove('active');
+      var hint = document.getElementById('flyerEditHint');
+      if (hint) hint.style.display = 'none';
+    }
+
+    /**
+     * 要素が直接テキストを含むか判定する
+     * @param {Element} el DOM要素
+     * @return {boolean}
+     */
+    function hasDirectText_(el) {
+      for (var i = 0; i < el.childNodes.length; i++) {
+        if (el.childNodes[i].nodeType === 3 && el.childNodes[i].textContent.trim().length > 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /**
+     * 編集対象フォーカス時のハンドラー
+     * @param {Event} e フォーカスイベント
+     */
+    function onFlyerEditFocus_(e) {
+      flyerEditTarget_ = e.target;
+      showFlyerEditToolbar_(e.target);
+    }
+
+    /**
+     * 編集対象ブラー時のハンドラー
+     */
+    function onFlyerEditBlur_() {
+      // 少し遅延させてツールバークリックを拾えるようにする
+      setTimeout(function() {
+        if (!flyerEditTarget_ || !document.activeElement || !document.activeElement.closest('#flyerEditToolbar')) {
+          hideFlyerEditToolbar_();
+          flyerEditTarget_ = null;
+        }
+      }, 200);
+    }
+
+    /**
+     * フローティングツールバーを対象要素の上に表示する
+     * @param {Element} el 対象要素
+     */
+    function showFlyerEditToolbar_(el) {
+      var toolbar = document.getElementById('flyerEditToolbar');
+      if (!toolbar) return;
+
+      var container = document.getElementById('flyerAiPreviewContainer');
+      if (!container) return;
+
+      var containerRect = container.getBoundingClientRect();
+      var elRect = el.getBoundingClientRect();
+
+      toolbar.style.display = 'flex';
+      toolbar.style.left = (elRect.left - containerRect.left) + 'px';
+      toolbar.style.top = (elRect.top - containerRect.top - 40) + 'px';
+    }
+
+    /**
+     * フローティングツールバーを非表示にする
+     */
+    function hideFlyerEditToolbar_() {
+      var toolbar = document.getElementById('flyerEditToolbar');
+      if (toolbar) toolbar.style.display = 'none';
+    }
+
+    /**
+     * フォントサイズを変更する
+     * @param {number} delta ピクセル差分（正=大きく、負=小さく）
+     */
+    function flyerEditFontSize_(delta) {
+      if (!flyerEditTarget_) return;
+      var current = parseInt(window.getComputedStyle(flyerEditTarget_).fontSize) || 14;
+      var newSize = Math.max(8, Math.min(72, current + delta));
+      flyerEditTarget_.style.fontSize = newSize + 'px';
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * 太字をトグルする
+     */
+    function flyerEditBold_() {
+      if (!flyerEditTarget_) return;
+      var current = window.getComputedStyle(flyerEditTarget_).fontWeight;
+      flyerEditTarget_.style.fontWeight = (current === 'bold' || parseInt(current) >= 700) ? 'normal' : 'bold';
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * テキスト色を変更する
+     * @param {string} color 16進数カラー
+     */
+    function flyerEditColor_(color) {
+      if (!flyerEditTarget_) return;
+      flyerEditTarget_.style.color = color;
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * 編集内容をflyerAiCurrentHtmlに同期する（contenteditable属性をstrip）
+     */
+    function syncFlyerEdits_() {
+      var inner = document.getElementById('flyerAiPreviewInner');
+      if (!inner) return;
+
+      // DOM → HTML文字列を取得してcontenteditable関連属性を除去
+      var html = inner.innerHTML;
+      html = html.replace(/\s*contenteditable="true"/g, '');
+      html = html.replace(/\s*class="flyer-editable"/g, '');
+      // 空のclass属性を削除
+      html = html.replace(/\s*class=""/g, '');
+
+      // 画像を元のプレースホルダーに戻す
+      if (flyerImageBase64) {
+        html = html.replace(new RegExp(escapeRegExp_(flyerImageBase64), 'g'), '{{IMAGE_PLACEHOLDER}}');
+      }
+
+      flyerAiCurrentHtml = html;
+    }
+
+    /**
+     * 正規表現の特殊文字をエスケープする
+     * @param {string} str 文字列
+     * @return {string} エスケープ済み文字列
+     */
+    function escapeRegExp_(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ========== PDF生成 ==========
+
+    /**
+     * トンボ設定の選択値を取得する
+     * @return {boolean} トンボあり = true
+     */
+    function flyerAiTomboEnabled_() {
+      var radios = document.querySelectorAll('[name="flyerAiTombo"]');
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) return radios[i].value === 'tombo';
+      }
+      return false;
+    }
+
+    /**
+     * 現在のプレビューHTMLからPDFを生成してダウンロードする
+     */
+    function generateFlyerAiPDF() {
+      if (!flyerAiCurrentHtml) { appAlert('まだチラシが生成されていません。\nAIに指示を送ってチラシを作成してください。'); return; }
+
+      // 編集モード中なら手動変更を同期
+      if (flyerEditModeActive) { syncFlyerEdits_(); }
+
+      var btn = document.getElementById('flyerAiPdfBtn');
+      var origText = btn.textContent;
+      btn.textContent = '⏳ 生成中...';
+      btn.disabled = true;
+
+      var withTombo = flyerAiTomboEnabled_();
+
+      // オフスクリーンコンテナにHTML注入
+      var container = document.createElement('div');
+      container.style.cssText = 'position:fixed;left:-9999px;top:0;background:white;';
+      document.body.appendChild(container);
+
+      var pageDiv = document.createElement('div');
+      pageDiv.style.cssText = 'width:794px;height:1123px;background:white;overflow:hidden;';
+      flyerDebug_('generateFlyerAiPDF', 'injectFlyerImage_呼び出し前 html長さ=' + (flyerAiCurrentHtml ? flyerAiCurrentHtml.length : 0));
+      pageDiv.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+      container.appendChild(pageDiv);
+
+      // Google Fontsの読み込み完了を待ってからキャプチャ（Noto Serif JP / Noto Sans JP）
+      document.fonts.ready.then(function() {
+        return html2canvas(pageDiv, { scale: 3, backgroundColor: '#ffffff', windowWidth: 830, useCORS: true });
+      }).then(function(canvas) {
+          document.body.removeChild(container);
+          btn.textContent = origText;
+          btn.disabled = false;
+
+          // ファイル名生成
+          var lecName = currentLectureId || 'チラシ';
+          var period = (lecturePeriods || []).find(function(lp) { return lp.id === currentLectureId; });
+          if (period) lecName = period.name;
+          var campusCode = document.getElementById('flyerAiCampusSelect').value;
+          var campusName = campusCode === 'common' ? '共通' : (campusData && campusData[campusCode] ? campusData[campusCode] : '');
+          var suffix = withTombo ? '_トンボあり' : '';
+          var fileName = lecName + (campusName ? '_' + campusName : '') + '_チラシ' + suffix;
+
+          outputFlyerPDF_([canvas], fileName, withTombo);
+        })
+        .catch(function(e) {
+          document.body.removeChild(container);
+          btn.textContent = origText;
+          btn.disabled = false;
+          console.error('チラシAI PDF生成エラー:', e);
+          appAlert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+        });
+    }
+
+    /**
+     * canvas配列からPDFを出力する
+     * @param {Array} canvases canvas配列
+     * @param {string} fileName ファイル名（拡張子なし）
+     * @param {boolean} withTombo トンボあり
+     */
+    function outputFlyerPDF_(canvases, fileName, withTombo) {
+      var A4W = 210;  // mm
+      var A4H = 297;  // mm
+      var tomboMargin = 10;  // トンボ用外枠 10mm
+
+      var pageW = withTombo ? A4W + tomboMargin * 2 : A4W;
+      var pageH = withTombo ? A4H + tomboMargin * 2 : A4H;
+
+      var pdf = new window.jspdf.jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [pageW, pageH]
+      });
+
+      canvases.forEach(function(c, idx) {
+        if (idx > 0) pdf.addPage([pageW, pageH]);
+
+        var imgData = c.toDataURL('image/jpeg', 0.95);
+
+        if (withTombo) {
+          pdf.addImage(imgData, 'JPEG', tomboMargin, tomboMargin, A4W, A4H);
+          addFlyerCropMarks_(pdf, tomboMargin, tomboMargin, A4W, A4H);
+        } else {
+          pdf.addImage(imgData, 'JPEG', 0, 0, A4W, A4H);
+        }
+      });
+
+      pdf.save(fileName + '.pdf');
+    }
+
+    /**
+     * PDFにトンボ（仕上がり線）を描画する
+     * @param {Object} pdf jsPDFインスタンス
+     * @param {number} ox コンテンツ左上X（mm）
+     * @param {number} oy コンテンツ左上Y（mm）
+     * @param {number} w コンテンツ幅（mm）
+     * @param {number} h コンテンツ高さ（mm）
+     */
+    function addFlyerCropMarks_(pdf, ox, oy, w, h) {
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.25);
+
+      var gap = 2;
+      var len = 6;
+
+      var x0 = ox;
+      var y0 = oy;
+      var x1 = ox + w;
+      var y1 = oy + h;
+      var xc = ox + w / 2;
+      var yc = oy + h / 2;
+
+      // 四隅のトンボ
+      pdf.line(x0 - gap - len, y0, x0 - gap, y0);
+      pdf.line(x0, y0 - gap - len, x0, y0 - gap);
+      pdf.line(x1 + gap, y0, x1 + gap + len, y0);
+      pdf.line(x1, y0 - gap - len, x1, y0 - gap);
+      pdf.line(x0 - gap - len, y1, x0 - gap, y1);
+      pdf.line(x0, y1 + gap, x0, y1 + gap + len);
+      pdf.line(x1 + gap, y1, x1 + gap + len, y1);
+      pdf.line(x1, y1 + gap, x1, y1 + gap + len);
+
+      // 中央トンボ（上下左右）
+      pdf.line(x0 - gap - len, yc, x0 - gap, yc);
+      pdf.line(x1 + gap, yc, x1 + gap + len, yc);
+      pdf.line(xc, y0 - gap - len, xc, y0 - gap);
+      pdf.line(xc, y1 + gap, xc, y1 + gap + len);
+    }
+
+    // ========== Enterキーで送信 ==========
+    document.addEventListener('DOMContentLoaded', function() {
+      var chatInput = document.getElementById('flyerAiChatInput');
+      if (chatInput) {
+        chatInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendFlyerAiMessage();
+          }
+        });
+      }
+    });
+
+    // ウィンドウリサイズ時にプレビューを再スケール
+    window.addEventListener('resize', function() {
+      resizeFlyerAiPreview();
+    });
+</script>

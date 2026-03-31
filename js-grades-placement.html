@@ -1,0 +1,337 @@
+<script>
+// ===== 【進学先タブ】 =====
+
+var placementTableData      = [];    // バックエンドから取得した全中3生データ
+var placementSortCol        = null;  // 現在のソート列キー
+var placementSortAsc        = true;  // true=昇順
+var activePlacementCampusTab = 'all'; // 現在表示中のタブ（'all' or 校舎コード）
+
+/**
+ * 進学先フィルターパネルの表示/非表示を切り替える
+ */
+function togglePlacementFilterPanel() {
+  var panel = document.getElementById('placement-filter-panel');
+  var icon  = document.getElementById('placement-filter-toggle-icon');
+  var desc  = document.getElementById('placement-filter-desc');
+  if (panel.style.display === 'none') {
+    panel.style.display = '';
+    desc.style.display  = '';
+    icon.textContent    = '▼';
+  } else {
+    panel.style.display = 'none';
+    desc.style.display  = 'none';
+    icon.textContent    = '▶';
+  }
+}
+
+/**
+ * 進学先サブタブを開いたとき、校舎チェックボックスを初期化する
+ * switchSubTab() から呼ばれる
+ */
+function initGradesPlacement() {
+  var box = document.getElementById('placement-campus-checkboxes');
+  if (!box) return;
+
+  // campusData (code→name) から校舎チェックボックスを生成（各チェックボックスは独立）
+  // 配属校舎が設定されている場合はその校舎のみデフォルトチェック。未設定なら全校舎チェック
+  var prefCodes = (typeof preferredCampuses !== 'undefined' && Array.isArray(preferredCampuses) && preferredCampuses.length > 0)
+    ? preferredCampuses.map(function(c) { return String(c).padStart(2, '0'); })
+    : null; // null = 全校舎チェック
+  var html = '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+           + '<input type="checkbox" id="placement-campus-all" onchange="onPlacementCampusAllChange()" checked style="width:16px;height:16px;cursor:pointer;"> 全校舎</label>';
+  for (var code in campusData) {
+    var isChecked = !prefCodes || prefCodes.indexOf(String(code).padStart(2, '0')) !== -1;
+    html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+          + '<input type="checkbox" class="placement-campus-cb" value="' + code + '" onchange="onPlacementCampusChange()"' + (isChecked ? ' checked' : '') + ' style="width:16px;height:16px;cursor:pointer;"> '
+          + campusData[code] + '</label>';
+  }
+  box.innerHTML = html;
+}
+
+/** 「全校舎」チェックボックス変更時（各校舎チェックとは独立） */
+function onPlacementCampusAllChange() {
+  // 独立したチェックボックスのため同期処理なし
+}
+
+/** 個別校舎チェックボックス変更時（全校舎チェックとは独立） */
+function onPlacementCampusChange() {
+  // 独立したチェックボックスのため同期処理なし
+}
+
+/**
+ * 「表示する」ボタン：2月以降チェック → バックエンドからデータ取得 → タブ構築 → テーブル描画
+ */
+function loadGradesPlacement() {
+  var year = currentFiscalYear;
+  var msgEl       = document.getElementById('placement-message');
+  var containerEl = document.getElementById('placement-table-container');
+
+  if (!year) {
+    msgEl.innerHTML = '<p style="color:#e53935; font-size:13px;">年度を選択してください</p>';
+    return;
+  }
+
+  // 2月以降チェック（選択年度+1年の2月1日以降かどうか）
+  var today = new Date();
+  var feb1  = new Date(year + 1, 1, 1); // 翌年2月1日
+  if (today < feb1) {
+    msgEl.innerHTML =
+      '<div style="text-align:center; color:#888; padding:32px 16px; background:white; border-radius:10px; border:1px solid #e0e0e0;">' +
+      '<div style="font-size:32px; margin-bottom:12px;">📅</div>' +
+      '<p style="font-size:14px; margin:0 0 10px;">' + year + '年度の進学先データは<br><strong>' + (year + 1) + '年2月以降</strong>に表示されます</p>' +
+      '<p style="font-size:13px; color:#aaa; margin:0;">進学先の事前入力は<br>「📝 情報入力」タブから行えます</p>' +
+      '</div>';
+    containerEl.innerHTML = '';
+    return;
+  }
+
+  msgEl.innerHTML       = '<p style="color:#999; font-size:13px;">読み込み中...</p>';
+  containerEl.innerHTML = '';
+  placementTableData    = [];
+  placementSortCol      = null;
+  placementSortAsc      = true;
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      placementTableData = data || [];
+      buildPlacementCampusTabs();
+    })
+    .withFailureHandler(function(err) {
+      msgEl.innerHTML = '<p style="color:#e53935; font-size:13px;">読み込みエラー: ' + err + '</p>';
+    })
+    .getStudentPlacementData(year);
+}
+
+/**
+ * バックエンドデータから進学先絞り込みフィルターを構築する（内部）
+ */
+function buildPlacementSchoolFilter_() {
+  var schools = {};
+  placementTableData.forEach(function(row) {
+    if (row.placementSchool) schools[row.placementSchool] = true;
+  });
+
+  var sel = document.getElementById('placement-school-filter');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+  Object.keys(schools).sort().forEach(function(s) {
+    sel.innerHTML += '<option value="' + s + '">' + s + '</option>';
+  });
+}
+
+/**
+ * 指定した校舎コードでフィルタリングしたデータを返す（タブ内部用ヘルパー）
+ * @param {string} campusCode 'all' で全校舎、それ以外は特定の校舎コード
+ * @return {Array}
+ */
+function getPlacementFilteredDataForCampus_(campusCode) {
+  var schoolFilter = (document.getElementById('placement-school-filter') || {}).value || '';
+  return placementTableData.filter(function(row) {
+    if (campusCode !== 'all') {
+      var norm = String(row.campus || '').padStart(2, '0');
+      if (norm !== campusCode) return false;
+    }
+    if (schoolFilter && row.placementSchool !== schoolFilter) return false;
+    return true;
+  });
+}
+
+/**
+ * 現在のアクティブタブの校舎・進学先フィルターを適用してデータを返す（内部）
+ * @return {Array}
+ */
+function getPlacementFilteredData_() {
+  return getPlacementFilteredDataForCampus_(activePlacementCampusTab || 'all');
+}
+
+/**
+ * チェックボックスの状態をもとに校舎タブを動的に構築して最初のタブを表示する
+ * 「表示する」ボタン押下後に呼ばれる
+ */
+function buildPlacementCampusTabs() {
+  var msgEl          = document.getElementById('placement-message');
+  var containerEl    = document.getElementById('placement-table-container');
+  var tabBarContEl   = document.getElementById('placement-tab-bar-container');
+
+  // チェック済みのタブを収集
+  var tabs = [];
+  var allCb = document.getElementById('placement-campus-all');
+  if (allCb && allCb.checked) {
+    tabs.push({ code: 'all', label: '全校舎' });
+  }
+  document.querySelectorAll('.placement-campus-cb:checked').forEach(function(cb) {
+    var code = String(cb.value).padStart(2, '0');
+    var label = campusData[cb.value] || campusData[code] || cb.value;
+    tabs.push({ code: code, label: label });
+  });
+
+  if (tabs.length === 0) {
+    if (msgEl) msgEl.innerHTML = '';
+    if (tabBarContEl) tabBarContEl.innerHTML = '';
+    if (containerEl) containerEl.innerHTML = '<p style="text-align:center;color:#bbb;padding:30px;font-size:13px;">校舎を選択してください</p>';
+    return;
+  }
+
+  // 最初のタブをアクティブに設定
+  activePlacementCampusTab = tabs[0].code;
+
+  // 進学先フィルターを構築（全データ対象）
+  buildPlacementSchoolFilter_();
+
+  // タブバーをフィルターエリア（placement-tab-bar-container）に配置
+  var tabBarHtml = '<div id="placement-campus-tab-bar" style="display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:2px solid #e0e8ff;padding-bottom:8px;margin-top:8px;">';
+  tabs.forEach(function(tab) {
+    var count = getPlacementFilteredDataForCampus_(tab.code).length;
+    var isActive = (tab.code === activePlacementCampusTab);
+    var btnStyle = isActive
+      ? 'padding:8px 16px;border:none;border-bottom:3px solid #667eea;background:#f0f4ff;color:#667eea;font-weight:700;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;'
+      : 'padding:8px 16px;border:1px solid #ddd;border-bottom:none;background:#f9f9f9;color:#888;font-weight:600;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+    tabBarHtml += '<button id="placement-tab-btn-' + tab.code + '" onclick="switchPlacementCampusTab(\'' + tab.code + '\')" style="' + btnStyle + '">'
+      + tab.label + ' <span style="font-size:11px;opacity:0.75;">(' + count + ')</span></button>';
+  });
+  tabBarHtml += '</div>';
+  if (tabBarContEl) tabBarContEl.innerHTML = tabBarHtml;
+
+  // データコンテナはスクロールエリア（placement-table-container）内に配置
+  if (msgEl) msgEl.innerHTML = '';
+  if (containerEl) containerEl.innerHTML = '<div id="placement-tab-content"></div>';
+  renderPlacementTable_();
+}
+
+/**
+ * 進学先校舎タブを切り替えてテーブルを再描画する
+ * @param {string} code 'all' または校舎コード
+ */
+function switchPlacementCampusTab(code) {
+  activePlacementCampusTab = code;
+  placementSortCol = null;
+  placementSortAsc = true;
+
+  // タブボタンのスタイルを更新
+  var tabBar = document.getElementById('placement-campus-tab-bar');
+  if (tabBar) {
+    tabBar.querySelectorAll('button').forEach(function(btn) {
+      var tabCode = btn.id.replace('placement-tab-btn-', '');
+      if (tabCode === code) {
+        btn.style.cssText = 'padding:8px 16px;border:none;border-bottom:3px solid #667eea;background:#f0f4ff;color:#667eea;font-weight:700;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+      } else {
+        btn.style.cssText = 'padding:8px 16px;border:1px solid #ddd;border-bottom:none;background:#f9f9f9;color:#888;font-weight:600;font-size:13px;cursor:pointer;border-radius:6px 6px 0 0;';
+      }
+    });
+  }
+  renderPlacementTable_();
+}
+
+/**
+ * ソートアイコンHTMLを返す内部ヘルパー
+ * @param {string} col 列キー
+ * @return {string}
+ */
+function getPlacementSortIcon_(col) {
+  if (placementSortCol !== col) return ' <span style="color:#ccc;font-size:10px;">⇅</span>';
+  return placementSortAsc
+    ? ' <span style="color:#667eea;font-size:10px;">▲</span>'
+    : ' <span style="color:#667eea;font-size:10px;">▼</span>';
+}
+
+/**
+ * 列ヘッダークリック時のソート処理
+ * @param {string} col 列キー
+ */
+function sortPlacementData(col) {
+  if (placementSortCol === col) {
+    placementSortAsc = !placementSortAsc;
+  } else {
+    placementSortCol = col;
+    // 名前・校舎は昇順デフォルト、点数・平均は降順デフォルト
+    placementSortAsc = (col === 'name' || col === 'campus' || col === 'placement');
+  }
+  renderPlacementTable_();
+}
+
+/**
+ * フィルター済みデータをテーブルとして描画する（内部）
+ */
+function renderPlacementTable_() {
+  var msgEl       = document.getElementById('placement-message');
+  var containerEl = document.getElementById('placement-tab-content') || document.getElementById('placement-table-container');
+  var filtered    = getPlacementFilteredData_();
+
+  if (msgEl) msgEl.innerHTML = '';
+
+  if (filtered.length === 0) {
+    containerEl.innerHTML =
+      '<p style="text-align:center; color:#bbb; padding:30px; font-size:13px;">該当するデータがありません</p>';
+    return;
+  }
+
+  // ソート
+  if (placementSortCol !== null) {
+    filtered.sort(function(a, b) {
+      var av = a[placementSortCol];
+      var bv = b[placementSortCol];
+      // null は常に最後
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (av < bv) return placementSortAsc ? -1 : 1;
+      if (av > bv) return placementSortAsc ? 1 : -1;
+      return 0;
+    });
+  }
+
+  // overflow は CSS（.grades-scroll-area）に集約。ここでは設定しない
+  var thStyle = 'padding:10px 8px; text-align:center; white-space:nowrap; cursor:pointer; font-size:13px; background:#f5f5f5; box-shadow:0 2px 0 #ddd;';
+  var thStyleL = 'padding:10px 8px; text-align:left; white-space:nowrap; cursor:pointer; font-size:13px; background:#f5f5f5; box-shadow:0 2px 0 #ddd;';
+  var thStyleNoSort = 'padding:10px 8px; text-align:left; white-space:nowrap; font-size:13px; background:#f5f5f5; box-shadow:0 2px 0 #ddd;';
+  // 氏名列（第1列）は左方向にも固定（横スクロール時に隠れない）
+  var thStyleName = thStyleL + 'position:sticky; left:0; z-index:3; border-right:2px solid #c8d8ff;';
+  var tdStyleName = 'padding:10px 8px; position:sticky; left:0; z-index:1; background:inherit; border-right:2px solid #c8d8ff; white-space:nowrap;';
+
+  var html =
+    '<p style="font-size:13px; color:#aaa; margin-bottom:10px;">進学先の入力・編集は「📝 情報入力」タブから行えます</p>' +
+    '<p style="font-size:13px; color:#666; margin-bottom:8px;">' + filtered.length + '名</p>' +
+    '<table style="width:100%; border-collapse:collapse; font-size:14px; min-width:520px;">' +
+    '<thead style="position:sticky;top:0;z-index:2;"><tr>' +
+    '<th style="' + thStyleName + '" onclick="sortPlacementData(\'name\')">氏名' + getPlacementSortIcon_('name') + '</th>' +
+    '<th style="' + thStyleL + '" onclick="sortPlacementData(\'campus\')">校舎' + getPlacementSortIcon_('campus') + '</th>' +
+    '<th style="' + thStyle + '" onclick="sortPlacementData(\'score1\')">第1回' + getPlacementSortIcon_('score1') + '</th>' +
+    '<th style="' + thStyle + '" onclick="sortPlacementData(\'score2\')">第2回' + getPlacementSortIcon_('score2') + '</th>' +
+    '<th style="' + thStyle + '" onclick="sortPlacementData(\'score3\')">第3回' + getPlacementSortIcon_('score3') + '</th>' +
+    '<th style="' + thStyle + '" onclick="sortPlacementData(\'avg\')">平均' + getPlacementSortIcon_('avg') + '</th>' +
+    '<th style="' + thStyleNoSort + '">進学先</th>' +
+    '</tr></thead><tbody>';
+
+  filtered.forEach(function(row, idx) {
+    var bg         = idx % 2 === 0 ? 'white' : '#f9f9f9';
+    var campusName = (typeof campusData !== 'undefined' && campusData[row.campus]) ? campusData[row.campus] : (row.campus || '');
+    var s1         = row.score1 !== null ? row.score1 : '－';
+    var s2         = row.score2 !== null ? row.score2 : '－';
+    var s3         = row.score3 !== null ? row.score3 : '－';
+    var avgStr     = row.avg    !== null ? row.avg.toFixed(1) : '－';
+    var ppStr      = row.passPercent != null
+                   ? '<br><span style="color:#667eea;font-size:11px;font-weight:600;">' + row.passPercent + '%</span>'
+                   : '';
+    var ikuseiBadge = row.ikusei
+                   ? '<span style="display:inline-block;margin-left:4px;padding:1px 6px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;">育成型(推薦)</span>'
+                   : '';
+    var placement  = row.placement
+                   ? ('<span>' + row.placement + ppStr + '</span>' + ikuseiBadge)
+                   : ikuseiBadge;
+
+    html +=
+      '<tr style="background:' + bg + '; border-bottom:1px solid #eee;">' +
+      '<td style="' + tdStyleName + 'background:' + bg + ';">' + row.name + '</td>' +
+      '<td style="padding:10px 8px; font-size:13px; color:#666;">' + campusName + '</td>' +
+      '<td style="padding:10px 8px; text-align:center;">' + s1 + '</td>' +
+      '<td style="padding:10px 8px; text-align:center;">' + s2 + '</td>' +
+      '<td style="padding:10px 8px; text-align:center;">' + s3 + '</td>' +
+      '<td style="padding:10px 8px; text-align:center; font-weight:600;">' + avgStr + '</td>' +
+      '<td style="padding:10px 8px; font-size:13px;">' + placement + '</td>' +
+      '</tr>';
+  });
+
+  html += '</tbody></table>';
+  containerEl.innerHTML = html;
+}
+</script>

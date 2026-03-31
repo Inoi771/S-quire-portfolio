@@ -1,0 +1,191 @@
+<script>
+    /**
+     * 管理タブ：講習日程締切管理セクションの初期化
+     * 年度セレクタを生成してデータを読み込む
+     */
+    function initLectureDeadlineDatesAdmin() {
+      var sel = document.getElementById('lectureDeadlineYear');
+      if (!sel) return;
+      sel.innerHTML = '';
+      var now = new Date();
+      var thisYear = now.getFullYear();
+      var fiscalYear = (now.getMonth() + 1) >= 4 ? thisYear : thisYear - 1;
+      for (var y = fiscalYear - 1; y <= fiscalYear + 2; y++) {
+        var opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y + '年度';
+        if (y === fiscalYear) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      loadLectureDeadlineDates();
+    }
+
+    /**
+     * 管理タブ：選択年度の講習日程締切一覧を読み込む
+     */
+    function loadLectureDeadlineDates() {
+      var sel = document.getElementById('lectureDeadlineYear');
+      if (!sel) return;
+      var yr = parseInt(sel.value);
+      document.getElementById('lectureDeadlineDateTable').innerHTML =
+        '<p style="color:#999; text-align:center; font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(overrides) {
+          lectureDeadlineOverrides = overrides || {};
+          renderLectureDeadlineDateTable(overrides || {}, yr);
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('lectureDeadlineDateTable').innerHTML =
+            '<p style="color:red; font-size:13px;">読み込みエラー: ' + (err.message || err) + '</p>';
+        })
+        .getLectureDeadlineOverrides();
+    }
+
+    /**
+     * 管理タブ：講習日程締切テーブルを描画する
+     * @param {Object} overrides 上書き設定オブジェクト
+     * @param {number} yr 学年年度
+     */
+    function renderLectureDeadlineDateTable(overrides, yr) {
+      // 選択年度の講習期間を scheduleLecturePeriods から抽出
+      var periods = (typeof scheduleLecturePeriods !== 'undefined' ? scheduleLecturePeriods : []).filter(function(lp) {
+        if (!lp.id) return false;
+        var idYear = parseInt(lp.id.split('-')[0]);
+        return idYear === yr;
+      });
+
+      if (periods.length === 0) {
+        document.getElementById('lectureDeadlineDateTable').innerHTML =
+          '<p style="color:#999; text-align:center; font-size:13px;">' + yr + '年度の講習データがありません。管理タブ「講習設定」で講習期間を設定してください。</p>';
+        return;
+      }
+
+      var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+      html += '<thead><tr style="background:#f5f5f5;">';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">講習名</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">開始日</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">自動計算の締切日</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">設定中の締切日</th>';
+      html += '<th style="padding:10px; border:1px solid #ddd; text-align:left;">変更</th>';
+      html += '</tr></thead><tbody>';
+
+      periods.forEach(function(lp) {
+        var lectureId = lp.id;
+        var hasOverride = !!(overrides[lectureId]);
+
+        // 自動計算の締切日
+        var autoDeadlineStr = '（開始日未設定）';
+        if (lp.startDate) {
+          try {
+            var parts = lp.startDate.split('-');
+            var startDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            var sm = startDate.getMonth() + 1;
+            var fy;
+            if (lp.name && lp.name.indexOf('春期') !== -1 && sm < 4) {
+              fy = startDate.getFullYear() - 1;
+            } else {
+              fy = sm >= 4 ? startDate.getFullYear() : startDate.getFullYear() - 1;
+            }
+            var cd = getClosedDays(fy);
+            closedDayOverrides.del.forEach(function(d) { delete cd[d]; });
+            closedDayOverrides.add.forEach(function(d) { cd[d] = true; });
+            var nm = lp.name || '';
+            var daysBack = (nm.indexOf('春期') !== -1 || nm.indexOf('夏期') !== -1 || nm.indexOf('冬期') !== -1) ? 42 : 28;
+            var autoDeadline = countBackLecDeadline_(startDate, daysBack, cd);
+            var dow = ['日','月','火','水','木','金','土'][autoDeadline.getDay()];
+            autoDeadlineStr = autoDeadline.getFullYear() + '/' + (autoDeadline.getMonth()+1) + '/' + autoDeadline.getDate() + '（' + dow + '）';
+          } catch(e) {
+            autoDeadlineStr = '計算エラー';
+          }
+        }
+
+        // 上書き設定の表示用文字列
+        var overrideDateVal = '';
+        var overrideStr = '';
+        if (hasOverride) {
+          var op = overrides[lectureId].split('-');
+          overrideDateVal = overrides[lectureId];
+          var od = new Date(parseInt(op[0]), parseInt(op[1])-1, parseInt(op[2]));
+          var odow = ['日','月','火','水','木','金','土'][od.getDay()];
+          overrideStr = parseInt(op[0]) + '/' + parseInt(op[1]) + '/' + parseInt(op[2]) + '（' + odow + '）';
+        }
+
+        // 開始日の表示
+        var startDateStr = lp.startDate ? lp.startDate.replace(/-/g, '/') : '未設定';
+
+        html += '<tr>';
+        html += '<td style="padding:10px; border:1px solid #ddd; font-weight:600;">' + (lp.name || lectureId) + '</td>';
+        html += '<td style="padding:10px; border:1px solid #ddd; color:#666;">' + startDateStr + '</td>';
+        html += '<td style="padding:10px; border:1px solid #ddd; color:#666;">' + autoDeadlineStr + '</td>';
+        if (hasOverride) {
+          html += '<td style="padding:10px; border:1px solid #ddd; color:#e67e22; font-weight:600;">' + overrideStr + '</td>';
+        } else {
+          html += '<td style="padding:10px; border:1px solid #ddd; color:#999;">自動計算</td>';
+        }
+        html += '<td style="padding:10px; border:1px solid #ddd;">';
+        html += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">';
+        html += '<input type="date" id="lecDeadlineInput_' + lectureId + '" value="' + overrideDateVal + '" style="padding:6px; border:1px solid #ddd; border-radius:5px; font-size:13px;">';
+        html += '<button onclick="saveLectureDeadlineDate(\'' + lectureId + '\')" style="padding:6px 12px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">日程変更</button>';
+        if (hasOverride) {
+          html += '<button onclick="resetLectureDeadlineDate(\'' + lectureId + '\')" style="padding:6px 12px; background:#e74c3c; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">リセット</button>';
+        }
+        html += '</div></td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('lectureDeadlineDateTable').innerHTML = html;
+    }
+
+    /**
+     * 管理タブ：講習日程締切を上書き保存する
+     * @param {string} lectureId 講習ID
+     */
+    function saveLectureDeadlineDate(lectureId) {
+      var inputEl = document.getElementById('lecDeadlineInput_' + lectureId);
+      if (!inputEl || !inputEl.value) { appAlert('日付を選択してください'); return; }
+      var dateStr = inputEl.value; // YYYY-MM-DD 形式のまま保存
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            lectureDeadlineOverrides[lectureId] = dateStr;
+            var yr = parseInt(document.getElementById('lectureDeadlineYear').value);
+            renderLectureDeadlineDateTable(lectureDeadlineOverrides, yr);
+            renderCalendar();
+            showMessage('adminMessage', '✅ ' + result.message, 'success');
+          } else {
+            showMessage('adminMessage', '❌ ' + result.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+        })
+        .setLectureDeadlineOverride(lectureId, dateStr);
+    }
+
+    /**
+     * 管理タブ：講習日程締切の上書きをリセットして自動計算に戻す
+     * @param {string} lectureId 講習ID
+     */
+    function resetLectureDeadlineDate(lectureId) {
+      appConfirm('「' + lectureId + '」の締切日設定をリセットして自動計算に戻しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              delete lectureDeadlineOverrides[lectureId];
+              var yr = parseInt(document.getElementById('lectureDeadlineYear').value);
+              renderLectureDeadlineDateTable(lectureDeadlineOverrides, yr);
+              renderCalendar();
+              showMessage('adminMessage', '✅ ' + result.message, 'success');
+            } else {
+              showMessage('adminMessage', '❌ ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
+          })
+          .deleteLectureDeadlineOverride(lectureId);
+      });
+    }
+</script>
