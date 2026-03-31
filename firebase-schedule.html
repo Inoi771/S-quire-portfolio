@@ -70,4 +70,117 @@ function fbGetLectureScheduleEntries(lectureId, campusCode) {
       return [];
     });
 }
+
+/**
+ * 講習スケジュールエントリを一括保存（Firebase SDK）
+ * google.script.run.saveLectureScheduleEntries の代替
+ * 全置換方式: 既存エントリを全削除してから新エントリを書き込む（writeBatch使用）
+ * 権限チェック: 非管理者は他のユーザーのエントリを削除・変更不可
+ *   （myTeacherId / isAdminUser グローバル変数を使用）
+ * @param {string} lectureId 講習ID
+ * @param {string} campusCode 校舎コード
+ * @param {Array} entries エントリ配列
+ * @return {Promise<Object>} { success, message, entries, error }
+ */
+function fbSaveLectureScheduleEntries(lectureId, campusCode, entries) {
+  var normalizedCampus = String(campusCode || '').padStart(2, '0');
+
+  return fbDb.collection('lectureEntries')
+    .where('lectureId',  '==', String(lectureId))
+    .where('campusCode', '==', normalizedCampus)
+    .get()
+    .then(function(snapshot) {
+      // 権限チェック: Admin以外は他人のエントリを変更・削除不可
+      var myTid   = (typeof myTeacherId  !== 'undefined') ? myTeacherId  : '';
+      var isAdmin = (typeof isAdminUser  !== 'undefined') ? isAdminUser  : false;
+
+      if (!isAdmin && myTid) {
+        var existingOtherEntries = {};
+        snapshot.forEach(function(docSnap) {
+          var doc = docSnap.data();
+          var tid = doc.teacherId || '';
+          if (tid && tid !== myTid) {
+            existingOtherEntries[doc.entryId || docSnap.id] = {
+              date:          String(doc.date      || ''),
+              startTime:     String(doc.startTime || ''),
+              durationSlots: String(Number(doc.durationSlots) || 9),
+              subject:       String(doc.subject   || ''),
+              grade:         String(doc.grade     || ''),
+              teacherId:     tid
+            };
+          }
+        });
+        var incomingOtherIds = {};
+        entries.forEach(function(e) {
+          var eTid = e.teacherId || '';
+          if (eTid && eTid !== myTid) {
+            incomingOtherIds[e.id] = {
+              date:          String(e.date      || ''),
+              startTime:     String(e.startTime || ''),
+              durationSlots: String(Number(e.durationSlots) || 9),
+              subject:       String(e.subject   || ''),
+              grade:         String(e.grade     || ''),
+              teacherId:     eTid
+            };
+          }
+        });
+        var otherKeys = Object.keys(existingOtherEntries);
+        for (var m = 0; m < otherKeys.length; m++) {
+          var eid = otherKeys[m];
+          if (!incomingOtherIds[eid]) {
+            return Promise.resolve({ success: false, error: '他のユーザーのエントリは削除できません' });
+          }
+          var orig = existingOtherEntries[eid];
+          var inc  = incomingOtherIds[eid];
+          if (orig.date !== inc.date || orig.startTime !== inc.startTime ||
+              orig.durationSlots !== inc.durationSlots ||
+              orig.subject !== inc.subject || orig.grade !== inc.grade) {
+            return Promise.resolve({ success: false, error: '他のユーザーのエントリは変更できません' });
+          }
+        }
+      }
+
+      // バッチ書き込み: 既存を全削除 → 新規エントリを書き込み
+      var batch = fbDb.batch();
+      snapshot.forEach(function(docSnap) {
+        batch.delete(docSnap.ref);
+      });
+
+      var savedEntries = [];
+      entries.forEach(function(e) {
+        var entryId = e.id || ('ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000));
+        var docId = String(lectureId) + '_' + normalizedCampus + '_' + entryId;
+        var ref = fbDb.collection('lectureEntries').doc(docId);
+        var data = {
+          entryId:       entryId,
+          lectureId:     String(lectureId),
+          campusCode:    normalizedCampus,
+          date:          String(e.date         || ''),
+          startTime:     String(e.startTime    || ''),
+          durationSlots: Number(e.durationSlots) || 9,
+          subject:       String(e.subject      || ''),
+          grade:         String(e.grade        || ''),
+          teacherName:   String(e.teacherName  || ''),
+          teacherEmail:  String(e.teacherEmail || ''),
+          classLabel:    e.classLabel || null,
+          teacherId:     String(e.teacherId    || '')
+        };
+        batch.set(ref, data);
+        savedEntries.push({
+          id: entryId, lectureId: String(lectureId), campusCode: normalizedCampus,
+          date: data.date, startTime: data.startTime, durationSlots: data.durationSlots,
+          subject: data.subject, grade: data.grade, teacherName: data.teacherName,
+          teacherEmail: data.teacherEmail, classLabel: data.classLabel, teacherId: data.teacherId
+        });
+      });
+
+      return batch.commit().then(function() {
+        return { success: true, message: entries.length + '件を保存しました', entries: savedEntries };
+      });
+    })
+    .catch(function(err) {
+      console.error('fbSaveLectureScheduleEntriesエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
 </script>
