@@ -67,7 +67,7 @@ jobs:
       - name: 古いデプロイを自動削除（上限対策）
         run: |
           APP_DEPLOY_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
-          LINE_DEPLOY_ID=""
+          LINE_DEPLOY_ID="AKfycbxihDymNO0il76l3fUWlFtJvI8_35DIhujjnYWK0oIJ9cCurglEVKyWJ6gLfjVTi-4lNQ"
           echo "=== 削除前のデプロイ一覧 ==="
           clasp deployments
           echo "=== 固定ID以外のデプロイを削除 ==="
