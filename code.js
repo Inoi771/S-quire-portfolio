@@ -260,7 +260,7 @@ function doPost(e) {
 
           // すでに同じ teacherId・同じ LINE ID で登録済みなら案内のみ
           if (mapping[teacherId] === lineUserId) {
-            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app');
+            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。');
             Logger.log('⚠ LINE登録済みのため案内のみ: ' + text + ' (teacherId: ' + teacherId + ')');
           } else {
             var isNew = !mapping[teacherId];
@@ -279,6 +279,7 @@ function doPost(e) {
             if (displayName) replyMsg += '\n表示名: ' + displayName;
             replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
             replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
+            replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
             Logger.log('プッシュ送信開始...');
             var sent = sendLineMessage(lineUserId, replyMsg);
             Logger.log('sendLineMessage 結果: ' + sent);
