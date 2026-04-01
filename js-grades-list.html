@@ -368,18 +368,15 @@
 
       var container = document.getElementById('list-tab-content') || document.getElementById('list-table-container');
 
-      // 固定列の幅定義（No. + 氏名の2列のみ固定）
+      // 固定列の幅定義（No. + 氏名（校舎含む）の2列のみ固定）
       var colW1 = 36;   // No.
-      var colW2 = 100;  // 氏名
+      var colW2 = 130;  // 氏名+校舎
       var stickyBorder = 'border-right:2px solid #c8d8ff;';
 
-      // ヘッダー: <thead> 全体を sticky にする（個別 th への top:0 は thead の範囲内のみで切れてしまうため）
-      // thBase から position:sticky;top:0 を除去 → thead 要素に設定
+      // ヘッダー: <thead> 全体を sticky にする
       var thBase   = 'padding:10px 6px;text-align:center;white-space:nowrap;background:#f0f4ff;border-bottom:2px solid #c8d8ff;font-size:13px;';
-      // 固定2列: 横方向 sticky（left）のみ。縦方向は thead が担う。角になるので z-index は thead(2) より高い 3
       var thFixed1 = thBase + 'position:sticky;left:0;z-index:3;width:' + colW1 + 'px;min-width:' + colW1 + 'px;max-width:' + colW1 + 'px;';
       var thFixed2 = thBase + 'position:sticky;left:' + colW1 + 'px;z-index:3;width:' + colW2 + 'px;min-width:' + colW2 + 'px;max-width:' + colW2 + 'px;' + stickyBorder;
-      // スクロール列: sticky 不要（thead が縦固定を担う）
       var thScroll      = thBase;
       var thSortable    = 'padding:10px 6px;text-align:center;white-space:nowrap;border-bottom:2px solid #c8d8ff;font-size:13px;cursor:pointer;user-select:none;transition:background 0.15s;';
       var thSubject     = thSortable + 'min-width:60px;';
@@ -392,31 +389,32 @@
       var tdSubject = tdBase + 'min-width:60px;';
       var tdTotal   = tdBase + 'min-width:68px;';
 
-      var html = '<table style="width:100%;border-collapse:collapse;min-width:780px;">';
+      var html = '<table style="width:100%;border-collapse:collapse;min-width:700px;">';
       html += '<thead style="position:sticky;top:0;z-index:2;"><tr>';
       html += '<th style="' + thFixed1 + '">No.</th>';
       html += '<th style="' + thFixed2 + 'text-align:left;">氏名</th>';
-      html += '<th style="' + thScroll + '">校舎</th>';
       html += '<th onclick="sortGradesList(\'kokugo\')" title="クリックで並び替え" style="' + thSubject + sortBg('kokugo') + '">国語' + sortIcon('kokugo') + '</th>';
       html += '<th onclick="sortGradesList(\'shakai\')" title="クリックで並び替え" style="' + thSubject + sortBg('shakai') + '">社会' + sortIcon('shakai') + '</th>';
       html += '<th onclick="sortGradesList(\'sugaku\')" title="クリックで並び替え" style="' + thSubject + sortBg('sugaku') + '">数学' + sortIcon('sugaku') + '</th>';
       html += '<th onclick="sortGradesList(\'rika\')" title="クリックで並び替え"   style="' + thSubject + sortBg('rika')   + '">理科' + sortIcon('rika')   + '</th>';
       html += '<th onclick="sortGradesList(\'eigo\')" title="クリックで並び替え"   style="' + thSubject + sortBg('eigo')   + '">英語' + sortIcon('eigo')   + '</th>';
       html += '<th onclick="sortGradesList(\'total\')" title="クリックで並び替え"  style="' + thTotal   + sortBg('total') + 'font-weight:700;">合計' + sortIcon('total') + '</th>';
-      html += '<th style="' + thScroll + '">第1志望</th>';
-      html += '<th style="' + thScroll + '">第2志望</th>';
+      html += '<th style="' + thScroll + 'white-space:normal;min-width:120px;">志望校</th>';
       html += '</tr></thead>';
       html += '<tbody>';
 
       data.forEach(function(s, idx) {
         var rowBg = idx % 2 === 0 ? '#fff' : '#fafbff';
+        var campusName = campusData[s.campus] || s.campus || '';
         html += '<tr style="background:' + rowBg + ';">';
         html += '<td style="' + tdFixed1 + 'background:' + rowBg + ';color:#aaa;font-size:12px;">' + (idx + 1) + '</td>';
         html += '<td style="' + tdFixed2 + 'background:' + rowBg + ';text-align:left;">'
+              + '<div style="display:flex;align-items:baseline;gap:6px;">'
               + '<span style="font-size:14px;">' + (s.name || '-') + '</span>'
-              + (s.furigana ? '<br><span style="font-size:11px;color:#999;">' + s.furigana + '</span>' : '')
+              + (campusName ? '<span style="font-size:10px;color:#888;background:#f0f0f0;padding:1px 5px;border-radius:3px;white-space:nowrap;">' + campusName + '</span>' : '')
+              + '</div>'
+              + (s.furigana ? '<div style="font-size:11px;color:#999;">' + s.furigana + '</div>' : '')
               + '</td>';
-        html += '<td style="' + tdBase + '">' + (campusData[s.campus] || s.campus || '-') + '</td>';
         ['kokugo','shakai','sugaku','rika','eigo'].forEach(function(col) {
           var v = s[col];
           var hasVal = (v !== '' && v !== null && v !== undefined);
@@ -425,14 +423,22 @@
         });
         var hasTotal = (s.total !== '' && s.total !== null && s.total !== undefined);
         var totalHighlight = (listSortCol === 'total') ? 'background:rgba(102,126,234,0.06);' : '';
-        html += '<td style="' + tdTotal + totalHighlight + 'font-weight:700;color:' + (hasTotal ? '#333' : '#ccc') + ';">'
-              + (hasTotal ? s.total : '-') + '</td>';
+        html += '<td style="' + tdTotal + totalHighlight + '">'
+              + '<div style="font-size:10px;color:#999;line-height:1;">合計</div>'
+              + '<div style="font-size:16px;font-weight:700;color:' + (hasTotal ? '#333' : '#ccc') + ';line-height:1.3;">'
+              + (hasTotal ? s.total : '-') + '</div>'
+              + '</td>';
+        // 志望校（第1・第2を縦に並べる）
         var p1 = (s.passPercent1 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent1 + '%)</span>' : '';
         var p2 = (s.passPercent2 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent2 + '%)</span>' : '';
-        var s1label = s.shogaku1 ? (s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + p1) : '<span style="color:#ccc;">-</span>';
-        var s2label = s.shogaku2 ? (s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + p2) : '<span style="color:#ccc;">-</span>';
-        html += '<td style="' + tdBase + 'font-size:12px;">' + s1label + '</td>';
-        html += '<td style="' + tdBase + 'font-size:12px;">' + s2label + '</td>';
+        var s1line = s.shogaku1
+          ? '<div style="font-size:12px;"><span style="color:#667eea;font-weight:600;font-size:10px;">①</span> ' + s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + p1 + '</div>'
+          : '';
+        var s2line = s.shogaku2
+          ? '<div style="font-size:12px;margin-top:2px;"><span style="color:#999;font-weight:600;font-size:10px;">②</span> ' + s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + p2 + '</div>'
+          : '';
+        var shogakuContent = (s1line || s2line) ? s1line + s2line : '<span style="color:#ccc;">-</span>';
+        html += '<td style="' + tdBase + 'text-align:left;white-space:normal;min-width:120px;">' + shogakuContent + '</td>';
         html += '</tr>';
       });
 
