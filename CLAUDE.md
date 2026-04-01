@@ -75,7 +75,8 @@ markdown# S-quire — プロジェクト設計書
 
 | ファイル | 読み込むタイミング |
 |---------|-----------------|
-| `FUNCTIONS.md` | 既存関数を呼び出す・修正する・新関数をリストに追加する前 |
+| `FUNCTIONS-frontend.md` | index.html / js-*.html の関数を呼び出す・修正する・新関数を追加する前 |
+| `FUNCTIONS-backend.md` | *.js GAS の関数を呼び出す・修正する・新関数を追加する前 |
 | `BUGS.md` | 新機能を実装する前（Sheets書き込み・JSON処理・非同期処理・UI追加を含む場合は必ず） |
 | `DEPLOY.md` | デプロイ設定・appsscript.json・認証情報を確認する必要があるとき |
 | `CODING.md` | 新関数追加・PDF出力・校舎ドロップダウン実装時 |
@@ -101,7 +102,8 @@ markdown# S-quire — プロジェクト設計書
 
 | トリガー | 更新箇所 |
 |---------|---------|
-| 新しい関数を追加 | セクション10（FUNCTIONS.md） |
+| 新しいフロントエンド関数を追加 | `FUNCTIONS-frontend.md` を更新 |
+| 新しいバックエンド関数を追加 | `FUNCTIONS-backend.md` を更新 |
 | タブ・サブタブを追加 | セクション8 |
 | Driveフォルダ構成変更 | セクション4 |
 | 新しいスクリプトプロパティ追加 | DATA.md |
@@ -329,7 +331,10 @@ MyProject/
 
 ## 10. 全関数リスト
 
-詳細は `FUNCTIONS.md` 参照（Claude が必要時に自動で読み込む）
+- フロントエンド（index.html 系）: `FUNCTIONS-frontend.md`
+- バックエンド（GAS）: `FUNCTIONS-backend.md`
+
+（Claude が作業内容に応じて必要なファイルを自動で読み込む）
 
 ---
 
