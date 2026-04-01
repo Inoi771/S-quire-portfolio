@@ -356,10 +356,14 @@
     function renderGradesTableDesktop(data) {
       // ソートアイコンヘルパー
       function sortIcon(col) {
-        if (listSortCol !== col) return ' <span style="color:#bbb;font-size:11px;">⇅</span>';
+        if (listSortCol !== col) return ' <span style="color:#aaa;font-size:13px;">⇅</span>';
         return listSortAsc
-          ? ' <span style="color:#667eea;font-size:11px;">▲</span>'
-          : ' <span style="color:#667eea;font-size:11px;">▼</span>';
+          ? ' <span style="color:#667eea;font-size:13px;font-weight:700;">▲</span>'
+          : ' <span style="color:#667eea;font-size:13px;font-weight:700;">▼</span>';
+      }
+      // ソート中の列かどうかでヘッダー背景色を変える
+      function sortBg(col) {
+        return listSortCol === col ? 'background:#e0e8ff;' : 'background:#f0f4ff;';
       }
 
       var container = document.getElementById('list-tab-content') || document.getElementById('list-table-container');
@@ -377,9 +381,9 @@
       var thFixed2 = thBase + 'position:sticky;left:' + colW1 + 'px;z-index:3;width:' + colW2 + 'px;min-width:' + colW2 + 'px;max-width:' + colW2 + 'px;' + stickyBorder;
       // スクロール列: sticky 不要（thead が縦固定を担う）
       var thScroll      = thBase;
-      var thScrollClick = thBase + 'cursor:pointer;user-select:none;';
-      var thSubject     = thScrollClick + 'min-width:60px;';
-      var thTotal       = thScrollClick + 'min-width:68px;';
+      var thSortable    = 'padding:10px 6px;text-align:center;white-space:nowrap;border-bottom:2px solid #c8d8ff;font-size:13px;cursor:pointer;user-select:none;transition:background 0.15s;';
+      var thSubject     = thSortable + 'min-width:60px;';
+      var thTotal       = thSortable + 'min-width:68px;';
 
       // データセル
       var tdBase    = 'padding:9px 6px;border-bottom:1px solid #eee;font-size:13px;text-align:center;white-space:nowrap;';
@@ -393,12 +397,12 @@
       html += '<th style="' + thFixed1 + '">No.</th>';
       html += '<th style="' + thFixed2 + 'text-align:left;">氏名</th>';
       html += '<th style="' + thScroll + '">校舎</th>';
-      html += '<th onclick="sortGradesList(\'kokugo\')" style="' + thSubject + '">国語' + sortIcon('kokugo') + '</th>';
-      html += '<th onclick="sortGradesList(\'shakai\')" style="' + thSubject + '">社会' + sortIcon('shakai') + '</th>';
-      html += '<th onclick="sortGradesList(\'sugaku\')" style="' + thSubject + '">数学' + sortIcon('sugaku') + '</th>';
-      html += '<th onclick="sortGradesList(\'rika\')"   style="' + thSubject + '">理科' + sortIcon('rika')   + '</th>';
-      html += '<th onclick="sortGradesList(\'eigo\')"   style="' + thSubject + '">英語' + sortIcon('eigo')   + '</th>';
-      html += '<th onclick="sortGradesList(\'total\')"  style="' + thTotal   + 'font-weight:700;">合計' + sortIcon('total') + '</th>';
+      html += '<th onclick="sortGradesList(\'kokugo\')" title="クリックで並び替え" style="' + thSubject + sortBg('kokugo') + '">国語' + sortIcon('kokugo') + '</th>';
+      html += '<th onclick="sortGradesList(\'shakai\')" title="クリックで並び替え" style="' + thSubject + sortBg('shakai') + '">社会' + sortIcon('shakai') + '</th>';
+      html += '<th onclick="sortGradesList(\'sugaku\')" title="クリックで並び替え" style="' + thSubject + sortBg('sugaku') + '">数学' + sortIcon('sugaku') + '</th>';
+      html += '<th onclick="sortGradesList(\'rika\')" title="クリックで並び替え"   style="' + thSubject + sortBg('rika')   + '">理科' + sortIcon('rika')   + '</th>';
+      html += '<th onclick="sortGradesList(\'eigo\')" title="クリックで並び替え"   style="' + thSubject + sortBg('eigo')   + '">英語' + sortIcon('eigo')   + '</th>';
+      html += '<th onclick="sortGradesList(\'total\')" title="クリックで並び替え"  style="' + thTotal   + sortBg('total') + 'font-weight:700;">合計' + sortIcon('total') + '</th>';
       html += '<th style="' + thScroll + '">第1志望</th>';
       html += '<th style="' + thScroll + '">第2志望</th>';
       html += '</tr></thead>';
@@ -416,10 +420,12 @@
         ['kokugo','shakai','sugaku','rika','eigo'].forEach(function(col) {
           var v = s[col];
           var hasVal = (v !== '' && v !== null && v !== undefined);
-          html += '<td style="' + tdSubject + '">' + (hasVal ? v : '<span style="color:#ccc;">-</span>') + '</td>';
+          var sortHighlight = (listSortCol === col) ? 'background:rgba(102,126,234,0.06);' : '';
+          html += '<td style="' + tdSubject + sortHighlight + '">' + (hasVal ? v : '<span style="color:#ccc;">-</span>') + '</td>';
         });
         var hasTotal = (s.total !== '' && s.total !== null && s.total !== undefined);
-        html += '<td style="' + tdTotal + 'font-weight:700;color:' + (hasTotal ? '#333' : '#ccc') + ';">'
+        var totalHighlight = (listSortCol === 'total') ? 'background:rgba(102,126,234,0.06);' : '';
+        html += '<td style="' + tdTotal + totalHighlight + 'font-weight:700;color:' + (hasTotal ? '#333' : '#ccc') + ';">'
               + (hasTotal ? s.total : '-') + '</td>';
         var p1 = (s.passPercent1 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent1 + '%)</span>' : '';
         var p2 = (s.passPercent2 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent2 + '%)</span>' : '';
