@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   test:
+    # [skip gas-deploy] コミットはGASデプロイをスキップ（Firebase Hostingのみ更新）
+    if: ${{ !contains(github.event.head_commit.message, '[skip gas-deploy]') }}
     runs-on: ubuntu-latest
     steps:
       - name: コードを取得
@@ -34,6 +36,7 @@ jobs:
 
   deploy:
     needs: test
+    if: ${{ !contains(github.event.head_commit.message, '[skip gas-deploy]') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -61,15 +64,77 @@ jobs:
           DEPLOY_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
           echo "デプロイ($DEPLOY_ID)を更新します"
           clasp deploy --deploymentId "$DEPLOY_ID" -d "Auto deploy $(date '+%Y-%m-%d %H:%M')"
-          # AKfycbwGW781... が Firebase Hosting API + LINE Webhook 兼用デプロイ（上記で更新済み）
+
+      - name: APIエンドポイント疎通確認・ANYONE_ANONYMOUSデプロイ確保
+        run: |
+          CURRENT_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
+          DEPLOY_URL="https://script.google.com/macros/s/${CURRENT_ID}/exec"
+
+          echo "=== サーバーサイドから疎通確認 ==="
+          RESPONSE=$(curl -s -m 15 -L \
+            -X POST \
+            -H "Content-Type: text/plain;charset=utf-8" \
+            -d '{"type":"gasApi","function":"testApiEndpoint","args":[],"idToken":""}' \
+            "$DEPLOY_URL" 2>&1 || echo "CURL_ERROR")
+
+          echo "レスポンス: $RESPONSE"
+
+          if echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo "✓ APIエンドポイントは正常（ANYONE_ANONYMOUS確認済み）"
+            echo "API_DEPLOY_ID=$CURRENT_ID" >> $GITHUB_ENV
+          else
+            echo "⚠ APIエンドポイントが正しいJSONを返していません"
+            echo "⚠ ANYONE_ANONYMOUSで新規デプロイを作成します..."
+
+            # appsscript.json を一時的に ANYONE_ANONYMOUS に変更してpush
+            python3 -c "
+import json
+with open('appsscript.json') as f:
+    d = json.load(f)
+d['webapp']['access'] = 'ANYONE_ANONYMOUS'
+d['webapp']['executeAs'] = 'USER_DEPLOYING'
+with open('appsscript.json', 'w') as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+print('appsscript.json を ANYONE_ANONYMOUS に変更しました')
+"
+            clasp push --force
+
+            # 新しい ANYONE_ANONYMOUS デプロイを作成
+            NEW_DEPLOY=$(clasp deploy --description "Firebase API + LINE Webhook (ANYONE_ANONYMOUS)" 2>&1)
+            echo "clasp deploy 結果: $NEW_DEPLOY"
+            NEW_ID=$(echo "$NEW_DEPLOY" | grep -oE 'AKfyc[A-Za-z0-9_-]+' | head -1)
+            echo "新しいデプロイID: $NEW_ID"
+
+            # appsscript.json を元に戻す
+            git checkout appsscript.json
+            clasp push --force
+
+            if [ -n "$NEW_ID" ] && [ "$NEW_ID" != "$CURRENT_ID" ]; then
+              echo "API_DEPLOY_ID=$NEW_ID" >> $GITHUB_ENV
+
+              # gas-bridge.html・index.html・このワークフロー内のIDを更新
+              sed -i "s|$CURRENT_ID|$NEW_ID|g" gas-bridge.html index.html
+              sed -i "s|$CURRENT_ID|$NEW_ID|g" .github/workflows/deploy-to-gas.yml
+
+              # コミットしてpush（[skip gas-deploy] でこのジョブを再実行しない）
+              git config user.email "github-actions@github.com"
+              git config user.name "GitHub Actions"
+              git add gas-bridge.html index.html .github/workflows/deploy-to-gas.yml
+              git diff --staged --quiet || git commit -m "[skip gas-deploy] fix: ANYONE_ANONYMOUSデプロイIDを自動更新 ($NEW_ID)"
+              git push origin "${GITHUB_REF##*/}"
+              echo "✓ 新しいデプロイIDをコミットしました。Firebase Hostingが自動的に更新されます。"
+            else
+              echo "⚠ 新しいIDの取得に失敗しました"
+            fi
+          fi
 
       - name: 古いデプロイを自動削除（上限対策）
         run: |
-          # 保持するデプロイID（2つ）
-          # AKfycbwGW781... = アプリ + Firebase Hosting API + LINE Webhook 兼用
-          # AKfycbyqwdCC... = 旧メインアプリURL（GAS版アクセス用）
-          KEEP_ID_1="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
+          # 保持するデプロイID
+          KEEP_ID_1="${{ env.API_DEPLOY_ID }}"
           KEEP_ID_2="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
+          echo "保持するID1: $KEEP_ID_1"
+          echo "保持するID2: $KEEP_ID_2"
           echo "=== 削除前のデプロイ一覧 ==="
           clasp deployments
           echo "=== 固定ID以外のデプロイを削除 ==="
@@ -83,4 +148,3 @@ jobs:
           done
           echo "=== 削除後のデプロイ一覧 ==="
           clasp deployments
-
