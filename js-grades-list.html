@@ -482,33 +482,37 @@
         function score(v) {
           return (v !== '' && v !== null && v !== undefined) ? '<b>' + v + '</b>' : '<span style="color:#ccc;">-</span>';
         }
-        var campusName = campusData[s.campus] || s.campus || '-';
+        var campusName = campusData[s.campus] || s.campus || '';
+        // 志望校（縦並び）
         var shogakuLine = '';
         if (s.shogaku1 || s.shogaku2) {
           var sp1 = (s.passPercent1 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent1 + '%)</span>' : '';
           var sp2 = (s.passPercent2 != null) ? ' <span style="color:#667eea;font-size:11px;font-weight:600;">(' + s.passPercent2 + '%)</span>' : '';
-          var sl1 = s.shogaku1 ? (s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + sp1) : '';
-          var sl2 = s.shogaku2 ? (s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + sp2) : '';
-          shogakuLine = '<div style="margin-top:6px;font-size:12px;color:#555;">'
-            + (sl1 ? '第1志望: ' + sl1 : '')
-            + (sl1 && sl2 ? ' / ' : '')
-            + (sl2 ? '第2志望: ' + sl2 : '')
-            + '</div>';
+          shogakuLine = '<div style="margin-top:6px;font-size:12px;color:#555;">';
+          if (s.shogaku1) {
+            shogakuLine += '<div><span style="color:#667eea;font-weight:600;font-size:10px;">①</span> ' + s.shogaku1 + (s.shogaku1_gakka ? '（' + s.shogaku1_gakka + '）' : '') + sp1 + '</div>';
+          }
+          if (s.shogaku2) {
+            shogakuLine += '<div style="margin-top:2px;"><span style="color:#999;font-weight:600;font-size:10px;">②</span> ' + s.shogaku2 + (s.shogaku2_gakka ? '（' + s.shogaku2_gakka + '）' : '') + sp2 + '</div>';
+          }
+          shogakuLine += '</div>';
         }
 
         var hasTotal = (s.total !== '' && s.total !== null && s.total !== undefined);
         return '<div style="background:white;border-radius:10px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.08);border:1px solid #e8edf5;">'
           + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
           +   '<div>'
-          +     '<div style="font-size:15px;font-weight:700;color:#222;"><span style="font-size:11px;color:#aaa;font-weight:400;margin-right:4px;">' + (idx + 1) + '.</span>' + (s.name || '-') + '</div>'
+          +     '<div style="display:flex;align-items:baseline;gap:6px;">'
+          +       '<span style="font-size:15px;font-weight:700;color:#222;"><span style="font-size:11px;color:#aaa;font-weight:400;margin-right:4px;">' + (idx + 1) + '.</span>' + (s.name || '-') + '</span>'
+          +       (campusName ? '<span style="font-size:10px;color:#888;background:#f0f0f0;padding:1px 5px;border-radius:3px;white-space:nowrap;">' + campusName + '</span>' : '')
+          +     '</div>'
           +     (s.furigana ? '<div style="font-size:11px;color:#999;">' + s.furigana + '</div>' : '')
           +   '</div>'
           +   '<div style="text-align:right;">'
-          +     '<div style="font-size:11px;color:#888;">' + campusName + '</div>'
+          +     '<div style="font-size:10px;color:#aaa;">合計</div>'
           +     '<div style="font-size:20px;font-weight:700;color:' + (hasTotal ? '#667eea' : '#ccc') + ';line-height:1.2;">'
           +       (hasTotal ? s.total : '-')
           +     '</div>'
-          +     '<div style="font-size:10px;color:#aaa;">合計</div>'
           +   '</div>'
           + '</div>'
           + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;background:#f8f9ff;border-radius:6px;padding:8px 4px;">'
