@@ -56,4 +56,23 @@ html = html.replace(INCLUDE_RE, (match, name) => {
 
 fs.writeFileSync(OUT_HTML, html, 'utf8');
 
+// ----- static/ フォルダを public/ にコピー -----
+const STATIC_DIR = path.join(SRC_DIR, 'static');
+if (fs.existsSync(STATIC_DIR)) {
+  function copyDir(src, dest) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      const srcPath  = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        copyDir(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+        console.log(`  ✓ static コピー: ${entry.name}`);
+      }
+    }
+  }
+  copyDir(STATIC_DIR, DIST_DIR);
+}
+
 console.log(`=== ビルド完了: ${count} ファイルをインライン展開 → public/index.html ===`);
