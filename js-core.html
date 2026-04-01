@@ -580,14 +580,6 @@
    * Firebase Auth でログイン確認後に実行するアプリ起動処理
    */
   function startAppAfterAuth_() {
-    // ヘッダーのアカウントボタンにメールアドレスを表示
-    if (window.fbCurrentUser) {
-      var btn = document.getElementById('fbAccountBtn');
-      var emailEl = document.getElementById('fbAccountEmail');
-      if (btn) btn.style.display = 'inline-flex';
-      if (emailEl) emailEl.textContent = window.fbUserEmail || '';
-    }
-
     // getAppStartupData・getScheduleData・アニメーション の3つが揃ったらスプラッシュを閉じる
 
     // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
@@ -693,69 +685,40 @@
     initializeApp();
   }
 
-  // 講師ID入力画面を表示（初回アクセス・未紐付けアカウント時）
+  // アクセス拒否画面を表示（未登録・未許可のGoogleアカウントでアクセスした時）
   function showIdInputScreen_() {
     var splash = document.getElementById('splashScreen');
     if (splash) splash.style.display = 'none';
 
+    var currentEmail = (window.fbUserEmail || '');
     var overlay = document.createElement('div');
     overlay.id = 'idInputOverlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;z-index:99999;';
     overlay.innerHTML =
       '<div style="background:white;border-radius:16px;padding:40px 32px;max-width:380px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.2);">' +
-      '<div style="font-size:56px;margin-bottom:12px;">🔑</div>' +
-      '<h2 style="margin:0 0 8px;color:#333;font-size:20px;">講師IDを入力してください</h2>' +
-      '<p style="color:#666;font-size:14px;line-height:1.7;margin:0 0 8px;">LINE登録時に送られた講師IDを入力してください</p>' +
-      '<p style="color:#999;font-size:12px;margin:0 0 24px;">（例：T1707123456789_abc123def）</p>' +
-      '<input id="idInputField" type="text" placeholder="T から始まるIDを入力" style="width:100%;box-sizing:border-box;padding:12px 16px;font-size:14px;font-family:monospace;border:2px solid #e0e0e0;border-radius:10px;outline:none;margin-bottom:8px;" />' +
-      '<div id="idInputError" style="color:#e53935;font-size:13px;min-height:20px;margin-bottom:8px;"></div>' +
-      '<button onclick="submitIdInput_()" style="width:100%;padding:14px;background:var(--theme-color,#43e97b);color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;">確認する</button>' +
-      '<p style="color:#aaa;font-size:12px;margin:16px 0 0;">IDが不明な場合は管理者にお問い合わせください</p>' +
+      '<div style="font-size:56px;margin-bottom:12px;">🔒</div>' +
+      '<h2 style="margin:0 0 8px;color:#333;font-size:20px;">アクセスできません</h2>' +
+      (currentEmail ? '<p style="color:#999;font-size:13px;background:#f5f5f5;border-radius:8px;padding:8px 12px;margin:0 0 12px;word-break:break-all;">' + currentEmail + '</p>' : '') +
+      '<p style="color:#666;font-size:14px;line-height:1.7;margin:0 0 24px;">このGoogleアカウントはアクセス権がありません。<br>登録済みのGoogleアカウントに切り替えてください。</p>' +
+      '<button onclick="switchAccountAndReload_()" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>' +
+      'Googleアカウントを選択' +
+      '</button>' +
+      '<p style="color:#aaa;font-size:12px;margin:16px 0 0;">アクセス権の付与は管理者にお問い合わせください</p>' +
       '</div>';
     document.body.appendChild(overlay);
-
-    var field = document.getElementById('idInputField');
-    if (field) {
-      field.focus();
-      field.addEventListener('keydown', function(e) { if (e.key === 'Enter') submitIdInput_(); });
-    }
   }
 
-  function submitIdInput_() {
-    var field = document.getElementById('idInputField');
-    var errorEl = document.getElementById('idInputError');
-    var inputId = field ? field.value.trim() : '';
-    if (!inputId) { if (errorEl) errorEl.textContent = '講師IDを入力してください'; return; }
-    if (errorEl) errorEl.textContent = '';
-    if (field) field.disabled = true;
-
-    var btn = document.querySelector('#idInputOverlay button');
-    if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
-
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result && result.success && result.found) {
-          var overlay = document.getElementById('idInputOverlay');
-          if (overlay) overlay.remove();
-          // 紐付け完了 → アプリを正式に起動
-          splashStartupData_.displayName = result.displayName;
-          splashStartupData_.isAdmin = result.isAdmin;
-          splashStartupData_.teacherId = result.teacherId;
-          splashStartupData_.needsIdInput = false;
-          applyStartupData_(splashStartupData_);
-        } else {
-          if (field) field.disabled = false;
-          if (btn) { btn.disabled = false; btn.textContent = '確認する'; }
-          if (errorEl) errorEl.textContent = 'この講師IDは見つかりませんでした。LINEで受け取ったIDを確認してください。';
-        }
-      })
-      .withFailureHandler(function() {
-        if (field) field.disabled = false;
-        if (btn) { btn.disabled = false; btn.textContent = '確認する'; }
-        if (errorEl) errorEl.textContent = '通信エラーが発生しました。もう一度お試しください。';
-      })
-      .linkUserById(inputId);
-  }
+  window.switchAccountAndReload_ = function() {
+    var provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    fbAuth.signInWithPopup(provider).then(function() {
+      var overlay = document.getElementById('idInputOverlay');
+      if (overlay) overlay.remove();
+    }).catch(function(error) {
+      console.error('アカウント切り替えエラー:', error);
+    });
+  };
 
   function startHeaderClock() {
       var el = document.getElementById('headerClock');
