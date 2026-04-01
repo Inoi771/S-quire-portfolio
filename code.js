@@ -260,7 +260,7 @@ function doPost(e) {
 
           // すでに同じ teacherId・同じ LINE ID で登録済みなら案内のみ
           if (mapping[teacherId] === lineUserId) {
-            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\n🔑 講師ID: ' + teacherId + '\n\nアプリURL:\nhttps://script.google.com/macros/s/AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ/exec');
+            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app');
             Logger.log('⚠ LINE登録済みのため案内のみ: ' + text + ' (teacherId: ' + teacherId + ')');
           } else {
             var isNew = !mapping[teacherId];
@@ -278,8 +278,7 @@ function doPost(e) {
             var replyMsg = '✅ 登録が完了しました！';
             if (displayName) replyMsg += '\n表示名: ' + displayName;
             replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
-            replyMsg += '\n\n※ 別のGoogleアカウントでアプリにアクセスするときに講師IDを入力してください（事前にメールアドレスを設定タブで登録しておくと次回から入力不要です）';
-            replyMsg += '\n\nアプリURL:\nhttps://script.google.com/macros/s/AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ/exec';
+            replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
             Logger.log('プッシュ送信開始...');
             var sent = sendLineMessage(lineUserId, replyMsg);
             Logger.log('sendLineMessage 結果: ' + sent);
