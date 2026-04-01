@@ -87,16 +87,9 @@ jobs:
             echo "⚠ ANYONE_ANONYMOUSで新規デプロイを作成します..."
 
             # appsscript.json を一時的に ANYONE_ANONYMOUS に変更してpush
-            python3 -c "
-import json
-with open('appsscript.json') as f:
-    d = json.load(f)
-d['webapp']['access'] = 'ANYONE_ANONYMOUS'
-d['webapp']['executeAs'] = 'USER_DEPLOYING'
-with open('appsscript.json', 'w') as f:
-    json.dump(d, f, indent=2, ensure_ascii=False)
-print('appsscript.json を ANYONE_ANONYMOUS に変更しました')
-"
+            jq '.webapp.access = "ANYONE_ANONYMOUS" | .webapp.executeAs = "USER_DEPLOYING"' appsscript.json > appsscript.json.tmp
+            mv appsscript.json.tmp appsscript.json
+            echo 'appsscript.json を ANYONE_ANONYMOUS に変更しました'
             clasp push --force
 
             # 新しい ANYONE_ANONYMOUS デプロイを作成
