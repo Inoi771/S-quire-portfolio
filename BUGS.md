@@ -286,7 +286,7 @@ function generatePDF(mode) {
 
 **やってはいけないこと:**
 - `position: fixed` の要素を新たに追加して `fitToScreen()` の補正処理を追加しない
-- CLAUDE.md セクション9「対応済みの要素一覧」を更新しない
+- DESIGN.md の「現在対応済みの要素」一覧を更新しない
 
 **正しい対応（3ステップ必須）:**
 ```javascript
