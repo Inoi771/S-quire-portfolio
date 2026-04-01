@@ -619,10 +619,9 @@
         .then(function(result) { gradeResult = result; onBothLoaded(); })
         .catch(function() { gradeResult = null; onBothLoaded(); });
 
-      google.script.run
-        .withSuccessHandler(function(result) { analysisResult = result; onBothLoaded(); })
-        .withFailureHandler(function() { analysisResult = null; onBothLoaded(); })
-        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+      fbGetStudentAnalysis(currentFiscalYear, studentId, selectedTest)
+        .then(function(result) { analysisResult = result; onBothLoaded(); })
+        .catch(function() { analysisResult = null; onBothLoaded(); });
     }
 
     /**

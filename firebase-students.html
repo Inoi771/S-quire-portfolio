@@ -761,4 +761,106 @@ function fbGetCampusAverages(year, testName) {
     return { success: false, error: err.message || String(err) };
   });
 }
+
+/**
+ * テスト全体AI分析を取得（Firebase SDK）
+ * google.script.run.getGradeAnalysis の代替
+ * @param {number} year 学年年度
+ * @param {string} testName テスト名
+ * @return {Promise<Object>} { success, exists, analysis, generatedAt }
+ */
+function fbGetGradeAnalysis(year, testName) {
+  var safe = fbSafeTestName_(testName);
+  var docId = String(parseInt(year, 10)) + '_' + safe;
+  return fbDb.collection('testAnalysis').doc(docId).get()
+    .then(function(docSnap) {
+      if (!docSnap.exists) {
+        return { success: true, exists: false, analysis: null, generatedAt: '' };
+      }
+      var doc = docSnap.data();
+      if (!doc.analysisJson) {
+        return { success: true, exists: false, analysis: null, generatedAt: '' };
+      }
+      try {
+        var analysis = JSON.parse(doc.analysisJson);
+        if (!analysis) return { success: true, exists: false, analysis: null, generatedAt: '' };
+        return { success: true, exists: true, analysis: analysis, generatedAt: doc.generatedAt || '' };
+      } catch (e) {
+        console.error('fbGetGradeAnalysis JSONパースエラー:', e);
+        return { success: true, exists: false, analysis: null, generatedAt: '' };
+      }
+    })
+    .catch(function(err) {
+      console.error('fbGetGradeAnalysisエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
+
+/**
+ * 生徒別AI分析を取得（Firebase SDK）
+ * google.script.run.getStudentAnalysis の代替
+ * @param {number} year 年度
+ * @param {string} studentId 生徒ID
+ * @param {string} testName テスト名
+ * @return {Promise<Object>} { success, exists, analysis, generatedAt }
+ */
+function fbGetStudentAnalysis(year, studentId, testName) {
+  var sid = String(studentId || '').trim();
+  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+  var safe = fbSafeTestName_(testName);
+  var docId = sid + '_' + safe + '_' + String(parseInt(year, 10));
+
+  return fbDb.collection('studentAnalysis').doc(docId).get()
+    .then(function(docSnap) {
+      if (docSnap.exists && docSnap.data().analysisJson) {
+        try {
+          var analysis = JSON.parse(docSnap.data().analysisJson);
+          if (analysis) {
+            return { success: true, exists: true, analysis: analysis, generatedAt: docSnap.data().generatedAt || '' };
+          }
+        } catch (e) { /* fall through */ }
+      }
+
+      // 基礎学力テストの特例：完全一致がない場合、N回以上のデータにフォールバック
+      var targetTest = String(testName).trim();
+      var basicMatch = targetTest.match(/^第(\d+)回基礎学力テスト$/);
+      if (!basicMatch) {
+        return { success: true, exists: false };
+      }
+
+      var targetNum = parseInt(basicMatch[1], 10);
+      var promises = [];
+      for (var r = 3; r > targetNum; r--) {
+        var fallbackTest = '第' + r + '回基礎学力テスト';
+        var fbSafe = fbSafeTestName_(fallbackTest);
+        var fbDocId = sid + '_' + fbSafe + '_' + String(parseInt(year, 10));
+        promises.push({ round: r, docId: fbDocId });
+      }
+
+      if (promises.length === 0) return { success: true, exists: false };
+
+      // 高い回数から順に試みる
+      return promises.reduce(function(chain, item) {
+        return chain.then(function(found) {
+          if (found) return found;
+          return fbDb.collection('studentAnalysis').doc(item.docId).get()
+            .then(function(snap) {
+              if (snap.exists && snap.data().analysisJson) {
+                try {
+                  var a = JSON.parse(snap.data().analysisJson);
+                  if (a) return { success: true, exists: true, analysis: a, generatedAt: snap.data().generatedAt || '' };
+                } catch (e) { /* continue */ }
+              }
+              return null;
+            });
+        });
+      }, Promise.resolve(null)).then(function(result) {
+        return result || { success: true, exists: false };
+      });
+    })
+    .catch(function(err) {
+      console.error('fbGetStudentAnalysisエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
 </script>

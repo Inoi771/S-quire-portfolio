@@ -1096,10 +1096,9 @@
         .then(function(result) { gradeResult = result; tryRender(); })
         .catch(function(err) { gradeResult = { success: false, error: err }; tryRender(); });
 
-      google.script.run
-        .withSuccessHandler(function(result) { analysisResult = result; tryRender(); })
-        .withFailureHandler(function() { analysisResult = { success: false }; tryRender(); })
-        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+      fbGetStudentAnalysis(currentFiscalYear, studentId, selectedTest)
+        .then(function(result) { analysisResult = result; tryRender(); })
+        .catch(function() { analysisResult = { success: false }; tryRender(); });
     }
 
     /**
@@ -1140,10 +1139,9 @@
         .then(function(r) { gradeResult = r; onDone(); })
         .catch(function()  { gradeResult = { success: false }; onDone(); });
 
-      google.script.run
-        .withSuccessHandler(function(r) { analysisResult = r; onDone(); })
-        .withFailureHandler(function()  { analysisResult = { success: false }; onDone(); })
-        .getStudentAnalysis(currentFiscalYear, studentId, selectedTest);
+      fbGetStudentAnalysis(currentFiscalYear, studentId, selectedTest)
+        .then(function(r) { analysisResult = r; onDone(); })
+        .catch(function()  { analysisResult = { success: false }; onDone(); });
     }
 
     /**
