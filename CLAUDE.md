@@ -15,13 +15,14 @@ Claude がやることは「コードを編集して git push するだけ」で
 
 | 状態 | 詳細 |
 |------|------|
-| GitHub リポジトリ | ✅ 設定済み（`square1995/gas-App`） |
+| GitHub リポジトリ | ✅ 設定済み（`square1995/S-quire`） |
 | デプロイ先ブランチ | ✅ `claude/` で始まるブランチへのプッシュで自動デプロイ |
 | clasp（GAS連携ツール） | ✅ GitHub Actions が自動でインストール・実行（ローカル不要） |
 | Google認証 | ✅ `CLASP_REFRESH_TOKEN` シークレットで管理済み（ログイン不要） |
 | GASプロジェクトID | ✅ `.clasp.json` に記載済み（変更不要） |
-| デプロイID（固定） | ✅ `AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ`（ワークフローに直接書いてある・変更不要） |
-| 自動デプロイ | ✅ git push → 約1〜2分でアプリに反映 |
+| GASデプロイID（LINE/API用・固定） | ✅ `AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw`（ANYONE_ANONYMOUS・変更不要） |
+| アプリURL | ✅ `https://fir-quire.web.app`（Firebase Hosting） |
+| 自動デプロイ | ✅ git push → GAS: 約1〜2分で反映 / Firebase Hosting: 約2〜3分で反映 |
 
 **ユーザーに「claspをインストールしてください」「ログインしてください」「GASエディタでデプロイしてください」などを案内することは絶対に禁止。**
 
@@ -171,32 +172,27 @@ Claude がやることは「コードを編集して git push するだけ」で
 | `.clasp.json` | GASプロジェクトとの紐付け設定（設定済み・変更不要） |
 | `appsscript.json` | GASマニフェスト（ウェブアプリ設定・API有効化） |
 
-#### ⚠️【重要】デプロイIDは固定値を使うこと
-GASのウェブアプリには「デプロイID」があり、これがアプリのURLに対応している。
-**このIDが変わるとアプリのURLも変わってしまう**ため、固定値をワークフローに直書きしている。
+#### ⚠️【重要】GASデプロイIDは固定値を使うこと（ANYONE_ANONYMOUS・1つのみ）
+
+Firebase Hosting 移行後、GASデプロイは**1つのみ**（LINE Webhook・Firebase API兼用）。
 
 | 項目 | 値 |
 |------|-----|
-| デプロイID | `AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ` |
-| アプリURL | `https://script.google.com/macros/s/AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ/exec` |
+| GASデプロイID | `AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw` |
+| 用途 | LINE Webhook受信 ＋ Firebase HostingからのAPIコール |
+| アクセス設定 | **全員（ANYONE_ANONYMOUS）** — Googleアカウント不要 |
+| アプリURL（ユーザー向け） | `https://fir-quire.web.app`（Firebase Hosting） |
+| LINE Webhook URL | `https://script.google.com/macros/s/AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw/exec` |
 
 **Claude がやってはいけないこと：**
-- `clasp deploy`（IDなし）で新規デプロイを作ること → 別URLが生成されてしまう
+- `clasp deploy`（IDなし）で新規デプロイを作ること → 不要なデプロイが増える
 - ワークフロー内の `DEPLOY_ID` を動的に取得しようとすること → 誤ったIDを拾う場合がある
 - 上記のデプロイIDを変更・削除すること
-- **ANYONE_ANONYMOUS デプロイ（`AKfycbzrzZkyS42v...`）に対して `appsscript.json` が ANYONE のまま `clasp deploy --deploymentId` を実行すること** → アクセス設定が ANYONE に上書きされLINEからのWebhookが401エラーで弾かれて完全に動かなくなる（ワークフローは必ず一時的に ANYONE_ANONYMOUS に変更してから deploy し、その後元に戻す）
-
-#### ⚠️【重要】2デプロイ構成とANYONE_ANONYMOUS専用デプロイの注意事項
-
-| デプロイID（先頭） | 用途 | アクセス設定 | 更新方法 |
-|---|---|---|---|
-| `AKfycbyqwdCC...` | 通常アプリ | Googleアカウント必須（ANYONE） | 自動更新（clasp deploy --deploymentId で更新） |
-| `AKfycbzrzZkyS42v...` | Firebase API・LINE Webhook専用 | **全員（ANYONE_ANONYMOUS）** | 自動更新（ワークフローが一時的にANYONE_ANONYMOUSに変更して deploy） |
+- **`appsscript.json` が ANYONE のまま `clasp deploy --deploymentId AKfycbzrzZkyS42v...` を実行すること** → アクセス設定が ANYONE に上書きされLINEとFirebase APIが401エラーになる（ワークフローは必ず一時的に ANYONE_ANONYMOUS に変更してから deploy し、その後元に戻す）
 
 **ANYONE_ANONYMOUSデプロイのルール（絶対に守ること）：**
 - ワークフロー（`deploy-to-gas.yml`）の「ANYONE_ANONYMOUSデプロイを更新」ステップが毎回正しく処理する
-- `appsscript.json` が ANYONE のまま `clasp deploy --deploymentId AKfycbzrzZkyS42v...` を手動実行してはいけない
-- もしGASエディタで設定を確認して「アクセスできるユーザー」が「Googleアカウントを持つ全員」になっていたら、即座に「全員」に戻すこと（LINEとFirebase APIが動かなくなっている）
+- もしGASエディタで「アクセスできるユーザー」が「Googleアカウントを持つ全員」になっていたら、即座に「全員」に戻すこと（LINEとFirebase APIが動かなくなっている）
 
 ##### `.clasp.json` の内容（設定済み・変更不要）
 ```json
@@ -361,7 +357,7 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 20**
+**現在のデプロイ回数: 21**
 
 > GASプロジェクト履歴の上限は200件。180回に達したら下記の警告が表示される。
 
@@ -379,7 +375,8 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 | 項目 | 内容 |
 |------|------|
 | アプリ名 | S-quire |
-| 種別 | Google Apps Script (GAS) Web App |
+| アプリURL | `https://fir-quire.web.app` |
+| 種別 | Firebase Hosting（フロント） + Google Apps Script（バックエンドAPI） |
 | 用途 | **個別指導スクエア**（個別指導塾）向け業務管理ダッシュボード |
 | 運営主体 | 個別指導スクエア（学校ではなく学習塾。個別指導形式） |
 | バージョン | 1.0.0 |
@@ -2018,7 +2015,7 @@ function featureDebug_(label, msg) {
 - `addCampus()` で `.toUpperCase()` を適用しているが、コードは数値文字列（例: `'01'`）なので実質影響なし
 - スケジュール抽出でファイル名に学校名が含まれていないファイルはスキップされる
 - Excel (.xlsx/.xls) 形式のファイルは自動インポート非対応（CSV か Google Sheets に変換が必要）
-- **`appsscript.json` の `webapp` 設定はGASの既存デプロイには反映されない**: `clasp deploy --deploymentId <ID>` で既存デプロイを更新する場合、`appsscript.json` の `webapp.access` / `webapp.executeAs` はコードには反映されるが、デプロイの実行設定（誰が実行・誰がアクセス可）には反映されない。これらを変更するにはGASエディタの「デプロイを管理」から手動で変更する必要がある。**2デプロイ構成**（理由: `ANYONE` と `ANYONE_ANONYMOUS` の両立が単一デプロイでは不可能なため）: アプリ用デプロイ `AKfycbyqwdCC...` は `access=ANYONE`（Googleアカウントが必要）＋**`executeAs=USER_ACCESSING`（アクセスしているユーザーとして実行）** で動作し `Session.getActiveUser().getEmail()` と `PropertiesService.getUserProperties()` が各ユーザー固有のデータを返す。Firebase API・LINE Webhook専用デプロイ `AKfycbzrzZkyS42v...` は `access=ANYONE_ANONYMOUS`（Googleアカウント不要）で動作しLINEの未認証POSTリクエストとFirebase HostingからのAPIコールを受け取る。⚠️ `ANYONE_ANONYMOUS` のデプロイでは `Session.getActiveUser().getEmail()` が常に空文字列を返すため、アプリのアクセスチェック（`isAllowedUser()`）で全員が拒否される。LINE Webhook専用以外の用途には絶対に使わないこと。
+- **GASデプロイは1つのみ（ANYONE_ANONYMOUS）**: Firebase Hosting 移行後、GASはAPIサーバーとして動作する。デプロイ `AKfycbzrzZkyS42v...` が `access=ANYONE_ANONYMOUS` で LINE Webhook と Firebase Hosting からの API コール（`body.type === 'gasApi'`）を両方受け取る。`Session.getActiveUser().getEmail()` は常に空文字列を返すため、ユーザー識別は Firebase ID トークン検証（`verifyFirebaseIdToken_`）＋ `setFirebaseEmailContext_()` で行う。`appsscript.json` の `webapp` 設定変更時はワークフローが自動で一時的に ANYONE_ANONYMOUS に変更してデプロイし元に戻す。
 - **⚠️【重要】`PropertiesService.getUserProperties()` は `USER_DEPLOYING` では全ユーザーで管理者データを返す**: このため、ユーザーごとのデータ（プロフィール・設定など）は `getUserProperty()` / `setUserProperty()` ヘルパーを通じて ScriptProperties に `_UP_{safeEmail}_{key}` 形式で保存している（`settings.js` の `getSafeUserKey_()` ヘルパー参照）。`PropertiesService.getUserProperties()` を直接使うことは禁止。ユーザーデータの読み書きは必ず `getUserProperty()` / `setUserProperty()` を使うこと。
 - **デプロイの `paths` フィルター**: `deploy-to-gas.yml` は `*.js`/`*.html`/`appsscript.json`/`.github/workflows/*.yml` が変更されたときのみ GAS デプロイを実行する。`README.md`/`CLAUDE.md` のみの変更ではデプロイは実行されない（ただし `merge-to-main.yml` が main へのマージは行う）。新しいファイル種別を GAS に送る必要がある場合は `paths` への追記も忘れないこと。報告文の使い分けはセクション0「プッシュ後の報告文ルール」を参照。
 
