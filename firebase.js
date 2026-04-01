@@ -222,8 +222,13 @@ function firestoreQuery_(collection, filters, limit) {
     muteHttpExceptions: true
   });
 
+  var responseCode = response.getResponseCode();
   var results = JSON.parse(response.getContentText());
-  if (!Array.isArray(results)) return [];
+  if (!Array.isArray(results)) {
+    var errMsg = (results && results.error) ? (results.error.message || JSON.stringify(results.error)) : JSON.stringify(results);
+    Logger.log('❌ firestoreQuery_ エラー (' + collection + '): HTTP ' + responseCode + ' - ' + errMsg);
+    throw new Error('Firestore クエリエラー (' + collection + '): ' + errMsg);
+  }
 
   return results
     .filter(function(r) { return r.document && r.document.fields; })
