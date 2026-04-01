@@ -184,17 +184,17 @@ GASのウェブアプリには「デプロイID」があり、これがアプリ
 - `clasp deploy`（IDなし）で新規デプロイを作ること → 別URLが生成されてしまう
 - ワークフロー内の `DEPLOY_ID` を動的に取得しようとすること → 誤ったIDを拾う場合がある
 - 上記のデプロイIDを変更・削除すること
-- **LINE Webhook用デプロイ（`AKfycbxihDym...`）に対して `clasp deploy --deploymentId` を実行すること** → `appsscript.json` の設定が上書きされ「アクセスできるユーザー：全員→Googleアカウント必須」に変わり、LINEからのWebhookが401エラーで弾かれて完全に動かなくなる
+- **LINE Webhook用デプロイ（`AKfycbwGW781...`）に対して `clasp deploy --deploymentId` を実行すること** → `appsscript.json` の設定が上書きされ「アクセスできるユーザー：全員→Googleアカウント必須」に変わり、LINEからのWebhookが401エラーで弾かれて完全に動かなくなる
 
 #### ⚠️【重要】2デプロイ構成とLINE Webhook専用デプロイの注意事項
 
 | デプロイID（先頭） | 用途 | アクセス設定 | バージョン |
 |---|---|---|---|
 | `AKfycbyqwdCC...` | 通常アプリ | Googleアカウント必須（ANYONE） | 自動更新（clasp deployで更新） |
-| `AKfycbxihDym...` | LINE Webhook専用 | **全員（ANYONE_ANONYMOUS）** | **Head（最新のコード）** |
+| `AKfycbwGW781...` | LINE Webhook専用 | **全員（ANYONE_ANONYMOUS）** | **Head（最新のコード）** |
 
 **LINE Webhook専用デプロイのルール（絶対に守ること）：**
-- GASエディタの「デプロイを管理」で `AKfycbxihDym...` のバージョンは常に「**Head（最新のコード）**」にしておく
+- GASエディタの「デプロイを管理」で `AKfycbwGW781...` のバージョンは常に「**Head（最新のコード）**」にしておく
 - `clasp push --force` でコードをプッシュするだけで自動的に最新コードが反映される
 - ワークフロー（`deploy-to-gas.yml`）でこのデプロイIDに対して `clasp deploy` を実行してはいけない
 - もしGASエディタで設定を確認して「アクセスできるユーザー」が「Googleアカウントを持つ全員」になっていたら、即座に「全員」に戻すこと（LINEが動かなくなっている）
@@ -2019,7 +2019,7 @@ function featureDebug_(label, msg) {
 - `addCampus()` で `.toUpperCase()` を適用しているが、コードは数値文字列（例: `'01'`）なので実質影響なし
 - スケジュール抽出でファイル名に学校名が含まれていないファイルはスキップされる
 - Excel (.xlsx/.xls) 形式のファイルは自動インポート非対応（CSV か Google Sheets に変換が必要）
-- **`appsscript.json` の `webapp` 設定はGASの既存デプロイには反映されない**: `clasp deploy --deploymentId <ID>` で既存デプロイを更新する場合、`appsscript.json` の `webapp.access` / `webapp.executeAs` はコードには反映されるが、デプロイの実行設定（誰が実行・誰がアクセス可）には反映されない。これらを変更するにはGASエディタの「デプロイを管理」から手動で変更する必要がある。**2デプロイ構成**（理由: `ANYONE` と `ANYONE_ANONYMOUS` の両立が単一デプロイでは不可能なため）: アプリ用デプロイ `AKfycbyqwdCC...` は `access=ANYONE`（Googleアカウントが必要）＋**`executeAs=USER_ACCESSING`（アクセスしているユーザーとして実行）** で動作し `Session.getActiveUser().getEmail()` と `PropertiesService.getUserProperties()` が各ユーザー固有のデータを返す。LINE Webhook専用デプロイ `AKfycbxihDym...` は `access=ANYONE_ANONYMOUS`（Googleアカウント不要）で動作しLINEの未認証POSTリクエストを受け取る。⚠️ `ANYONE_ANONYMOUS` のデプロイでは `Session.getActiveUser().getEmail()` が常に空文字列を返すため、アプリのアクセスチェック（`isAllowedUser()`）で全員が拒否される。LINE Webhook専用以外の用途には絶対に使わないこと。
+- **`appsscript.json` の `webapp` 設定はGASの既存デプロイには反映されない**: `clasp deploy --deploymentId <ID>` で既存デプロイを更新する場合、`appsscript.json` の `webapp.access` / `webapp.executeAs` はコードには反映されるが、デプロイの実行設定（誰が実行・誰がアクセス可）には反映されない。これらを変更するにはGASエディタの「デプロイを管理」から手動で変更する必要がある。**2デプロイ構成**（理由: `ANYONE` と `ANYONE_ANONYMOUS` の両立が単一デプロイでは不可能なため）: アプリ用デプロイ `AKfycbyqwdCC...` は `access=ANYONE`（Googleアカウントが必要）＋**`executeAs=USER_ACCESSING`（アクセスしているユーザーとして実行）** で動作し `Session.getActiveUser().getEmail()` と `PropertiesService.getUserProperties()` が各ユーザー固有のデータを返す。LINE Webhook専用デプロイ `AKfycbwGW781...` は `access=ANYONE_ANONYMOUS`（Googleアカウント不要）で動作しLINEの未認証POSTリクエストを受け取る。⚠️ `ANYONE_ANONYMOUS` のデプロイでは `Session.getActiveUser().getEmail()` が常に空文字列を返すため、アプリのアクセスチェック（`isAllowedUser()`）で全員が拒否される。LINE Webhook専用以外の用途には絶対に使わないこと。
 - **⚠️【重要】`PropertiesService.getUserProperties()` は `USER_DEPLOYING` では全ユーザーで管理者データを返す**: このため、ユーザーごとのデータ（プロフィール・設定など）は `getUserProperty()` / `setUserProperty()` ヘルパーを通じて ScriptProperties に `_UP_{safeEmail}_{key}` 形式で保存している（`settings.js` の `getSafeUserKey_()` ヘルパー参照）。`PropertiesService.getUserProperties()` を直接使うことは禁止。ユーザーデータの読み書きは必ず `getUserProperty()` / `setUserProperty()` を使うこと。
 - **デプロイの `paths` フィルター**: `deploy-to-gas.yml` は `*.js`/`*.html`/`appsscript.json`/`.github/workflows/*.yml` が変更されたときのみ GAS デプロイを実行する。`README.md`/`CLAUDE.md` のみの変更ではデプロイは実行されない（ただし `merge-to-main.yml` が main へのマージは行う）。新しいファイル種別を GAS に送る必要がある場合は `paths` への追記も忘れないこと。報告文の使い分けはセクション0「プッシュ後の報告文ルール」を参照。
 

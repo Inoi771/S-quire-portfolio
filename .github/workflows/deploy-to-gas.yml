@@ -61,18 +61,20 @@ jobs:
           DEPLOY_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
           echo "デプロイ($DEPLOY_ID)を更新します"
           clasp deploy --deploymentId "$DEPLOY_ID" -d "Auto deploy $(date '+%Y-%m-%d %H:%M')"
-          # LINE Webhook用デプロイ(AKfycbx94J2E...)は「Head」設定のため clasp deploy 不要
-          # clasp deploy を実行するとアクセス設定が「全員→Googleアカウント必須」に上書きされるため実行しない
+          # AKfycbwGW781... が Firebase Hosting API + LINE Webhook 兼用デプロイ（上記で更新済み）
 
       - name: 古いデプロイを自動削除（上限対策）
         run: |
-          APP_DEPLOY_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
-          LINE_DEPLOY_ID="AKfycbxihDymNO0il76l3fUWlFtJvI8_35DIhujjnYWK0oIJ9cCurglEVKyWJ6gLfjVTi-4lNQ"
+          # 保持するデプロイID（2つ）
+          # AKfycbwGW781... = アプリ + Firebase Hosting API + LINE Webhook 兼用
+          # AKfycbyqwdCC... = 旧メインアプリURL（GAS版アクセス用）
+          KEEP_ID_1="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
+          KEEP_ID_2="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
           echo "=== 削除前のデプロイ一覧 ==="
           clasp deployments
           echo "=== 固定ID以外のデプロイを削除 ==="
           clasp deployments 2>&1 | grep -oE 'AKfyc[A-Za-z0-9_-]+' | while IFS= read -r id; do
-            if [ "$id" = "$APP_DEPLOY_ID" ] || [ "$id" = "$LINE_DEPLOY_ID" ]; then
+            if [ "$id" = "$KEEP_ID_1" ] || [ "$id" = "$KEEP_ID_2" ]; then
               echo "保持（固定デプロイ）: $id"
             else
               echo "削除対象: $id"

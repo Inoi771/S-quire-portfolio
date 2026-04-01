@@ -7,10 +7,10 @@
   // GAS 環境ではネイティブ実装がすでに存在するためスキップ
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
 
-  // GAS LINE Webhook兼APIデプロイのURL（ANYONE_ANONYMOUS = 認証なしでPOST可能）
+  // GAS APIデプロイのURL（ワークフローで管理・常に最新コードを維持）
   // handleApiCall_() が Firebase ID トークンを検証してユーザー識別する
   var GAS_EXEC_URL = 'https://script.google.com/macros/s/' +
-    'AKfycbxihDymNO0il76l3fUWlFtJvI8_35DIhujjnYWK0oIJ9cCurglEVKyWJ6gLfjVTi-4lNQ/exec';
+    'AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ/exec';
 
   /**
    * Firebase ID トークンを取得する（firebase-auth.html の fbGetIdToken を使用）
