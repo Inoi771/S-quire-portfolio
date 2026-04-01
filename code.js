@@ -403,6 +403,14 @@ function getAppMetadata() {
   };
 }
 
+/**
+ * APIエンドポイント疎通確認用（認証なしで呼べることを確認）
+ * @return {Object} 疎通確認結果
+ */
+function testApiEndpoint() {
+  return { ok: true, timestamp: new Date().toISOString() };
+}
+
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
