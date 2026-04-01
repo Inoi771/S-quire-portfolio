@@ -56,75 +56,49 @@ jobs:
       - name: 認証情報を作成
         run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
-      - name: GASへプッシュ
+      - name: GASへプッシュ（通常設定）
         run: clasp push --force
 
-      - name: デプロイバージョンを更新（/exec URLに反映）
+      - name: メインアプリのデプロイを更新（/exec URLに反映）
         run: |
-          DEPLOY_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
-          echo "デプロイ($DEPLOY_ID)を更新します"
+          DEPLOY_ID="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
+          echo "メインアプリのデプロイ($DEPLOY_ID)を更新します"
           clasp deploy --deploymentId "$DEPLOY_ID" -d "Auto deploy $(date '+%Y-%m-%d %H:%M')"
 
-      - name: APIエンドポイント疎通確認・ANYONE_ANONYMOUSデプロイ確保
+      - name: ANYONE_ANONYMOUSデプロイを更新（Firebase API・LINE Webhook用）
         run: |
-          CURRENT_ID="AKfycbwGW781DHxX_AR5CBBVF8S4o14KScDsIi9FBQoGHdodRxcGStDrC6ddVK3-UdYs5HxGQQ"
-          DEPLOY_URL="https://script.google.com/macros/s/${CURRENT_ID}/exec"
+          ANON_ID="AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw"
+          echo "=== ANYONE_ANONYMOUSデプロイを更新: $ANON_ID ==="
+          # appsscript.json を一時的に ANYONE_ANONYMOUS に変更してpush & deploy
+          jq '.webapp.access = "ANYONE_ANONYMOUS" | .webapp.executeAs = "USER_DEPLOYING"' appsscript.json > appsscript.json.tmp
+          mv appsscript.json.tmp appsscript.json
+          clasp push --force
+          clasp deploy --deploymentId "$ANON_ID" -d "Auto deploy ANON $(date '+%Y-%m-%d %H:%M')"
+          echo "✓ ANYONE_ANONYMOUSデプロイ更新完了"
+          # appsscript.json を元に戻す
+          git checkout appsscript.json
+          clasp push --force
+          echo "ANON_DEPLOY_ID=$ANON_ID" >> $GITHUB_ENV
 
+      - name: APIエンドポイント疎通確認
+        run: |
+          DEPLOY_URL="https://script.google.com/macros/s/${{ env.ANON_DEPLOY_ID }}/exec"
           echo "=== サーバーサイドから疎通確認 ==="
           RESPONSE=$(curl -s -m 15 -L \
             -X POST \
             -H "Content-Type: text/plain;charset=utf-8" \
             -d '{"type":"gasApi","function":"testApiEndpoint","args":[],"idToken":""}' \
             "$DEPLOY_URL" 2>&1 || echo "CURL_ERROR")
-
-          echo "レスポンス: $RESPONSE"
-
+          echo "レスポンス (先頭300文字): ${RESPONSE:0:300}"
           if echo "$RESPONSE" | grep -q '"ok":true'; then
             echo "✓ APIエンドポイントは正常（ANYONE_ANONYMOUS確認済み）"
-            echo "API_DEPLOY_ID=$CURRENT_ID" >> $GITHUB_ENV
           else
-            echo "⚠ APIエンドポイントが正しいJSONを返していません"
-            echo "⚠ ANYONE_ANONYMOUSで新規デプロイを作成します..."
-
-            # appsscript.json を一時的に ANYONE_ANONYMOUS に変更してpush
-            jq '.webapp.access = "ANYONE_ANONYMOUS" | .webapp.executeAs = "USER_DEPLOYING"' appsscript.json > appsscript.json.tmp
-            mv appsscript.json.tmp appsscript.json
-            echo 'appsscript.json を ANYONE_ANONYMOUS に変更しました'
-            clasp push --force
-
-            # 新しい ANYONE_ANONYMOUS デプロイを作成
-            NEW_DEPLOY=$(clasp deploy --description "Firebase API + LINE Webhook (ANYONE_ANONYMOUS)" 2>&1)
-            echo "clasp deploy 結果: $NEW_DEPLOY"
-            NEW_ID=$(echo "$NEW_DEPLOY" | grep -oE 'AKfyc[A-Za-z0-9_-]+' | head -1)
-            echo "新しいデプロイID: $NEW_ID"
-
-            # appsscript.json を元に戻す
-            git checkout appsscript.json
-            clasp push --force
-
-            if [ -n "$NEW_ID" ] && [ "$NEW_ID" != "$CURRENT_ID" ]; then
-              echo "API_DEPLOY_ID=$NEW_ID" >> $GITHUB_ENV
-
-              # gas-bridge.html・index.html・このワークフロー内のIDを更新
-              sed -i "s|$CURRENT_ID|$NEW_ID|g" gas-bridge.html index.html
-              sed -i "s|$CURRENT_ID|$NEW_ID|g" .github/workflows/deploy-to-gas.yml
-
-              # コミットしてpush（[skip gas-deploy] でこのジョブを再実行しない）
-              git config user.email "github-actions@github.com"
-              git config user.name "GitHub Actions"
-              git add gas-bridge.html index.html .github/workflows/deploy-to-gas.yml
-              git diff --staged --quiet || git commit -m "[skip gas-deploy] fix: ANYONE_ANONYMOUSデプロイIDを自動更新 ($NEW_ID)"
-              git push origin "${GITHUB_REF##*/}"
-              echo "✓ 新しいデプロイIDをコミットしました。Firebase Hostingが自動的に更新されます。"
-            else
-              echo "⚠ 新しいIDの取得に失敗しました"
-            fi
+            echo "⚠ 疎通確認失敗（デプロイ反映に数分かかる場合があります）"
           fi
 
       - name: 古いデプロイを自動削除（上限対策）
         run: |
-          # 保持するデプロイID
-          KEEP_ID_1="${{ env.API_DEPLOY_ID }}"
+          KEEP_ID_1="AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw"
           KEEP_ID_2="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
           echo "保持するID1: $KEEP_ID_1"
           echo "保持するID2: $KEEP_ID_2"
