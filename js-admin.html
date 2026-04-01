@@ -180,7 +180,7 @@
         inquiryRow.style.display = result.isEligible ? '' : 'none';
         if (result.isEligible) {
           // 通知方法ラジオボタンを設定
-          var method = result.method || 'gmail';
+          var method = result.method || 'line';
           var radio = document.querySelector('input[name="notificationMethod"][value="' + method + '"]');
           if (radio) radio.checked = true;
           // Gmail通知先メール選択を設定
@@ -219,7 +219,7 @@
     function updateLineGuideVisibility(lineRegistered) {
       // 通知方法の選択に応じてLINE登録ガイドを表示/非表示
       var selected = document.querySelector('input[name="notificationMethod"]:checked');
-      var method = selected ? selected.value : 'gmail';
+      var method = selected ? selected.value : 'line';
       var guide = document.getElementById('lineRegistrationGuide');
       if (!guide) return;
       var needsLine = (method === 'line' || method === 'both');
