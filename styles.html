@@ -189,6 +189,10 @@
       min-height: 0;
       overflow: auto; /* 縦横ともここ1か所でスクロール。thead sticky の基準もここ */
     }
+    /* ソート可能な列ヘッダーのホバー効果 */
+    #grades-list .grades-scroll-area th[onclick]:hover {
+      background: #dde4f8 !important;
+    }
     /* 進学先：一覧表と同じ flex column レイアウト */
     #grades-placement.sub-content.active {
       padding: 0;
