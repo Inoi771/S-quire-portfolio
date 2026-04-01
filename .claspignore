@@ -5,6 +5,12 @@ README.md
 package.json
 package-lock.json
 plan.md
+firebase.json
+firestore.rules
+.gitignore
 node_modules/**
 __tests__/**
 *.test.js
+scripts/**
+public/**
+.github/**
