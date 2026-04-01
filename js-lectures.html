@@ -1377,7 +1377,10 @@
             : c.bg;
 
           // 所有者判定（自分のエントリか、管理者か）
-          var isOwnEntry = !entry.teacherId || entry.teacherId === myTeacherId || isAdminUser;
+          // teacherId が一致、または teacherEmail が一致（旧データ・管理者作成データ対応）
+          var isOwnEntry = isAdminUser || !entry.teacherId
+            || entry.teacherId === myTeacherId
+            || (entry.teacherEmail && myTeacherEmail && entry.teacherEmail.toLowerCase() === myTeacherEmail.toLowerCase());
 
           var div = document.createElement('div');
           div.className = 'lec-entry' + (isOwnEntry ? '' : ' lec-entry-readonly');
@@ -1489,7 +1492,10 @@
         var entries = lectureEntries[currentLectureCampus] || [];
         var entry = entries.find(function(e) { return e.id === entryId; });
         if (entry && entry.teacherId && entry.teacherId !== myTeacherId) {
-          return;
+          // teacherEmail でもフォールバック判定（管理者作成・旧データ対応）
+          var emailMatch = entry.teacherEmail && myTeacherEmail
+            && entry.teacherEmail.toLowerCase() === myTeacherEmail.toLowerCase();
+          if (!emailMatch) return;
         }
       }
       selectedEntryId = (selectedEntryId === entryId) ? null : entryId;
@@ -1568,8 +1574,12 @@
       var entries = lectureEntries[currentLectureCampus] || [];
       var entry = entries.find(function(e) { return e.id === entryId; });
       if (!entry) return;
-      // 所有者チェック（防御的ガード）
-      if (!isAdminUser && entry.teacherId && entry.teacherId !== myTeacherId) return;
+      // 所有者チェック（防御的ガード）— teacherEmail フォールバック付き
+      if (!isAdminUser && entry.teacherId && entry.teacherId !== myTeacherId) {
+        var emailMatch = entry.teacherEmail && myTeacherEmail
+          && entry.teacherEmail.toLowerCase() === myTeacherEmail.toLowerCase();
+        if (!emailMatch) return;
+      }
       entry.date      = date;
       entry.startTime = slotToTimeStr(startSlot);
       pendingChanges  = true;
@@ -1587,7 +1597,11 @@
       // 所有者チェック（防御的ガード）
       var entries = lectureEntries[currentLectureCampus] || [];
       var target = entries.find(function(e) { return e.id === selectedEntryId; });
-      if (target && !isAdminUser && target.teacherId && target.teacherId !== myTeacherId) return;
+      if (target && !isAdminUser && target.teacherId && target.teacherId !== myTeacherId) {
+        var emailMatch = target.teacherEmail && myTeacherEmail
+          && target.teacherEmail.toLowerCase() === myTeacherEmail.toLowerCase();
+        if (!emailMatch) return;
+      }
       lectureEntries[currentLectureCampus] = entries.filter(function(e) { return e.id !== selectedEntryId; });
       selectedEntryId = null;
       pendingChanges  = true;

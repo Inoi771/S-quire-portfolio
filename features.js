@@ -1958,12 +1958,16 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
       ]);
 
       // 権限チェック: Admin以外は他人のエントリを改ざんできない
+      // teacherEmail フォールバック: teacherId が異なっても email が一致すれば自分のエントリとみなす
       if (!isAdmin()) {
         var myTid = getOrCreateTeacherId();
+        var myEmail = (getRegisteredEmail() || '').toLowerCase();
         var existingOtherEntries = {};
         existingDocs.forEach(function(doc) {
           var tid = doc.teacherId || '';
-          if (tid && tid !== myTid) {
+          var docEmail = (doc.teacherEmail || '').toLowerCase();
+          var isMine = !tid || tid === myTid || (docEmail && myEmail && docEmail === myEmail);
+          if (!isMine) {
             existingOtherEntries[doc.entryId || doc._id] = {
               date: String(doc.date || ''), startTime: String(doc.startTime || ''),
               durationSlots: String(Number(doc.durationSlots) || 9),
@@ -1974,7 +1978,9 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
         var incomingOtherIds = {};
         entries.forEach(function(e) {
           var eTid = e.teacherId || '';
-          if (eTid && eTid !== myTid) {
+          var eEmail = (e.teacherEmail || '').toLowerCase();
+          var isMine = !eTid || eTid === myTid || (eEmail && myEmail && eEmail === myEmail);
+          if (!isMine) {
             incomingOtherIds[e.id] = {
               date: String(e.date || ''), startTime: String(e.startTime || ''),
               durationSlots: String(Number(e.durationSlots) || 9),
