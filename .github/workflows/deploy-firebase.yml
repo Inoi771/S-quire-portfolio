@@ -37,11 +37,6 @@ jobs:
       - name: サービスアカウント認証情報を作成
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-sa.json
 
-      - name: Firestore セキュリティルールをデプロイ
-        run: firebase deploy --only firestore:rules --project fir-quire
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
-
       - name: ビルド（HTMLファイルを public/ にインライン展開）
         run: npm run build
 
