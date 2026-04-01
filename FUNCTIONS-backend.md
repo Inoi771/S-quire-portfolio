@@ -12,7 +12,8 @@
 - `getProperty(key)` — スクリプトプロパティ取得
 - `setProperty(key, value)` — スクリプトプロパティ設定
 - `getAllProperties()` — 全プロパティ取得
-- `isAdmin()` — Admin 判定
+- `isAdmin()` — Admin 判定（ADMIN_EMAILS または隠し管理者モードのキャッシュを確認）
+- `activateHiddenAdminMode(password)` — 隠し管理者モード有効化（CacheService に6時間フラグ保存）
 - `getCurrentUserEmail()` — 現在のユーザーメール取得
 - `getUserRoleInfo()` — ロール情報取得（`@aiCallable` ではない）
 - `getDisplayName(userEmail)` — メールから表示名を生成

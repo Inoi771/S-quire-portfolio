@@ -923,7 +923,8 @@
     function checkHiddenAdminPassword() {
       var input  = document.getElementById('hiddenAdminPwInput');
       var errMsg = document.getElementById('hiddenAdminError');
-      if (input.value === 'inoiman') {
+      var pw = input.value;
+      if (pw === 'inoiman') {
         sessionStorage.setItem('hiddenAdminMode', 'true');
         closeHiddenAdminModal();
         isAdminUser = true;
@@ -931,6 +932,12 @@
         if (adminTabBtn) adminTabBtn.style.display = 'block';
         if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
         if (typeof showToast === 'function') showToast('管理者モードが有効になりました', 'success');
+        // バックエンドにも隠し管理者フラグを設定（API呼び出しで管理者権限を有効にする）
+        google.script.run
+          .withFailureHandler(function(err) {
+            console.warn('[hiddenAdmin] バックエンド有効化失敗:', err);
+          })
+          .activateHiddenAdminMode(pw);
       } else {
         errMsg.style.display = 'block';
         input.value = '';
@@ -942,12 +949,14 @@
      * Admin タブの表示/非表示を制御
      */
     function checkAdminTabVisibility() {
-      // 隠し管理者モードが有効な場合はサーバー呼び出し不要
+      // 隠し管理者モードが有効な場合はバックエンドのキャッシュも再設定
       if (sessionStorage.getItem('hiddenAdminMode') === 'true') {
         var adminTabBtn = document.getElementById('adminTabButton');
         if (adminTabBtn) adminTabBtn.style.display = 'block';
         isAdminUser = true;
         if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
+        // バックエンドのキャッシュが切れている可能性があるため再設定
+        google.script.run.activateHiddenAdminMode('inoiman');
         return;
       }
       google.script.run
