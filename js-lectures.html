@@ -861,6 +861,8 @@
         }, { passive: true });
 
         row.addEventListener('touchend', function(ev) {
+          // エントリ上のタップは onEntryClick に任せる
+          if (ev.target.closest('.lec-entry')) return;
           var t = ev.changedTouches[0];
           var dx = Math.abs(t.clientX - touchStartX);
           var dy = Math.abs(t.clientY - touchStartY);
@@ -1393,6 +1395,11 @@
           if (isOwnEntry) {
             (function(eid) {
               div.addEventListener('click', function(ev) { onEntryClick(ev, eid); });
+              div.addEventListener('touchend', function(ev) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                onEntryClick(ev, eid);
+              });
             })(entry.id);
           }
 
