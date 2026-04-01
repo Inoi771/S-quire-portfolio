@@ -528,23 +528,20 @@
       var testSelect = document.getElementById('student-analysis-test');
       if (!yearSelect || !testSelect) return;
 
-      // 年度を成績管理フォルダの実フォルダ一覧から取得
+      // 年度を grades コレクションから取得（Firebase SDK）
       yearSelect.innerHTML = '<option value="">読み込み中...</option>';
-      google.script.run
-        .withSuccessHandler(function(result) {
-          var yearOpts = '<option value="">選択してください</option>';
-          if (result && result.years && result.years.length > 0) {
-            result.years.forEach(function(y) {
-              yearOpts += '<option value="' + y + '">' + y + '年度</option>';
-            });
-          }
-          yearSelect.innerHTML = yearOpts;
-        })
-        .withFailureHandler(function(err) {
-          console.error('年度取得エラー:', err);
-          yearSelect.innerHTML = '<option value="">取得失敗</option>';
-        })
-        .getGradesYearFolders();
+      fbGetGradesYearFolders().then(function(result) {
+        var yearOpts = '<option value="">選択してください</option>';
+        if (result && result.years && result.years.length > 0) {
+          result.years.forEach(function(y) {
+            yearOpts += '<option value="' + y + '">' + y + '年度</option>';
+          });
+        }
+        yearSelect.innerHTML = yearOpts;
+      }).catch(function(err) {
+        console.error('年度取得エラー:', err);
+        yearSelect.innerHTML = '<option value="">取得失敗</option>';
+      });
 
       // テスト名をバックエンドから取得
       testSelect.innerHTML = '<option value="">読み込み中...</option>';

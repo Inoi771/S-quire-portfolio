@@ -624,4 +624,27 @@ function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
     return { success: false, error: err.message || String(err) };
   });
 }
+
+/**
+ * 成績データの年度一覧を取得（Firebase SDK）
+ * grades コレクションの全ドキュメントから fiscalYear を収集して返す
+ * @return {Promise<Object>} { success, years, error }
+ */
+function fbGetGradesYearFolders() {
+  return fbDb.collection('grades').get()
+    .then(function(snapshot) {
+      var yearSet = {};
+      snapshot.forEach(function(docSnap) {
+        var doc = docSnap.data();
+        if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
+      });
+      var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
+      years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
+      return { success: true, years: years };
+    })
+    .catch(function(err) {
+      console.error('fbGetGradesYearFoldersエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
+}
 </script>
