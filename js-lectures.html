@@ -866,12 +866,15 @@
           var dy = Math.abs(t.clientY - touchStartY);
           ev.preventDefault(); // 合成clickを常にブロック（指ズレによる誤操作防止）
           if (dx < 10 && dy < 10) {
-            // タッチ座標の最前面要素を取得してエントリ判定（ev.target はtouchstart時点のためズレうる）
-            var el = document.elementFromPoint(t.clientX, t.clientY);
-            var entryDiv = el && el.closest('.lec-entry');
-            if (entryDiv && !entryDiv.classList.contains('lec-entry-readonly')) {
-              var eid = entryDiv.dataset.entryId;
-              if (eid) { onEntryClick(ev, eid); return; }
+            // CSS zoom 環境でも正確に判定するため getBoundingClientRect で座標比較
+            var entries = row.querySelectorAll('.lec-entry:not(.lec-entry-readonly)');
+            for (var i = 0; i < entries.length; i++) {
+              var rect = entries[i].getBoundingClientRect();
+              if (t.clientX >= rect.left && t.clientX <= rect.right &&
+                  t.clientY >= rect.top  && t.clientY <= rect.bottom) {
+                var eid = entries[i].dataset.entryId;
+                if (eid) { onEntryClick(ev, eid); return; }
+              }
             }
             handleLecGridAction(dateKey, calcSlotFromX(t.clientX));
           }
