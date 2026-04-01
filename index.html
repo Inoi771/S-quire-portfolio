@@ -1588,10 +1588,10 @@
             <div id="inquiryNotifRow" style="display:none; border:1px solid #e0e0e0; border-radius:8px; padding:14px; margin-bottom:10px;">
               <div style="font-weight:600; font-size:14px; margin-bottom:10px;">📧 お問い合わせ転送通知</div>
               <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="gmail" id="notif-gmail" onchange="saveNotificationSettings()"> 📧 Gmailのみ</label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="line" id="notif-line" onchange="saveNotificationSettings()"> 💬 LINEのみ</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="gmail" id="notif-gmail" onchange="saveNotificationSettings()"> 📧 メールのみ</label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="both" id="notif-both" onchange="saveNotificationSettings()"> 両方</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="none" id="notif-none" onchange="saveNotificationSettings()"> 🔕 通知しない</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="none" id="notif-none" onchange="saveNotificationSettings()"> 🔕 受け取らない</label>
               </div>
               <!-- Gmail通知先メール選択（複数メール登録時のみ表示） -->
               <div id="notifEmailSelectRow" style="display:none; margin-bottom:10px;">
