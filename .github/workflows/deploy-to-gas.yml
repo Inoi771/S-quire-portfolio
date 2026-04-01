@@ -59,12 +59,6 @@ jobs:
       - name: GASへプッシュ（通常設定）
         run: clasp push --force
 
-      - name: メインアプリのデプロイを更新（/exec URLに反映）
-        run: |
-          DEPLOY_ID="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
-          echo "メインアプリのデプロイ($DEPLOY_ID)を更新します"
-          clasp deploy --deploymentId "$DEPLOY_ID" -d "Auto deploy $(date '+%Y-%m-%d %H:%M')"
-
       - name: ANYONE_ANONYMOUSデプロイを更新（Firebase API・LINE Webhook用）
         run: |
           ANON_ID="AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw"
@@ -99,14 +93,12 @@ jobs:
       - name: 古いデプロイを自動削除（上限対策）
         run: |
           KEEP_ID_1="AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw"
-          KEEP_ID_2="AKfycbyqwdCCeypXH5A-JjK6zphkAYRs4m5CIUySzKcn7dlKqZXF-1jKKT7U4YXmJl1xgquCqQ"
-          echo "保持するID1: $KEEP_ID_1"
-          echo "保持するID2: $KEEP_ID_2"
+          echo "保持するID: $KEEP_ID_1"
           echo "=== 削除前のデプロイ一覧 ==="
           clasp deployments
           echo "=== 固定ID以外のデプロイを削除 ==="
           clasp deployments 2>&1 | grep -oE 'AKfyc[A-Za-z0-9_-]+' | while IFS= read -r id; do
-            if [ "$id" = "$KEEP_ID_1" ] || [ "$id" = "$KEEP_ID_2" ]; then
+            if [ "$id" = "$KEEP_ID_1" ]; then
               echo "保持（固定デプロイ）: $id"
             else
               echo "削除対象: $id"
