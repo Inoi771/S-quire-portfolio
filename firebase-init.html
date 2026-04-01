@@ -15,5 +15,11 @@
   // グローバルに公開（他のスクリプトから使用）
   window.fbAuth = firebase.auth();
   window.fbDb  = firebase.firestore();
+
+  // オフラインキャッシュを有効化（2回目以降の読み込みを高速化）
+  window.fbDb.enablePersistence({ synchronizeTabs: true })
+    .catch(function() {
+      // 複数タブ同時起動時など有効化できない場合があるが問題なし
+    });
 })();
 </script>
