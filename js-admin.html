@@ -403,7 +403,7 @@
               html += '<option value="' + escapeHtml_(tid) + '">' + optLabel + '</option>';
             });
             html += '</select>' +
-              '<button onclick="addCampusRoutingMember(\'' + eCampusCode + '\')" ' +
+              '<button onclick="addCampusRoutingMember(\'' + eCampusCode + '\', this)" ' +
               'style="padding:7px 12px;background:var(--theme-color);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">➕ 追加</button>' +
               '</div>';
           } else {
@@ -428,27 +428,41 @@
     }
 
     // 指定校舎に担当者を追加する
-    function addCampusRoutingMember(campusCode) {
+    function addCampusRoutingMember(campusCode, btn) {
       var select = document.getElementById('addMember_' + campusCode);
       if (!select || !select.value) return;
+      if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
       var teacherId = select.value;
 
       // 現在の設定を読み込んでから追加する
       google.script.run
         .withSuccessHandler(function(result) {
-          if (!result.success) { appAlert('❌ 読み込みに失敗しました: ' + result.error); return; }
+          if (!result.success) {
+            if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+            appAlert('❌ 読み込みに失敗しました: ' + result.error); return;
+          }
           var campus = result.routing.find(function(c) { return c.code === campusCode; });
-          if (!campus) { appAlert('❌ 校舎が見つかりませんでした'); return; }
+          if (!campus) {
+            if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+            appAlert('❌ 校舎が見つかりませんでした'); return;
+          }
           var newIds = (campus.teacherIds || []).concat([teacherId]);
           google.script.run
             .withSuccessHandler(function(r) {
+              if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
               if (r.success) { loadCampusNotificationRouting(); }
               else { appAlert('❌ ' + r.error); }
             })
-            .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+            .withFailureHandler(function(err) {
+              if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+              appAlert('❌ エラー: ' + err);
+            })
             .updateCampusNotificationRouting(campusCode, newIds);
         })
-        .withFailureHandler(function(err) { appAlert('❌ エラー: ' + err); })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+          appAlert('❌ エラー: ' + err);
+        })
         .getCampusNotificationRouting();
     }
 

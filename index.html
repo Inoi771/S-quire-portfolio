@@ -761,7 +761,7 @@
 
               <!-- 新規登録ボタン -->
               <div id="input-buttons-new" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <button onclick="registerStudent()" style="padding: 12px; background: var(--theme-color); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">登録</button>
+                <button id="btnRegisterStudent" onclick="registerStudent()" style="padding: 12px; background: var(--theme-color); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">登録</button>
                 <button onclick="clearInputForm()" style="padding: 12px; background: #e0e0e0; color: #333; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">クリア</button>
               </div>
 
@@ -1906,7 +1906,7 @@
 
                   <div style="display: grid; gap: 6px;">
                     <input type="text" id="newTestName" placeholder="テスト名" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <button onclick="addNewTestName()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
+                    <button id="btnAddTestName" onclick="addNewTestName()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
                   </div>
                 </div>
 
@@ -1921,7 +1921,7 @@
                   <div style="display: grid; gap: 6px;">
                     <input type="text" id="newCampusCode" placeholder="コード" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                     <input type="text" id="newCampusName" placeholder="校舎名" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <button onclick="addNewCampus()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
+                    <button id="btnAddCampus" onclick="addNewCampus()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
                   </div>
                 </div>
 
@@ -1952,7 +1952,7 @@
                   <div>
                     <input type="text" id="newSchoolDepts" placeholder="学科と偏差値（例: 普通科:55, 理数科:62）" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                   </div>
-                  <button onclick="addNewSchool()" style="padding: 12px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; min-height: 44px;">➕ 追加</button>
+                  <button id="btnAddSchool" onclick="addNewSchool()" style="padding: 12px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; min-height: 44px;">➕ 追加</button>
                 </div>
               </div>
 
@@ -2027,7 +2027,7 @@
               <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
                 <input type="text" id="newPropKey" placeholder="設定キー (例: MY_SETTING)" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
                 <textarea id="newPropValue" placeholder="値" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; resize: vertical; min-height: 40px;"></textarea>
-                <button onclick="addProperty()" style="padding: 12px; background: var(--theme-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; min-height: 44px;">追加</button>
+                <button id="btnAddProperty" onclick="addProperty()" style="padding: 12px; background: var(--theme-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; min-height: 44px;">追加</button>
               </div>
             </div>
           </div>
