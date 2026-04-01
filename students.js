@@ -1621,20 +1621,32 @@ function saveExamResult(studentId, examDataJson) {
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
     var examData = safeJsonParse_(examDataJson, {});
-    var doc = firestoreGet_('students', sid);
-    if (!doc) return { success: false, error: '生徒が見つかりません: ' + sid };
 
-    doc.jukoukou1        = examData.jukoukou1        || '';
-    doc.jukoukou1_gakka  = examData.jukoukou1_gakka  || '';
-    doc.jukoukou1_gokaku = examData.jukoukou1_gokaku || '';
-    doc.ikusei           = examData.ikusei            || '';
-    doc.jukoukou2        = examData.jukoukou2        || '';
-    doc.jukoukou2_gakka  = examData.jukoukou2_gakka  || '';
-    doc.jukoukou2_gokaku = examData.jukoukou2_gokaku || '';
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(10000);
+    } catch (lockErr) {
+      return { success: false, error: '同時操作による競合が発生しました。時間をおいて再試行してください。' };
+    }
 
-    firestoreSet_('students', sid, doc);
-    Logger.log('✓ saveExamResult: 保存完了 ' + sid);
-    return { success: true, message: '受験情報を保存しました' };
+    try {
+      var doc = firestoreGet_('students', sid);
+      if (!doc) return { success: false, error: '生徒が見つかりません: ' + sid };
+
+      doc.jukoukou1        = examData.jukoukou1        || '';
+      doc.jukoukou1_gakka  = examData.jukoukou1_gakka  || '';
+      doc.jukoukou1_gokaku = examData.jukoukou1_gokaku || '';
+      doc.ikusei           = examData.ikusei            || '';
+      doc.jukoukou2        = examData.jukoukou2        || '';
+      doc.jukoukou2_gakka  = examData.jukoukou2_gakka  || '';
+      doc.jukoukou2_gokaku = examData.jukoukou2_gokaku || '';
+
+      firestoreSet_('students', sid, doc);
+      Logger.log('✓ saveExamResult: 保存完了 ' + sid);
+      return { success: true, message: '受験情報を保存しました' };
+    } finally {
+      lock.releaseLock();
+    }
   } catch (error) {
     Logger.log('❌ saveExamResultエラー: ' + error);
     return { success: false, error: error.toString() };
