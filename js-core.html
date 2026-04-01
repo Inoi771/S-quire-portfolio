@@ -89,12 +89,11 @@
   function preloadTabData() {
     if (tabDataPreloaded_) return;
     tabDataPreloaded_ = true;
-    // 設定タブのデータを事前読み込み
-    // campusData が揃ってからプロフィールを読み込むためコールバックを使用
+    // 4つのAPIリクエストを並列実行（互いに独立）
+    loadNotificationSettings();
+    loadLineSchedulerNotifPrefs();
+    loadProfileInfo();
     loadDropdownData(function() {
-      loadProfileInfo();
-      loadNotificationSettings();
-      loadLineSchedulerNotifPrefs();
       settingsTabPreloaded = true;
     });
     // 管理タブのデータは checkAdminTabVisibility() 側で処理

@@ -8,7 +8,16 @@
  * @return {Promise<Array>} スケジュールデータ配列
  */
 function fbGetScheduleData() {
-  return fbDb.collection('schedules').get()
+  // 現在の年度（4月始まり）を基準に、前年度〜翌年度の3年分のみ取得
+  var now = new Date();
+  var m   = now.getMonth() + 1; // 1〜12
+  var y   = now.getFullYear();
+  var currentFiscalYear = (m >= 4) ? y : y - 1;
+
+  return fbDb.collection('schedules')
+    .where('fiscalYear', '>=', currentFiscalYear - 1)
+    .where('fiscalYear', '<=', currentFiscalYear + 1)
+    .get()
     .then(function(snapshot) {
       var results = [];
       snapshot.forEach(function(docSnap) {
