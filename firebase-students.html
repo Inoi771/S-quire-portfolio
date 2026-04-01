@@ -638,6 +638,10 @@ function fbGetGradesYearFolders() {
         var doc = docSnap.data();
         if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
       });
+      // 現在の年度は成績データがなくても常に含める
+      var now = new Date();
+      var currentFy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+      yearSet[String(currentFy)] = true;
       var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
       years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
       return { success: true, years: years };
