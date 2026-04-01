@@ -8,6 +8,21 @@ window.fbAuthReady    = false; // 認証状態の確認が完了したか
 window.fbAuthCallbacks = [];   // 認証完了後に呼ぶコールバック一覧
 
 /**
+ * アプリ内ブラウザ（WebView）かどうかを判定する
+ * LINE, Instagram, Facebook, Twitter 等のアプリ内ブラウザを検出
+ */
+window.isInAppBrowser = function() {
+  var ua = navigator.userAgent || navigator.vendor || '';
+  // LINE, Instagram, Facebook, Twitter, WeChat 等のアプリ内ブラウザ
+  if (/Line\/|FBAN|FBAV|Instagram|Twitter|Weibo|MicroMessenger|Snapchat/i.test(ua)) return true;
+  // Android WebView
+  if (/wv\)/.test(ua) && /Android/.test(ua)) return true;
+  // iOS WebView (Safari ではない UIWebView / WKWebView)
+  if (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua) && !/CriOS/.test(ua)) return true;
+  return false;
+};
+
+/**
  * Firebase Auth 準備完了後に実行するコールバックを登録する。
  * すでに準備完了（ログイン済み）なら即実行。
  * @param {Function} callback
@@ -57,6 +72,14 @@ fbAuth.onAuthStateChanged(function(user) {
 
     var loginScreen = document.getElementById('fbLoginScreen');
     if (loginScreen) loginScreen.style.display = 'flex';
+
+    // アプリ内ブラウザの場合は警告を表示
+    if (window.isInAppBrowser()) {
+      var warn = document.getElementById('fbWebviewWarning');
+      var btn = document.getElementById('fbSignInBtn');
+      if (warn) warn.style.display = 'block';
+      if (btn) btn.style.display = 'none';
+    }
   }
 });
 
@@ -76,8 +99,26 @@ window.signInWithGoogle = function() {
     console.error('ログインエラー:', error);
     if (btn) { btn.disabled = false; btn.textContent = 'Googleでログイン'; }
     if (msgEl) {
-      msgEl.textContent = 'ログインに失敗しました。もう一度お試しください。';
-      msgEl.style.display = 'block';
+      // WebView からのアクセスブロック or ポップアップブロックを検出
+      if (error.code === 'auth/unauthorized-domain' ||
+          error.code === 'auth/operation-not-supported-in-this-environment' ||
+          (error.message && error.message.indexOf('disallowed_useragent') !== -1)) {
+        // WebView 警告を表示してボタンを隠す
+        var warn = document.getElementById('fbWebviewWarning');
+        if (warn) warn.style.display = 'block';
+        if (btn) btn.style.display = 'none';
+        msgEl.style.display = 'none';
+      } else if (error.code === 'auth/popup-blocked') {
+        msgEl.textContent = 'ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。';
+        msgEl.style.display = 'block';
+      } else if (error.code === 'auth/popup-closed-by-user' ||
+                 error.code === 'auth/cancelled-popup-request') {
+        // ユーザーが閉じた場合は何も表示しない
+        msgEl.style.display = 'none';
+      } else {
+        msgEl.textContent = 'ログインに失敗しました。もう一度お試しください。';
+        msgEl.style.display = 'block';
+      }
     }
   });
 };

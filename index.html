@@ -205,6 +205,23 @@
         Googleでログイン
       </button>
       <p id="fbLoginError" style="display:none; margin:12px 0 0; color:#e53935; font-size:13px;"></p>
+      <!-- アプリ内ブラウザ警告 -->
+      <div id="fbWebviewWarning" style="display:none; margin:16px 0 0; padding:16px; background:#fff3e0; border-radius:10px; border:1px solid #ffe0b2; text-align:left;">
+        <p style="margin:0 0 10px; font-size:14px; font-weight:600; color:#e65100;">⚠️ アプリ内ブラウザではログインできません</p>
+        <p style="margin:0 0 12px; font-size:13px; color:#555; line-height:1.6;">
+          LINE や SNS などのアプリ内ブラウザでは Google ログインがブロックされます。<br>
+          以下の方法で通常のブラウザから開いてください。
+        </p>
+        <div style="font-size:12px; color:#666; line-height:1.8; margin-bottom:12px;">
+          <b>LINE の場合：</b>右下の「︙」→「ブラウザで開く」<br>
+          <b>iOS の場合：</b>下部の Safari アイコンをタップ<br>
+          <b>Android の場合：</b>右上の「︙」→「Chrome で開く」
+        </div>
+        <button onclick="window.open('https://fir-quire.web.app','_system')||window.open('https://fir-quire.web.app','_blank')" style="width:100%; padding:12px; background:#1a73e8; color:white; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">
+          外部ブラウザで開く
+        </button>
+        <p style="margin:8px 0 0; font-size:11px; color:#999; text-align:center;">ボタンが効かない場合は上の手順をお試しください</p>
+      </div>
     </div>
   </div>
 
