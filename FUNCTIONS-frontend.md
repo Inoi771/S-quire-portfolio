@@ -275,3 +275,7 @@
 - `triggerAdminSubTabInit_(tabName)` — 管理サブタブの初期化関数をトリガーする内部ヘルパー
 - `navigateToGradeAnalysis_fromAI(year, testName)` — 分析タブへ自動ナビゲート・テスト名選択・分析ロード
 - `navigateToLectures_fromAI(lectureId, campusCode)` — 講習管理タブへ自動ナビゲート・講習選択・校舎チェック
+
+**【Firebase SDK クライアントサイド関数】** (`firebase-students.html`)
+- `fbGetGradeAnalysis(year, testName)` — テスト全体AI分析をFirestoreから直接取得（`testAnalysis`コレクション）
+- `fbGetStudentAnalysis(year, studentId, testName)` — 生徒別AI分析をFirestoreから直接取得（`studentAnalysis`コレクション、基礎学力テストのフォールバック対応）
