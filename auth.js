@@ -97,12 +97,22 @@ function normalizeTeacherEntry_(entry) {
 
 /**
  * 現在のユーザーが Admin かどうかをチェック
+ * ADMIN_EMAILS に含まれるか、隠し管理者モードが有効な場合に true を返す
  * @return {boolean} true=Admin, false=一般ユーザー
  */
 function isAdmin() {
   try {
     var userEmail = getCurrentUserEmail().toLowerCase();
     if (!userEmail || userEmail === 'unknown@example.com') return false;
+
+    // 隠し管理者モード（CacheService）のチェック
+    try {
+      var cache = CacheService.getScriptCache();
+      if (cache.get('hiddenAdmin_' + userEmail) === 'true') return true;
+    } catch (cacheErr) {
+      Logger.log('⚠ hiddenAdmin キャッシュ読み取りエラー: ' + cacheErr);
+    }
+
     var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '')
       .split(',')
       .map(function(email) { return email.trim().toLowerCase(); })
@@ -112,6 +122,31 @@ function isAdmin() {
   } catch (error) {
     Logger.log('❌ isAdminエラー: ' + error);
     return false;
+  }
+}
+
+/**
+ * 隠し管理者モードを有効化する（ロゴタップ認証からフロントエンドが呼び出す）
+ * パスワードが正しければ CacheService に6時間有効のフラグを保存する
+ * @param {string} password 入力されたパスワード
+ * @return {Object} { success:boolean, error?:string }
+ */
+function activateHiddenAdminMode(password) {
+  try {
+    if (password !== 'inoiman') {
+      return { success: false, error: 'パスワードが違います' };
+    }
+    var userEmail = getCurrentUserEmail().toLowerCase();
+    if (!userEmail || userEmail === 'unknown@example.com') {
+      return { success: false, error: 'ユーザーを識別できません' };
+    }
+    var cache = CacheService.getScriptCache();
+    cache.put('hiddenAdmin_' + userEmail, 'true', 21600); // 6時間（秒）
+    Logger.log('✓ 隠し管理者モード有効化: ' + userEmail);
+    return { success: true };
+  } catch (error) {
+    Logger.log('❌ activateHiddenAdminModeエラー: ' + error);
+    return { success: false, error: error.toString() };
   }
 }
 
