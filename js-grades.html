@@ -975,6 +975,20 @@ function calculateTotal() {
 
       if (analysisInitialized && select.options.length > 1) return;
 
+      // まず testNamesData（loadDropdownData で保存済み）を使う
+      if (testNamesData && testNamesData.length > 0) {
+        select.innerHTML = '<option value="">テストを選択してください</option>';
+        testNamesData.forEach(function(name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          select.appendChild(opt);
+        });
+        analysisInitialized = true;
+        return;
+      }
+
+      // 次に score-test ドロップダウンからコピーを試みる
       var testSelect = document.getElementById('score-test');
       if (testSelect && testSelect.options.length > 1) {
         select.innerHTML = '<option value="">テストを選択してください</option>';
@@ -986,6 +1000,7 @@ function calculateTotal() {
         }
         analysisInitialized = true;
       } else if (!analysisInitialized) {
+        // どちらもまだない場合のみ GAS から取得
         analysisInitialized = true;
         google.script.run
           .withSuccessHandler(function(r) {
@@ -1037,9 +1052,13 @@ function calculateTotal() {
             document.getElementById('analysis-result-container').innerHTML =
               '<div style="background: white; border-radius: 10px; padding: 30px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">' +
                 '<p style="color: #666; font-size: 14px; margin-bottom: 8px;">📭 このテストのAI分析はまだ生成されていません。</p>' +
-                '<p style="color: #999; font-size: 12px;">管理者へご連絡ください。</p>' +
+                '<p style="color: #999; font-size: 12px;">管理タブ → 🤖 AI成績分析 一括生成 から生成してください。</p>' +
               '</div>';
           }
+        })
+        .catch(function(err) {
+          document.getElementById('analysis-result-container').innerHTML =
+            '<p style="color:red;padding:20px;font-size:13px;">❌ 読み込みエラー: ' + (err.message || err) + '</p>';
         });
     }
 
