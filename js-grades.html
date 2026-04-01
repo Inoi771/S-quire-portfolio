@@ -16,58 +16,34 @@
       select.disabled = true;
       status.textContent = '';
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          select.innerHTML = '';
+      // 現在の年度を日付から算出（4月以降=当該年、1-3月=前年）
+      var now = new Date();
+      var fy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
 
-          // 現在の年度を日付から算出（4月以降=当該年、1-3月=前年）
-          var now = new Date();
-          var fy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+      fbGetGradesYearFolders().then(function(result) {
+        select.innerHTML = '';
 
-          if (result.success && result.years.length > 0) {
-            result.years.forEach(function(year) {
-              var opt = document.createElement('option');
-              opt.value = year;
-              opt.textContent = year + '年度';
-              select.appendChild(opt);
-            });
-            select.disabled = false;
-            gradesYearsLoaded = true;
-
-            // 年度フォルダの中から現在年度に一致するものを選択、なければ最新を選択
-            if (result.years.indexOf(String(fy)) >= 0) {
-              select.value = String(fy);
-              currentFiscalYear = fy;
-            } else {
-              currentFiscalYear = parseInt(result.years[0]);
-            }
-
-            status.textContent = result.years.length + '件の年度フォルダを取得';
-          } else {
-            // エラーまたはデータなし：現在年度をデフォルトとして設定
+        if (result.success && result.years.length > 0) {
+          result.years.forEach(function(year) {
             var opt = document.createElement('option');
-            opt.value = String(fy);
-            opt.textContent = fy + '年度';
+            opt.value = year;
+            opt.textContent = year + '年度';
             select.appendChild(opt);
-            select.disabled = false;
+          });
+          select.disabled = false;
+          gradesYearsLoaded = true;
+
+          // 年度の中から現在年度に一致するものを選択、なければ最新を選択
+          if (result.years.indexOf(String(fy)) >= 0) {
+            select.value = String(fy);
             currentFiscalYear = fy;
-            gradesYearsLoaded = true;
-            if (result.error) {
-              status.textContent = 'データ取得エラー: ' + result.error;
-              status.style.color = '#e53935';
-            } else {
-              status.textContent = '成績データはまだありません';
-              status.style.color = '#999';
-            }
+          } else {
+            currentFiscalYear = parseInt(result.years[0]);
           }
 
-          // 校舎・学年・テスト名のドロップダウンは年度フォルダの有無に関わらず常に読み込む
-          loadDropdownData();
-        })
-        .withFailureHandler(function(err) {
-          var now = new Date();
-          var fy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
-          select.innerHTML = '';
+          status.textContent = result.years.length + '件の年度データを取得';
+        } else {
+          // データなし：現在年度をデフォルトとして設定
           var opt = document.createElement('option');
           opt.value = String(fy);
           opt.textContent = fy + '年度';
@@ -75,11 +51,18 @@
           select.disabled = false;
           currentFiscalYear = fy;
           gradesYearsLoaded = true;
-          document.getElementById('gradesYearStatus').textContent = 'データ取得エラー（再読み込みしてください）';
-          document.getElementById('gradesYearStatus').style.color = '#e53935';
-          loadDropdownData();
-        })
-        .getGradesYearFolders();
+          if (result.error) {
+            status.textContent = 'データ取得エラー: ' + result.error;
+            status.style.color = '#e53935';
+          } else {
+            status.textContent = '成績データはまだありません';
+            status.style.color = '#999';
+          }
+        }
+
+        // 校舎・学年・テスト名のドロップダウンは年度データの有無に関わらず常に読み込む
+        loadDropdownData();
+      });
     }
 
     function onGradesYearChanged() {
