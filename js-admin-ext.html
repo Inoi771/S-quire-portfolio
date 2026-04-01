@@ -35,14 +35,17 @@
     function addProperty() {
       var key = document.getElementById('newPropKey').value.trim();
       var value = document.getElementById('newPropValue').value.trim();
-      
+
       if (!key || !value) {
         showMessage('adminMessage', '❌ キーと値を入力してください', 'error');
         return;
       }
-      
+
+      var btn = document.getElementById('btnAddProperty');
+      if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '追加'; }
           if (result.success) {
             showMessage('adminMessage', '✓ プロパティを追加しました', 'success');
             document.getElementById('newPropKey').value = '';
@@ -51,6 +54,10 @@
           } else {
             showMessage('adminMessage', '❌ ' + result.error, 'error');
           }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '追加'; }
+          showMessage('adminMessage', '❌ エラー: ' + err, 'error');
         })
         .updateScriptPropertyFromGUI(key, value);
     }
@@ -110,7 +117,7 @@
           '<div id="tn-edit-' + idx + '" style="' + editBg + 'margin-bottom:6px;">' +
             '<input id="tn-input-' + idx + '" value="' + html + '" style="' + inputSt + '">' +
             '<div style="display:flex;gap:4px;">' +
-              '<button onclick="saveTestNameRow(' + idx + ',\'' + esc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="saveTestNameRow(' + idx + ',\'' + esc + '\', this)" style="' + btnSave + '">保存</button>' +
               '<button onclick="cancelEditRow(\'tn\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
             '</div>' +
           '</div>';
@@ -134,7 +141,7 @@
             '<div style="font-size:11px;color:#666;margin-bottom:4px;">コード: <strong>' + campus.code + '</strong>（変更不可）</div>' +
             '<input id="cp-input-' + idx + '" value="' + nameHtml + '" placeholder="校舎名" style="' + inputSt + '">' +
             '<div style="display:flex;gap:4px;">' +
-              '<button onclick="saveCampusRow(' + idx + ',\'' + codeEsc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="saveCampusRow(' + idx + ',\'' + codeEsc + '\', this)" style="' + btnSave + '">保存</button>' +
               '<button onclick="cancelEditRow(\'cp\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
             '</div>' +
           '</div>';
@@ -184,7 +191,7 @@
             '<input id="sc-name-' + idx + '" value="' + nameHtml + '" placeholder="高校名" style="' + inputSt + '">' +
             '<input id="sc-depts-' + idx + '" value="' + deptInputVal + '" placeholder="学科と偏差値（例: 普通科:55, 理数科:62）" style="' + inputSt + '">' +
             '<div style="display:flex;gap:4px;">' +
-              '<button onclick="saveSchoolRow(' + idx + ',\'' + nameEsc + '\')" style="' + btnSave + '">保存</button>' +
+              '<button onclick="saveSchoolRow(' + idx + ',\'' + nameEsc + '\', this)" style="' + btnSave + '">保存</button>' +
               '<button onclick="cancelEditRow(\'sc\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
             '</div>' +
           '</div>';
@@ -204,18 +211,23 @@
       document.getElementById('tn-edit-' + idx).style.display = 'block';
       document.getElementById('tn-input-' + idx).focus();
     }
-    function saveTestNameRow(idx, oldName) {
+    function saveTestNameRow(idx, oldName, btn) {
       var newName = document.getElementById('tn-input-' + idx).value.trim();
       if (!newName) { showMessage('adminMessage', 'テスト名を入力してください', 'error'); return; }
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             loadGradesSettings();
             if (typeof loadDropdownData === 'function') loadDropdownData();
           } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
         })
-        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+          showMessage('adminMessage', '❌ ' + err, 'error');
+        })
         .updateTestName(oldName, newName);
     }
 
@@ -225,18 +237,23 @@
       document.getElementById('cp-edit-' + idx).style.display = 'block';
       document.getElementById('cp-input-' + idx).focus();
     }
-    function saveCampusRow(idx, campusCode) {
+    function saveCampusRow(idx, campusCode, btn) {
       var newName = document.getElementById('cp-input-' + idx).value.trim();
       if (!newName) { showMessage('adminMessage', '校舎名を入力してください', 'error'); return; }
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             loadGradesSettings();
             if (typeof loadDropdownData === 'function') loadDropdownData();
           } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
         })
-        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+          showMessage('adminMessage', '❌ ' + err, 'error');
+        })
         .updateCampusName(campusCode, newName);
     }
 
@@ -275,19 +292,24 @@
       document.getElementById('sc-edit-' + idx).style.display = 'block';
       document.getElementById('sc-name-' + idx).focus();
     }
-    function saveSchoolRow(idx, oldName) {
+    function saveSchoolRow(idx, oldName, btn) {
       var newName  = document.getElementById('sc-name-' + idx).value.trim();
       var newDepts = document.getElementById('sc-depts-' + idx).value.trim();
       if (!newName) { showMessage('adminMessage', '学校名を入力してください', 'error'); return; }
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             loadGradesSettings();
             if (typeof loadDropdownData === 'function') loadDropdownData();
           } else { showMessage('adminMessage', '❌ ' + result.error, 'error'); }
         })
-        .withFailureHandler(function(err) { showMessage('adminMessage', '❌ ' + err, 'error'); })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+          showMessage('adminMessage', '❌ ' + err, 'error');
+        })
         .updateSchool(oldName, newName, newDepts);
     }
     // --- インライン編集ヘルパー ここまで ---
@@ -299,8 +321,11 @@
         showMessage('adminMessage', '高校名を入力してください', 'error');
         return;
       }
+      var btn = document.getElementById('btnAddSchool');
+      if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             document.getElementById('newSchoolName').value = '';
@@ -310,6 +335,10 @@
           } else {
             showMessage('adminMessage', '❌ ' + result.error, 'error');
           }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+          showMessage('adminMessage', '❌ エラー: ' + err, 'error');
         })
         .addSchool(name, depts);
     }
@@ -333,24 +362,29 @@
 
     function addNewTestName() {
       var testName = document.getElementById('newTestName').value.trim();
-      
+
       if (!testName) {
         showMessage('adminMessage', 'テスト名を入力してください', 'error');
         return;
       }
 
+      var btn = document.getElementById('btnAddTestName');
+      if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             document.getElementById('newTestName').value = '';
             loadGradesSettings();
-            if (typeof loadDropdownData === 'function') {
-              loadDropdownData();
-            }
+            if (typeof loadDropdownData === 'function') loadDropdownData();
           } else {
             showMessage('adminMessage', '❌ ' + result.error, 'error');
           }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+          showMessage('adminMessage', '❌ エラー: ' + err, 'error');
         })
         .addTestName(testName);
     }
@@ -374,25 +408,30 @@
     function addNewCampus() {
       var campusCode = document.getElementById('newCampusCode').value.trim();
       var campusName = document.getElementById('newCampusName').value.trim();
-      
+
       if (!campusCode || !campusName) {
         showMessage('adminMessage', 'コードと校舎名を入力してください', 'error');
         return;
       }
 
+      var btn = document.getElementById('btnAddCampus');
+      if (btn) { btn.disabled = true; btn.textContent = '追加中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
           if (result.success) {
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             document.getElementById('newCampusCode').value = '';
             document.getElementById('newCampusName').value = '';
             loadGradesSettings();
-            if (typeof loadDropdownData === 'function') {
-              loadDropdownData();
-            }
+            if (typeof loadDropdownData === 'function') loadDropdownData();
           } else {
             showMessage('adminMessage', '❌ ' + result.error, 'error');
           }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
+          showMessage('adminMessage', '❌ エラー: ' + err, 'error');
         })
         .addCampus(campusCode, campusName);
     }

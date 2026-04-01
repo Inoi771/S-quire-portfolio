@@ -347,10 +347,13 @@ function loadDropdownData(onComplete) {
                      + '学年：' + gradeName + '\n'
                      + '氏名：' + fullName
                      + warningMsg;
+      var btn = document.getElementById('btnRegisterStudent');
       appConfirm(confirmMsg).then(function(ok) {
         if (!ok) return;
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
         google.script.run
           .withSuccessHandler(function(result) {
+            if (btn) { btn.disabled = false; btn.textContent = '登録'; }
             if (result.success) {
               showMessage('input-message', '✓ ' + result.message + '（ID: ' + result.studentId + '）', 'success');
               clearInputForm();
@@ -360,6 +363,7 @@ function loadDropdownData(onComplete) {
             }
           })
           .withFailureHandler(function(err) {
+            if (btn) { btn.disabled = false; btn.textContent = '登録'; }
             showMessage('input-message', 'エラー: ' + err, 'error');
           })
           .submitStudentInfo(currentFiscalYear, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName);

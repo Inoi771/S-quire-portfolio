@@ -125,9 +125,9 @@
         html += '<td style="padding:10px; border:1px solid #ddd;">';
         html += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">';
         html += '<input type="date" id="lecDeadlineInput_' + lectureId + '" value="' + overrideDateVal + '" style="padding:6px; border:1px solid #ddd; border-radius:5px; font-size:13px;">';
-        html += '<button onclick="saveLectureDeadlineDate(\'' + lectureId + '\')" style="padding:6px 12px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">日程変更</button>';
+        html += '<button onclick="saveLectureDeadlineDate(\'' + lectureId + '\', this)" style="padding:6px 12px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">日程変更</button>';
         if (hasOverride) {
-          html += '<button onclick="resetLectureDeadlineDate(\'' + lectureId + '\')" style="padding:6px 12px; background:#e74c3c; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">リセット</button>';
+          html += '<button onclick="resetLectureDeadlineDate(\'' + lectureId + '\', this)" style="padding:6px 12px; background:#e74c3c; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">リセット</button>';
         }
         html += '</div></td>';
         html += '</tr>';
@@ -141,12 +141,14 @@
      * 管理タブ：講習日程締切を上書き保存する
      * @param {string} lectureId 講習ID
      */
-    function saveLectureDeadlineDate(lectureId) {
+    function saveLectureDeadlineDate(lectureId, btn) {
       var inputEl = document.getElementById('lecDeadlineInput_' + lectureId);
       if (!inputEl || !inputEl.value) { appAlert('日付を選択してください'); return; }
       var dateStr = inputEl.value; // YYYY-MM-DD 形式のまま保存
+      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
       google.script.run
         .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '日程変更'; }
           if (result.success) {
             lectureDeadlineOverrides[lectureId] = dateStr;
             var yr = parseInt(document.getElementById('lectureDeadlineYear').value);
@@ -158,6 +160,7 @@
           }
         })
         .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '日程変更'; }
           showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
         })
         .setLectureDeadlineOverride(lectureId, dateStr);
@@ -167,11 +170,13 @@
      * 管理タブ：講習日程締切の上書きをリセットして自動計算に戻す
      * @param {string} lectureId 講習ID
      */
-    function resetLectureDeadlineDate(lectureId) {
+    function resetLectureDeadlineDate(lectureId, btn) {
       appConfirm('「' + lectureId + '」の締切日設定をリセットして自動計算に戻しますか？').then(function(ok) {
         if (!ok) return;
+        if (btn) { btn.disabled = true; btn.textContent = '処理中...'; }
         google.script.run
           .withSuccessHandler(function(result) {
+            if (btn) { btn.disabled = false; btn.textContent = 'リセット'; }
             if (result.success) {
               delete lectureDeadlineOverrides[lectureId];
               var yr = parseInt(document.getElementById('lectureDeadlineYear').value);
@@ -183,6 +188,7 @@
             }
           })
           .withFailureHandler(function(err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'リセット'; }
             showMessage('adminMessage', '❌ 通信エラー: ' + (err.message || err), 'error');
           })
           .deleteLectureDeadlineOverride(lectureId);
