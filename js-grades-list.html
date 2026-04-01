@@ -1437,20 +1437,19 @@
       document.getElementById('schoolAveragesDisplay').innerHTML = loading;
       document.getElementById('averagesTableContainer').innerHTML = loading;
 
-      // 塾平均（校舎別・自動計算）
-      google.script.run
-        .withSuccessHandler(function(r) {
+      // 塾平均（校舎別・自動計算）— Firebase SDK
+      fbGetCampusAverages(year, testName)
+        .then(function(r) {
           if (r.success) renderCampusAverages(r.campuses);
           else document.getElementById('campusAveragesContainer').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + r.error + '</p>';
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           document.getElementById('campusAveragesContainer').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + err + '</p>';
-        })
-        .getCampusAverages(year, testName);
+        });
 
-      // 学校別平均（入力データ）と入力テーブル
-      google.script.run
-        .withSuccessHandler(function(avgResult) {
+      // 学校別平均（入力データ）— Firebase SDK
+      fbGetSchoolAverages(year, testName)
+        .then(function(avgResult) {
           if (!avgResult.success) {
             document.getElementById('schoolAveragesDisplay').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + avgResult.error + '</p>';
             document.getElementById('averagesTableContainer').innerHTML = '<p style="color:red;">❌ ' + avgResult.error + '</p>';
@@ -1461,11 +1460,10 @@
           renderSchoolAveragesDisplay(avgResult.averages || []);
           renderAveragesTable();
         })
-        .withFailureHandler(function(err) {
+        .catch(function(err) {
           document.getElementById('schoolAveragesDisplay').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + err + '</p>';
           document.getElementById('averagesTableContainer').innerHTML = '<p style="color:red;">❌ ' + err + '</p>';
-        })
-        .getSchoolAverages(year, testName);
+        });
     }
 
     /** 塾平均（校舎別）テーブルを描画する（表示のみ） */
