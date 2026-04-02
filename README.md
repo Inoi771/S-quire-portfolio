@@ -40,7 +40,7 @@
 ## ファイル構成
 
 ```
-gas-App/
+MyProject/
 ├── code.js               定数・doGet/doPost・ヘルパー関数
 ├── auth.js               認証・ロール管理
 ├── schedule.js           スケジュール管理・基礎学力テスト日程
@@ -51,15 +51,31 @@ gas-App/
 ├── admin.js              Admin API・初期化・ユーティリティ
 ├── line.js               LINE通知・LINEスケジューラー
 ├── features.js           AIアシスタント・料金表・講習管理
+├── backup.js             Firestoreバックアップ（定時自動実行）
 ├── index.html            HTMLシェル（画面構造）
 ├── styles.html           CSS（スタイル定義）
 ├── js-core.html          JS: 初期化・タブ制御・スケジュール・設定
 ├── js-grades.html        JS: 成績管理
+├── js-grades-list.html   JS: 成績一覧表
+├── js-grades-placement.html JS: 進学先
+├── js-grades-report-pdf.html JS: 成績表PDF出力
 ├── js-lectures.html      JS: 講習管理
+├── js-lectures-admin.html JS: 通常設定・講習設定
+├── js-lectures-materials.html JS: 内部配布物
+├── js-lectures-flyer.html JS: 外部チラシ
+├── js-lectures-imagen.html JS: 画像生成
 ├── js-pricing.html       JS: 料金表・年間カレンダー
-├── js-admin.html         JS: Admin管理
-├── js-admin-ext.html     JS: Admin続き・AIアシスタント
-├── （その他 js-*.html）   各機能のJSファイル（約15ファイル）
+├── js-admin.html         JS: Admin管理・LINEスケジューラー
+├── js-admin-ext.html     JS: Admin続き・固定イベント・AIアシスタント
+├── js-admin-lec-deadline.html JS: 講習日程締切管理
+├── js-ai-actions.html    JS: AIアシスタント アクション実行
+├── js-admin-chatbot.html JS: チャットボット管理
+├── gas-bridge.html       JS: google.script.run → fetch() 変換シム
+├── firebase.js           Firestore REST APIクライアント
+├── firebase-init.html    Firebase 初期化
+├── firebase-auth.html    Firebase Auth管理
+├── firebase-schedule.html Firebase スケジュール・講習クライアント
+├── firebase-students.html Firebase 生徒データクライアント
 ├── appsscript.json       GAS の設定ファイル（権限・タイムゾーン等）
 ├── .clasp.json           GASプロジェクトとの紐付け設定（スクリプトID）
 ├── .github/
@@ -584,7 +600,7 @@ GAS エディタで確認した「ウェブアプリ URL」（`https://script.go
 | 実行環境 | Google Apps Script（V8 ランタイム） |
 | フロントエンド | HTML + CSS + JavaScript |
 | データ保存先 | Google スプレッドシート / Google Drive |
-| AI 機能 | Gemini API（gemini-2.5-flash-lite-preview）・Imagen 4.0 Ultra |
+| AI 機能 | Gemini API（gemini-3.1-flash-lite-preview）・Imagen 4.0 Ultra |
 | 自動デプロイ | GitHub Actions + clasp |
 
 詳細な設計情報は `CLAUDE.md` を参照してください。
