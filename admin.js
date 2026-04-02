@@ -1690,6 +1690,177 @@ function parseGeminiErrorMessage_(response) {
 }
 
 // ========================================
+// 【セクション】スタッフデータ Firestore 移行
+// ========================================
+
+/**
+ * スクリプトプロパティからスタッフ情報を収集し、Firestore staffs コレクションに移行する
+ * Admin のみ実行可能
+ * @return {Object} { success, total, savedCount, skippedCount, errors, staffList }
+ */
+function migrateStaffToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  Logger.log('=== migrateStaffToFirestore 開始 ===');
+
+  try {
+    var props = PropertiesService.getScriptProperties().getProperties();
+
+    // --- 1. TEACHER_ID_MAP から基本情報を取得 ---
+    var teacherIdMap = {};
+    try { teacherIdMap = JSON.parse(props[PROP_KEYS.TEACHER_ID_MAP] || '{}'); } catch(e) {}
+
+    if (!Object.keys(teacherIdMap).length) {
+      return { success: false, error: 'TEACHER_ID_MAP が空です' };
+    }
+
+    // --- 2. 関連プロパティを一括パース ---
+    var lineUserMapping = {};
+    try { lineUserMapping = JSON.parse(props[PROP_KEYS.LINE_USER_MAPPING] || '{}'); } catch(e) {}
+
+    var notificationMethods = {};
+    try { notificationMethods = JSON.parse(props[PROP_KEYS.NOTIFICATION_METHODS] || '{}'); } catch(e) {}
+
+    var schedulerNotifPrefs = {};
+    try { schedulerNotifPrefs = JSON.parse(props[PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS] || '{}'); } catch(e) {}
+
+    // --- 3. _UP_ プロパティをメールごとに集約 ---
+    var upByEmail = {}; // { "safeEmail": { key: value, ... } }
+    var upPrefix = '_UP_';
+    var upKeys = ['DISPLAY_NAME', 'SUBJECTS', 'PREFERRED_CAMPUSES', 'AI_ASSISTANT_NAME', 'AI_PERSONALITY', 'USER_THEME_COLOR'];
+
+    Object.keys(props).forEach(function(key) {
+      if (key.indexOf(upPrefix) !== 0) return;
+      var rest = key.substring(upPrefix.length); // "safe_email_KEY"
+      for (var i = 0; i < upKeys.length; i++) {
+        var suffix = '_' + upKeys[i];
+        if (rest.indexOf(suffix, rest.length - suffix.length) !== -1) {
+          var safeEmail = rest.substring(0, rest.length - suffix.length);
+          if (!upByEmail[safeEmail]) upByEmail[safeEmail] = {};
+          upByEmail[safeEmail][upKeys[i]] = props[key];
+          break;
+        }
+      }
+    });
+
+    // --- 4. メールアドレス→safeEmailの逆引きマップ ---
+    function toSafeEmail(email) {
+      return email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    }
+
+    // --- 5. staffs ドキュメントを組み立て ---
+    var writes = [];
+    var errors = [];
+    var staffList = [];
+    var now = new Date().toISOString();
+
+    Object.keys(teacherIdMap).forEach(function(teacherId) {
+      try {
+        var entry = normalizeTeacherEntry_(teacherIdMap[teacherId]);
+        var primaryEmail = entry.emails.length > 0 ? entry.emails[0] : '';
+        var safeEmail = primaryEmail ? toSafeEmail(primaryEmail) : '';
+        var up = safeEmail ? (upByEmail[safeEmail] || {}) : {};
+
+        // subjects と preferredCampuses は JSON 配列文字列
+        var subjects = [];
+        try { subjects = JSON.parse(up['SUBJECTS'] || '[]'); } catch(e) {}
+
+        var preferredCampuses = [];
+        try { preferredCampuses = JSON.parse(up['PREFERRED_CAMPUSES'] || '[]'); } catch(e) {}
+
+        var data = {
+          teacherId: teacherId,
+          email: primaryEmail,
+          name: entry.name || '',
+          firebaseUid: null,
+          lineUserId: lineUserMapping[teacherId] || null,
+          displayName: up['DISPLAY_NAME'] || '',
+          subjects: subjects,
+          preferredCampuses: preferredCampuses,
+          aiAssistantName: up['AI_ASSISTANT_NAME'] || '',
+          aiPersonality: up['AI_PERSONALITY'] || '',
+          themeColor: up['USER_THEME_COLOR'] || '',
+          notificationMethod: notificationMethods[teacherId] || 'gmail',
+          addedAt: now
+        };
+
+        writes.push({ collection: 'staffs', docId: teacherId, data: data });
+        staffList.push({ teacherId: teacherId, email: primaryEmail, name: entry.name });
+      } catch(e) {
+        errors.push('teacherId=' + teacherId + ': ' + e.toString());
+      }
+    });
+
+    Logger.log('移行対象スタッフ数: ' + writes.length);
+
+    if (writes.length === 0) {
+      return { success: true, total: 0, savedCount: 0, skippedCount: 0, errors: errors };
+    }
+
+    // --- 6. Firestore にバッチ書き込み ---
+    var result = firestoreBatchWrite_(writes);
+
+    Logger.log('=== migrateStaffToFirestore 完了 ===');
+    return {
+      success: result.success,
+      total: Object.keys(teacherIdMap).length,
+      savedCount: writes.length,
+      skippedCount: 0,
+      errors: errors.concat(result.errors || []),
+      staffList: staffList
+    };
+  } catch (error) {
+    Logger.log('❌ migrateStaffToFirestoreエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Firestore staffs コレクションの移行結果を確認する
+ * Admin のみ実行可能
+ * @return {Object} { success, firestoreCount, teacherIdMapCount, staffs }
+ */
+function verifyStaffMigration() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+
+  try {
+    // Firestore のスタッフ数を取得
+    var fsDocs = firestoreQuery_('staffs', [], 500);
+    var fsCount = fsDocs ? fsDocs.length : 0;
+
+    // TEACHER_ID_MAP のスタッフ数
+    var teacherIdMap = {};
+    try { teacherIdMap = JSON.parse(getProperty(PROP_KEYS.TEACHER_ID_MAP) || '{}'); } catch(e) {}
+    var mapCount = Object.keys(teacherIdMap).length;
+
+    // 各ドキュメントのサマリー
+    var staffSummary = (fsDocs || []).map(function(doc) {
+      return {
+        teacherId: doc.teacherId || doc._id,
+        email: doc.email || '',
+        name: doc.name || '',
+        hasLineId: !!doc.lineUserId,
+        hasDisplayName: !!doc.displayName
+      };
+    });
+
+    var match = fsCount === mapCount;
+    return {
+      success: true,
+      firestoreCount: fsCount,
+      teacherIdMapCount: mapCount,
+      match: match,
+      message: match
+        ? '✅ 移行完了: Firestore ' + fsCount + '件 = TEACHER_ID_MAP ' + mapCount + '件'
+        : '⚠️ 件数不一致: Firestore ' + fsCount + '件 / TEACHER_ID_MAP ' + mapCount + '件',
+      staffs: staffSummary
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
 if (typeof module !== 'undefined') {
