@@ -134,6 +134,28 @@
       });
     }
 
+    // ===== 🔒 Firestore allowedUsers 初期化 =====
+    function runInitFirestoreAllowedUsers() {
+      var btn = document.getElementById('initFirestoreBtn');
+      var msg = document.getElementById('initFirestoreMessage');
+      if (btn) { btn.disabled = true; btn.textContent = '実行中...'; }
+      if (msg) msg.textContent = '';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (btn) { btn.disabled = false; btn.textContent = '▶ 今すぐ初期化を実行'; }
+          if (result.success) {
+            if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '✅ ' + result.message; }
+          } else {
+            if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ ' + result.error; }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '▶ 今すぐ初期化を実行'; }
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ エラー: ' + err; }
+        })
+        .initFirestoreAllowedUsers();
+    }
+
     // ===== 📬 通知設定（ユーザー設定画面用） =====
 
     function loadNotificationSettings() {

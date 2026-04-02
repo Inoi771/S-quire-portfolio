@@ -376,6 +376,13 @@ function addUserAccess(email) {
       Logger.log('⚠ addUserAccess: teacherId 登録失敗: ' + tidErr);
     }
 
+    // Firestore の allowedUsers に自動登録（セキュリティルール用）
+    try {
+      firestoreSet_('allowedUsers', email, { email: email, addedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      Logger.log('⚠ addUserAccess: Firestore allowedUsers 登録失敗（機能への影響なし）: ' + fsErr);
+    }
+
     logAdminAction('addUserAccess', { email: email });
     return { success: true, message: email + ' にアクセスを許可しました（Drive共有通知が届きます）' };
   } catch (error) {
@@ -482,6 +489,15 @@ function removeUserAccess(email) {
       }
     }
 
+    // Firestore の allowedUsers から削除（複数メールアドレス対応）
+    allEmails.forEach(function(addr) {
+      try {
+        firestoreDelete_('allowedUsers', addr);
+      } catch (fsErr) {
+        Logger.log('⚠ removeUserAccess: Firestore allowedUsers 削除失敗（' + addr + '）: ' + fsErr);
+      }
+    });
+
     logAdminAction('removeUserAccess', { email: email });
     return { success: true, message: email + ' のアクセスを削除しました（Drive共有・通知設定も解除されました）' };
   } catch (error) {
@@ -529,6 +545,12 @@ function linkUserById(inputId) {
           freshMap[inputId] = freshEntry;
           setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(freshMap));
           Logger.log('✓ linkUserById: ' + emailLower + ' を ' + inputId + ' のemailsに追加');
+          // Firestore の allowedUsers にも追加（複数メール対応）
+          try {
+            firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
+          } catch (fsErr) {
+            Logger.log('⚠ linkUserById: Firestore allowedUsers 登録失敗: ' + fsErr);
+          }
         }
       } finally {
         lock.releaseLock();
@@ -619,6 +641,12 @@ function addEmailToTeacher(newEmail) {
       teacherMap[teacherId] = myEntry;
       setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(teacherMap));
       Logger.log('✓ addEmailToTeacher: ' + newEmail + ' を ' + teacherId + ' に追加');
+      // Firestore の allowedUsers にも追加（複数メール対応）
+      try {
+        firestoreSet_('allowedUsers', newEmail, { email: newEmail, addedAt: new Date().toISOString() });
+      } catch (fsErr) {
+        Logger.log('⚠ addEmailToTeacher: Firestore allowedUsers 登録失敗: ' + fsErr);
+      }
       return { success: true, message: 'メールアドレスを追加しました', emails: myEntry.emails };
     } finally {
       lock.releaseLock();
@@ -766,6 +794,72 @@ function initializeFirstAdmin() {
     return { success: true, message: email + ' を管理者として登録しました' };
   } catch (error) {
     Logger.log('❌ initializeFirstAdminエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 既存の許可ユーザー全員を Firestore allowedUsers コレクションに一括登録する
+ * Firestoreセキュリティルール強化前に一度だけ実行する（Admin のみ）
+ * 登録対象: ADMIN_EMAILS / TEACHER_ID_MAP の全メール / Drive共有フォルダのエディター
+ * @aiCallable
+ * @return {Object} { success, registered, skipped, message, error }
+ */
+function initFirestoreAllowedUsers() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  try {
+    var emails = [];
+
+    // 1. ADMIN_EMAILS から取得
+    var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
+    adminRaw.split(',').forEach(function(e) {
+      var em = e.trim().toLowerCase();
+      if (em && emails.indexOf(em) === -1) emails.push(em);
+    });
+
+    // 2. TEACHER_ID_MAP から全メールアドレスを取得（複数メール対応）
+    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+    Object.keys(teacherMap).forEach(function(tid) {
+      var entry = normalizeTeacherEntry_(teacherMap[tid]);
+      entry.emails.forEach(function(em) {
+        if (em && emails.indexOf(em) === -1) emails.push(em);
+      });
+    });
+
+    // 3. Drive共有フォルダのエディター一覧からも取得
+    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+    if (folderId) {
+      try {
+        var folder = DriveApp.getFolderById(folderId);
+        folder.getEditors().forEach(function(user) {
+          var em = user.getEmail().toLowerCase();
+          if (em && emails.indexOf(em) === -1) emails.push(em);
+        });
+      } catch (e) {
+        Logger.log('⚠ initFirestoreAllowedUsers: Drive取得失敗: ' + e);
+      }
+    }
+
+    // 4. Firestoreに一括登録
+    var now = new Date().toISOString();
+    var registered = 0;
+    var skipped = 0;
+    emails.forEach(function(email) {
+      try {
+        firestoreSet_('allowedUsers', email, { email: email, addedAt: now });
+        registered++;
+      } catch (e) {
+        Logger.log('⚠ initFirestoreAllowedUsers: ' + email + ' 登録失敗: ' + e);
+        skipped++;
+      }
+    });
+
+    var msg = registered + '人をFirestoreに登録しました' + (skipped > 0 ? '（' + skipped + '人失敗）' : '');
+    Logger.log('✓ initFirestoreAllowedUsers: ' + msg);
+    logAdminAction('initFirestoreAllowedUsers', { registered: registered, skipped: skipped });
+    return { success: true, registered: registered, skipped: skipped, message: msg };
+  } catch (error) {
+    Logger.log('❌ initFirestoreAllowedUsersエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }

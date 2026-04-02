@@ -1724,6 +1724,14 @@
                 <p style="text-align: center; color: #999; font-size: 13px;">読み込み中...</p>
               </div>
               <div id="allowedUsersMessage" style="margin-bottom: 8px;"></div>
+
+              <!-- Firestore アクセス初期化（セキュリティ強化用） -->
+              <div id="firestoreInitSection" style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:14px; margin-top:10px;">
+                <div style="font-weight:700; font-size:13px; margin-bottom:6px; color:#e65100;">🔒 Firebaseセキュリティ初期化</div>
+                <p style="font-size:12px; color:#666; margin:0 0 10px; line-height:1.7;">現在の許可ユーザーをFirebaseに登録します。<br>初回セットアップ時と、スタッフを追加・削除したがFirebaseに反映されていない場合に実行してください。</p>
+                <button onclick="runInitFirestoreAllowedUsers()" id="initFirestoreBtn" style="padding:8px 16px; background:#e65100; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">▶ 今すぐ初期化を実行</button>
+                <div id="initFirestoreMessage" style="margin-top:8px; font-size:13px;"></div>
+              </div>
             </div>
 
             <!-- Admin 管理（固定・変更不可） -->
