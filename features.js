@@ -834,14 +834,12 @@ function applyConfigChange_(settings) {
   }
   if (settings.displayName) {
     setUserProperty('DISPLAY_NAME', settings.displayName);
-    setUserProperty('PROFILE_UPDATED', new Date().toISOString());
-    // TEACHER_ID_MAP の表示名も更新
-    try {
-      var teacherId = getOrCreateTeacherId();
-      var email = getRegisteredEmail();
-      getOrCreateTeacherIdForEmail_(email, settings.displayName);
-    } catch (e) {
-      Logger.log('⚠ TEACHER_ID_MAP 更新スキップ: ' + e);
+    // staffs の name も同期し、updatedAt を記録
+    var staff = getCurrentStaff_();
+    if (staff) {
+      staff.name = settings.displayName;
+      staff.updatedAt = new Date().toISOString();
+      writeStaffToFirestore_(staff);
     }
   }
 }
@@ -2035,8 +2033,12 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
  */
 function getTeacherNamesMap() {
   try {
-    var raw = getProperty(PROP_KEYS.TEACHER_ID_MAP) || '{}';
-    var map = JSON.parse(raw);
+    var allStaffs = firestoreQuery_('staffs', [], 500);
+    var map = {};
+    (allStaffs || []).forEach(function(staff) {
+      var tid = staff.teacherId || staff._id;
+      map[tid] = { email: staff.email || '', name: staff.displayName || staff.name || '' };
+    });
     return { success: true, map: map };
   } catch (error) {
     Logger.log('❌ getTeacherNamesMapエラー: ' + error);
@@ -2046,7 +2048,7 @@ function getTeacherNamesMap() {
 
 /**
  * 講師一覧を取得する（Admin のみ）
- * getAllowedUsers() をベースにし、TEACHER_ID_MAP から teacherId を付加して返す。
+ * getAllowedUsers() をベースにし、staffs から teacherId を付加して返す。
  * アクセス許可ユーザー全員が対象（スプレッドシートに入力実績のないユーザーも含む）。
  * @return {Object} { success, teachers: [{email, name, teacherId}] }
  */
