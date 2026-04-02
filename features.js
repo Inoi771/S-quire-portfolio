@@ -1936,29 +1936,6 @@ function getLectureScheduleEntries(lectureId, campusCode) {
 }
 
 /**
- * 講習エントリを全削除する（Admin専用・テストデータクリーンアップ用）
- * @param {string} [lectureId] 指定時はその講習のみ削除。省略時は全講習エントリを削除
- * @return {Object} { success, message, deletedCount }
- */
-function deleteAllLectureEntries(lectureId) {
-  try {
-    if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能です' };
-    var filters = [];
-    if (lectureId) filters.push(fsFilter_('lectureId', 'EQUAL', String(lectureId)));
-    var docs = firestoreQuery_('lectureEntries', filters);
-    if (docs.length === 0) return { success: true, message: '削除対象のエントリはありません', deletedCount: 0 };
-    var writes = docs.map(function(doc) {
-      return { collection: 'lectureEntries', docId: doc._id, delete: true };
-    });
-    firestoreBatchWrite_(writes);
-    return { success: true, message: docs.length + '件のエントリを削除しました', deletedCount: docs.length };
-  } catch (error) {
-    Logger.log('❌ deleteAllLectureEntriesエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
  * 指定の講習・校舎のスケジュールエントリを一括保存する（全置換・LockService使用）
  * Firestore の lectureEntries コレクションに書き込む
  * @param {string} lectureId 講習ID
