@@ -16,67 +16,20 @@
     function displayProperties(properties) {
       var container = document.getElementById('propertiesList');
       var html = '';
-
+      
       properties.forEach(function(prop) {
         var eKey = escapeHtml_(prop.key);
         var eValue = escapeHtml_(prop.value);
-        html += '<div class="property-item" id="prop-item-' + eKey + '">' +
-                '<div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 4px;">' +
-                '<strong style="font-size:13px; color:#333; word-break:break-all;">' + eKey + '</strong>' +
-                '<div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">' +
-                '<button onclick="startEditProperty(\'' + eKey + '\')" style="padding:3px 10px; background:#e3f2fd; border:1px solid #90caf9; color:#1565c0; border-radius:4px; font-size:12px; cursor:pointer;">編集</button>' +
-                '<button onclick="deleteProperty(\'' + eKey + '\')" style="padding:3px 10px; background:#fce4ec; border:1px solid #f48fb1; color:#c62828; border-radius:4px; font-size:12px; cursor:pointer;">削除</button>' +
+        html += '<div class="property-item">' +
+                '<div style="display: flex; justify-content: space-between; width: 100%;">' +
+                '<strong>' + eKey + ':</strong>' +
+                '<button onclick="deleteProperty(\'' + eKey + '\')">削除</button>' +
                 '</div>' +
-                '</div>' +
-                '<div id="prop-view-' + eKey + '" class="prop-value" style="word-break:break-all;">' + eValue + '</div>' +
-                '<div id="prop-edit-' + eKey + '" style="display:none; margin-top:6px;">' +
-                '<textarea id="prop-textarea-' + eKey + '" style="width:100%; min-height:60px; padding:6px; border:1px solid #90caf9; border-radius:4px; font-size:12px; font-family:monospace; resize:vertical; box-sizing:border-box;">' + eValue + '</textarea>' +
-                '<div style="display:flex; gap:6px; margin-top:4px;">' +
-                '<button onclick="saveEditProperty(\'' + eKey + '\')" style="padding:4px 14px; background:#1565c0; color:white; border:none; border-radius:4px; font-size:12px; cursor:pointer;">保存</button>' +
-                '<button onclick="cancelEditProperty(\'' + eKey + '\')" style="padding:4px 14px; background:#f5f5f5; border:1px solid #ddd; border-radius:4px; font-size:12px; cursor:pointer;">キャンセル</button>' +
-                '</div>' +
-                '</div>' +
+                '<div class="prop-value">' + eValue + '</div>' +
                 '</div>';
       });
-
+      
       container.innerHTML = html || '<p style="text-align: center; color: #999;">プロパティがありません</p>';
-    }
-
-    function startEditProperty(key) {
-      document.getElementById('prop-view-' + key).style.display = 'none';
-      document.getElementById('prop-edit-' + key).style.display = 'block';
-      var ta = document.getElementById('prop-textarea-' + key);
-      if (ta) ta.focus();
-    }
-
-    function cancelEditProperty(key) {
-      document.getElementById('prop-view-' + key).style.display = '';
-      document.getElementById('prop-edit-' + key).style.display = 'none';
-    }
-
-    function saveEditProperty(key) {
-      var ta = document.getElementById('prop-textarea-' + key);
-      if (!ta) return;
-      var newValue = ta.value;
-      var saveBtn = ta.parentElement.querySelector('button');
-      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
-          if (result && result.success) {
-            showMessage('adminMessage', '✓ ' + key + ' を更新しました', 'success');
-            loadProperties();
-          } else {
-            showMessage('adminMessage', '❌ ' + (result ? result.error : 'エラー'), 'error');
-            cancelEditProperty(key);
-          }
-        })
-        .withFailureHandler(function(err) {
-          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
-          showMessage('adminMessage', '❌ エラー: ' + err, 'error');
-          cancelEditProperty(key);
-        })
-        .updateScriptPropertyFromGUI(key, newValue);
     }
     
     function addProperty() {

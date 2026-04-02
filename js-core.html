@@ -613,8 +613,8 @@
         setupTabNavigation();
         checkAdminTabVisibility();
       })
-      // Firebase Auth メールと UID を渡す（Session.getActiveUser() が空の場合のフォールバック用）
-      .getAppStartupData(window.fbUserEmail || '', window.fbCurrentUser ? window.fbCurrentUser.uid : '');
+      // Firebase Auth メールを渡す（Session.getActiveUser() が空の場合のフォールバック用）
+      .getAppStartupData(window.fbUserEmail || '');
   }
 
   /**
@@ -1951,6 +1951,9 @@
       var curEl = document.getElementById('currentEmailDisplay');
       if (curEl) curEl.textContent = profile.currentEmail;
 
+      // メールアドレス一覧を読み込む
+      loadTeacherEmailList_();
+
       // フォーム入力欄に反映
       document.getElementById('displayNameInput').value = profile.displayName;
       var aiName = profile.aiAssistantName || 'イノイマン';
@@ -2218,21 +2221,99 @@
         .updateUserProfile(profileData);
     }
     
-    // ===== 講師ID（UID）表示 =====
+    // ===== 講師ID・メールアドレス管理 =====
 
     function copyTeacherId_() {
       var tid = document.getElementById('profileTeacherId');
       var text = tid ? tid.textContent : '';
       if (!text || text === '未設定') return;
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function() { showToast('✓ IDをコピーしました', 'success'); });
+        navigator.clipboard.writeText(text).then(function() { showToast('✓ 講師IDをコピーしました', 'success'); });
       } else {
         var ta = document.createElement('textarea');
         ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
         document.body.appendChild(ta); ta.select();
-        try { document.execCommand('copy'); showToast('✓ IDをコピーしました', 'success'); } catch(e) {}
+        try { document.execCommand('copy'); showToast('✓ 講師IDをコピーしました', 'success'); } catch(e) {}
         document.body.removeChild(ta);
       }
+    }
+
+    function loadTeacherEmailList_() {
+      var listEl = document.getElementById('teacherEmailList');
+      if (!listEl) return;
+      listEl.innerHTML = '<p style="color:#999;font-size:13px;">読み込み中...</p>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            listEl.innerHTML = '<p style="color:#e53935;font-size:13px;">読み込みエラー</p>';
+            return;
+          }
+          renderTeacherEmailList_(result.emails, result.currentEmail);
+        })
+        .withFailureHandler(function() {
+          listEl.innerHTML = '<p style="color:#e53935;font-size:13px;">読み込みに失敗しました</p>';
+        })
+        .getTeacherEmails();
+    }
+
+    function renderTeacherEmailList_(emails, currentEmail) {
+      var listEl = document.getElementById('teacherEmailList');
+      if (!listEl) return;
+      if (!emails || emails.length === 0) {
+        listEl.innerHTML = '<p style="color:#999;font-size:13px;">メールアドレスが登録されていません</p>';
+        return;
+      }
+      var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+      emails.forEach(function(em) {
+        var isCurrent = em.toLowerCase() === (currentEmail || '').toLowerCase();
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:10px 14px;">' +
+          '<span style="font-size:14px;font-family:monospace;">' + em + (isCurrent ? ' <span style="font-size:11px;background:#4caf50;color:white;border-radius:10px;padding:2px 7px;">現在</span>' : '') + '</span>' +
+          (isCurrent ? '' : '<button onclick="removeTeacherEmail_(\'' + em + '\')" style="background:#fff0f0;border:1px solid #ffcdd2;color:#c62828;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">削除</button>') +
+          '</div>';
+      });
+      html += '</div>';
+      listEl.innerHTML = html;
+    }
+
+    function addTeacherEmail_() {
+      var input = document.getElementById('addEmailInput');
+      var email = input ? input.value.trim() : '';
+      if (!email) { showMessage('emailListMessage', '⚠ メールアドレスを入力してください', 'error'); return; }
+      if (input) input.disabled = true;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (input) { input.disabled = false; input.value = ''; }
+          if (result && result.success) {
+            showMessage('emailListMessage', '✓ メールアドレスを追加しました', 'success');
+            loadTeacherEmailList_();
+          } else {
+            showMessage('emailListMessage', '❌ ' + (result ? result.error : 'エラーが発生しました'), 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (input) input.disabled = false;
+          showMessage('emailListMessage', '❌ エラー: ' + err, 'error');
+        })
+        .addEmailToTeacher(email);
+    }
+
+    function removeTeacherEmail_(email) {
+      appConfirm(email + ' を削除しますか？').then(function(ok) {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success) {
+              showMessage('emailListMessage', '✓ 削除しました', 'success');
+              loadTeacherEmailList_();
+            } else {
+              showMessage('emailListMessage', '❌ ' + (result ? result.error : 'エラーが発生しました'), 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('emailListMessage', '❌ エラー: ' + err, 'error');
+          })
+          .removeEmailFromTeacher(email);
+      });
     }
 
     // 設定タブを切り替える際にプロフィール情報を読み込み（キャッシュ済みなら即時表示）

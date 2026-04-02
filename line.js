@@ -14,14 +14,7 @@ function getCurrentTeacherId_() {
   if (tid) return tid;
   // フォールバック: TEACHER_ID_MAP からメールで逆引き
   var email = getCurrentUserEmail().toLowerCase();
-  if (!email) return null;
-  var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-  var found = null;
-  Object.keys(map).forEach(function(uid) {
-    var entry = map[uid];
-    if (entry && (entry.email || '').toLowerCase() === email) found = uid;
-  });
-  return found;
+  return getOrCreateTeacherIdForEmail_(email, '');
 }
 
 /**
@@ -35,10 +28,10 @@ function getEmailByTeacherId_(teacherId) {
   // 通知専用メールが設定されている場合はそちらを優先
   var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
   if (notifEmails[teacherId]) return notifEmails[teacherId];
-  // TEACHER_ID_MAP からメールを返す（UID をキーとした新フォーマット）
+  // TEACHER_ID_MAP から先頭メールを返す（新フォーマット: emails[]、旧フォーマット: email）
   var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-  var entry = map[teacherId];
-  return (entry && entry.email) ? entry.email.toLowerCase() : '';
+  var entry = normalizeTeacherEntry_(map[teacherId]);
+  return entry.emails.length > 0 ? entry.emails[0] : '';
 }
 
 /**
@@ -231,11 +224,10 @@ function getNotificationSettings() {
       registeredEmail = email;
     }
 
-    // 講師の登録メール
+    // 講師の全登録メールリスト（Gmail通知先選択用）
     var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    var teacherEntry = teacherMap[teacherId] || {};
-    var teacherEmail = teacherEntry.email || '';
-    var emails = teacherEmail ? [teacherEmail] : (email ? [email] : []);
+    var teacherEntry = normalizeTeacherEntry_(teacherMap[teacherId]);
+    var emails = teacherEntry.emails.length > 0 ? teacherEntry.emails : (email ? [email] : []);
 
     // 現在の通知先メール（NOTIFICATION_EMAILS に保存済みの個別設定）
     var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
@@ -473,20 +465,19 @@ function getLineRegisteredUsers() {
 
     // TEACHER_ID_MAP ベースでイテレート（LINE未登録ユーザーも候補に含める）
     var users = Object.keys(teacherMap)
-      .filter(function(uid) {
+      .filter(function(tid) {
         if (!folderId) return true;
-        var entry = teacherMap[uid] || {};
-        var em = (entry.email || '').toLowerCase();
-        return em && allowedEmails[em];
+        var entry = normalizeTeacherEntry_(teacherMap[tid] || {});
+        return entry.emails.some(function(e) { return allowedEmails[e]; });
       })
-      .map(function(uid) {
-        var entry = teacherMap[uid] || {};
+      .map(function(tid) {
+        var entry = normalizeTeacherEntry_(teacherMap[tid] || {});
         return {
-          teacherId: uid,
-          email: (entry.email || '').toLowerCase(),
+          teacherId: tid,
+          email: entry.emails[0] || '',
           name: entry.name || '',
-          method: methods[uid] || 'gmail',
-          lineRegistered: !!mapping[uid]
+          method: methods[tid] || 'gmail',
+          lineRegistered: !!mapping[tid]
         };
       });
 
