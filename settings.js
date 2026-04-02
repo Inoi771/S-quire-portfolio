@@ -10,12 +10,12 @@ var _safeUserKey_ = null;
 
 /**
  * 現在ユーザーのScriptPropertyキープレフィックスを返す内部ヘルパー
+ * staffs にマッピングされないキー（Gemini使用量等）で引き続き使用
  * @return {string} "_UP_{safeEmail}_" 形式の文字列
  */
 function getSafeUserKey_() {
   if (_safeUserKey_) return _safeUserKey_;
   try {
-    // getCurrentUserEmail() を使用することで Firebase Auth フォールバックが適用される
     var email = getCurrentUserEmail() || 'anonymous';
     if (email === 'unknown@example.com') email = 'anonymous';
     _safeUserKey_ = '_UP_' + email.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
@@ -23,6 +23,107 @@ function getSafeUserKey_() {
     _safeUserKey_ = '_UP_anonymous_';
   }
   return _safeUserKey_;
+}
+
+// ========================================
+// Firestore staffs コレクション連携
+// ========================================
+// スタッフ情報は Firestore staffs/{teacherId} に集約。
+// getUserProperty / setUserProperty はスタッフ系キーを自動的に Firestore へ振り分ける。
+
+/** スタッフドキュメントキャッシュ（同一GAS実行内でのみ有効） */
+var _currentStaff_ = null;
+
+/** Firebase UID コンテキスト（handleApiCall_ 等から設定される） */
+var _firebaseUidContext_ = null;
+
+/** _UP_ キー → staffs フィールド名のマッピング */
+var STAFF_FIELD_MAP_ = {
+  'DISPLAY_NAME':       'displayName',
+  'SUBJECTS':           'subjects',
+  'PREFERRED_CAMPUSES': 'preferredCampuses',
+  'AI_ASSISTANT_NAME':  'aiAssistantName',
+  'AI_PERSONALITY':     'aiPersonality',
+  'USER_THEME_COLOR':   'themeColor',
+  'TEACHER_ID':         'teacherId',
+  'REGISTERED_EMAIL':   'email'
+};
+
+/** JSON配列として保存されるフィールド（getUserProperty は文字列で返す必要がある） */
+var STAFF_ARRAY_FIELDS_ = { 'SUBJECTS': true, 'PREFERRED_CAMPUSES': true };
+
+/**
+ * Firebase UID をこの実行コンテキストに設定する
+ * @param {string} uid Firebase UID
+ */
+function setFirebaseUidContext_(uid) {
+  _firebaseUidContext_ = uid || null;
+}
+
+/**
+ * Firebase UID またはメールアドレスで staffs コレクションからスタッフを照合する
+ * 1. firebaseUid で検索 → 見つかればそのスタッフ
+ * 2. 見つからなければ email で検索 → 見つかれば firebaseUid を書き込んで返す
+ * 3. どちらも見つからなければ null（未登録）
+ * @param {string} firebaseUid Firebase UID（省略可）
+ * @param {string} email メールアドレス（省略可）
+ * @return {Object|null} スタッフドキュメント or null
+ */
+function resolveStaffByUid_(firebaseUid, email) {
+  if (_currentStaff_) return _currentStaff_;
+
+  var staff = null;
+
+  // 1. firebaseUid で検索
+  if (firebaseUid) {
+    var byUid = firestoreQuery_('staffs', [fsFilter_('firebaseUid', 'EQUAL', firebaseUid)], 1);
+    if (byUid && byUid.length > 0) {
+      staff = byUid[0];
+    }
+  }
+
+  // 2. email で検索（UID で見つからなかった場合）
+  if (!staff && email) {
+    var byEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email.toLowerCase())], 1);
+    if (byEmail && byEmail.length > 0) {
+      staff = byEmail[0];
+      // firebaseUid が渡されていて未設定なら書き込む
+      if (firebaseUid && !staff.firebaseUid) {
+        staff.firebaseUid = firebaseUid;
+        writeStaffToFirestore_(staff);
+        Logger.log('✓ resolveStaffByUid_: firebaseUid を書き込み email=' + email);
+      }
+    }
+  }
+
+  if (staff) {
+    _currentStaff_ = staff;
+  }
+  return staff;
+}
+
+/**
+ * 現在のコンテキストからスタッフを解決する内部ヘルパー
+ * @return {Object|null} スタッフドキュメント or null
+ */
+function getCurrentStaff_() {
+  if (_currentStaff_) return _currentStaff_;
+  var email = getCurrentUserEmail();
+  return resolveStaffByUid_(_firebaseUidContext_, email);
+}
+
+/**
+ * スタッフドキュメントを Firestore に書き込む内部ヘルパー
+ * _id フィールド（firestoreQuery_ が付加するメタ情報）は除外して書き込む
+ * @param {Object} staff スタッフドキュメント
+ */
+function writeStaffToFirestore_(staff) {
+  var docId = staff.teacherId || staff._id;
+  var writeData = {};
+  Object.keys(staff).forEach(function(k) {
+    if (k !== '_id') writeData[k] = staff[k];
+  });
+  firestoreSet_('staffs', docId, writeData);
 }
 
 /**
@@ -160,43 +261,64 @@ function updateSettings(settingsData) {
 
 /**
  * ユーザープロパティを取得
+ * スタッフ系キー（DISPLAY_NAME, SUBJECTS 等）→ Firestore staffs から取得
+ * その他のキー（GEMINI_DAILY_* 等）→ 従来の _UP_ ScriptProperties から取得
  * @param {string} key プロパティキー
  * @return {string} 値（存在しない場合は空文字列）
  */
 function getUserProperty(key) {
+  var firestoreField = STAFF_FIELD_MAP_[key];
+  if (firestoreField) {
+    var staff = getCurrentStaff_();
+    if (staff) {
+      var val = staff[firestoreField];
+      if (val === undefined || val === null) return '';
+      if (STAFF_ARRAY_FIELDS_[key]) return JSON.stringify(val);
+      return String(val);
+    }
+    return '';
+  }
+  // staffs にマッピングされないキーは従来の _UP_ から取得
   return PropertiesService.getScriptProperties().getProperty(getSafeUserKey_() + key) || '';
 }
 
 /**
  * ユーザープロパティを設定
- * USER_DEPLOYING環境でもユーザーごとに独立したデータを保持するため
- * ScriptPropertiesにメールアドレスをプレフィックスとして保存する
+ * スタッフ系キー → Firestore staffs/{teacherId} に書き込み
+ * その他のキー → 従来の _UP_ ScriptProperties に書き込み
  * @param {string} key プロパティキー
  * @param {string} value 設定する値
  * @return {boolean} 常に true
  */
 function setUserProperty(key, value) {
+  var firestoreField = STAFF_FIELD_MAP_[key];
+  if (firestoreField) {
+    var staff = getCurrentStaff_();
+    if (staff) {
+      var writeVal = value;
+      if (STAFF_ARRAY_FIELDS_[key]) {
+        try { writeVal = JSON.parse(value); } catch(e) { writeVal = []; }
+      }
+      staff[firestoreField] = writeVal;
+      writeStaffToFirestore_(staff);
+      return true;
+    }
+  }
+  // staffs にマッピングされないキーは従来の _UP_ へ保存
   PropertiesService.getScriptProperties().setProperty(getSafeUserKey_() + key, value);
   return true;
 }
 
 /**
  * ユーザーが登録したメールアドレスを取得
- * 初回はGoogle アカウントのメール
+ * staffs コレクションの email フィールドから取得する
  * @return {string} メールアドレス
  */
 function getRegisteredEmail() {
   try {
-    var registeredEmail = getUserProperty('REGISTERED_EMAIL');
-    
-    // 初回はGoogle アカウントのメール
-    if (!registeredEmail) {
-      registeredEmail = getCurrentUserEmail();
-      setUserProperty('REGISTERED_EMAIL', registeredEmail);
-    }
-    
-    return registeredEmail;
-    
+    var staff = getCurrentStaff_();
+    if (staff && staff.email) return staff.email;
+    return getCurrentUserEmail();
   } catch (error) {
     Logger.log('❌ getRegisteredEmailエラー: ' + error);
     return getCurrentUserEmail();
@@ -205,59 +327,33 @@ function getRegisteredEmail() {
 
 /**
  * ユーザーのプロフィール情報を取得
- * 設定タブ表示用に個人情報を返す
+ * Firestore staffs/{teacherId} から直接読み取る
  * @aiCallable
  * @return {Object} プロフィール情報
  */
 function getUserProfile() {
   try {
     var currentEmail = getCurrentUserEmail();
-    var registeredEmail = getRegisteredEmail();
-    var teacherId = getOrCreateTeacherId();
-    
-    var displayName = getUserProperty('DISPLAY_NAME');
-    // DISPLAY_NAME 未設定の場合、TEACHER_ID_MAP の表示名を自動引き継ぎ（複数メール対応）
-    if (!displayName) {
-      var tidMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-      var lookupEmail = (registeredEmail || currentEmail || '').toLowerCase();
-      Object.keys(tidMap).forEach(function(tid) {
-        var tidEntry = normalizeTeacherEntry_(tidMap[tid]);
-        if (tidEntry.emails.indexOf(lookupEmail) !== -1 && tidEntry.name) {
-          displayName = tidEntry.name;
-        }
-      });
-      if (displayName) {
-        setUserProperty('DISPLAY_NAME', displayName);
-      }
-    }
-    if (!displayName) displayName = getDisplayName(currentEmail);
+    var staff = getCurrentStaff_();
 
-    // 担当教科（複数）を取得
-    var subjectsJson = getUserProperty('SUBJECTS') || '[]';
-    var subjects = [];
-    try {
-      subjects = JSON.parse(subjectsJson);
-    } catch (e) {
-      subjects = [];
+    if (!staff) {
+      return { success: false, error: '未登録のユーザーです' };
     }
-    
-    var aiAssistantName = getUserProperty('AI_ASSISTANT_NAME') || 'イノイマン';
-    var aiPersonality = getUserProperty('AI_PERSONALITY') || 'polite';
-    var themeColor = getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
-    var preferredCampuses = safeJsonParse_(getUserProperty('PREFERRED_CAMPUSES'), []);
 
-    // TEACHER_ID_MAP との同期
-    // LINE登録時に既にIDが割り当てられている場合はそちらを優先して使用する
-    // これにより「LINEで登録した時点」でIDが確定し、一貫性が保たれる
-    try {
-      var mapTeacherId = getOrCreateTeacherIdForEmail_(registeredEmail, displayName);
-      if (mapTeacherId && mapTeacherId !== teacherId) {
-        // LINEまたは手動追加時に先行して割り当てられたIDがあればそちらを採用
-        teacherId = mapTeacherId;
-        setUserProperty('TEACHER_ID', teacherId);
-      }
-    } catch (mapErr) {
-      Logger.log('⚠ getUserProfile: TEACHER_ID_MAP 同期エラー: ' + mapErr);
+    var teacherId = staff.teacherId || staff._id;
+    var displayName = staff.displayName || staff.name || getDisplayName(currentEmail);
+
+    var subjects = staff.subjects || [];
+    if (typeof subjects === 'string') {
+      try { subjects = JSON.parse(subjects); } catch(e) { subjects = []; }
+    }
+
+    var aiAssistantName = staff.aiAssistantName || 'イノイマン';
+    var aiPersonality = staff.aiPersonality || 'polite';
+    var themeColor = staff.themeColor || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
+    var preferredCampuses = staff.preferredCampuses || [];
+    if (typeof preferredCampuses === 'string') {
+      preferredCampuses = safeJsonParse_(preferredCampuses, []);
     }
 
     // プロフィール写真の取得（Drive の assets/profile-photos/{teacherId}.jpg）
@@ -287,20 +383,20 @@ function getUserProfile() {
     return {
       success: true,
       currentEmail: currentEmail,
-      registeredEmail: registeredEmail,
+      registeredEmail: staff.email || currentEmail,
       teacherId: teacherId,
       displayName: displayName,
-      isDisplayNameSet: !!getUserProperty('DISPLAY_NAME'),
+      isDisplayNameSet: !!staff.displayName,
       subjects: subjects,
       subjectsDisplay: subjects.join(', ') || 'なし',
       aiAssistantName: aiAssistantName,
       aiPersonality: aiPersonality,
       themeColor: themeColor,
       preferredCampuses: preferredCampuses,
-      lastUpdated: getUserProperty('PROFILE_UPDATED') || new Date().toISOString(),
+      lastUpdated: staff.updatedAt || staff.addedAt || new Date().toISOString(),
       profilePhotoUrl: profilePhotoUrl
     };
-    
+
   } catch (error) {
     Logger.log('❌ getUserProfileエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -308,21 +404,15 @@ function getUserProfile() {
 }
 
 /**
- * ユーザーの講師IDを取得（初回は自動生成）
- * @return {string} 講師ID（例: T1707123456789_abc123def）
+ * ユーザーの講師IDを取得
+ * Firestore staffs コレクションから解決する（自動生成はしない）
+ * @return {string|null} 講師ID（未登録の場合は null）
  */
 function getOrCreateTeacherId() {
   try {
-    var teacherId = getUserProperty('TEACHER_ID');
-
-    // 初回アクセス時に講師IDを生成
-    if (!teacherId) {
-      teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      setUserProperty('TEACHER_ID', teacherId);
-    }
-
-    return teacherId;
-
+    var staff = getCurrentStaff_();
+    if (staff) return staff.teacherId || staff._id;
+    return null;
   } catch (error) {
     Logger.log('❌ getOrCreateTeacherIdエラー: ' + error);
     return null;
@@ -429,20 +519,23 @@ function updateEmailAddress(newEmail) {
 
 /**
  * プロフィール情報を更新
- * 表示名、担当教科を保存
+ * Firestore staffs/{teacherId} に直接書き込む
  * @aiCallable
- * @param {Object} profileData { displayName, subjects }
+ * @param {Object} profileData { displayName, subjects, aiAssistantName, aiPersonality, themeColor }
  * @return {Object} { success, message, profile, error }
  */
 function updateUserProfile(profileData) {
   try {
-    var teacherId = getOrCreateTeacherId();
-    
+    var staff = getCurrentStaff_();
+    if (!staff) {
+      return { success: false, error: '未登録のユーザーです' };
+    }
+
     // バリデーション
     if (!profileData.displayName || profileData.displayName.trim().length === 0) {
       return { success: false, error: '名前は必須です' };
     }
-    
+
     profileData.displayName = profileData.displayName.trim();
 
     // 担当教科の処理
@@ -450,7 +543,7 @@ function updateUserProfile(profileData) {
     if (typeof subjects === 'string') {
       subjects = subjects.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
     }
-    
+
     // 長さチェック
     if (profileData.displayName.length > 50) {
       return { success: false, error: '名前は50文字以下にしてください' };
@@ -458,38 +551,29 @@ function updateUserProfile(profileData) {
     if (subjects.length > 10) {
       return { success: false, error: '担当教科は最大10個までです' };
     }
-    
-    // AIアシスタント名の保存（任意。未指定またはデフォルト値ならリセット）
-    var aiName = (profileData.aiAssistantName || '').trim();
-    if (aiName && aiName !== 'イノイマン') {
-      setUserProperty('AI_ASSISTANT_NAME', aiName);
-    } else {
-      setUserProperty('AI_ASSISTANT_NAME', 'イノイマン');
-    }
 
-    // AIアシスタントの喋り方を保存
+    // AIアシスタント名
+    var aiName = (profileData.aiAssistantName || '').trim() || 'イノイマン';
+
+    // AIアシスタントの喋り方
     var validPersonalities = ['polite', 'friendly', 'energetic', 'cool', 'kansai', 'hakata', 'tohoku', 'nagoya', 'awa'];
     var aiPersonality = validPersonalities.indexOf(profileData.aiPersonality) !== -1 ? profileData.aiPersonality : 'polite';
-    setUserProperty('AI_PERSONALITY', aiPersonality);
 
-    // テーマカラーを保存（#xxxxxx形式のみ受け付ける）
+    // テーマカラー（#xxxxxx形式のみ受け付ける）
     var themeColor = (profileData.themeColor || '').trim();
+
+    // staffs ドキュメントを更新（一括書き込み）
+    staff.displayName = profileData.displayName;
+    staff.name = profileData.displayName;
+    staff.subjects = subjects;
+    staff.aiAssistantName = aiName;
+    staff.aiPersonality = aiPersonality;
     if (/^#[0-9a-fA-F]{6}$/.test(themeColor)) {
-      setUserProperty('USER_THEME_COLOR', themeColor);
+      staff.themeColor = themeColor;
     }
+    staff.updatedAt = new Date().toISOString();
 
-    // 保存
-    setUserProperty('DISPLAY_NAME', profileData.displayName);
-    setUserProperty('SUBJECTS', JSON.stringify(subjects));
-    setUserProperty('PROFILE_UPDATED', new Date().toISOString());
-
-    // TEACHER_ID_MAP の名前も最新に同期する
-    try {
-      var regEmail = getRegisteredEmail();
-      if (regEmail) getOrCreateTeacherIdForEmail_(regEmail, profileData.displayName);
-    } catch (e) {
-      Logger.log('⚠ updateUserProfile: TEACHER_ID_MAP同期失敗: ' + e);
-    }
+    writeStaffToFirestore_(staff);
 
     return {
       success: true,
@@ -499,7 +583,7 @@ function updateUserProfile(profileData) {
         subjects: subjects
       }
     };
-    
+
   } catch (error) {
     Logger.log('❌ updateUserProfileエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -508,12 +592,17 @@ function updateUserProfile(profileData) {
 
 /**
  * ユーザー個別のテーマカラー設定をリセットし、システムデフォルトに戻す
+ * Firestore staffs/{teacherId} の themeColor を空にする
  * @aiCallable
  * @return {Object} { success, themeColor } themeColor はリセット後の有効カラー
  */
 function resetUserThemeColor() {
   try {
-    PropertiesService.getScriptProperties().deleteProperty(getSafeUserKey_() + 'USER_THEME_COLOR');
+    var staff = getCurrentStaff_();
+    if (staff) {
+      staff.themeColor = '';
+      writeStaffToFirestore_(staff);
+    }
     var effectiveColor = getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
     return { success: true, themeColor: effectiveColor };
   } catch (error) {
@@ -705,14 +794,17 @@ function getMyGeminiUsage() {
 
 /**
  * アプリ起動時の初期データを一括取得する（高速起動用）
- * checkAccountBlocked / getSetupStatus / 管理者判定 / 基本設定を1回のAPI呼び出しで返す。
+ * Firestore staffs コレクションからスタッフを照合し、基本設定を返す。
  * Drive API（ロゴ・ファビコン）は含まない。
+ * @param {string} firebaseEmail Firebase Auth のメールアドレス
+ * @param {string} firebaseUid Firebase Auth の UID（省略可）
  * @return {Object} 起動に必要なデータ一式
  */
-function getAppStartupData(firebaseEmail) {
+function getAppStartupData(firebaseEmail, firebaseUid) {
   try {
-    // Firebase Auth から渡されたメールをコンテキストにセット（Session が空の場合のフォールバック）
+    // Firebase Auth コンテキストをセット
     if (firebaseEmail) setFirebaseEmailContext_(firebaseEmail);
+    if (firebaseUid) setFirebaseUidContext_(firebaseUid);
     var email = getCurrentUserEmail();
 
     // 管理者かどうかを素早く判定（ScriptProperties の文字列比較のみ・Drive API不要）
@@ -723,48 +815,42 @@ function getAppStartupData(firebaseEmail) {
     // 初回セットアップチェック（Admin未登録なら true）
     var isFirstSetup = adminList.length === 0;
 
-    // 基本設定（ScriptProperties / UserProperties のみ・Drive API不要）
-    var themeColor      = getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
-    var displayName     = getUserProperty('DISPLAY_NAME') || '';
-    var geminiApiKey    = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
-    var appFolderId     = getProperty(PROP_KEYS.APP_FOLDER_ID) || '';
-    var aiAssistantName    = getUserProperty('AI_ASSISTANT_NAME') || 'イノイマン';
-    var aiPersonality      = getUserProperty('AI_PERSONALITY') || 'polite';
-    var preferredCampuses  = safeJsonParse_(getUserProperty('PREFERRED_CAMPUSES'), []);
+    // Firestore staffs からスタッフを照合
+    var staff = resolveStaffByUid_(firebaseUid || _firebaseUidContext_, email);
 
-    // 講師ID入力が必要かどうかを判定
-    var teacherId = getUserProperty('TEACHER_ID') || '';
+    var teacherId       = '';
+    var displayName     = '';
+    var themeColor      = getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
+    var aiAssistantName = 'イノイマン';
+    var aiPersonality   = 'polite';
+    var preferredCampuses = [];
 
-    // TEACHER_IDが未設定の場合、TEACHER_ID_MAPのemailsリストで自動照合（ID入力不要にする）
-    if (!teacherId && !isFirstSetup && !isAdminResult && email) {
-      var emailLower = email.toLowerCase();
-      var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-      var allTids = Object.keys(teacherMap);
-      for (var ti = 0; ti < allTids.length; ti++) {
-        var tEntry = normalizeTeacherEntry_(teacherMap[allTids[ti]]);
-        if (tEntry.emails.indexOf(emailLower) !== -1) {
-          // 事前登録済みメールと一致 → 自動紐付け
-          teacherId = allTids[ti];
-          setUserProperty('TEACHER_ID', teacherId);
-          if (!displayName && tEntry.name) {
-            displayName = tEntry.name;
-            setUserProperty('DISPLAY_NAME', tEntry.name);
-          }
-          Logger.log('✓ getAppStartupData: ' + emailLower + ' を自動紐付け → ' + teacherId);
-          break;
-        }
+    if (staff) {
+      teacherId       = staff.teacherId || staff._id || '';
+      displayName     = staff.displayName || staff.name || '';
+      themeColor      = staff.themeColor || themeColor;
+      aiAssistantName = staff.aiAssistantName || aiAssistantName;
+      aiPersonality   = staff.aiPersonality || aiPersonality;
+      preferredCampuses = staff.preferredCampuses || [];
+      if (typeof preferredCampuses === 'string') {
+        preferredCampuses = safeJsonParse_(preferredCampuses, []);
       }
     }
 
-    var needsIdInput = !isFirstSetup && !isAdminResult && !teacherId;
+    var geminiApiKey = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
+    var appFolderId  = getProperty(PROP_KEYS.APP_FOLDER_ID) || '';
 
-    Logger.log('✓ getAppStartupData: 完了（admin=' + isAdminResult + ', firstSetup=' + isFirstSetup + ', needsIdInput=' + needsIdInput + '）');
+    // 未登録スタッフ判定（Admin と初回セットアップは除く）
+    var isUnregistered = !isFirstSetup && !isAdminResult && !staff;
+
+    Logger.log('✓ getAppStartupData: 完了（admin=' + isAdminResult + ', firstSetup=' + isFirstSetup + ', staff=' + !!staff + '）');
     return {
       success: true,
       isFirstSetup: isFirstSetup,
       currentUserEmail: email,
       isAdmin: isAdminResult,
-      needsIdInput: needsIdInput,
+      needsIdInput: isUnregistered,  // 後方互換（将来削除予定）
+      isUnregistered: isUnregistered,
       teacherId: teacherId,
       themeColor: themeColor,
       displayName: displayName,
