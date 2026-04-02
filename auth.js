@@ -615,6 +615,12 @@ function initializeFirstAdmin() {
       return { success: false, error: 'Googleアカウントにログインしてください' };
     }
     setProperty(PROP_KEYS.ADMIN_EMAILS, email);
+    // Firestore allowedUsers にも登録（セキュリティルール用）
+    try {
+      firestoreSet_('allowedUsers', email.toLowerCase(), { email: email.toLowerCase(), addedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      Logger.log('⚠ initializeFirstAdmin: Firestore allowedUsers 登録失敗（機能への影響なし）: ' + fsErr);
+    }
     return { success: true, message: email + ' を管理者として登録しました' };
   } catch (error) {
     Logger.log('❌ initializeFirstAdminエラー: ' + error);
@@ -624,8 +630,7 @@ function initializeFirstAdmin() {
 
 /**
  * 既存の許可ユーザー全員を Firestore allowedUsers コレクションに一括登録する
- * Firestoreセキュリティルール強化前に一度だけ実行する（Admin のみ）
- * 登録対象: ADMIN_EMAILS / TEACHER_ID_MAP の全メール / Drive共有フォルダのエディター
+ * 登録対象: ADMIN_EMAILS / TEACHER_ID_MAP の全メール（Drive エディターは含まない）
  * @aiCallable
  * @return {Object} { success, registered, skipped, message, error }
  */
@@ -649,21 +654,7 @@ function initFirestoreAllowedUsers() {
       if (em && emails.indexOf(em) === -1) emails.push(em);
     });
 
-    // 3. Drive共有フォルダのエディター一覧からも取得
-    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (folderId) {
-      try {
-        var folder = DriveApp.getFolderById(folderId);
-        folder.getEditors().forEach(function(user) {
-          var em = user.getEmail().toLowerCase();
-          if (em && emails.indexOf(em) === -1) emails.push(em);
-        });
-      } catch (e) {
-        Logger.log('⚠ initFirestoreAllowedUsers: Drive取得失敗: ' + e);
-      }
-    }
-
-    // 4. Firestoreに一括登録
+    // 3. Firestoreに一括登録
     var now = new Date().toISOString();
     var registered = 0;
     var skipped = 0;

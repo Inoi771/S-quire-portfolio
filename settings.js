@@ -723,19 +723,59 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       } else if (email) {
         var emailLower = email.toLowerCase();
 
-        // UID 未登録 → メールで逆引き（旧データ移行 or 別端末ログイン）
+        // UID 未登録 → メールで逆引き（仮ID or 別端末ログイン）
         var allUids = Object.keys(teacherMap);
         for (var ti = 0; ti < allUids.length; ti++) {
-          var oldEntry = teacherMap[allUids[ti]];
+          var oldKey = allUids[ti];
+          var oldEntry = teacherMap[oldKey];
           var entryEmail = (oldEntry && oldEntry.email) ? oldEntry.email.toLowerCase() : '';
           if (entryEmail === emailLower) {
-            teacherId = allUids[ti];
-            setUserProperty('TEACHER_ID', teacherId);
+            if (oldKey !== uid) {
+              // キーが違う（仮ID or 古いUID）→ UID に移行
+              var lock2 = LockService.getScriptLock();
+              try {
+                lock2.waitLock(8000);
+                var migMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+                if (migMap[oldKey] && !migMap[uid]) {
+                  // TEACHER_ID_MAP: 旧キー削除、UIDキーで新規作成（pending フラグも除去）
+                  migMap[uid] = { email: emailLower, name: oldEntry.name || displayName || '' };
+                  delete migMap[oldKey];
+                  setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(migMap));
+
+                  // LINE_USER_MAPPING を旧キー → UID に移行
+                  var lineMap = safeJsonParse_(getProperty(PROP_KEYS.LINE_USER_MAPPING), {});
+                  if (lineMap[oldKey]) {
+                    lineMap[uid] = lineMap[oldKey];
+                    delete lineMap[oldKey];
+                    setProperty(PROP_KEYS.LINE_USER_MAPPING, JSON.stringify(lineMap));
+                  }
+                  // NOTIFICATION_METHODS を移行
+                  var nmRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
+                  if (nmRaw) {
+                    var nm = safeJsonParse_(nmRaw, {});
+                    if (nm[oldKey]) { nm[uid] = nm[oldKey]; delete nm[oldKey]; setProperty(PROP_KEYS.NOTIFICATION_METHODS, JSON.stringify(nm)); }
+                  }
+                  // LINE_SCHEDULER_NOTIF_PREFS を移行
+                  var npRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS);
+                  if (npRaw) {
+                    var np = safeJsonParse_(npRaw, {});
+                    if (np[oldKey]) { np[uid] = np[oldKey]; delete np[oldKey]; setProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS, JSON.stringify(np)); }
+                  }
+                  Logger.log('✓ getAppStartupData: 仮ID ' + oldKey + ' → UID ' + uid + ' に移行完了');
+                }
+              } finally {
+                try { lock2.releaseLock(); } catch (e) {}
+              }
+              teacherId = uid;
+              setUserProperty('TEACHER_ID', uid);
+            } else {
+              teacherId = uid;
+              setUserProperty('TEACHER_ID', uid);
+            }
             if (!displayName && oldEntry.name) {
               displayName = oldEntry.name;
               setUserProperty('DISPLAY_NAME', oldEntry.name);
             }
-            Logger.log('✓ getAppStartupData: ' + emailLower + ' をメールで自動紐付け → ' + teacherId);
             break;
           }
         }
