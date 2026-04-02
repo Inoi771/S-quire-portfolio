@@ -1951,9 +1951,6 @@
       var curEl = document.getElementById('currentEmailDisplay');
       if (curEl) curEl.textContent = profile.currentEmail;
 
-      // メールアドレス一覧を読み込む
-      loadTeacherEmailList_();
-
       // フォーム入力欄に反映
       document.getElementById('displayNameInput').value = profile.displayName;
       var aiName = profile.aiAssistantName || 'イノイマン';
