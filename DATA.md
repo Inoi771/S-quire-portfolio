@@ -28,12 +28,6 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `CAMPUS_NOTIFICATION_ROUTING` | 校舎別通知振り分け（JSON: `{"campusCode": ["teacherId1"]}`） |
 | `LINE_SCHEDULER_SETTINGS` | LINEスケジューラー設定（JSON） |
 | `LINE_SCHEDULER_NOTIF_PREFS` | ユーザー別通知方法設定（JSON） |
-| `GEMINI_TEAM_DAILY_DATE` | Gemini使用量：今日の日付 |
-| `GEMINI_TEAM_DAILY_CALLS` | Gemini使用量：今日の呼び出し回数 |
-| `GEMINI_TEAM_DAILY_TOKENS` | Gemini使用量：今日のトークン数 |
-| `GEMINI_TEAM_MONTHLY_KEY` | Gemini使用量：今月のキー |
-| `GEMINI_TEAM_MONTHLY_CALLS` | Gemini使用量：今月の呼び出し回数 |
-| `GEMINI_TEAM_MONTHLY_TOKENS` | Gemini使用量：今月のトークン数 |
 | `FLYER_ALL_CONFIGS` | チラシ設定一括保存（JSON） |
 | `FORM_EMAIL_SENDER` | フォームメール送信元フィルター（デフォルト: `noreply@web-cms.jp`） |
 | `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列） |

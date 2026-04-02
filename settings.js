@@ -662,47 +662,16 @@ function logGeminiUsage(operationName, usageMetadata) {
     setUserProperty('GEMINI_MONTHLY_CALLS',  String(monthlyCalls));
     setUserProperty('GEMINI_MONTHLY_TOKENS', String(monthlyTokens));
 
-    // ── チーム全体（ScriptProperties）の更新 ─ LockServiceで競合を防止 ──
-    try {
-      var lock = LockService.getScriptLock();
-      lock.waitLock(5000);
-      try {
-        // チーム日次リセット
-        var teamDate = getProperty('GEMINI_TEAM_DAILY_DATE');
-        if (teamDate !== today) {
-          setProperty('GEMINI_TEAM_DAILY_DATE',   today);
-          setProperty('GEMINI_TEAM_DAILY_CALLS',  '0');
-          setProperty('GEMINI_TEAM_DAILY_TOKENS', '0');
-        }
-        // チーム月次リセット
-        var teamMonthKey = getProperty('GEMINI_TEAM_MONTHLY_KEY');
-        if (teamMonthKey !== monthKey) {
-          setProperty('GEMINI_TEAM_MONTHLY_KEY',    monthKey);
-          setProperty('GEMINI_TEAM_MONTHLY_CALLS',  '0');
-          setProperty('GEMINI_TEAM_MONTHLY_TOKENS', '0');
-        }
-        // チームカウント更新
-        setProperty('GEMINI_TEAM_DAILY_CALLS',   String(parseInt(getProperty('GEMINI_TEAM_DAILY_CALLS')   || '0') + 1));
-        setProperty('GEMINI_TEAM_DAILY_TOKENS',  String(parseInt(getProperty('GEMINI_TEAM_DAILY_TOKENS')  || '0') + tokens));
-        setProperty('GEMINI_TEAM_MONTHLY_CALLS', String(parseInt(getProperty('GEMINI_TEAM_MONTHLY_CALLS') || '0') + 1));
-        setProperty('GEMINI_TEAM_MONTHLY_TOKENS',String(parseInt(getProperty('GEMINI_TEAM_MONTHLY_TOKENS')|| '0') + tokens));
-      } finally {
-        lock.releaseLock();
-      }
-    } catch (lockErr) {
-      Logger.log('⚠ チーム使用量の記録をスキップ（ロック取得失敗）: ' + lockErr);
-    }
-
   } catch (e) {
     Logger.log('⚠ logGeminiUsage エラー: ' + e);
   }
 }
 
 /**
- * 現在ユーザーのGemini API使用量（個人 + チーム全体）を取得する
+ * 現在ユーザーのGemini API使用量（個人）を取得する
  * 設定タブのフロントエンドから呼び出される。
  * @aiCallable
- * @return {Object} { mine: { today, month }, team: { today, month } }
+ * @return {Object} { mine: { today, month } }
  *   today: { calls, tokens, ops[] }  month: { calls, tokens }
  */
 function getMyGeminiUsage() {
@@ -720,30 +689,16 @@ function getMyGeminiUsage() {
     var mineMonthCalls  = savedMonth === monthKey ? parseInt(getUserProperty('GEMINI_MONTHLY_CALLS') || '0') : 0;
     var mineMonthTokens = savedMonth === monthKey ? parseInt(getUserProperty('GEMINI_MONTHLY_TOKENS')|| '0') : 0;
 
-    // チームデータ（ScriptProperties）
-    var teamDate  = getProperty('GEMINI_TEAM_DAILY_DATE');
-    var teamMonth = getProperty('GEMINI_TEAM_MONTHLY_KEY');
-
-    var teamTodayCalls  = teamDate  === today    ? parseInt(getProperty('GEMINI_TEAM_DAILY_CALLS')   || '0') : 0;
-    var teamTodayTokens = teamDate  === today    ? parseInt(getProperty('GEMINI_TEAM_DAILY_TOKENS')  || '0') : 0;
-    var teamMonthCalls  = teamMonth === monthKey ? parseInt(getProperty('GEMINI_TEAM_MONTHLY_CALLS') || '0') : 0;
-    var teamMonthTokens = teamMonth === monthKey ? parseInt(getProperty('GEMINI_TEAM_MONTHLY_TOKENS')|| '0') : 0;
-
     return {
       mine: {
         today: { calls: mineTodayCalls, tokens: mineTodayTokens, ops: mineTodayOps },
         month: { calls: mineMonthCalls, tokens: mineMonthTokens }
-      },
-      team: {
-        today: { calls: teamTodayCalls, tokens: teamTodayTokens },
-        month: { calls: teamMonthCalls, tokens: teamMonthTokens }
       }
     };
   } catch (e) {
     Logger.log('❌ getMyGeminiUsage エラー: ' + e);
     return {
-      mine: { today: { calls: 0, tokens: 0, ops: [] }, month: { calls: 0, tokens: 0 } },
-      team: { today: { calls: 0, tokens: 0 }, month: { calls: 0, tokens: 0 } }
+      mine: { today: { calls: 0, tokens: 0, ops: [] }, month: { calls: 0, tokens: 0 } }
     };
   }
 }
