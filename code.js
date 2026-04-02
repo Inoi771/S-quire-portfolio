@@ -245,8 +245,7 @@ function doPost(e) {
           sendLineMessage(lineUserId, dupMsg);
           Logger.log('⚠ doPost: 重複のため登録スキップ: email=' + text + ' name=' + displayName);
         } else {
-          // TEACHER_ID_MAP からメールアドレスで UID（teacherId）を逆引き
-          // ※スタッフは先にアプリにログインして UID が登録されている必要がある
+          // TEACHER_ID_MAP からメールアドレスで既存エントリを逆引き（UID or 仮ID）
           var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
           var teacherId = null;
           var emailLower = text.toLowerCase();
@@ -259,65 +258,83 @@ function doPost(e) {
             }
           }
 
+          // 初回登録: 仮IDを発行して TEACHER_ID_MAP に登録
           if (!teacherId) {
-            // アプリへのログインがまだの場合
-            sendLineMessage(lineUserId, '⚠️ このメールアドレスは未登録です。\n\n先にアプリにGoogleアカウントでログインしてから、再度こちらにメールアドレスを送信してください。\n\nアプリURL:\nhttps://fir-quire.web.app');
-            Logger.log('⚠ doPost: TEACHER_ID_MAP にメール未登録のため案内: ' + text);
+            teacherId = 'pending_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+            var lock = LockService.getScriptLock();
+            try {
+              lock.waitLock(8000);
+              var freshMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+              freshMap[teacherId] = { email: emailLower, name: displayName || '', pending: true };
+              setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(freshMap));
+              Logger.log('✓ doPost: 仮ID発行: ' + teacherId + ' for ' + emailLower);
+            } catch (lockErr) {
+              Logger.log('⚠ doPost: 仮ID登録ロックエラー: ' + lockErr);
+            } finally {
+              try { lock.releaseLock(); } catch (e) {}
+            }
+          }
+
+          // LINE User ID マッピングを取得
+          var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
+          var mapping = safeJsonParse_(mappingRaw, {});
+
+          // すでに同じIDで登録済みなら案内のみ
+          if (mapping[teacherId] === lineUserId) {
+            sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。');
+            Logger.log('⚠ LINE登録済みのため案内のみ: ' + text);
           } else {
-            // LINE User ID マッピングを取得（UID → LINE User ID）
-            var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-            var mapping = safeJsonParse_(mappingRaw, {});
+            var isNew = !mapping[teacherId];
 
-            // すでに同じ UID・同じ LINE ID で登録済みなら案内のみ
-            if (mapping[teacherId] === lineUserId) {
-              sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。');
-              Logger.log('⚠ LINE登録済みのため案内のみ: ' + text);
-            } else {
-              var isNew = !mapping[teacherId];
+            // LINE User ID を保存（teacherId をキーに）
+            mapping[teacherId] = lineUserId;
+            try {
+              setProperty(PROP_KEYS.LINE_USER_MAPPING, JSON.stringify(mapping));
+              Logger.log('✓ LINE_USER_MAPPING 保存完了');
+            } catch (mapErr) {
+              Logger.log('⚠ doPost: LINE_USER_MAPPING 保存失敗（返信は継続）: ' + mapErr);
+            }
 
-              // LINE User ID を保存（UID をキーに）
-              mapping[teacherId] = lineUserId;
+            // 登録完了メッセージ
+            var replyMsg = '✅ 登録が完了しました！';
+            if (displayName) replyMsg += '\n表示名: ' + displayName;
+            replyMsg += '\n\n次にアプリにそのGoogleアカウントでログインすると、LINE通知が有効になります。\n\nアプリURL:\nhttps://fir-quire.web.app';
+            replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
+            Logger.log('プッシュ送信開始...');
+            var sent = sendLineMessage(lineUserId, replyMsg);
+            Logger.log('sendLineMessage 結果: ' + sent);
+
+            // Drive権限付与・Firestore allowedUsers 登録・管理者メール
+            var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+            if (folderId) {
               try {
-                setProperty(PROP_KEYS.LINE_USER_MAPPING, JSON.stringify(mapping));
-                Logger.log('✓ LINE_USER_MAPPING 保存完了');
-              } catch (mapErr) {
-                Logger.log('⚠ doPost: LINE_USER_MAPPING 保存失敗（返信は継続）: ' + mapErr);
+                DriveApp.getFolderById(folderId).addEditor(text);
+                Logger.log('✓ Drive Editor 権限付与完了');
+              } catch (folderErr) {
+                Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
               }
+            }
 
-              // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
-              var replyMsg = '✅ LINE通知の登録が完了しました！';
-              if (displayName) replyMsg += '\n表示名: ' + displayName;
-              replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
-              replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
-              Logger.log('プッシュ送信開始...');
-              var sent = sendLineMessage(lineUserId, replyMsg);
-              Logger.log('sendLineMessage 結果: ' + sent);
+            // Firestore allowedUsers に追加（アプリ初回ログイン時の認証用）
+            try {
+              firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
+              Logger.log('✓ Firestore allowedUsers 登録完了');
+            } catch (fsErr) {
+              Logger.log('⚠ doPost: Firestore allowedUsers 登録失敗: ' + fsErr);
+            }
 
-              // 返信後に時間のかかる処理（Drive権限付与・管理者メール）を実行
-              var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-              Logger.log('Driveフォルダ付与: folderId=' + (folderId || 'なし'));
-              if (folderId) {
-                try {
-                  DriveApp.getFolderById(folderId).addEditor(text);
-                  Logger.log('✓ Drive Editor 権限付与完了');
-                } catch (folderErr) {
-                  Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
+            if (isNew) {
+              try {
+                var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+                if (adminEmails.length > 0) {
+                  var adminBody = '以下のスタッフが LINE 経由で登録しました。\n\nメール: ' + text;
+                  if (displayName) adminBody += '\n表示名: ' + displayName;
+                  adminBody += '\n\n不審な登録の場合は管理タブ → ユーザー管理から削除してください。';
+                  GmailApp.sendEmail(adminEmails[0], '[S-quire] 新しいスタッフが登録しました', adminBody);
+                  Logger.log('✓ 管理者通知メール送信完了');
                 }
-              }
-
-              if (isNew) {
-                try {
-                  var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
-                  if (adminEmails.length > 0) {
-                    var adminBody = '以下のスタッフが LINE 通知を登録しました。\n\nメール: ' + text;
-                    if (displayName) adminBody += '\n表示名: ' + displayName;
-                    adminBody += '\n\n不審な登録の場合は管理タブ → ユーザー管理から削除してください。';
-                    GmailApp.sendEmail(adminEmails[0], '[S-quire] スタッフがLINE通知を登録しました', adminBody);
-                    Logger.log('✓ 管理者通知メール送信完了');
-                  }
-                } catch (mailErr) {
-                  Logger.log('⚠ doPost: 管理者通知メール送信失敗: ' + mailErr);
-                }
+              } catch (mailErr) {
+                Logger.log('⚠ doPost: 管理者通知メール送信失敗: ' + mailErr);
               }
             }
           }
