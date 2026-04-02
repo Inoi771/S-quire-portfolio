@@ -577,27 +577,12 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 運営情報コンテキスト生成スキップ: ' + e);
     }
 
-    // AI使用量情報を取得（使用量・解除時刻の質問に回答するため）
+    // AI使用量情報を取得（使用量の質問に回答するため）
     var usageData = getMyGeminiUsage();
     var usageMine = usageData.mine || { today: { calls: 0 }, month: { calls: 0 } };
-    var usageTeam = usageData.team || { today: { calls: 0 }, month: { calls: 0 } };
-    var RPD_LIMIT = 250;
-    var teamPct = Math.min(100, Math.round(usageTeam.today.calls / RPD_LIMIT * 100));
-    var remaining = Math.max(0, RPD_LIMIT - usageTeam.today.calls);
-    // サマータイム判定: 太平洋時間のUTCオフセットで判定
-    var ptOffset = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'Z');
-    var isPDT = (ptOffset === '-0700');
-    var resetHour = isPDT ? 16 : 17;
-    var nowHour = parseInt(Utilities.formatDate(new Date(), 'Asia/Tokyo', 'H'), 10);
-    var resetWhen = nowHour >= resetHour ? '明日の' : '今日の';
-    var usageContext = '\n\n【AI使用量情報（ユーザーが使用量・残り回数・制限・解除時刻を聞いた場合のみ使用）】\n' +
-      '- 1日の上限: 約' + RPD_LIMIT + '回（塾全体で共有）\n' +
-      '- 今日の塾全体の使用: ' + usageTeam.today.calls + '回 / ' + RPD_LIMIT + '回（' + teamPct + '%）\n' +
+    var usageContext = '\n\n【AI使用量情報（ユーザーが使用量を聞いた場合のみ使用）】\n' +
       '- 今日のこのユーザーの使用: ' + usageMine.today.calls + '回\n' +
-      '- 残り: 約' + remaining + '回\n' +
-      '- 今月の合計: 塾全体' + usageTeam.month.calls + '回 / このユーザー' + usageMine.month.calls + '回\n' +
-      '- 制限の解除時刻: ' + resetWhen + resetHour + ':00頃（アメリカ太平洋時間の午前0時にリセット）\n' +
-      '- ユーザーに教える際は「今日は塾全体でXX回使っていて、残りは約YY回です。制限は' + resetWhen + resetHour + ':00頃に解除されます」のように簡潔に伝える';
+      '- 今月のこのユーザーの合計: ' + usageMine.month.calls + '回';
 
     // 意図判定と回答生成を1回のAPI呼び出しで完結させる
     var prompt = `あなたはS-quire（個別指導スクエア専用の塾運営管理ダッシュボード）のAIアシスタント「${aiAssistantName || 'イノイマン'}」です。

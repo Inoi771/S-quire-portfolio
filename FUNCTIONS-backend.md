@@ -229,7 +229,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 
 ### セクション17: Gemini API 使用量トラッキング
 - `logGeminiUsage(operationName, usageMetadata)` — Gemini API呼び出し後に使用量をUserPropertiesに記録（日次・月次・操作一覧20件）。各API呼び出し関数の直後に挿入
-- `getMyGeminiUsage()` — `@aiCallable` 現在ユーザーのGemini API使用量（個人+チーム）を取得して返す（`{ mine: { today, month }, team: { today, month } }`）。AIアシスタントのプロンプト構築時にバックエンドから直接呼び出して使用量・解除時刻情報を注入
+- `getMyGeminiUsage()` — `@aiCallable` 現在ユーザーのGemini API使用量（個人）を取得して返す（`{ mine: { today, month } }`）。AIアシスタントのプロンプト構築時にバックエンドから直接呼び出して使用量情報を注入
 
 ### セクション18: LINEメッセージスケジューラー
 #### 内部ヘルパー（`_` 末尾・非公開）
