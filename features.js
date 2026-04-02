@@ -852,9 +852,14 @@ function applyConfigChange_(settings) {
     setUserProperty('PROFILE_UPDATED', new Date().toISOString());
     // TEACHER_ID_MAP の表示名も更新
     try {
-      var teacherId = getOrCreateTeacherId();
-      var email = getRegisteredEmail();
-      getOrCreateTeacherIdForEmail_(email, settings.displayName);
+      var teacherId = getUserProperty('TEACHER_ID') || '';
+      if (teacherId) {
+        var fMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+        if (fMap[teacherId]) {
+          fMap[teacherId].name = settings.displayName;
+          setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(fMap));
+        }
+      }
     } catch (e) {
       Logger.log('⚠ TEACHER_ID_MAP 更新スキップ: ' + e);
     }
@@ -1959,7 +1964,7 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
 
       // 権限チェック: Admin以外は他人のエントリを改ざんできない（講師IDのみで判定）
       if (!isAdmin()) {
-        var myTid = getOrCreateTeacherId();
+        var myTid = getUserProperty('TEACHER_ID') || '';
         var existingOtherEntries = {};
         existingDocs.forEach(function(doc) {
           var tid = doc.teacherId || '';

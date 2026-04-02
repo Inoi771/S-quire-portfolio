@@ -1485,7 +1485,7 @@
                     <div><strong id="profileSubjects">-</strong> <span style="opacity: 0.8;">担当教科</span></div>
                   </div>
                   <div style="margin-top: 8px; font-size: 12px; opacity: 0.85;">
-                    🔑 講師ID: <span id="profileTeacherId" style="font-family:monospace;">読み込み中...</span>
+                    🔑 スタッフID: <span id="profileTeacherId" style="font-family:monospace;">読み込み中...</span>
                     <button onclick="copyTeacherId_()" style="margin-left:6px;background:rgba(255,255,255,0.25);border:none;border-radius:4px;padding:2px 8px;font-size:11px;color:white;cursor:pointer;">コピー</button>
                   </div>
                 </div>
@@ -1656,24 +1656,6 @@
             </div>
           </div>
 
-          <!-- ===== 📧 アクセス可能なメールアドレス管理セクション ===== -->
-          <div class="settings-section" style="grid-column: 1 / -1;">
-            <h2>📧 アクセス可能なメールアドレス</h2>
-            <p style="font-size: 13px; color: #666; margin: 0 0 16px;">ここに登録したメールアドレスのGoogleアカウントは、次回から講師IDの入力なしに自動でアクセスできます。</p>
-
-            <div id="emailListMessage"></div>
-
-            <!-- メールアドレス一覧 -->
-            <div id="teacherEmailList" style="margin-bottom: 16px;">
-              <p style="color: #999; font-size: 13px;">読み込み中...</p>
-            </div>
-
-            <!-- 追加フォーム -->
-            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <input type="email" id="addEmailInput" placeholder="追加するメールアドレス" style="flex: 1; min-width: 220px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
-              <button onclick="addTeacherEmail_()" style="background: var(--theme-color, #43e97b); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap;">追加</button>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -2675,15 +2657,32 @@
             <div style="background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:20px;">
               <h3 style="margin:0 0 12px;">👥 スタッフのアクセス管理</h3>
               <div style="background:#e8f5e9; border-left:4px solid #43e97b; padding:12px 16px; border-radius:0 8px 8px 0; margin-bottom:12px;">
-                <p style="margin:0; font-size:13px; font-weight:600;">スタッフがアプリを使えるようにする方法</p>
+                <p style="margin:0; font-size:13px; font-weight:600;">スタッフを追加する手順</p>
               </div>
               <ol style="font-size:14px; line-height:2; padding-left:20px; margin:0;">
-                <li>Google Drive で「共有フォルダ（ACCESS_FOLDER_ID）」を開く</li>
-                <li>右クリック → 「共有」をクリック</li>
-                <li>スタッフのGoogleアカウントのメールアドレスを入力</li>
-                <li>権限を「<strong>編集者</strong>」に設定して「送信」</li>
+                <li>管理タブ → ユーザー管理 → 「アクセスを許可」でスタッフのメールアドレスを追加</li>
+                <li>スタッフがアプリ（<strong>https://fir-quire.web.app</strong>）にGoogleアカウントでログイン<br><span style="font-size:12px; color:#888;">→ この時点でスタッフIDが自動発行されます</span></li>
+                <li>LINE通知を使う場合：スタッフがLINEボットに自分のメールアドレスを送信</li>
               </ol>
-              <p style="font-size:13px; color:#666; margin:12px 0 0;">※ アクセスを取り消す場合は、同じ共有設定から「アクセスを削除」してください。</p>
+              <p style="font-size:13px; color:#666; margin:12px 0 0;">※ アクセスを取り消す場合は、管理タブ → ユーザー管理 → 「削除」をクリックしてください。Drive共有とFirebase認証の両方が自動で解除されます。</p>
+            </div>
+
+            <!-- 🔄 スクリプトプロパティのリセット手順 -->
+            <div style="background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:20px;">
+              <h3 style="margin:0 0 12px;">🔄 スタッフデータのリセット手順</h3>
+              <p style="font-size:13px; color:#666; margin:0 0 12px;">スタッフの登録をすべてやり直したい場合（例：アーキテクチャ変更後のクリーンスタート）は以下の手順で行います。</p>
+              <div style="background:#fff3e0; border-left:4px solid #ff9800; padding:12px 16px; border-radius:0 8px 8px 0; margin-bottom:12px;">
+                <p style="margin:0; font-size:13px; color:#e65100;"><strong>⚠️ 注意：</strong> 以下の操作を行うとスタッフのLINE登録と通知設定がすべて消去されます。スタッフは再度LINE登録が必要になります。</p>
+              </div>
+              <ol style="font-size:13px; line-height:2; padding-left:20px; margin:0 0 12px;">
+                <li>GASエディタ（script.google.com）を開く</li>
+                <li>左メニュー「プロジェクトの設定」→「スクリプトプロパティ」を開く</li>
+                <li><code>TEACHER_ID_MAP</code> の値を <code>{}</code> に変更</li>
+                <li><code>LINE_USER_MAPPING</code> の値を <code>{}</code> に変更</li>
+                <li>Firebaseコンソール → Firestore → <code>allowedUsers</code> コレクションを開き、すべてのドキュメントを削除</li>
+                <li>アプリに戻り、管理タブ → ユーザー管理 → 「Firebaseセキュリティ初期化」を実行して管理者を再登録</li>
+                <li>各スタッフに再ログインを依頼（ログイン時にIDが自動発行されます）</li>
+              </ol>
             </div>
 
             <!-- 💬 LINE通知の設定手順 -->

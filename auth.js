@@ -81,18 +81,57 @@ function getAllProperties() {
 }
 
 /**
- * TEACHER_ID_MAP のエントリを新フォーマット（emails配列）に正規化する内部ヘルパー
- * 旧フォーマット { email: "...", name: "..." } → 新フォーマット { emails: ["..."], name: "..." }
- * @param {Object} entry TEACHER_ID_MAP の1エントリ
- * @return {Object} 正規化済みエントリ { emails: string[], name: string }
+ * アプリへの初回ログイン時に TEACHER_ID_MAP へ登録する
+ * Firebase UID をキーとして { email, name } を保存する
+ * @aiCallable
+ * @param {string} uid Firebase UID（講師IDとして使用）
+ * @param {string} email Googleアカウントのメールアドレス
+ * @param {string} displayName 表示名（任意）
+ * @return {Object} { success, isNew, teacherId, error }
  */
-function normalizeTeacherEntry_(entry) {
-  if (!entry) return { emails: [], name: '' };
-  if (Array.isArray(entry.emails)) return entry; // 既に新フォーマット
-  // 旧フォーマット: email (単一文字列) → emails (配列) に変換
-  var emailsList = [];
-  if (entry.email) emailsList.push(entry.email.toLowerCase());
-  return { emails: emailsList, name: entry.name || '' };
+function registerUserOnLogin(uid, email, displayName) {
+  try {
+    if (!uid || !email) return { success: false, error: 'uid と email は必須です' };
+    uid = String(uid).trim();
+    email = String(email).trim().toLowerCase();
+    displayName = String(displayName || '').trim();
+
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(10000); } catch (e) {
+      return { success: false, error: 'しばらくしてから再試行してください' };
+    }
+    try {
+      var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+
+      // すでに UID が登録済みなら名前だけ更新して返す
+      if (map[uid]) {
+        var needsUpdate = false;
+        if (displayName && map[uid].name !== displayName) {
+          map[uid].name = displayName;
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
+        }
+        setUserProperty('TEACHER_ID', uid);
+        if (displayName && !getUserProperty('DISPLAY_NAME')) setUserProperty('DISPLAY_NAME', displayName);
+        return { success: true, isNew: false, teacherId: uid };
+      }
+
+      // 新規登録
+      map[uid] = { email: email, name: displayName || '' };
+      setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
+      setUserProperty('TEACHER_ID', uid);
+      if (displayName) setUserProperty('DISPLAY_NAME', displayName);
+      Logger.log('✓ registerUserOnLogin: UID ' + uid + ' (' + email + ') を TEACHER_ID_MAP に登録');
+      return { success: true, isNew: true, teacherId: uid };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (error) {
+    Logger.log('❌ registerUserOnLoginエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
 }
 
 /**
@@ -272,8 +311,8 @@ function isAllowedUser() {
     var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
     var keys = Object.keys(teacherMap);
     for (var j = 0; j < keys.length; j++) {
-      var entry = normalizeTeacherEntry_(teacherMap[keys[j]]);
-      if (entry.emails.indexOf(email) !== -1) {
+      var entry = teacherMap[keys[j]];
+      if (entry && (entry.email || '').toLowerCase() === email) {
         Logger.log('✓ isAllowedUser: TEACHER_ID_MAP で許可: ' + email);
         return true;
       }
@@ -310,19 +349,17 @@ function getAllowedUsers() {
   try {
     var usersMap = {};
 
-    // TEACHER_ID_MAP からLINE登録ユーザーを取得（複数メール対応）
+    // TEACHER_ID_MAP から登録ユーザーを取得
     var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    Object.keys(teacherMap).forEach(function(tid) {
-      var entry = normalizeTeacherEntry_(teacherMap[tid]);
-      if (entry.emails.length === 0) return;
-      // 代表メール（最初のメール）をキーに登録
-      var primaryEmail = entry.emails[0];
-      usersMap[primaryEmail] = {
-        email: primaryEmail,
-        emails: entry.emails,
+    Object.keys(teacherMap).forEach(function(uid) {
+      var entry = teacherMap[uid];
+      if (!entry || !entry.email) return;
+      var emailKey = entry.email.toLowerCase();
+      usersMap[emailKey] = {
+        email: emailKey,
         name: entry.name || '',
-        role: 'LINE登録',
-        teacherId: tid
+        role: 'スタッフ',
+        teacherId: uid
       };
     });
 
@@ -369,13 +406,6 @@ function addUserAccess(email) {
     var folder = DriveApp.getFolderById(folderId);
     folder.addEditor(email);
 
-    // teacherId を TEACHER_ID_MAP に登録（手動追加時点でIDを確定）
-    try {
-      getOrCreateTeacherIdForEmail_(email, '');
-    } catch (tidErr) {
-      Logger.log('⚠ addUserAccess: teacherId 登録失敗: ' + tidErr);
-    }
-
     // Firestore の allowedUsers に自動登録（セキュリティルール用）
     try {
       firestoreSet_('allowedUsers', email, { email: email, addedAt: new Date().toISOString() });
@@ -420,25 +450,21 @@ function removeUserAccess(email) {
       return { success: false, error: 'フォルダのオーナーは削除できません' };
     }
 
-    // teacherId を取得して紐づく全メールアドレスを Drive から一括解除
+    // UID（teacherId）を TEACHER_ID_MAP からメールで逆引き
     var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
     var teacherId = null;
-    var allEmails = [email];
-    Object.keys(teacherMap).forEach(function(tid) {
-      var entry = normalizeTeacherEntry_(teacherMap[tid]);
-      if (entry.emails.indexOf(email) !== -1) {
-        teacherId = tid;
-        allEmails = entry.emails.length > 0 ? entry.emails : [email];
+    Object.keys(teacherMap).forEach(function(uid) {
+      var entry = teacherMap[uid];
+      if (entry && (entry.email || '').toLowerCase() === email) {
+        teacherId = uid;
       }
     });
 
-    // 講師IDに紐づく全メールアドレスを Drive 共有から解除
-    allEmails.forEach(function(addr) {
-      var ownerEmail = folder.getOwner() ? folder.getOwner().getEmail().toLowerCase() : '';
-      if (addr !== ownerEmail) {
-        try { folder.removeEditor(addr); } catch (e) { Logger.log('⚠ removeEditor スキップ: ' + addr + ' / ' + e); }
-      }
-    });
+    // Drive 共有から解除
+    var ownerEmail = folder.getOwner() ? folder.getOwner().getEmail().toLowerCase() : '';
+    if (email !== ownerEmail) {
+      try { folder.removeEditor(email); } catch (e) { Logger.log('⚠ removeEditor スキップ: ' + email + ' / ' + e); }
+    }
 
     if (teacherId) {
       // TEACHER_ID_MAP から削除
@@ -489,14 +515,12 @@ function removeUserAccess(email) {
       }
     }
 
-    // Firestore の allowedUsers から削除（複数メールアドレス対応）
-    allEmails.forEach(function(addr) {
-      try {
-        firestoreDelete_('allowedUsers', addr);
-      } catch (fsErr) {
-        Logger.log('⚠ removeUserAccess: Firestore allowedUsers 削除失敗（' + addr + '）: ' + fsErr);
-      }
-    });
+    // Firestore の allowedUsers から削除
+    try {
+      firestoreDelete_('allowedUsers', email);
+    } catch (fsErr) {
+      Logger.log('⚠ removeUserAccess: Firestore allowedUsers 削除失敗: ' + fsErr);
+    }
 
     logAdminAction('removeUserAccess', { email: email });
     return { success: true, message: email + ' のアクセスを削除しました（Drive共有・通知設定も解除されました）' };
@@ -506,206 +530,6 @@ function removeUserAccess(email) {
   }
 }
 
-/**
- * 講師IDでTEACHER_ID_MAPを検索し、見つかればUserPropertiesに保存して紐付ける
- * 初回アクセス時の講師ID入力認証に使用。紐付け時に現在のGoogleアカウントのメールをemailsリストに追加する
- * @aiCallable
- * @param {string} inputId 入力された講師ID（例: T1707123456789_abc123def）
- * @return {Object} { success, found, teacherId, displayName, isAdmin, error }
- */
-function linkUserById(inputId) {
-  try {
-    inputId = (inputId || '').trim();
-    if (!inputId) return { success: false, found: false, error: '講師IDを入力してください' };
-
-    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    if (!teacherMap[inputId]) {
-      return { success: true, found: false };
-    }
-
-    var entry = normalizeTeacherEntry_(teacherMap[inputId]);
-
-    // ユーザープロパティに TEACHER_ID と DISPLAY_NAME を保存（このGoogleアカウントに紐付け）
-    setUserProperty('TEACHER_ID', inputId);
-    setUserProperty('DISPLAY_NAME', entry.name || '');
-    if (entry.emails.length > 0) setUserProperty('REGISTERED_EMAIL', entry.emails[0]);
-
-    // 現在のGoogleアカウントのメールをemailsリストに追加（未登録の場合のみ）
-    var currentEmail = getCurrentUserEmail();
-    if (currentEmail && currentEmail !== 'unknown@example.com') {
-      var emailLower = currentEmail.toLowerCase();
-      var lock = LockService.getScriptLock();
-      try {
-        lock.waitLock(10000);
-        // 再取得してから更新（競合対策）
-        var freshMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-        var freshEntry = normalizeTeacherEntry_(freshMap[inputId]);
-        if (freshEntry.emails.indexOf(emailLower) === -1) {
-          freshEntry.emails.push(emailLower);
-          freshMap[inputId] = freshEntry;
-          setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(freshMap));
-          Logger.log('✓ linkUserById: ' + emailLower + ' を ' + inputId + ' のemailsに追加');
-          // Firestore の allowedUsers にも追加（複数メール対応）
-          try {
-            firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
-          } catch (fsErr) {
-            Logger.log('⚠ linkUserById: Firestore allowedUsers 登録失敗: ' + fsErr);
-          }
-        }
-      } finally {
-        lock.releaseLock();
-      }
-    }
-
-    // Admin かどうか確認
-    var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',')
-      .map(function(e) { return e.trim().toLowerCase(); })
-      .filter(function(e) { return e.length > 0; });
-    var isAdminUser = currentEmail && adminEmails.indexOf(currentEmail.toLowerCase()) !== -1;
-
-    Logger.log('✓ linkUserById: ' + inputId + ' に紐付け完了（名前: ' + entry.name + '）');
-    return { success: true, found: true, teacherId: inputId, displayName: entry.name || '', isAdmin: isAdminUser };
-
-  } catch (error) {
-    Logger.log('❌ linkUserByIdエラー: ' + error);
-    return { success: false, found: false, error: error.toString() };
-  }
-}
-
-/**
- * 現在の講師のemailsリストを取得する
- * 設定タブのメールアドレス管理UIで使用
- * @aiCallable
- * @return {Object} { success, emails: string[], teacherId, error }
- */
-function getTeacherEmails() {
-  try {
-    var teacherId = getUserProperty('TEACHER_ID');
-    if (!teacherId) return { success: false, error: '講師IDが設定されていません' };
-
-    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    if (!teacherMap[teacherId]) return { success: false, error: '講師情報が見つかりません' };
-
-    var entry = normalizeTeacherEntry_(teacherMap[teacherId]);
-    var currentEmail = getCurrentUserEmail().toLowerCase();
-    return { success: true, emails: entry.emails, teacherId: teacherId, currentEmail: currentEmail };
-  } catch (error) {
-    Logger.log('❌ getTeacherEmailsエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * 現在の講師のemailsリストにメールアドレスを追加する
- * 設定タブのメールアドレス管理UIで使用
- * @aiCallable
- * @param {string} newEmail 追加するメールアドレス
- * @return {Object} { success, emails, message, error }
- */
-function addEmailToTeacher(newEmail) {
-  try {
-    var teacherId = getUserProperty('TEACHER_ID');
-    if (!teacherId) return { success: false, error: '講師IDが設定されていません' };
-
-    newEmail = (newEmail || '').trim().toLowerCase();
-    if (!newEmail || newEmail.indexOf('@') === -1) {
-      return { success: false, error: '正しいメールアドレスを入力してください' };
-    }
-
-    var lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(10000);
-    } catch (e) {
-      return { success: false, error: 'しばらくしてから再試行してください' };
-    }
-    try {
-      var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-
-      // 他の講師に既に登録されていないか確認
-      var allTids = Object.keys(teacherMap);
-      for (var i = 0; i < allTids.length; i++) {
-        var entry = normalizeTeacherEntry_(teacherMap[allTids[i]]);
-        if (allTids[i] !== teacherId && entry.emails.indexOf(newEmail) !== -1) {
-          return { success: false, error: 'このメールアドレスは既に別の講師に登録されています' };
-        }
-      }
-
-      var myEntry = normalizeTeacherEntry_(teacherMap[teacherId]);
-      if (!teacherMap[teacherId]) return { success: false, error: '講師情報が見つかりません' };
-
-      if (myEntry.emails.indexOf(newEmail) !== -1) {
-        return { success: false, error: 'このメールアドレスは既に登録されています' };
-      }
-
-      myEntry.emails.push(newEmail);
-      teacherMap[teacherId] = myEntry;
-      setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(teacherMap));
-      Logger.log('✓ addEmailToTeacher: ' + newEmail + ' を ' + teacherId + ' に追加');
-      // Firestore の allowedUsers にも追加（複数メール対応）
-      try {
-        firestoreSet_('allowedUsers', newEmail, { email: newEmail, addedAt: new Date().toISOString() });
-      } catch (fsErr) {
-        Logger.log('⚠ addEmailToTeacher: Firestore allowedUsers 登録失敗: ' + fsErr);
-      }
-      return { success: true, message: 'メールアドレスを追加しました', emails: myEntry.emails };
-    } finally {
-      lock.releaseLock();
-    }
-  } catch (error) {
-    Logger.log('❌ addEmailToTeacherエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * 現在の講師のemailsリストからメールアドレスを削除する
- * 設定タブのメールアドレス管理UIで使用。現在のGoogleアカウントのメールは削除不可
- * @aiCallable
- * @param {string} emailToRemove 削除するメールアドレス
- * @return {Object} { success, emails, message, error }
- */
-function removeEmailFromTeacher(emailToRemove) {
-  try {
-    var teacherId = getUserProperty('TEACHER_ID');
-    if (!teacherId) return { success: false, error: '講師IDが設定されていません' };
-
-    emailToRemove = (emailToRemove || '').trim().toLowerCase();
-    if (!emailToRemove) return { success: false, error: 'メールアドレスを指定してください' };
-
-    // 現在のGoogleアカウントのメールは削除不可（ロックアウト防止）
-    var currentEmail = getCurrentUserEmail().toLowerCase();
-    if (emailToRemove === currentEmail) {
-      return { success: false, error: '現在ログイン中のメールアドレスは削除できません' };
-    }
-
-    var lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(10000);
-    } catch (e) {
-      return { success: false, error: 'しばらくしてから再試行してください' };
-    }
-    try {
-      var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-      if (!teacherMap[teacherId]) return { success: false, error: '講師情報が見つかりません' };
-
-      var myEntry = normalizeTeacherEntry_(teacherMap[teacherId]);
-      var idx = myEntry.emails.indexOf(emailToRemove);
-      if (idx === -1) return { success: false, error: 'このメールアドレスは登録されていません' };
-      if (myEntry.emails.length <= 1) return { success: false, error: 'メールアドレスは最低1件必要です' };
-
-      myEntry.emails.splice(idx, 1);
-      teacherMap[teacherId] = myEntry;
-      setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(teacherMap));
-      Logger.log('✓ removeEmailFromTeacher: ' + emailToRemove + ' を ' + teacherId + ' から削除');
-      return { success: true, message: 'メールアドレスを削除しました', emails: myEntry.emails };
-    } finally {
-      lock.releaseLock();
-    }
-  } catch (error) {
-    Logger.log('❌ removeEmailFromTeacherエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
 
 /**
  * アクセス拒否ページのHTMLを生成する
@@ -817,13 +641,12 @@ function initFirestoreAllowedUsers() {
       if (em && emails.indexOf(em) === -1) emails.push(em);
     });
 
-    // 2. TEACHER_ID_MAP から全メールアドレスを取得（複数メール対応）
+    // 2. TEACHER_ID_MAP から全メールアドレスを取得
     var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    Object.keys(teacherMap).forEach(function(tid) {
-      var entry = normalizeTeacherEntry_(teacherMap[tid]);
-      entry.emails.forEach(function(em) {
-        if (em && emails.indexOf(em) === -1) emails.push(em);
-      });
+    Object.keys(teacherMap).forEach(function(uid) {
+      var entry = teacherMap[uid];
+      var em = entry && (entry.email || '').toLowerCase();
+      if (em && emails.indexOf(em) === -1) emails.push(em);
     });
 
     // 3. Drive共有フォルダのエディター一覧からも取得
