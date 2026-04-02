@@ -11,19 +11,22 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 
 **すべての人物・エンティティを「不変のID」で管理する。名前・メールを主キーに使うことは禁止。**
 
-### 講師ID発行フロー
+### 講師ID発行フロー（Firebase UID = 講師ID）
 ```
-①LINE自己登録 → getOrCreateTeacherIdForEmail_(email, name) → TEACHER_ID_MAP に登録
-②管理者手動追加 → getOrCreateTeacherIdForEmail_(email, '') → TEACHER_ID_MAP に登録
-③初回アプリ起動 → getUserProfile() → 既存IDがあれば再利用、なければ新規生成 → UserProperties TEACHER_ID に保存
+①アプリに初回ログイン → getAppStartupData(email, uid) → Firestore allowedUsers で認可確認
+  → TEACHER_ID_MAP に { uid: { email, name } } を自動登録 → UserProperties TEACHER_ID に保存
+②LINEでメールを送信 → TEACHER_ID_MAP でメール逆引き → UID 取得 → LINE_USER_MAPPING に保存
+③管理者追加（addUserAccess） → Drive + Firestore allowedUsers に登録（UID は初回ログイン時に確定）
 ```
 
 ### TEACHER_ID_MAP 構造（ScriptProperties）
 ```json
 {
-  "T1707123456789_abc123def": { "email": "teacher@example.com", "name": "田中 花子" }
+  "firebase_uid_abc123": { "email": "teacher@example.com", "name": "田中 花子" }
 }
 ```
+
+> ⚠️ キーは Firebase UID（不変）。メールは1人1件。複数メール管理は廃止済み。
 
 ### 新機能実装時のルール
 
@@ -34,11 +37,10 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 
 ### 所有者判定は講師IDのみ
 
-**エントリ・データの所有者判定は必ず `teacherId` のみで行う。`teacherEmail` でのフォールバック判定は禁止。**
+**エントリ・データの所有者判定は必ず `teacherId`（= Firebase UID）のみで行う。`teacherEmail` でのフォールバック判定は禁止。**
 
 理由：
-- 1人の講師が複数のメールアドレスでログインする可能性がある
-- メールアドレスは変更・追加される可能性があるが、講師IDは不変
+- Firebase UID は不変（メールアドレスは変更の可能性があるが UID は変わらない）
 - 管理者が他の講師として作成したエントリも、対象講師の `teacherId` で紐づけられるため正しく判定される
 
 ---

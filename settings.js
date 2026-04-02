@@ -213,20 +213,15 @@ function getUserProfile() {
   try {
     var currentEmail = getCurrentUserEmail();
     var registeredEmail = getRegisteredEmail();
-    var teacherId = getOrCreateTeacherId();
-    
+    var teacherId = getUserProperty('TEACHER_ID') || '';
+
     var displayName = getUserProperty('DISPLAY_NAME');
-    // DISPLAY_NAME 未設定の場合、TEACHER_ID_MAP の表示名を自動引き継ぎ（複数メール対応）
-    if (!displayName) {
+    // DISPLAY_NAME 未設定の場合、TEACHER_ID_MAP の表示名を自動引き継ぎ
+    if (!displayName && teacherId) {
       var tidMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-      var lookupEmail = (registeredEmail || currentEmail || '').toLowerCase();
-      Object.keys(tidMap).forEach(function(tid) {
-        var tidEntry = normalizeTeacherEntry_(tidMap[tid]);
-        if (tidEntry.emails.indexOf(lookupEmail) !== -1 && tidEntry.name) {
-          displayName = tidEntry.name;
-        }
-      });
-      if (displayName) {
+      var tidEntry = tidMap[teacherId];
+      if (tidEntry && tidEntry.name) {
+        displayName = tidEntry.name;
         setUserProperty('DISPLAY_NAME', displayName);
       }
     }
@@ -246,18 +241,17 @@ function getUserProfile() {
     var themeColor = getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
     var preferredCampuses = safeJsonParse_(getUserProperty('PREFERRED_CAMPUSES'), []);
 
-    // TEACHER_ID_MAP との同期
-    // LINE登録時に既にIDが割り当てられている場合はそちらを優先して使用する
-    // これにより「LINEで登録した時点」でIDが確定し、一貫性が保たれる
-    try {
-      var mapTeacherId = getOrCreateTeacherIdForEmail_(registeredEmail, displayName);
-      if (mapTeacherId && mapTeacherId !== teacherId) {
-        // LINEまたは手動追加時に先行して割り当てられたIDがあればそちらを採用
-        teacherId = mapTeacherId;
-        setUserProperty('TEACHER_ID', teacherId);
+    // TEACHER_ID_MAP の name を最新表示名で更新（名前変更があった場合）
+    if (teacherId && displayName) {
+      try {
+        var profileMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+        if (profileMap[teacherId] && profileMap[teacherId].name !== displayName) {
+          profileMap[teacherId].name = displayName;
+          setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(profileMap));
+        }
+      } catch (mapErr) {
+        Logger.log('⚠ getUserProfile: TEACHER_ID_MAP 名前同期エラー: ' + mapErr);
       }
-    } catch (mapErr) {
-      Logger.log('⚠ getUserProfile: TEACHER_ID_MAP 同期エラー: ' + mapErr);
     }
 
     // プロフィール写真の取得（Drive の assets/profile-photos/{teacherId}.jpg）
@@ -307,79 +301,6 @@ function getUserProfile() {
   }
 }
 
-/**
- * ユーザーの講師IDを取得（初回は自動生成）
- * @return {string} 講師ID（例: T1707123456789_abc123def）
- */
-function getOrCreateTeacherId() {
-  try {
-    var teacherId = getUserProperty('TEACHER_ID');
-
-    // 初回アクセス時に講師IDを生成
-    if (!teacherId) {
-      teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      setUserProperty('TEACHER_ID', teacherId);
-    }
-
-    return teacherId;
-
-  } catch (error) {
-    Logger.log('❌ getOrCreateTeacherIdエラー: ' + error);
-    return null;
-  }
-}
-
-/**
- * メールアドレスに対応する teacherId を TEACHER_ID_MAP から取得する。
- * 既存エントリがあれば再利用し、なければ新規生成して TEACHER_ID_MAP に保存する（内部ヘルパー）。
- * ScriptProperties に書き込むため、ユーザーが開いていない状態でも admin が呼び出せる。
- * @param {string} email 対象メールアドレス
- * @param {string} name 表示名（任意。指定した場合は最新値で更新）
- * @return {string} teacherId
- */
-function getOrCreateTeacherIdForEmail_(email, name) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-  } catch (e) {
-    throw new Error('講師IDの生成に失敗しました（ロック取得タイムアウト）');
-  }
-  try {
-    var emailLower = email.toLowerCase();
-    var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-
-    // 既存エントリをメールアドレスで逆引き（新旧フォーマット両対応）
-    var existingId = null;
-    Object.keys(map).forEach(function(tid) {
-      var entry = normalizeTeacherEntry_(map[tid]);
-      if (entry.emails.indexOf(emailLower) !== -1) {
-        existingId = tid;
-      }
-    });
-
-    if (existingId) {
-      // 表示名が変わった場合は更新
-      var existEntry = normalizeTeacherEntry_(map[existingId]);
-      if (name && existEntry.name !== name) {
-        existEntry.name = name;
-        map[existingId] = existEntry;
-        setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
-      }
-      return existingId;
-    }
-
-    // 新規生成（新フォーマット: emails配列）
-    var newId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    map[newId] = { emails: [emailLower], name: name || '' };
-    setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
-    return newId;
-  } catch (error) {
-    Logger.log('❌ getOrCreateTeacherIdForEmail_エラー: ' + error);
-    throw new Error('講師IDの生成に失敗しました: ' + error);
-  } finally {
-    lock.releaseLock();
-  }
-}
 
 /**
  * メールアドレスを変更
@@ -436,8 +357,8 @@ function updateEmailAddress(newEmail) {
  */
 function updateUserProfile(profileData) {
   try {
-    var teacherId = getOrCreateTeacherId();
-    
+    var teacherId = getUserProperty('TEACHER_ID') || '';
+
     // バリデーション
     if (!profileData.displayName || profileData.displayName.trim().length === 0) {
       return { success: false, error: '名前は必須です' };
@@ -484,11 +405,16 @@ function updateUserProfile(profileData) {
     setUserProperty('PROFILE_UPDATED', new Date().toISOString());
 
     // TEACHER_ID_MAP の名前も最新に同期する
-    try {
-      var regEmail = getRegisteredEmail();
-      if (regEmail) getOrCreateTeacherIdForEmail_(regEmail, profileData.displayName);
-    } catch (e) {
-      Logger.log('⚠ updateUserProfile: TEACHER_ID_MAP同期失敗: ' + e);
+    if (teacherId) {
+      try {
+        var upMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+        if (upMap[teacherId]) {
+          upMap[teacherId].name = profileData.displayName;
+          setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(upMap));
+        }
+      } catch (e) {
+        Logger.log('⚠ updateUserProfile: TEACHER_ID_MAP同期失敗: ' + e);
+      }
     }
 
     return {
@@ -550,7 +476,7 @@ function savePreferredCampuses(campusCodes) {
  */
 function saveProfilePhoto(base64Image, mimeType) {
   try {
-    var teacherId = getOrCreateTeacherId();
+    var teacherId = getUserProperty('TEACHER_ID') || '';
     var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
     if (!rootFolderId) {
       return { success: false, error: 'アプリフォルダが設定されていません' };
@@ -754,7 +680,7 @@ function getMyGeminiUsage() {
  * Drive API（ロゴ・ファビコン）は含まない。
  * @return {Object} 起動に必要なデータ一式
  */
-function getAppStartupData(firebaseEmail) {
+function getAppStartupData(firebaseEmail, firebaseUid) {
   try {
     // Firebase Auth から渡されたメールをコンテキストにセット（Session が空の場合のフォールバック）
     if (firebaseEmail) setFirebaseEmailContext_(firebaseEmail);
@@ -777,26 +703,66 @@ function getAppStartupData(firebaseEmail) {
     var aiPersonality      = getUserProperty('AI_PERSONALITY') || 'polite';
     var preferredCampuses  = safeJsonParse_(getUserProperty('PREFERRED_CAMPUSES'), []);
 
-    // 講師ID入力が必要かどうかを判定
+    // 講師IDの判定（Firebase UID をキーとして TEACHER_ID_MAP を参照）
+    var uid = (firebaseUid || '').trim();
     var teacherId = getUserProperty('TEACHER_ID') || '';
 
-    // TEACHER_IDが未設定の場合、TEACHER_ID_MAPのemailsリストで自動照合（ID入力不要にする）
-    if (!teacherId && !isFirstSetup && !isAdminResult && email) {
-      var emailLower = email.toLowerCase();
+    if (!teacherId && !isFirstSetup && !isAdminResult && uid) {
       var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-      var allTids = Object.keys(teacherMap);
-      for (var ti = 0; ti < allTids.length; ti++) {
-        var tEntry = normalizeTeacherEntry_(teacherMap[allTids[ti]]);
-        if (tEntry.emails.indexOf(emailLower) !== -1) {
-          // 事前登録済みメールと一致 → 自動紐付け
-          teacherId = allTids[ti];
-          setUserProperty('TEACHER_ID', teacherId);
-          if (!displayName && tEntry.name) {
-            displayName = tEntry.name;
-            setUserProperty('DISPLAY_NAME', tEntry.name);
+
+      if (teacherMap[uid]) {
+        // UID が既に登録済み → 自動紐付け
+        teacherId = uid;
+        setUserProperty('TEACHER_ID', uid);
+        var tEntry = teacherMap[uid];
+        if (!displayName && tEntry.name) {
+          displayName = tEntry.name;
+          setUserProperty('DISPLAY_NAME', tEntry.name);
+        }
+        Logger.log('✓ getAppStartupData: UID ' + uid + ' を自動紐付け');
+      } else if (email) {
+        var emailLower = email.toLowerCase();
+
+        // UID 未登録 → メールで逆引き（旧データ移行 or 別端末ログイン）
+        var allUids = Object.keys(teacherMap);
+        for (var ti = 0; ti < allUids.length; ti++) {
+          var oldEntry = teacherMap[allUids[ti]];
+          var entryEmail = (oldEntry && oldEntry.email) ? oldEntry.email.toLowerCase() : '';
+          if (entryEmail === emailLower) {
+            teacherId = allUids[ti];
+            setUserProperty('TEACHER_ID', teacherId);
+            if (!displayName && oldEntry.name) {
+              displayName = oldEntry.name;
+              setUserProperty('DISPLAY_NAME', oldEntry.name);
+            }
+            Logger.log('✓ getAppStartupData: ' + emailLower + ' をメールで自動紐付け → ' + teacherId);
+            break;
           }
-          Logger.log('✓ getAppStartupData: ' + emailLower + ' を自動紐付け → ' + teacherId);
-          break;
+        }
+
+        // まだ見つからなければ: Firestore allowedUsers に登録済みなら新規UID登録
+        if (!teacherId && uid) {
+          try {
+            var allowed = firestoreGet_('allowedUsers', emailLower);
+            if (allowed) {
+              var lock = LockService.getScriptLock();
+              lock.waitLock(5000);
+              try {
+                var freshMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+                if (!freshMap[uid]) {
+                  freshMap[uid] = { email: emailLower, name: displayName || '' };
+                  setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(freshMap));
+                  Logger.log('✓ getAppStartupData: allowedUsers 確認済み → UID ' + uid + ' を新規登録');
+                }
+              } finally {
+                lock.releaseLock();
+              }
+              teacherId = uid;
+              setUserProperty('TEACHER_ID', uid);
+            }
+          } catch (fsErr) {
+            Logger.log('⚠ getAppStartupData: Firestore allowedUsers チェック失敗: ' + fsErr);
+          }
         }
       }
     }

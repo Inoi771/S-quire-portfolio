@@ -51,7 +51,7 @@
 - `setUserProperty(key, value)` — ユーザープロパティ設定
 - `getRegisteredEmail()` — 登録メール取得（初回はGoogle アカウントのメール）
 - `getUserProfile()` — `@aiCallable` プロフィール取得
-- `getOrCreateTeacherId()` — 講師ID取得（初回自動生成）
+- `registerUserOnLogin(uid, email, displayName)` — アプリ初回ログイン時に TEACHER_ID_MAP へ Firebase UID を登録（自動呼び出し）
 - `updateEmailAddress(newEmail)` — `@aiCallable` メール変更
 - `updateUserProfile(profileData)` — `@aiCallable` プロフィール更新
 - `getSubjectOptions()` — `@aiCallable` 教科リスト

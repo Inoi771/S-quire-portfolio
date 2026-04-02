@@ -246,7 +246,9 @@ MyProject/
 詳細は `DATA.md` 参照。
 
 - 生徒ID形式: `{校舎CD2桁}{登録年度4桁}{登録学年コード2桁}{連番2桁}`
-- Firestoreコレクション: `students` / `grades` / `schedules` 等
+- 講師ID形式: Firebase UID（アプリ初回ログイン時に自動取得・TEACHER_ID_MAP に登録）
+- Firestoreコレクション: `students` / `grades` / `schedules` / `allowedUsers` 等
+- `TEACHER_ID_MAP` 構造: `{uid: {email: "...", name: "..."}}` — 複数メール管理は廃止済み
 
 ---
 
