@@ -1381,47 +1381,40 @@ function showMessage(elementId, message, type) {
 
     /**
      * TSVテキストを成績データ配列に変換する
-     * 各行: テスト名[TAB]校舎[TAB]学年[TAB]氏名[TAB]国語[TAB]社会[TAB]数学[TAB]理科[TAB]英語[TAB]合計点
+     * 各行: テスト名[TAB]生徒ID[TAB]国語[TAB]社会[TAB]数学[TAB]理科[TAB]英語[TAB]合計点
      */
     function parseTsvToGrades(tsv) {
       var lines = tsv.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
       var results = [];
       lines.forEach(function(line) {
         var cols = line.split('\t');
-        if (cols.length < 9) {
-          results.push({ raw: line, error: '列数が足りません（10列必要）' });
+        if (cols.length < 7) {
+          results.push({ raw: line, error: '列数が足りません（8列必要）' });
           return;
         }
         var testName   = cols[0].trim();
-        var campusStr  = cols[1].trim();
-        var gradeStr   = cols[2].trim();
-        var nameStr    = cols[3].trim();
-        var kokugo     = cols[4].trim();
-        var shakai     = cols[5].trim();
-        var sugaku     = cols[6].trim();
-        var rika       = cols[7].trim();
-        var eigo       = cols[8].trim();
-        var gokei      = cols[9] ? cols[9].trim() : '';
+        var studentId  = cols[1].trim().replace(/\s+/g, '');
+        var kokugo     = cols[2].trim();
+        var shakai     = cols[3].trim();
+        var sugaku     = cols[4].trim();
+        var rika       = cols[5].trim();
+        var eigo       = cols[6].trim();
+        var gokei      = cols[7] ? cols[7].trim() : '';
 
-        var campusCode = resolveCampusCode(campusStr);
-        var gradeCode  = resolveGradeCode(gradeStr);
-        var fullName   = nameStr.replace(/\s+/g, '');
+        // 先頭ゼロ補完（Excelで開いた際に消えた場合の対処）
+        if (studentId && /^\d+$/.test(studentId) && studentId.length < 10) {
+          studentId = studentId.padStart(10, '0');
+        }
 
         var error = null;
-        if (!testName)    error = 'テスト名が空です';
-        else if (!campusCode) error = '校舎名「' + campusStr + '」が見つかりません';
-        else if (!gradeCode)  error = '学年「' + gradeStr + '」が認識できません';
-        else if (!fullName)   error = '氏名が空です';
+        if (!testName)                      error = 'テスト名が空です';
+        else if (!studentId)                error = '生徒IDが空です';
+        else if (studentId.length !== 10)   error = '生徒IDは10桁である必要があります（入力値: ' + studentId + '）';
 
         results.push({
           raw: line,
           testName: testName,
-          campusStr: campusStr,
-          gradeStr: gradeStr,
-          campusCode: campusCode,
-          gradeCode: gradeCode,
-          campusName: campusCode ? (campusData[campusCode] || campusCode) : campusStr,
-          name: fullName,
+          studentId: studentId,
           kokugo: kokugo, shakai: shakai, sugaku: sugaku, rika: rika, eigo: eigo, gokei: gokei,
           error: error
         });
@@ -1459,9 +1452,7 @@ function showMessage(elementId, message, type) {
             + '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
             + '<thead><tr style="background:#f0f4f8; text-align:left;">'
             + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">テスト名</th>'
-            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">校舎</th>'
-            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">学年</th>'
-            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">氏名</th>'
+            + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">生徒ID</th>'
             + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">国</th>'
             + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">社</th>'
             + '<th style="padding:5px 8px; border-bottom:2px solid #ddd;">数</th>'
@@ -1478,9 +1469,7 @@ function showMessage(elementId, message, type) {
           : '<span style="color:#43a047;">✓ 登録予定</span>';
         html += '<tr style="background:' + rowBg + '; border-bottom:1px solid #eee;">'
               + '<td style="padding:5px 8px;">' + (g.testName || '') + '</td>'
-              + '<td style="padding:5px 8px;">' + (g.campusName || g.campusStr || '') + '</td>'
-              + '<td style="padding:5px 8px;">' + (g.gradeStr || '') + '</td>'
-              + '<td style="padding:5px 8px;">' + (g.name || '') + '</td>'
+              + '<td style="padding:5px 8px; font-family:monospace;">' + (g.studentId || '') + '</td>'
               + '<td style="padding:5px 8px; text-align:right;">' + (g.kokugo || '') + '</td>'
               + '<td style="padding:5px 8px; text-align:right;">' + (g.shakai || '') + '</td>'
               + '<td style="padding:5px 8px; text-align:right;">' + (g.sugaku || '') + '</td>'
@@ -1517,9 +1506,7 @@ function showMessage(elementId, message, type) {
       var payload = grades.map(function(g) {
         return {
           testName: g.testName,
-          campusCode: g.campusCode,
-          gradeCode: g.gradeCode,
-          name: g.name,
+          studentId: g.studentId,
           kokugo: g.kokugo, shakai: g.shakai, sugaku: g.sugaku,
           rika: g.rika, eigo: g.eigo, gokei: g.gokei
         };
@@ -1544,7 +1531,7 @@ function showMessage(elementId, message, type) {
           if (res.errors && res.errors.length > 0) {
             msg += '<ul style="margin-top:8px; font-size:12px; color:#e53935;">';
             res.errors.forEach(function(e) {
-              msg += '<li>' + e.name + ': ' + e.reason + '</li>';
+              msg += '<li>生徒ID ' + (e.studentId || e.row + '行目') + ': ' + e.reason + '</li>';
             });
             msg += '</ul>';
           }

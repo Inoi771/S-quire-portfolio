@@ -1510,8 +1510,8 @@ function bulkImportStudents(studentsJson, importYear) {
 
 /**
  * 成績データを一括インポートする（Admin のみ）
- * 氏名・校舎・学年で生徒マスタを検索して生徒IDを解決し、成績をupsertする
- * @param {string} gradesJson JSON文字列 [{testName, campusCode, gradeCode, name, kokugo, shakai, sugaku, rika, eigo, gokei}]
+ * 生徒IDで直接成績をupsertする
+ * @param {string} gradesJson JSON文字列 [{testName, studentId, kokugo, shakai, sugaku, rika, eigo, gokei}]
  * @param {number} [importYear] 対象年度（省略時は現在の学年年度）
  * @return {Object} { success, total, savedCount, skippedCount, errors[] }
  */
@@ -1528,55 +1528,26 @@ function bulkImportGrades(gradesJson, importYear) {
 
     var year = importYear ? parseInt(importYear, 10) : getCurrentFiscalYear();
 
-    // 生徒マスタをすべて読み込んで名前→ID の逆引きマップを作成
-    var masterStudents = getMasterData(year);
-    // キー: "氏名（スペースなし）_校舎コード_学年コード" → studentId
-    var studentMap = {};
-    masterStudents.forEach(function(s) {
-      var key = (String(s.sei || '') + String(s.mei || '')).replace(/\s+/g, '')
-              + '_' + String(s.campus || '').padStart(2, '0')
-              + '_' + String(s.grade || '');
-      studentMap[key] = s.studentId;
-    });
-
     var savedCount = 0;
     var skippedCount = 0;
     var errors = [];
 
     for (var i = 0; i < records.length; i++) {
       var r = records[i];
-      var fullName = String(r.name || '').replace(/\s+/g, '');
-      var campusCode = String(r.campusCode || '').padStart(2, '0');
-      var gradeCode = String(r.gradeCode || '');
       var testName = String(r.testName || '').trim();
+      var sid = String(r.studentId || '').trim();
 
-      if (!fullName || !campusCode || !gradeCode || !testName) {
-        errors.push({ row: i + 1, name: fullName || '（空）', reason: '必須項目が不足しています' });
+      // 先頭ゼロ補完（Excelで開いた際に消えた場合の対処）
+      if (sid && /^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+      if (!testName || !sid) {
+        errors.push({ row: i + 1, studentId: sid || '（空）', reason: '必須項目（テスト名・生徒ID）が不足しています' });
         skippedCount++;
         continue;
       }
 
-      // 生徒IDを氏名＋校舎＋学年で解決
-      // 学年コードは動的計算後のコードなので、getMasterData の grade と比較
-      var studentId = null;
-      var lookupKey = fullName + '_' + campusCode + '_' + gradeCode;
-      if (studentMap[lookupKey]) {
-        studentId = studentMap[lookupKey];
-      } else {
-        // 学年が見つからない場合、氏名と校舎だけで再検索（学年を緩めて探す）
-        for (var k in studentMap) {
-          var parts = k.split('_');
-          var mapName = parts[0];
-          var mapCampus = parts[1];
-          if (mapName === fullName && mapCampus === campusCode) {
-            studentId = studentMap[k];
-            break;
-          }
-        }
-      }
-
-      if (!studentId) {
-        errors.push({ row: i + 1, name: fullName, reason: '生徒マスタに見つかりません（' + year + '年度・' + campusCode + '校舎）' });
+      if (sid.length !== 10) {
+        errors.push({ row: i + 1, studentId: sid, reason: '生徒IDは10桁である必要があります' });
         skippedCount++;
         continue;
       }
@@ -1590,11 +1561,11 @@ function bulkImportGrades(gradesJson, importYear) {
         gokei: String(r.gokei || '')
       };
 
-      var result = submitGradeData(year, studentId, testName, scores);
+      var result = submitGradeData(year, sid, testName, scores);
       if (result && result.success) {
         savedCount++;
       } else {
-        errors.push({ row: i + 1, name: fullName, reason: (result && result.error) || '成績登録に失敗しました' });
+        errors.push({ row: i + 1, studentId: sid, reason: (result && result.error) || '成績登録に失敗しました' });
         skippedCount++;
       }
     }

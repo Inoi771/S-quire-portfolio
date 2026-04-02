@@ -93,7 +93,7 @@
 - `getStudentsWithGradesByTest(year, campusCode, testName)` — `@aiCallable` 指定テスト名の成績がある生徒一覧を校舎でフィルタして返す（成績表タブ用）
 - `getStudentGradeReport(year, studentId)` — `@aiCallable` 成績表用：指定生徒の全テスト成績と学校別平均を取得
 - `bulkImportStudents(studentsJson, importYear)` — 生徒を一括インポート（Admin のみ。ふりがな省略可。JSON文字列 `[{campusCode, gradeCode, sei, mei}]`。importYear 省略時は現在年度。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）
-- `bulkImportGrades(gradesJson, importYear)` — 成績を一括インポート（Admin のみ。氏名・校舎・学年で生徒IDを解決してupsert。JSON文字列 `[{testName, campusCode, gradeCode, name, kokugo, shakai, sugaku, rika, eigo, gokei}]`。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）
+- `bulkImportGrades(gradesJson, importYear)` — 成績を一括インポート（Admin のみ。生徒IDで直接upsert。JSON文字列 `[{testName, studentId, kokugo, shakai, sugaku, rika, eigo, gokei}]`。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）
 - `saveExamResult(studentId, examDataJson)` — `@aiCallable` 中3生徒の受験情報を生徒マスタ列10〜16に保存。`examDataJson`: `{jukoukou1, jukoukou1_gakka, jukoukou1_gokaku, ikusei, jukoukou2, jukoukou2_gakka, jukoukou2_gokaku}`
 - `getStudentExamData(studentId, fiscalYear)` — `@aiCallable` 生徒の受験情報（生徒マスタ列10〜16）と最新テストの第1志望校を取得。戻り値: `{ success, examData: {...}, latestGrade: {shogaku1, shogaku1_gakka} }`
 - `getStudentPlacementData(year)` — `@aiCallable` 進学先一覧取得。指定年度の中3生（学年コード15）全員について第1〜第3回基礎学力テストの合計点・平均・進学先を返す。戻り値: `[{studentId, name, campus, score1, score2, score3, avg, placement, placementSchool}]`
