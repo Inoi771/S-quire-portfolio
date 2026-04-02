@@ -40,8 +40,8 @@ jobs:
       - name: ビルド（HTMLファイルを public/ にインライン展開）
         run: npm run build
 
-      - name: Firebase Hosting + Firestore ルールをデプロイ
-        run: firebase deploy --only hosting,firestore --project fir-quire
+      - name: Firebase Hosting にデプロイ
+        run: firebase deploy --only hosting --project fir-quire
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
 
