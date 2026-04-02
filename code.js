@@ -226,91 +226,88 @@ function doPost(e) {
       Logger.log('メールアドレス判定: ' + isEmail + ' (email=' + text + ', name=' + displayName + ')');
 
       if (isEmail) {
-        // 重複チェック（メールアドレスまたは名前が既に登録されていないか確認）
-        var existingMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-        var dupEmail = false;
-        var dupName = false;
-        Object.keys(existingMap).forEach(function(tid) {
-          var en = normalizeTeacherEntry_(existingMap[tid]);
-          if (en.emails.indexOf(text) !== -1) dupEmail = true;
-          if (displayName && en.name && en.name.trim() === displayName.trim()) dupName = true;
-        });
-        Logger.log('重複チェック: dupEmail=' + dupEmail + ', dupName=' + dupName);
+        // Firestore staffs で重複チェック
+        var existingStaff = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', text)], 1);
+        var dupEmail = existingStaff && existingStaff.length > 0;
+        Logger.log('重複チェック: dupEmail=' + dupEmail);
 
-        if (dupEmail || dupName) {
-          var dupMsg = '⚠ 登録されている情報と重複しています。管理者にご連絡ください。\n';
-          if (dupEmail) dupMsg += '（理由：このメールアドレスは既に登録済みです）';
-          if (dupName && !dupEmail) dupMsg += '（理由：この名前は既に登録済みです）';
-          sendLineMessage(lineUserId, dupMsg);
-          Logger.log('⚠ doPost: 重複のため登録スキップ: email=' + text + ' name=' + displayName);
-        } else {
-          // teacherId を TEACHER_ID_MAP に登録（LINE登録時点でIDを確定）
-          var teacherId;
-          try {
-            teacherId = getOrCreateTeacherIdForEmail_(text, displayName || '');
-            Logger.log('teacherId 発行: ' + teacherId);
-          } catch (tidErr) {
-            Logger.log('⚠ doPost: teacherId 登録失敗: ' + tidErr);
-            teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-          }
-
-          // LINE User ID マッピングを取得（teacherId → LINE User ID）
-          var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-          var mapping = safeJsonParse_(mappingRaw, {});
-
-          // すでに同じ teacherId・同じ LINE ID で登録済みなら案内のみ
-          if (mapping[teacherId] === lineUserId) {
+        if (dupEmail) {
+          // 既存スタッフなら lineUserId を更新
+          var existStaff = existingStaff[0];
+          if (existStaff.lineUserId === lineUserId) {
             sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。');
-            Logger.log('⚠ LINE登録済みのため案内のみ: ' + text + ' (teacherId: ' + teacherId + ')');
+            Logger.log('⚠ LINE登録済みのため案内のみ: ' + text);
           } else {
-            var isNew = !mapping[teacherId];
-
-            // LINE User ID を保存（teacherId をキーに）
-            mapping[teacherId] = lineUserId;
-            try {
-              setProperty(PROP_KEYS.LINE_USER_MAPPING, JSON.stringify(mapping));
-              Logger.log('✓ LINE_USER_MAPPING 保存完了');
-            } catch (mapErr) {
-              Logger.log('⚠ doPost: LINE_USER_MAPPING 保存失敗（返信は継続）: ' + mapErr);
-            }
-
-            // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
-            var replyMsg = '✅ 登録が完了しました！';
-            if (displayName) replyMsg += '\n表示名: ' + displayName;
-            replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
+            // lineUserId を更新
+            existStaff.lineUserId = lineUserId;
+            if (displayName && !existStaff.displayName) existStaff.displayName = displayName;
+            if (displayName && !existStaff.name) existStaff.name = displayName;
+            writeStaffToFirestore_(existStaff);
+            var tid = existStaff.teacherId || existStaff._id;
+            var replyMsg = '✅ LINE連携が完了しました！';
+            if (displayName) replyMsg += '\n表示名: ' + (existStaff.displayName || displayName);
+            replyMsg += '\n\n🔑 あなたの講師ID:\n' + tid;
             replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
             replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
-            Logger.log('プッシュ送信開始...');
-            var sent = sendLineMessage(lineUserId, replyMsg);
-            Logger.log('sendLineMessage 結果: ' + sent);
+            sendLineMessage(lineUserId, replyMsg);
+            Logger.log('✓ 既存スタッフの lineUserId を更新: ' + tid);
+          }
+        } else {
+          // 新規スタッフを staffs に作成
+          var teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          Logger.log('teacherId 発行: ' + teacherId);
 
-            // 返信後に時間のかかる処理（Drive権限付与・管理者メール）を実行
-            var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-            Logger.log('Driveフォルダ付与: folderId=' + (folderId || 'なし'));
-            if (folderId) {
-              try {
-                DriveApp.getFolderById(folderId).addEditor(text);
-                Logger.log('✓ Drive Editor 権限付与完了');
-              } catch (folderErr) {
-                Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
-              }
-            }
+          firestoreSet_('staffs', teacherId, {
+            teacherId: teacherId,
+            email: text,
+            name: displayName || '',
+            firebaseUid: null,
+            lineUserId: lineUserId,
+            displayName: displayName || '',
+            subjects: [],
+            preferredCampuses: [],
+            aiAssistantName: '',
+            aiPersonality: '',
+            themeColor: '',
+            notificationMethod: 'gmail',
+            addedAt: new Date().toISOString()
+          });
+          Logger.log('✓ staffs に新規登録完了');
 
-            if (isNew) {
-              try {
-                var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
-                if (adminEmails.length > 0) {
-                  var adminBody = '以下のメールアドレスが LINE 経由で自己登録しました。\n\nメール: ' + text;
-                  if (displayName) adminBody += '\n表示名: ' + displayName;
-                  adminBody += '\n講師ID: ' + teacherId;
-                  adminBody += '\n\n不審な登録の場合は管理タブ → ユーザー管理から削除してください。';
-                  GmailApp.sendEmail(adminEmails[0], '[S-quire] 新しいスタッフが自己登録しました', adminBody);
-                  Logger.log('✓ 管理者通知メール送信完了');
-                }
-              } catch (mailErr) {
-                Logger.log('⚠ doPost: 管理者通知メール送信失敗: ' + mailErr);
-              }
+          // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
+          var replyMsg = '✅ 登録が完了しました！';
+          if (displayName) replyMsg += '\n表示名: ' + displayName;
+          replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
+          replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
+          replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
+          Logger.log('プッシュ送信開始...');
+          var sent = sendLineMessage(lineUserId, replyMsg);
+          Logger.log('sendLineMessage 結果: ' + sent);
+
+          // 返信後に時間のかかる処理（Drive権限付与・管理者メール）を実行
+          var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+          Logger.log('Driveフォルダ付与: folderId=' + (folderId || 'なし'));
+          if (folderId) {
+            try {
+              DriveApp.getFolderById(folderId).addEditor(text);
+              Logger.log('✓ Drive Editor 権限付与完了');
+            } catch (folderErr) {
+              Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
             }
+          }
+
+          try {
+            var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+            if (adminEmails.length > 0) {
+              var adminBody = '以下のメールアドレスが LINE 経由で自己登録しました。\n\nメール: ' + text;
+              if (displayName) adminBody += '\n表示名: ' + displayName;
+              adminBody += '\n講師ID: ' + teacherId;
+              adminBody += '\n\n不審な登録の場合は管理タブ → ユーザー管理から削除してください。';
+              GmailApp.sendEmail(adminEmails[0], '[S-quire] 新しいスタッフが自己登録しました', adminBody);
+              Logger.log('✓ 管理者通知メール送信完了');
+            }
+          } catch (mailErr) {
+            Logger.log('⚠ doPost: 管理者通知メール送信失敗: ' + mailErr);
           }
         }
       } else {

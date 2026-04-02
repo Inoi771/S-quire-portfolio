@@ -2,24 +2,40 @@
 // 【セクション15】LINE通知・お問い合わせ通知機能
 // ========================================
 // LINE Messaging API と Gmail を使った通知送信・通知設定管理
-// すべてのデータは teacherId をキーに管理される
+// すべてのデータは Firestore staffs コレクションの teacherId をキーに管理される
 
 /**
- * 現在ログイン中のユーザーの teacherId を取得する内部ヘルパー
- * UserProperties の TEACHER_ID を優先し、なければ TEACHER_ID_MAP から逆引き
- * @return {string} teacherId
+ * teacherId から Firestore staffs ドキュメントを取得する内部ヘルパー（キャッシュ付き）
+ * @param {string} teacherId 講師ID
+ * @return {Object|null} スタッフドキュメント or null
  */
-function getCurrentTeacherId_() {
-  var tid = getUserProperty('TEACHER_ID');
-  if (tid) return tid;
-  // フォールバック: TEACHER_ID_MAP からメールで逆引き
-  var email = getCurrentUserEmail().toLowerCase();
-  return getOrCreateTeacherIdForEmail_(email, '');
+var _staffCache_ = {};
+function getStaffByTeacherId_(teacherId) {
+  if (!teacherId) return null;
+  if (_staffCache_[teacherId]) return _staffCache_[teacherId];
+  var staff = firestoreGet_('staffs', teacherId);
+  if (staff) _staffCache_[teacherId] = staff;
+  return staff;
 }
 
 /**
- * teacherId からメールアドレスを逆引きする内部ヘルパー
- * NOTIFICATION_EMAILS に個別設定があればそちらを優先し、なければ TEACHER_ID_MAP の先頭メールを返す
+ * 現在ログイン中のユーザーの teacherId を取得する内部ヘルパー
+ * settings.js の getCurrentStaff_() を使用して staffs から解決する
+ * @return {string} teacherId
+ */
+function getCurrentTeacherId_() {
+  var staff = getCurrentStaff_();
+  if (staff) return staff.teacherId || staff._id;
+  // フォールバック: メールで staffs を検索
+  var email = getCurrentUserEmail().toLowerCase();
+  var result = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
+  if (result && result.length > 0) return result[0].teacherId || result[0]._id;
+  return '';
+}
+
+/**
+ * teacherId からメールアドレスを取得する内部ヘルパー
+ * NOTIFICATION_EMAILS に個別設定があればそちらを優先し、なければ staffs の email を返す
  * @param {string} teacherId 講師ID
  * @return {string} メールアドレス（見つからない場合は空文字）
  */
@@ -28,10 +44,9 @@ function getEmailByTeacherId_(teacherId) {
   // 通知専用メールが設定されている場合はそちらを優先
   var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
   if (notifEmails[teacherId]) return notifEmails[teacherId];
-  // TEACHER_ID_MAP から先頭メールを返す（新フォーマット: emails[]、旧フォーマット: email）
-  var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-  var entry = normalizeTeacherEntry_(map[teacherId]);
-  return entry.emails.length > 0 ? entry.emails[0] : '';
+  // staffs から email を返す
+  var staff = getStaffByTeacherId_(teacherId);
+  return staff ? (staff.email || '') : '';
 }
 
 /**
@@ -138,10 +153,9 @@ function sendNotification(teacherId, subject, body) {
     // teacherId からメールアドレスを取得
     var toEmail = getEmailByTeacherId_(teacherId);
 
-    // 通知方法を取得（teacherId をキーに）
-    var methodsRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
-    var methods = methodsRaw ? JSON.parse(methodsRaw) : {};
-    var method = methods[teacherId] || 'gmail'; // デフォルトは Gmail
+    // staffs から通知方法と LINE User ID を取得
+    var staff = getStaffByTeacherId_(teacherId);
+    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'gmail';
 
     if (method === 'none') {
       Logger.log('⚠ sendNotification: ' + teacherId + ' は通知オフ設定');
@@ -167,9 +181,7 @@ function sendNotification(teacherId, subject, body) {
 
     // LINE 送信
     if (method === 'line' || method === 'both') {
-      var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-      var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-      var lineUserId = mapping[teacherId];
+      var lineUserId = staff ? staff.lineUserId : null;
       if (lineUserId) {
         sentLine = sendLineMessage(lineUserId, subject + '\n\n' + body);
       } else {
@@ -204,30 +216,19 @@ function getNotificationSettings() {
       return arr.indexOf(teacherId) !== -1;
     });
 
-    // 通知方法（teacherId をキーに取得）
-    var methodsRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
-    var methods = methodsRaw ? JSON.parse(methodsRaw) : {};
-    var method = methods[teacherId] || 'gmail';
+    // staffs から通知方法・LINE User ID を取得
+    var staff = getStaffByTeacherId_(teacherId);
+    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'gmail';
 
-    // LINE User ID 登録状態（teacherId をキーに取得）
-    var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-    var lineUserId = mapping[teacherId] || '';
+    var lineUserId = staff ? (staff.lineUserId || '') : '';
     var lineRegistered = !!lineUserId;
     var lineUserIdMasked = lineRegistered ? '****' + lineUserId.slice(-4) : '';
 
-    // 登録メールアドレス（LINE登録ガイドのヒント表示用）
-    var registeredEmail = '';
-    try {
-      registeredEmail = getUserProperty('REGISTERED_EMAIL') || email;
-    } catch (e) {
-      registeredEmail = email;
-    }
+    // 登録メールアドレス
+    var registeredEmail = (staff && staff.email) ? staff.email : email;
 
-    // 講師の全登録メールリスト（Gmail通知先選択用）
-    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-    var teacherEntry = normalizeTeacherEntry_(teacherMap[teacherId]);
-    var emails = teacherEntry.emails.length > 0 ? teacherEntry.emails : (email ? [email] : []);
+    // メールリスト（staffs は1ドキュメント1メール）
+    var emails = registeredEmail ? [registeredEmail] : (email ? [email] : []);
 
     // 現在の通知先メール（NOTIFICATION_EMAILS に保存済みの個別設定）
     var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
@@ -277,11 +278,12 @@ function updateNotificationSettings(method, notificationEmail) {
       return { success: false, error: 'このアカウントは通知設定の対象ではありません' };
     }
 
-    // 通知方法を保存（teacherId をキーに）
-    var methodsRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
-    var methods = methodsRaw ? JSON.parse(methodsRaw) : {};
-    methods[teacherId] = method;
-    setProperty(PROP_KEYS.NOTIFICATION_METHODS, JSON.stringify(methods));
+    // 通知方法を staffs に保存
+    var staff = getStaffByTeacherId_(teacherId);
+    if (staff) {
+      staff.notificationMethod = method;
+      writeStaffToFirestore_(staff);
+    }
 
     // Gmail通知先メールアドレスを保存（指定があれば）
     if (notificationEmail && (method === 'gmail' || method === 'both')) {
@@ -307,9 +309,8 @@ function updateNotificationSettings(method, notificationEmail) {
 function getLineSchedulerNotifPrefs() {
   try {
     var teacherId = getCurrentTeacherId_();
-    var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-    var lineRegistered = !!mapping[teacherId];
+    var staff = getStaffByTeacherId_(teacherId);
+    var lineRegistered = !!(staff && staff.lineUserId);
 
     // 宛先はシートから読む（管理タブの保存先がシートのため LINE_SCHEDULER_SETTINGS は不正確）
     var shitsuchoRecipients = getShitsuchoRecipientsFromSheet_();
@@ -321,9 +322,7 @@ function getLineSchedulerNotifPrefs() {
       shitsucho: isShitsuchoRecipient
     };
 
-    var prefsRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS);
-    var allPrefs = prefsRaw ? JSON.parse(prefsRaw) : {};
-    var myPrefs = allPrefs[teacherId] || {};
+    var myPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
     var prefs = {
       meeting: myPrefs.meeting || 'line',
       report: myPrefs.report || 'line',
@@ -351,20 +350,19 @@ function updateLineSchedulerNotifPref(type, method) {
     if (validTypes.indexOf(type) === -1) return { success: false, error: '無効な種別: ' + type };
     if (validMethods.indexOf(method) === -1) return { success: false, error: '無効な通知方法: ' + method };
     var teacherId = getCurrentTeacherId_();
-    var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-    var lineRegistered = !!mapping[teacherId];
+    var staff = getStaffByTeacherId_(teacherId);
+    var lineRegistered = !!(staff && staff.lineUserId);
     if (type === 'meeting' || type === 'report') {
       if (!lineRegistered) return { success: false, error: 'LINE未登録のため設定できません' };
     } else if (type === 'shitsucho') {
       var shitsuchoRecipients = getShitsuchoRecipientsFromSheet_();
       if (shitsuchoRecipients.indexOf(teacherId) < 0) return { success: false, error: '設定権限がありません' };
     }
-    var prefsRaw = getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS);
-    var allPrefs = prefsRaw ? JSON.parse(prefsRaw) : {};
-    if (!allPrefs[teacherId]) allPrefs[teacherId] = {};
-    allPrefs[teacherId][type] = method;
-    setProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS, JSON.stringify(allPrefs));
+    if (staff) {
+      if (!staff.schedulerNotifPrefs) staff.schedulerNotifPrefs = {};
+      staff.schedulerNotifPrefs[type] = method;
+      writeStaffToFirestore_(staff);
+    }
     var methodLabel = { line: 'LINEのみ', gmail: 'メールのみ', both: 'LINE+メール両方', none: '通知しない' };
     return { success: true, message: (methodLabel[method] || method) + 'に変更しました' };
   } catch (error) {
@@ -383,11 +381,6 @@ function getNotificationMembers() {
   try {
     var routingRaw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
     var routingMap = routingRaw ? JSON.parse(routingRaw) : {};
-    var methodsRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
-    var methods = methodsRaw ? JSON.parse(methodsRaw) : {};
-    var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
 
     // 振り分け設定内の全 teacherId をユニークに収集
     var allIds = {};
@@ -396,13 +389,13 @@ function getNotificationMembers() {
     });
 
     var result = Object.keys(allIds).map(function(tid) {
-      var info = teacherMap[tid] || {};
+      var staff = getStaffByTeacherId_(tid);
       return {
         teacherId: tid,
-        email: info.email || '',
-        name: info.name || '',
-        method: methods[tid] || 'gmail',
-        lineRegistered: !!mapping[tid]
+        email: staff ? (staff.email || '') : '',
+        name: staff ? (staff.displayName || staff.name || '') : '',
+        method: staff ? (staff.notificationMethod || 'gmail') : 'gmail',
+        lineRegistered: !!(staff && staff.lineUserId)
       };
     });
 
@@ -422,8 +415,14 @@ function getNotificationMembers() {
 function getLineUserMapping() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var raw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = raw ? JSON.parse(raw) : {};
+    // staffs から lineUserId が設定されているスタッフを収集
+    var allStaffs = firestoreQuery_('staffs', [], 500);
+    var mapping = {};
+    (allStaffs || []).forEach(function(staff) {
+      if (staff.lineUserId) {
+        mapping[staff.teacherId || staff._id] = staff.lineUserId;
+      }
+    });
     return { success: true, mapping: mapping };
   } catch (error) {
     Logger.log('❌ getLineUserMappingエラー: ' + error);
@@ -439,11 +438,8 @@ function getLineUserMapping() {
 function getLineRegisteredUsers() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-    var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-    var methodsRaw = getProperty(PROP_KEYS.NOTIFICATION_METHODS);
-    var methods = methodsRaw ? JSON.parse(methodsRaw) : {};
-    var teacherMap = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
+    // staffs から全スタッフを取得
+    var allStaffs = firestoreQuery_('staffs', [], 500);
 
     // 現在アクセス権があるユーザーのメールを収集
     var allowedEmails = {};
@@ -463,21 +459,19 @@ function getLineRegisteredUsers() {
       });
     }
 
-    // TEACHER_ID_MAP ベースでイテレート（LINE未登録ユーザーも候補に含める）
-    var users = Object.keys(teacherMap)
-      .filter(function(tid) {
+    // staffs ベースでイテレート（LINE未登録ユーザーも候補に含める）
+    var users = (allStaffs || [])
+      .filter(function(staff) {
         if (!folderId) return true;
-        var entry = normalizeTeacherEntry_(teacherMap[tid] || {});
-        return entry.emails.some(function(e) { return allowedEmails[e]; });
+        return staff.email && allowedEmails[staff.email.toLowerCase()];
       })
-      .map(function(tid) {
-        var entry = normalizeTeacherEntry_(teacherMap[tid] || {});
+      .map(function(staff) {
         return {
-          teacherId: tid,
-          email: entry.emails[0] || '',
-          name: entry.name || '',
-          method: methods[tid] || 'gmail',
-          lineRegistered: !!mapping[tid]
+          teacherId: staff.teacherId || staff._id || '',
+          email: staff.email || '',
+          name: staff.displayName || staff.name || '',
+          method: staff.notificationMethod || 'gmail',
+          lineRegistered: !!staff.lineUserId
         };
       });
 
@@ -1169,14 +1163,21 @@ function buildShimurochoMessage_(sendYear, sendMonth, sendDay, closedDays) {
 }
 
 /**
- * LINE_USER_MAPPING に登録されている全 teacherId を返す内部ヘルパー
+ * Firestore staffs で lineUserId が設定されている全 teacherId を返す内部ヘルパー
  * meeting/report の全員送信用
  * @return {Array<string>} teacherId 配列
  */
 function getAllLineRegisteredTeacherIds_() {
-  var mappingRaw = getProperty(PROP_KEYS.LINE_USER_MAPPING);
-  var mapping = mappingRaw ? JSON.parse(mappingRaw) : {};
-  return Object.keys(mapping);
+  var allStaffs = firestoreQuery_('staffs', [], 500);
+  var ids = [];
+  (allStaffs || []).forEach(function(staff) {
+    if (staff.lineUserId) {
+      ids.push(staff.teacherId || staff._id);
+      // キャッシュにも入れておく
+      _staffCache_[staff.teacherId || staff._id] = staff;
+    }
+  });
+  return ids;
 }
 
 /**
@@ -1504,7 +1505,6 @@ function sendScheduledLineMessageNow(id) {
     var recipientsArr = doc.recipients || [];
     var msgType = doc.type || '';
     if (msgType === 'shimurocho') msgType = 'shitsucho'; // 旧名称の後方互換
-    var lineMapping = safeJsonParse_(getProperty(PROP_KEYS.LINE_USER_MAPPING), {});
     if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
       recipientsArr = getAllLineRegisteredTeacherIds_();
     }
@@ -1512,7 +1512,8 @@ function sendScheduledLineMessageNow(id) {
     var seenLineIds = {};
     var deduped = [];
     recipientsArr.forEach(function(tid) {
-      var lid = lineMapping[tid];
+      var staff = getStaffByTeacherId_(tid);
+      var lid = staff ? staff.lineUserId : null;
       if (lid) {
         if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
       } else {
@@ -1521,16 +1522,17 @@ function sendScheduledLineMessageNow(id) {
     });
     recipientsArr = deduped;
     var message = doc.message || '';
-    var notifPrefs = safeJsonParse_(getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS), {});
     var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
 
     var sentCount = 0;
     var failedRecipients = [];
     recipientsArr.forEach(function(tid) {
-      var pref = (notifPrefs[tid] && notifPrefs[tid][msgType]) || 'line';
+      var staff = getStaffByTeacherId_(tid);
+      var notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+      var pref = notifPrefs[msgType] || 'line';
       if (pref === 'none') return;
       if (pref === 'line' || pref === 'both') {
-        var lineUserId = lineMapping[tid];
+        var lineUserId = staff ? staff.lineUserId : null;
         if (lineUserId) {
           var ok = sendLineMessage(lineUserId, message);
           if (ok) sentCount++; else failedRecipients.push(tid);
@@ -1577,8 +1579,6 @@ function checkAndSendDueLineMessages() {
 
     // 未送信のドキュメントを全件取得し、送信予定日時が過ぎたものをクライアント側でフィルタ
     var docs = firestoreQuery_('lineSchedules', [fsFilter_('sent', 'EQUAL', false)]);
-    var lineMapping = safeJsonParse_(getProperty(PROP_KEYS.LINE_USER_MAPPING), {});
-    var notifPrefs = safeJsonParse_(getProperty(PROP_KEYS.LINE_SCHEDULER_NOTIF_PREFS), {});
     var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
 
     var sentCount = 0;
@@ -1599,7 +1599,8 @@ function checkAndSendDueLineMessages() {
       var seenLineIds = {};
       var deduped = [];
       recipientsArr.forEach(function(tid) {
-        var lid = lineMapping[tid];
+        var staff = getStaffByTeacherId_(tid);
+        var lid = staff ? staff.lineUserId : null;
         if (lid) {
           if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
         } else {
@@ -1610,10 +1611,12 @@ function checkAndSendDueLineMessages() {
       var message = doc.message || '';
       var rowSent = 0;
       recipientsArr.forEach(function(tid) {
-        var pref = (notifPrefs[tid] && notifPrefs[tid][msgType]) || 'line';
+        var staff = getStaffByTeacherId_(tid);
+        var notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+        var pref = notifPrefs[msgType] || 'line';
         if (pref === 'none') return;
         if (pref === 'line' || pref === 'both') {
-          var lineUserId = lineMapping[tid];
+          var lineUserId = staff ? staff.lineUserId : null;
           if (lineUserId) {
             try { if (sendLineMessage(lineUserId, message)) rowSent++; } catch(e) { errors.push(tid + ': ' + e); }
           }
