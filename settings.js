@@ -62,9 +62,8 @@ function setFirebaseUidContext_(uid) {
 
 /**
  * Firebase UID またはメールアドレスで staffs コレクションからスタッフを照合する
- * 1. firebaseUid で検索 → 見つかればそのスタッフ
- * 2. 見つからなければ email で検索 → 見つかれば firebaseUid を書き込んで返す
- * 3. どちらも見つからなければ null（未登録）
+ * 照合順序: firebaseUids 配列 → firebaseUid スカラー → emails 配列 → email スカラー
+ * マッチ後、現在の UID/メールが配列に未登録なら自動追加（レガシー自動マイグレーション）
  * @param {string} firebaseUid Firebase UID（省略可）
  * @param {string} email メールアドレス（省略可）
  * @return {Object|null} スタッフドキュメント or null
@@ -73,30 +72,63 @@ function resolveStaffByUid_(firebaseUid, email) {
   if (_currentStaff_) return _currentStaff_;
 
   var staff = null;
+  var emailLower = email ? email.toLowerCase() : '';
 
-  // 1. firebaseUid で検索
-  if (firebaseUid) {
+  // 1. firebaseUids 配列で検索（最速パス）
+  if (!staff && firebaseUid) {
+    var byUids = firestoreQuery_('staffs', [fsFilter_('firebaseUids', 'ARRAY_CONTAINS', firebaseUid)], 1);
+    if (byUids && byUids.length > 0) staff = byUids[0];
+  }
+
+  // 2. レガシー: firebaseUid スカラーで検索
+  if (!staff && firebaseUid) {
     var byUid = firestoreQuery_('staffs', [fsFilter_('firebaseUid', 'EQUAL', firebaseUid)], 1);
-    if (byUid && byUid.length > 0) {
-      staff = byUid[0];
-    }
+    if (byUid && byUid.length > 0) staff = byUid[0];
   }
 
-  // 2. email で検索（UID で見つからなかった場合）
-  if (!staff && email) {
-    var byEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email.toLowerCase())], 1);
-    if (byEmail && byEmail.length > 0) {
-      staff = byEmail[0];
-      // firebaseUid が渡されていて未設定なら書き込む
-      if (firebaseUid && !staff.firebaseUid) {
-        staff.firebaseUid = firebaseUid;
-        writeStaffToFirestore_(staff);
-        Logger.log('✓ resolveStaffByUid_: firebaseUid を書き込み email=' + email);
-      }
-    }
+  // 3. emails 配列で検索
+  if (!staff && emailLower) {
+    var byEmails = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', emailLower)], 1);
+    if (byEmails && byEmails.length > 0) staff = byEmails[0];
   }
 
+  // 4. レガシー: email スカラーで検索
+  if (!staff && emailLower) {
+    var byEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', emailLower)], 1);
+    if (byEmail && byEmail.length > 0) staff = byEmail[0];
+  }
+
+  // 5. マッチ後: 配列フィールドの自動マイグレーション＆現在の UID/メール追加
   if (staff) {
+    var updated = false;
+    // emails 配列がなければ作成
+    if (!Array.isArray(staff.emails)) {
+      staff.emails = staff.email ? [staff.email] : [];
+      updated = true;
+    }
+    // firebaseUids 配列がなければ作成
+    if (!Array.isArray(staff.firebaseUids)) {
+      staff.firebaseUids = staff.firebaseUid ? [staff.firebaseUid] : [];
+      updated = true;
+    }
+    // 現在のメールが配列に未登録なら追加
+    if (emailLower && staff.emails.indexOf(emailLower) === -1) {
+      staff.emails.push(emailLower);
+      updated = true;
+    }
+    // 現在の UID が配列に未登録なら追加
+    if (firebaseUid && staff.firebaseUids.indexOf(firebaseUid) === -1) {
+      staff.firebaseUids.push(firebaseUid);
+      updated = true;
+    }
+    // スカラーフィールドを最新値で更新（後方互換）
+    if (emailLower && staff.email !== emailLower) { staff.email = emailLower; updated = true; }
+    if (firebaseUid && staff.firebaseUid !== firebaseUid) { staff.firebaseUid = firebaseUid; updated = true; }
+
+    if (updated) {
+      writeStaffToFirestore_(staff);
+      Logger.log('✓ resolveStaffByUid_: 配列更新 teacherId=' + (staff.teacherId || staff._id));
+    }
     _currentStaff_ = staff;
   }
   return staff;

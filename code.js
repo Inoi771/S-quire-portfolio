@@ -254,8 +254,10 @@ function doPost(e) {
           firestoreSet_('staffs', teacherId, {
             teacherId: teacherId,
             email: text,
+            emails: [text],
             name: displayName || '',
             firebaseUid: null,
+            firebaseUids: [],
             lineUserId: lineUserId,
             displayName: displayName || '',
             subjects: [],
@@ -264,6 +266,7 @@ function doPost(e) {
             aiPersonality: '',
             themeColor: '',
             notificationMethod: 'gmail',
+            notificationEmail: '',
             addedAt: new Date().toISOString()
           });
           Logger.log('✓ staffs に新規登録完了');
@@ -346,10 +349,11 @@ function handleApiCall_(body) {
 
     // Firebase ID トークンを検証してユーザーコンテキストを設定
     if (idToken) {
-      var email = verifyFirebaseIdToken_(idToken);
-      if (email) {
-        setFirebaseEmailContext_(email);
-        Logger.log('✓ Firebase Auth 確認: ' + email);
+      var authResult = verifyFirebaseIdToken_(idToken);
+      if (authResult) {
+        setFirebaseEmailContext_(authResult.email);
+        if (authResult.uid) setFirebaseUidContext_(authResult.uid);
+        Logger.log('✓ Firebase Auth 確認: ' + authResult.email + ' uid=' + (authResult.uid || ''));
       } else {
         Logger.log('⚠ Firebase トークン検証失敗 - 匿名として処理');
       }
