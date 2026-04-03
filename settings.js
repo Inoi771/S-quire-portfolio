@@ -320,12 +320,17 @@ function cleanupMigratedUserProperties_() {
     var sp = PropertiesService.getScriptProperties();
     var all = sp.getProperties();
     var migratedKeys = Object.keys(STAFF_FIELD_MAP_);
+    // 廃止済みの _UP_ キー（コードから削除済みで使われていないもの）
+    var obsoleteKeys = ['PROFILE_UPDATED'];
     var toDelete = Object.keys(all).filter(function(propKey) {
       if (propKey.indexOf('_UP_') !== 0) return false;
-      // メール部分は小文字・アンダースコアのみ。キー部分は大文字。
-      // "_DISPLAY_NAME" のように末尾が "_" + 移行済みキーかチェック
-      return migratedKeys.some(function(mk) {
+      // STAFF_FIELD_MAP_ に含まれるキーの旧 _UP_ バージョン
+      if (migratedKeys.some(function(mk) {
         return propKey.slice(-(mk.length + 1)) === '_' + mk;
+      })) return true;
+      // その他の廃止済みキー
+      return obsoleteKeys.some(function(ok) {
+        return propKey.slice(-(ok.length + 1)) === '_' + ok;
       });
     });
     toDelete.forEach(function(k) {
