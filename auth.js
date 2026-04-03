@@ -688,9 +688,11 @@ function getSetupStatus() {
 /**
  * 最初の管理者を登録する
  * ADMIN_EMAILS が空の場合のみ実行可能（2回目以降は拒否される）
+ * staffs コレクションにドキュメントを作成し、firebaseUid も保存する
+ * @param {string} [displayName] 表示名（省略可）
  * @return {Object} { success, message/error }
  */
-function initializeFirstAdmin() {
+function initializeFirstAdmin(displayName) {
   try {
     if (getProperty(PROP_KEYS.ADMIN_EMAILS)) {
       return { success: false, error: '管理者は既に登録されています' };
@@ -699,8 +701,37 @@ function initializeFirstAdmin() {
     if (!email || email === 'unknown@example.com') {
       return { success: false, error: 'Googleアカウントにログインしてください' };
     }
-    setProperty(PROP_KEYS.ADMIN_EMAILS, email);
-    return { success: true, message: email + ' を管理者として登録しました' };
+    var emailLower = email.toLowerCase();
+    var name = (displayName || '').trim();
+
+    // 1. ADMIN_EMAILS に登録
+    setProperty(PROP_KEYS.ADMIN_EMAILS, emailLower);
+
+    // 2. 講師ID発行 & Firestore staffs に登録
+    var teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    var firebaseUid = _firebaseUidContext_ || null;
+    firestoreSet_('staffs', teacherId, {
+      teacherId: teacherId,
+      email: emailLower,
+      name: name,
+      firebaseUid: firebaseUid,
+      lineUserId: null,
+      displayName: name,
+      subjects: [],
+      preferredCampuses: [],
+      aiAssistantName: '',
+      aiPersonality: '',
+      themeColor: '',
+      notificationMethod: 'gmail',
+      notificationEmail: '',
+      addedAt: new Date().toISOString()
+    });
+
+    // 3. allowedUsers に登録
+    firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
+
+    Logger.log('✓ initializeFirstAdmin: 管理者登録完了 email=' + emailLower + ' teacherId=' + teacherId);
+    return { success: true, message: emailLower + ' を管理者として登録しました' };
   } catch (error) {
     Logger.log('❌ initializeFirstAdminエラー: ' + error);
     return { success: false, error: error.toString() };

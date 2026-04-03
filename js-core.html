@@ -441,6 +441,8 @@
    * Step 1: 管理者として登録するボタンの処理
    */
   function registerFirstAdmin() {
+    var nameInput = document.getElementById('setupAdminName');
+    var displayName = nameInput ? (nameInput.value || '').trim() : '';
     var btn = document.querySelector('#setupStep1 button');
     if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
     google.script.run
@@ -460,7 +462,7 @@
         if (err) { err.style.display = 'block'; err.textContent = '❌ エラーが発生しました。ページを再読み込みしてください。'; }
         if (btn) { btn.disabled = false; btn.textContent = 'このアカウントを管理者として登録する'; }
       })
-      .initializeFirstAdmin();
+      .initializeFirstAdmin(displayName);
   }
 
   /**
