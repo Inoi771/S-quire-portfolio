@@ -130,6 +130,7 @@
 - `applyConfigChange_(settings)` — config_changeの推奨設定をバックエンドで実際に適用する内部ヘルパー（themeColor, aiAssistantName, aiPersonality, displayName）
 - `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule / create_lecture_entry / edit_lecture_entry / delete_lecture_entry）
 - `createLectureEntryAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを1件追加する内部ヘルパー
+- `createWeeklyLectureEntriesAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを毎週一括作成する内部ヘルパー（休校日スキップ、学年別設定の回数分）
 - `editLectureEntryAI_(lectureId, campusCode, entryId, changes)` — AIアシスタントから講習エントリを1件編集する内部ヘルパー
 - `deleteLectureEntryAI_(lectureId, campusCode, entryId)` — AIアシスタントから講習エントリを1件削除する内部ヘルパー
 
