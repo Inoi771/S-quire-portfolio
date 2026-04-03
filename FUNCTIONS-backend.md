@@ -14,6 +14,7 @@
 - `getAllProperties()` — 全プロパティ取得
 - `isAdmin()` — Admin 判定（ADMIN_EMAILS または隠し管理者モードのキャッシュを確認）
 - `activateHiddenAdminMode(password)` — 隠し管理者モード有効化（CacheService に6時間フラグ保存）
+- `verifyFirebaseIdToken_(idToken)` — Firebase IDトークンを検証し `{ email, uid }` を返す。検証失敗時は null（内部ヘルパー）
 - `getCurrentUserEmail()` — 現在のユーザーメール取得
 - `getUserRoleInfo()` — ロール情報取得（`@aiCallable` ではない）
 - `getDisplayName(userEmail)` — メールから表示名を生成
@@ -21,14 +22,14 @@
 - `addAdminEmail(newEmail)` — Admin 追加（Admin のみ）
 - `removeAdminEmail(emailToRemove)` — Admin 削除（自分自身は不可、最低1人保持）
 - `getSetupStatus()` — 初回セットアップが必要かを返す（`isFirstSetup`, `currentUserEmail`, `hasAppFolder`）。ADMIN_EMAILS が空なら `isFirstSetup: true`
-- `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Firestore staffs 作成（firebaseUid 含む）＋ allowedUsers 登録を一括で行う
+- `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Firestore staffs 作成（`emails`/`firebaseUids` 配列＋`displayName` 含む）＋ allowedUsers 登録を一括で行う
 - `getAllowedUsers()` — Driveフォルダの共有ユーザー一覧を取得（Admin のみ。ACCESS_FOLDER_ID 優先）
 - `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加＋staffs作成＋allowedUsers登録）
-- `removeUserAccess(email)` — ユーザーのアプリアクセスを削除（Admin のみ。オーナーと自分自身は削除不可）
+- `removeUserAccess(email)` — ユーザーのアプリアクセスを完全削除（Admin のみ。オーナーと自分自身は削除不可）。`staff.emails` 配列の全メールを Drive共有・allowedUsers・ADMIN_EMAILS から一括削除し、staffs ドキュメントも削除
 - `getTeacherEmails()` — `@aiCallable` 現在の講師の `emails` 配列を取得（設定タブのメール管理UIで使用）
 - `addEmailToTeacher(newEmail)` — `@aiCallable` 現在の講師に新しいメールアドレスを追加（`emails` 配列＋ `allowedUsers` ＋ Drive共有）
 - `removeEmailFromTeacher(emailToRemove)` — `@aiCallable` 現在の講師からメールアドレスを削除（最低1件は残す制約付き）
-- `linkUserById(teacherId)` — `@aiCallable` 講師IDを入力してスタッフ紐付け（初回アクセス時）。`firebaseUid` を staffs に書き込む
+- `linkUserById(teacherId)` — `@aiCallable` 講師IDを入力してスタッフ紐付け（初回アクセス時）。`emails`/`firebaseUids` 配列に現在のメール・UIDを追加し、allowedUsers にも登録
 - `createAccessDeniedHtml(email)` — アクセス拒否ページのHTMLを生成
 
 ### セクション3: Web App エントリーポイント
