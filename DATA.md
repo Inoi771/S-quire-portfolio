@@ -80,18 +80,6 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `TEACHER_ID` | `teacherId` | 講師ID（`T{timestamp}_{random}`） |
 | `REGISTERED_EMAIL` | `email` | 登録メールアドレス |
 
-### `_UP_` ScriptProperties に保存（未移行）
-
-| キー | 内容 |
-|------|------|
-| `GEMINI_DAILY_DATE` | Gemini使用量：今日の日付 |
-| `GEMINI_DAILY_CALLS` | Gemini使用量：今日の呼び出し回数 |
-| `GEMINI_DAILY_TOKENS` | Gemini使用量：今日のトークン数 |
-| `GEMINI_DAILY_OPS` | Gemini使用量：直近20件の操作一覧 |
-| `GEMINI_MONTHLY_KEY` | Gemini使用量：今月のキー |
-| `GEMINI_MONTHLY_CALLS` | Gemini使用量：今月の呼び出し回数 |
-| `GEMINI_MONTHLY_TOKENS` | Gemini使用量：今月のトークン数 |
-
 ---
 
 ## シート列構成

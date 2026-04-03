@@ -52,8 +52,9 @@
 - `updateSettings(settingsData)` — 設定更新（APIキー・フォルダIDは Admin のみ）。受け付けるキー: `geminiApiKey`, `appFolderId`, `accessFolderId`, `themeColor`
 
 ### セクション6: プロフィール管理
-- `getUserProperty(key)` — ユーザープロパティ取得
-- `setUserProperty(key, value)` — ユーザープロパティ設定
+- `getUserProperty(key)` — ユーザープロパティ取得（`STAFF_FIELD_MAP_` に含まれるキーは Firestore staffs から取得）
+- `setUserProperty(key, value)` — ユーザープロパティ設定（`STAFF_FIELD_MAP_` に含まれるキーは Firestore staffs へ書き込み、旧 `_UP_` キーを自動削除）
+- `cleanupMigratedUserProperties_()` — 内部ヘルパー。Firestore 移行済み・廃止済みの `_UP_` ScriptProperty キーを一括削除。`getAppStartupData()` から起動時に呼び出される
 - `getRegisteredEmail()` — 登録メール取得（初回はGoogle アカウントのメール）
 - `getUserProfile()` — `@aiCallable` プロフィール取得
 - `getOrCreateTeacherId()` — 講師ID取得（初回自動生成）
@@ -231,11 +232,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `refreshHolidayCache()` — Googleカレンダーから祝日を取得しスクリプトプロパティ `HOLIDAY_CACHE` にJSON保存（`scheduledInitializeSheets()` から日次で呼ばれる）
 - `getCachedHolidays()` — `@aiCallable` キャッシュ済み祝日データを返す（アプリ起動時にフロントエンドが使用）
 - `getReAuthorizationUrl()` — GAS権限承認URLを取得する（oauthScopes追加後の再認証用。管理タブ「権限を承認する」ボタンから呼び出される）
-### セクション17: Gemini API 使用量トラッキング
-- `logGeminiUsage(operationName, usageMetadata)` — Gemini API呼び出し後に使用量をUserPropertiesに記録（日次・月次・操作一覧20件）。各API呼び出し関数の直後に挿入
-- `getMyGeminiUsage()` — `@aiCallable` 現在ユーザーのGemini API使用量（個人）を取得して返す（`{ mine: { today, month } }`）。AIアシスタントのプロンプト構築時にバックエンドから直接呼び出して使用量情報を注入
-
-### セクション18: LINEメッセージスケジューラー
+### セクション17: LINEメッセージスケジューラー
 #### 内部ヘルパー（`_` 末尾・非公開）
 - `getLineSchedulerSheet_()` — システム設定.gs 内の「LINEスケジューラー」シートを取得/作成
 - `computeClosedDaysForMonth_(year, month)` — 指定年月の休校日セットを計算（index.html の getClosedDays を再実装 + CLOSED_DAYS_OVERRIDES 適用）
@@ -268,7 +265,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLineSchedulerNotifPrefs()` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法設定を種別ごとに取得。戻り値: `{ success, lineRegistered, prefs: {meeting,report,shitsucho}, eligible: {meeting,report,shitsucho} }`
 - `updateLineSchedulerNotifPref(type, method)` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法を種別ごとに更新（type: 'meeting'/'report'/'shitsucho'、method: 'line'/'gmail'/'both'/'none'）。戻り値: `{ success, message }`
 
-### セクション20: 講習管理
+### セクション19: 講習管理
 
 #### 日程自動計算ヘルパー（内部）
 - `addDaysLec_(date, days)` — 日数加算して新しいDateを返す
@@ -327,7 +324,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `translateToImagePrompt_(japanesePrompt)` — 日本語プロンプトをGemini Flashで画像生成用の英語プロンプトに翻訳する内部ヘルパー
 - `generateImageWithImagen(japanesePrompt, aspectRatio)` — `@aiCallable` Imagen 4.0 Ultra で画像を生成し、Drive の assets/flyer フォルダに保存する。日本語プロンプトを受け取り英語に翻訳してから Imagen に渡す。戻り値: `{success, fileId, fileName, base64, mimeType, englishPrompt}`
 
-### セクション19: 料金表管理
+### セクション18: 料金表管理
 - `getDefaultPricingData_()` — デフォルトの料金表データを返す内部ヘルパー
 - `getPricingConfigForWeb()` — `@aiCallable` 料金表データを取得（未初期化ならデフォルトで初期化）
 - `savePricingConfig(jsonData)` — 料金表データを一括保存（Admin のみ）
