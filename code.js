@@ -240,7 +240,6 @@ function doPost(e) {
             var tid = existStaff.teacherId || existStaff._id;
             var replyMsg = '✅ LINE連携が完了しました！';
             if (displayName) replyMsg += '\n表示名: ' + (existStaff.displayName || displayName);
-            replyMsg += '\n\n🔑 あなたの講師ID:\n' + tid;
             replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
             replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
             sendLineMessage(lineUserId, replyMsg);
@@ -274,7 +273,6 @@ function doPost(e) {
           // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
           var replyMsg = '✅ 登録が完了しました！';
           if (displayName) replyMsg += '\n表示名: ' + displayName;
-          replyMsg += '\n\n🔑 あなたの講師ID:\n' + teacherId;
           replyMsg += '\n\nアプリURL:\nhttps://fir-quire.web.app';
           replyMsg += '\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。';
           Logger.log('プッシュ送信開始...');
