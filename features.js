@@ -2365,49 +2365,6 @@ function deleteFlyerImageTags_(fileId) {
 }
 
 // --- 旧チラシ設定（非推奨: AI生成方式に移行済み。互換性のため残存） ---
-
-/**
- * 【非推奨】指定の講習・校舎のチラシ設定を取得する（旧方式）
- * @param {string} lectureId 講習ID
- * @param {string} campusCode 校舎コード
- * @return {Object|null} 保存済み設定オブジェクト、なければ null
- */
-function getFlyerConfig(lectureId, campusCode) {
-  try {
-    var key = lectureId + '_' + campusCode;
-    var json = PropertiesService.getScriptProperties().getProperty('FLYER_ALL_CONFIGS');
-    if (!json) return null;
-    var all = JSON.parse(json);
-    return all[key] || null;
-  } catch (error) {
-    Logger.log('❌ getFlyerConfigエラー: ' + error);
-    return null;
-  }
-}
-
-/**
- * 【非推奨】指定の講習・校舎のチラシ設定を保存する（旧方式）
- * @param {string} lectureId 講習ID
- * @param {string} campusCode 校舎コード
- * @param {string} configJson 設定オブジェクトのJSON文字列
- * @return {Object} { success, message }
- */
-function saveFlyerConfig(lectureId, campusCode, configJson) {
-  try {
-    if (!lectureId || !campusCode) return { success: false, error: 'lectureId と campusCode は必須です' };
-    var key = lectureId + '_' + campusCode;
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty('FLYER_ALL_CONFIGS');
-    var all = json ? JSON.parse(json) : {};
-    all[key] = JSON.parse(configJson);
-    props.setProperty('FLYER_ALL_CONFIGS', JSON.stringify(all));
-    return { success: true, message: '設定を保存しました' };
-  } catch (error) {
-    Logger.log('❌ saveFlyerConfigエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
 // --- AIチラシ生成（Gemini連携） ---
 
 /**
