@@ -257,7 +257,7 @@ function updateSettings(settingsData) {
 /**
  * ユーザープロパティを取得
  * スタッフ系キー（DISPLAY_NAME, SUBJECTS 等）→ Firestore staffs から取得
- * その他のキー（GEMINI_DAILY_* 等）→ 従来の _UP_ ScriptProperties から取得
+ * その他のキー → 従来の _UP_ ScriptProperties から取得
  * @param {string} key プロパティキー
  * @return {string} 値（存在しない場合は空文字列）
  */
@@ -321,7 +321,11 @@ function cleanupMigratedUserProperties_() {
     var all = sp.getProperties();
     var migratedKeys = Object.keys(STAFF_FIELD_MAP_);
     // 廃止済みの _UP_ キー（コードから削除済みで使われていないもの）
-    var obsoleteKeys = ['PROFILE_UPDATED'];
+    var obsoleteKeys = [
+      'PROFILE_UPDATED',
+      'GEMINI_DAILY_DATE', 'GEMINI_DAILY_CALLS', 'GEMINI_DAILY_TOKENS', 'GEMINI_DAILY_OPS',
+      'GEMINI_MONTHLY_KEY', 'GEMINI_MONTHLY_CALLS', 'GEMINI_MONTHLY_TOKENS'
+    ];
     var toDelete = Object.keys(all).filter(function(propKey) {
       if (propKey.indexOf('_UP_') !== 0) return false;
       // STAFF_FIELD_MAP_ に含まれるキーの旧 _UP_ バージョン
@@ -674,105 +678,6 @@ function getSubjectOptions() {
     '化学',
     '社会'
   ];
-}
-
-// ========================================
-// 【セクション17】Gemini API 使用量トラッキング
-// ========================================
-// アプリ内でのGemini API呼び出し回数・トークン数をユーザーごとにUserPropertiesに記録する。
-// チーム全体の集計はScriptPropertiesにLockService排他制御で記録する。
-// Google APIには「残り使用量」を取得するエンドポイントが存在しないため、自己トラッキングによる近似値。
-
-/**
- * Gemini API呼び出し後に使用量をUserProperties（個人）とScriptProperties（チーム）に記録する
- * 日次・月次で自動リセット。直近20件の操作履歴を保持。
- * @param {string} operationName 操作名（表示用日本語）
- * @param {Object} usageMetadata APIレスポンスのusageMetadataオブジェクト
- */
-function logGeminiUsage(operationName, usageMetadata) {
-  try {
-    if (!usageMetadata) return;
-    var tokens = usageMetadata.totalTokenCount || 0;
-    var today    = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
-    var monthKey = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
-    var timeStr  = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'HH:mm');
-
-    // ── 個人（UserProperties）の更新 ──
-
-    // 日次リセット（日付が変わっていれば0にリセット）
-    var savedDate = getUserProperty('GEMINI_DAILY_DATE');
-    if (savedDate !== today) {
-      setUserProperty('GEMINI_DAILY_DATE',   today);
-      setUserProperty('GEMINI_DAILY_CALLS',  '0');
-      setUserProperty('GEMINI_DAILY_TOKENS', '0');
-      setUserProperty('GEMINI_DAILY_OPS',    '[]');
-    }
-
-    // 月次リセット（月が変わっていれば0にリセット）
-    var savedMonth = getUserProperty('GEMINI_MONTHLY_KEY');
-    if (savedMonth !== monthKey) {
-      setUserProperty('GEMINI_MONTHLY_KEY',    monthKey);
-      setUserProperty('GEMINI_MONTHLY_CALLS',  '0');
-      setUserProperty('GEMINI_MONTHLY_TOKENS', '0');
-    }
-
-    // 日次カウント更新
-    var dailyCalls  = parseInt(getUserProperty('GEMINI_DAILY_CALLS')  || '0') + 1;
-    var dailyTokens = parseInt(getUserProperty('GEMINI_DAILY_TOKENS') || '0') + tokens;
-    setUserProperty('GEMINI_DAILY_CALLS',  String(dailyCalls));
-    setUserProperty('GEMINI_DAILY_TOKENS', String(dailyTokens));
-
-    // 操作履歴（直近20件を保持）
-    var ops = JSON.parse(getUserProperty('GEMINI_DAILY_OPS') || '[]');
-    ops.push({ name: operationName, tokens: tokens, ts: timeStr });
-    if (ops.length > 20) ops = ops.slice(ops.length - 20);
-    setUserProperty('GEMINI_DAILY_OPS', JSON.stringify(ops));
-
-    // 月次カウント更新
-    var monthlyCalls  = parseInt(getUserProperty('GEMINI_MONTHLY_CALLS')  || '0') + 1;
-    var monthlyTokens = parseInt(getUserProperty('GEMINI_MONTHLY_TOKENS') || '0') + tokens;
-    setUserProperty('GEMINI_MONTHLY_CALLS',  String(monthlyCalls));
-    setUserProperty('GEMINI_MONTHLY_TOKENS', String(monthlyTokens));
-
-  } catch (e) {
-    Logger.log('⚠ logGeminiUsage エラー: ' + e);
-  }
-}
-
-/**
- * 現在ユーザーのGemini API使用量（個人）を取得する
- * 設定タブのフロントエンドから呼び出される。
- * @aiCallable
- * @return {Object} { mine: { today, month } }
- *   today: { calls, tokens, ops[] }  month: { calls, tokens }
- */
-function getMyGeminiUsage() {
-  try {
-    var today    = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
-    var monthKey = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
-
-    // 個人データ（UserProperties）
-    var savedDate  = getUserProperty('GEMINI_DAILY_DATE');
-    var savedMonth = getUserProperty('GEMINI_MONTHLY_KEY');
-
-    var mineTodayCalls  = savedDate  === today    ? parseInt(getUserProperty('GEMINI_DAILY_CALLS')   || '0') : 0;
-    var mineTodayTokens = savedDate  === today    ? parseInt(getUserProperty('GEMINI_DAILY_TOKENS')  || '0') : 0;
-    var mineTodayOps    = savedDate  === today    ? JSON.parse(getUserProperty('GEMINI_DAILY_OPS')   || '[]') : [];
-    var mineMonthCalls  = savedMonth === monthKey ? parseInt(getUserProperty('GEMINI_MONTHLY_CALLS') || '0') : 0;
-    var mineMonthTokens = savedMonth === monthKey ? parseInt(getUserProperty('GEMINI_MONTHLY_TOKENS')|| '0') : 0;
-
-    return {
-      mine: {
-        today: { calls: mineTodayCalls, tokens: mineTodayTokens, ops: mineTodayOps },
-        month: { calls: mineMonthCalls, tokens: mineMonthTokens }
-      }
-    };
-  } catch (e) {
-    Logger.log('❌ getMyGeminiUsage エラー: ' + e);
-    return {
-      mine: { today: { calls: 0, tokens: 0, ops: [] }, month: { calls: 0, tokens: 0 } }
-    };
-  }
 }
 
 /**

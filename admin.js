@@ -1086,7 +1086,6 @@ function callGeminiForScheduleExtraction(prompt) {
     }
     
     var result = JSON.parse(response.getContentText());
-    if (result.usageMetadata) logGeminiUsage('スケジュール抽出', result.usageMetadata);
 
     if (!result.candidates || !result.candidates[0]) {
       Logger.log('⚠ Gemini から応答がありません');

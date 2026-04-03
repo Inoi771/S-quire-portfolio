@@ -652,7 +652,6 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
     });
 
     var json = JSON.parse(response.getContentText());
-    if (json.usageMetadata) logGeminiUsage('成績OCR', json.usageMetadata);
     if (!json.candidates || !json.candidates[0]) {
       return { success: false, error: 'AIからの応答がありませんでした' };
     }

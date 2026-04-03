@@ -559,7 +559,6 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
     }
 
     var result = JSON.parse(response.getContentText());
-    if (result.usageMetadata) logGeminiUsage('成績AI分析', result.usageMetadata);
 
     // 出力トークン上限チェック
     var finishReason = ((result.candidates || [])[0] || {}).finishReason;
@@ -973,7 +972,6 @@ function generateStudentAnalyses(year, testName) {
     }
 
     var result = JSON.parse(response.getContentText());
-    if (result.usageMetadata) logGeminiUsage('生徒別AI分析', result.usageMetadata);
 
     // 出力トークン上限チェック
     var finishReason = ((result.candidates || [])[0] || {}).finishReason;
@@ -1122,7 +1120,6 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
   }
 
   var result = JSON.parse(response.getContentText());
-  if (result.usageMetadata) logGeminiUsage('生徒別AI分析（バッチ）', result.usageMetadata);
 
   var finishReason = ((result.candidates || [])[0] || {}).finishReason;
   if (finishReason === 'MAX_TOKENS') {
