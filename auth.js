@@ -516,26 +516,29 @@ function linkUserById(inputId) {
       return { success: true, found: false };
     }
 
-    // 現在のメールアドレスを staffs に反映（未設定 or 異なる場合）
-    var currentEmail = getCurrentUserEmail();
+    // 配列フィールドの初期化（レガシードキュメント対応）
     var updated = false;
+    if (!Array.isArray(staff.emails)) { staff.emails = staff.email ? [staff.email] : []; updated = true; }
+    if (!Array.isArray(staff.firebaseUids)) { staff.firebaseUids = staff.firebaseUid ? [staff.firebaseUid] : []; updated = true; }
+
+    // 現在のメールアドレスを staffs に反映
+    var currentEmail = getCurrentUserEmail();
     if (currentEmail && currentEmail !== 'unknown@example.com') {
       var emailLower = currentEmail.toLowerCase();
-      if (!staff.email || staff.email !== emailLower) {
-        staff.email = emailLower;
-        updated = true;
-      }
-      // Firestore の allowedUsers にも追加
+      if (staff.emails.indexOf(emailLower) === -1) { staff.emails.push(emailLower); updated = true; }
+      staff.email = emailLower; // スカラーも最新値に
+      // allowedUsers にも追加
       try {
         firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
       } catch (fsErr) {
-        Logger.log('⚠ linkUserById: Firestore allowedUsers 登録失敗: ' + fsErr);
+        Logger.log('⚠ linkUserById: allowedUsers 登録失敗: ' + fsErr);
       }
     }
 
-    // firebaseUid をコンテキストから取得して書き込み（設定されている場合）
-    if (_firebaseUidContext_ && !staff.firebaseUid) {
-      staff.firebaseUid = _firebaseUidContext_;
+    // firebaseUid をコンテキストから取得して配列に追加
+    if (_firebaseUidContext_) {
+      if (staff.firebaseUids.indexOf(_firebaseUidContext_) === -1) { staff.firebaseUids.push(_firebaseUidContext_); updated = true; }
+      staff.firebaseUid = _firebaseUidContext_; // スカラーも最新値に
       updated = true;
     }
 
