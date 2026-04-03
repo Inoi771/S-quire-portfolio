@@ -456,25 +456,38 @@ function removeUserAccess(email) {
       return { success: false, error: 'フォルダのオーナーは削除できません' };
     }
 
-    // Firestore staffs からスタッフを検索
-    var teacherId = null;
+    // Firestore staffs からスタッフを検索（emails 配列 → レガシー email の順）
+    var staff = null;
     try {
-      var staffResult = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
-      if (staffResult && staffResult.length > 0) {
-        teacherId = staffResult[0].teacherId || staffResult[0]._id;
+      var staffResult = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', email)], 1);
+      if (!staffResult || staffResult.length === 0) {
+        staffResult = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
       }
+      if (staffResult && staffResult.length > 0) staff = staffResult[0];
     } catch (staffErr) {
       Logger.log('⚠ removeUserAccess: staffs 検索エラー: ' + staffErr);
     }
 
-    // Drive 共有から解除
-    var ownerEmail = folder.getOwner() ? folder.getOwner().getEmail().toLowerCase() : '';
-    if (email !== ownerEmail) {
-      try { folder.removeEditor(email); } catch (e) { Logger.log('⚠ removeEditor スキップ: ' + email + ' / ' + e); }
+    // スタッフの全メールアドレスを収集
+    var allEmails = [email];
+    if (staff) {
+      var staffEmails = Array.isArray(staff.emails) ? staff.emails : (staff.email ? [staff.email] : []);
+      staffEmails.forEach(function(e) {
+        if (e && allEmails.indexOf(e) === -1) allEmails.push(e);
+      });
     }
 
+    // Drive 共有から全メールを解除
+    var ownerEmail = folder.getOwner() ? folder.getOwner().getEmail().toLowerCase() : '';
+    allEmails.forEach(function(em) {
+      if (em !== ownerEmail) {
+        try { folder.removeEditor(em); } catch (e) { Logger.log('⚠ removeEditor スキップ: ' + em + ' / ' + e); }
+      }
+    });
+
     // Firestore staffs ドキュメントを削除
-    if (teacherId) {
+    if (staff) {
+      var teacherId = staff.teacherId || staff._id;
       try {
         firestoreDelete_('staffs', teacherId);
         Logger.log('✓ removeUserAccess: staffs/' + teacherId + ' を削除');
@@ -483,15 +496,25 @@ function removeUserAccess(email) {
       }
     }
 
-    // Firestore allowedUsers から削除
-    try {
-      firestoreDelete_('allowedUsers', email);
-    } catch (fsErr) {
-      Logger.log('⚠ removeUserAccess: Firestore allowedUsers 削除失敗（' + email + '）: ' + fsErr);
+    // Firestore allowedUsers から全メールを削除
+    allEmails.forEach(function(em) {
+      try {
+        firestoreDelete_('allowedUsers', em);
+      } catch (fsErr) {
+        Logger.log('⚠ removeUserAccess: allowedUsers 削除失敗（' + em + '）: ' + fsErr);
+      }
+    });
+
+    // ADMIN_EMAILS からも全メールを削除
+    var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
+    var adminList = adminRaw.split(',').map(function(e) { return e.trim().toLowerCase(); }).filter(function(e) { return e.length > 0; });
+    var newAdminList = adminList.filter(function(e) { return allEmails.indexOf(e) === -1; });
+    if (newAdminList.length !== adminList.length) {
+      setProperty(PROP_KEYS.ADMIN_EMAILS, newAdminList.join(','));
     }
 
-    logAdminAction('removeUserAccess', { email: email });
-    return { success: true, message: email + ' のアクセスを削除しました（Drive共有・通知設定も解除されました）' };
+    logAdminAction('removeUserAccess', { email: email, allEmails: allEmails });
+    return { success: true, message: email + ' のアクセスを削除しました（全メール・Drive共有・通知設定も解除されました）' };
   } catch (error) {
     Logger.log('❌ removeUserAccessエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -686,6 +709,14 @@ function removeEmailFromTeacher(emailToRemove) {
       firestoreDelete_('allowedUsers', emailToRemove);
     } catch (fsErr) {
       Logger.log('⚠ removeEmailFromTeacher: allowedUsers 削除失敗: ' + fsErr);
+    }
+
+    // Drive 共有フォルダからも削除
+    try {
+      var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+      if (folderId) DriveApp.getFolderById(folderId).removeEditor(emailToRemove);
+    } catch (driveErr) {
+      Logger.log('⚠ removeEmailFromTeacher: Drive 共有削除失敗: ' + driveErr);
     }
 
     return { success: true, message: 'メールアドレスを削除しました', emails: staff.emails.slice() };
