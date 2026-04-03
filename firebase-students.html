@@ -631,6 +631,10 @@ function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
  * @return {Promise<Object>} { success, years, error }
  */
 function fbGetGradesYearFolders() {
+  // 認証チェック（未認証だとFirestoreルールでブロックされる）
+  if (!window.fbCurrentUser) {
+    return Promise.resolve({ success: false, error: '認証されていません。ページを再読み込みしてください。' });
+  }
   return fbDb.collection('grades').get()
     .then(function(snapshot) {
       var yearSet = {};
