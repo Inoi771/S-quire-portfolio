@@ -156,7 +156,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 | コレクション | DocId形式 | 用途 |
 |------------|---------|------|
-| `staffs` | `{teacherId}` | スタッフ情報（UserProperties から移行。`notificationEmail` フィールド含む） |
+| `staffs` | `{teacherId}` | スタッフ情報。`emails` 配列（複数メール対応）・`firebaseUids` 配列（複数UID対応）・`notificationEmail`（通知先） |
 | `allowedUsers` | `{email}` | アクセス許可メールのホワイトリスト |
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |

@@ -23,8 +23,12 @@
 - `getSetupStatus()` — 初回セットアップが必要かを返す（`isFirstSetup`, `currentUserEmail`, `hasAppFolder`）。ADMIN_EMAILS が空なら `isFirstSetup: true`
 - `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Firestore staffs 作成（firebaseUid 含む）＋ allowedUsers 登録を一括で行う
 - `getAllowedUsers()` — Driveフォルダの共有ユーザー一覧を取得（Admin のみ。ACCESS_FOLDER_ID 優先）
-- `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加）
+- `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加＋staffs作成＋allowedUsers登録）
 - `removeUserAccess(email)` — ユーザーのアプリアクセスを削除（Admin のみ。オーナーと自分自身は削除不可）
+- `getTeacherEmails()` — `@aiCallable` 現在の講師の `emails` 配列を取得（設定タブのメール管理UIで使用）
+- `addEmailToTeacher(newEmail)` — `@aiCallable` 現在の講師に新しいメールアドレスを追加（`emails` 配列＋ `allowedUsers` ＋ Drive共有）
+- `removeEmailFromTeacher(emailToRemove)` — `@aiCallable` 現在の講師からメールアドレスを削除（最低1件は残す制約付き）
+- `linkUserById(teacherId)` — `@aiCallable` 講師IDを入力してスタッフ紐付け（初回アクセス時）。`firebaseUid` を staffs に書き込む
 - `createAccessDeniedHtml(email)` — アクセス拒否ページのHTMLを生成
 
 ### セクション3: Web App エントリーポイント

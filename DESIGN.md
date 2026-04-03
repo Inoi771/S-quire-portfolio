@@ -22,7 +22,10 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 ```json
 {
   "teacherId": "T1707123456789_abc123def",
+  "emails": ["teacher@example.com", "personal@gmail.com"],
+  "firebaseUids": ["uid_abc123", "uid_def456"],
   "email": "teacher@example.com",
+  "firebaseUid": "uid_abc123",
   "name": "田中 花子",
   "notificationEmail": "",
   "notificationMethod": "gmail",
@@ -30,7 +33,16 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 }
 ```
 
-> ⚠️ `TEACHER_ID_MAP`（ScriptProperties）はレガシー。マイグレーション関数 `migrateStaffToFirestore()` でのみ参照される。
+- `emails` / `firebaseUids`: 配列。1人のスタッフが複数 Google アカウントでアクセス可能
+- `email` / `firebaseUid`: スカラー（後方互換）。最新ログイン値を常に反映
+- `notificationEmail`: 通知先メール（アクセス制御とは別概念）
+
+### 認証・照合フロー
+
+```
+isAllowedUser(): ADMIN_EMAILS → firebaseUids ARRAY_CONTAINS → emails ARRAY_CONTAINS → Drive編集者
+resolveStaffByUid_(): firebaseUids → email配列 → レガシースカラー → 配列自動マイグレーション
+```
 
 ### 新機能実装時のルール
 

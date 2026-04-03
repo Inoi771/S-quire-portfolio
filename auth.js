@@ -45,7 +45,8 @@ function verifyFirebaseIdToken_(idToken) {
       Logger.log('⚠ verifyFirebaseIdToken_: 検証失敗 ' + JSON.stringify(result && result.error));
       return null;
     }
-    return result.users[0].email || null;
+    var user = result.users[0];
+    return { email: user.email || null, uid: user.localId || null };
   } catch (e) {
     Logger.log('❌ verifyFirebaseIdToken_エラー: ' + e);
     return null;
@@ -255,18 +256,43 @@ function isAllowedUser() {
     var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
     if (!folderId) return true;
 
-    // 3. Firestore staffs コレクションで email チェック（Drive API不要で高速）
+    // 3. Firebase UID で staffs 検索（2回目以降の最速パス）
+    if (_firebaseUidContext_) {
+      try {
+        var staffByUids = firestoreQuery_('staffs', [fsFilter_('firebaseUids', 'ARRAY_CONTAINS', _firebaseUidContext_)], 1);
+        if (staffByUids && staffByUids.length > 0) {
+          Logger.log('✓ isAllowedUser: firebaseUids で許可: ' + _firebaseUidContext_);
+          return true;
+        }
+        // レガシーフォールバック
+        var staffByUid = firestoreQuery_('staffs', [fsFilter_('firebaseUid', 'EQUAL', _firebaseUidContext_)], 1);
+        if (staffByUid && staffByUid.length > 0) {
+          Logger.log('✓ isAllowedUser: firebaseUid(legacy) で許可');
+          return true;
+        }
+      } catch (uidErr) {
+        Logger.log('⚠ isAllowedUser: UID チェックエラー（スキップ）: ' + uidErr);
+      }
+    }
+
+    // 4. Firestore staffs の emails 配列でメールチェック
     try {
+      var staffByEmails = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', email)], 1);
+      if (staffByEmails && staffByEmails.length > 0) {
+        Logger.log('✓ isAllowedUser: emails で許可: ' + email);
+        return true;
+      }
+      // レガシーフォールバック
       var staffByEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
       if (staffByEmail && staffByEmail.length > 0) {
-        Logger.log('✓ isAllowedUser: staffs で許可: ' + email);
+        Logger.log('✓ isAllowedUser: email(legacy) で許可: ' + email);
         return true;
       }
     } catch (staffErr) {
       Logger.log('⚠ isAllowedUser: staffs チェックエラー（スキップ）: ' + staffErr);
     }
 
-    // 4. Driveフォルダのオーナー・編集者チェック（管理者が手動追加したユーザーの対応）
+    // 5. Driveフォルダのオーナー・編集者チェック（管理者が手動追加したユーザーの対応）
     try {
       var folder = DriveApp.getFolderById(folderId);
       var owner = folder.getOwner();
@@ -365,8 +391,10 @@ function addUserAccess(email) {
         firestoreSet_('staffs', newTeacherId, {
           teacherId: newTeacherId,
           email: email,
+          emails: [email],
           name: '',
           firebaseUid: null,
+          firebaseUids: [],
           lineUserId: null,
           displayName: '',
           subjects: [],
@@ -375,6 +403,7 @@ function addUserAccess(email) {
           aiPersonality: '',
           themeColor: '',
           notificationMethod: 'gmail',
+          notificationEmail: '',
           addedAt: new Date().toISOString()
         });
         Logger.log('✓ addUserAccess: staffs に新規登録 teacherId=' + newTeacherId);
@@ -544,8 +573,7 @@ function getTeacherEmails() {
 
     var teacherId = staff.teacherId || staff._id;
     var currentEmail = getCurrentUserEmail().toLowerCase();
-    // staffs は1ドキュメント1メールのため配列で返す
-    var emails = staff.email ? [staff.email] : [];
+    var emails = Array.isArray(staff.emails) ? staff.emails.slice() : (staff.email ? [staff.email] : []);
     return { success: true, emails: emails, teacherId: teacherId, currentEmail: currentEmail };
   } catch (error) {
     Logger.log('❌ getTeacherEmailsエラー: ' + error);
@@ -570,29 +598,47 @@ function addEmailToTeacher(newEmail) {
       return { success: false, error: '正しいメールアドレスを入力してください' };
     }
 
-    // 他のスタッフに既に登録されていないか確認
-    var existing = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', newEmail)], 1);
     var teacherId = staff.teacherId || staff._id;
+
+    // 自分の emails 配列に既にあるか確認
+    if (!Array.isArray(staff.emails)) staff.emails = staff.email ? [staff.email] : [];
+    if (staff.emails.indexOf(newEmail) !== -1) {
+      return { success: false, error: 'このメールアドレスは既に登録されています' };
+    }
+
+    // 他のスタッフに登録されていないか確認（配列＋レガシー両方）
+    var existing = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', newEmail)], 1);
+    if (!existing || existing.length === 0) {
+      existing = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', newEmail)], 1);
+    }
     if (existing && existing.length > 0) {
       var existTid = existing[0].teacherId || existing[0]._id;
       if (existTid !== teacherId) {
         return { success: false, error: 'このメールアドレスは既に別の講師に登録されています' };
       }
-      return { success: false, error: 'このメールアドレスは既に登録されています' };
     }
 
-    // staffs の email を更新
-    staff.email = newEmail;
+    // emails 配列に追加
+    staff.emails.push(newEmail);
     writeStaffToFirestore_(staff);
-    Logger.log('✓ addEmailToTeacher: ' + newEmail + ' を ' + teacherId + ' に設定');
+    Logger.log('✓ addEmailToTeacher: ' + newEmail + ' を ' + teacherId + ' に追加');
 
-    // Firestore の allowedUsers にも追加
+    // allowedUsers にも追加
     try {
       firestoreSet_('allowedUsers', newEmail, { email: newEmail, addedAt: new Date().toISOString() });
     } catch (fsErr) {
-      Logger.log('⚠ addEmailToTeacher: Firestore allowedUsers 登録失敗: ' + fsErr);
+      Logger.log('⚠ addEmailToTeacher: allowedUsers 登録失敗: ' + fsErr);
     }
-    return { success: true, message: 'メールアドレスを変更しました', emails: [newEmail] };
+
+    // Drive 共有フォルダにも追加
+    try {
+      var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
+      if (folderId) DriveApp.getFolderById(folderId).addEditor(newEmail);
+    } catch (driveErr) {
+      Logger.log('⚠ addEmailToTeacher: Drive 共有追加失敗: ' + driveErr);
+    }
+
+    return { success: true, message: 'メールアドレスを追加しました', emails: staff.emails.slice() };
   } catch (error) {
     Logger.log('❌ addEmailToTeacherエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -608,8 +654,38 @@ function addEmailToTeacher(newEmail) {
  */
 function removeEmailFromTeacher(emailToRemove) {
   try {
-    // staffs は1ドキュメント1メールのため、メールの「削除」は非対応
-    return { success: false, error: 'メールアドレスは変更のみ可能です。削除はできません' };
+    var staff = getCurrentStaff_();
+    if (!staff) return { success: false, error: '講師情報が見つかりません' };
+
+    emailToRemove = (emailToRemove || '').trim().toLowerCase();
+    if (!emailToRemove) return { success: false, error: 'メールアドレスを指定してください' };
+
+    if (!Array.isArray(staff.emails)) staff.emails = staff.email ? [staff.email] : [];
+
+    // 最低1件は残す
+    if (staff.emails.length <= 1) {
+      return { success: false, error: 'メールアドレスは最低1つ必要です。削除する前に別のメールアドレスを追加してください' };
+    }
+
+    var idx = staff.emails.indexOf(emailToRemove);
+    if (idx === -1) return { success: false, error: 'このメールアドレスは登録されていません' };
+
+    staff.emails.splice(idx, 1);
+    // スカラー email が削除対象だった場合、残りの先頭に更新
+    if (staff.email === emailToRemove) {
+      staff.email = staff.emails[0];
+    }
+    writeStaffToFirestore_(staff);
+    Logger.log('✓ removeEmailFromTeacher: ' + emailToRemove + ' を削除');
+
+    // allowedUsers からも削除
+    try {
+      firestoreDelete_('allowedUsers', emailToRemove);
+    } catch (fsErr) {
+      Logger.log('⚠ removeEmailFromTeacher: allowedUsers 削除失敗: ' + fsErr);
+    }
+
+    return { success: true, message: 'メールアドレスを削除しました', emails: staff.emails.slice() };
   } catch (error) {
     Logger.log('❌ removeEmailFromTeacherエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -713,8 +789,10 @@ function initializeFirstAdmin(displayName) {
     firestoreSet_('staffs', teacherId, {
       teacherId: teacherId,
       email: emailLower,
+      emails: [emailLower],
       name: name,
       firebaseUid: firebaseUid,
+      firebaseUids: firebaseUid ? [firebaseUid] : [],
       lineUserId: null,
       displayName: name,
       subjects: [],
