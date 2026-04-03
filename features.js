@@ -3035,17 +3035,19 @@ function saveNormalClassConfig(rowsJson) {
 
 /**
  * 配布物ファイルを保存するDriveフォルダを取得または作成する内部ヘルパー
- * ルートフォルダ → 配布物/ → {lectureName}/ → {campusName}/ の構造を作成する
- * @param {string} lectureName 講習名（例: "2025年度 夏期講習"）
+ * ルートフォルダ → 講習/ → {fy}年度/ → {lectureName}/ → {campusName}/ の構造を作成する
+ * @param {number|string} fy 年度（例: 2025）
+ * @param {string} lectureName 講習名（例: "夏期講習"）
  * @param {string} campusName 校舎名（例: "本町"）
  * @return {Folder} Driveフォルダオブジェクト
  */
-function getDistributionFilesFolder_(lectureName, campusName) {
+function getDistributionFilesFolder_(fy, lectureName, campusName) {
   var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
   if (!rootFolderId) throw new Error('APP_FOLDER_ID が設定されていません');
   var root = DriveApp.getFolderById(rootFolderId);
-  var distFolder = getOrCreateTabFolder(root, '配布物');
-  var lecFolder = getOrCreateTabFolder(distFolder, lectureName);
+  var lecturesFolder = getOrCreateTabFolder(root, '講習');
+  var yearFolder = getOrCreateTabFolder(lecturesFolder, fy + '年度');
+  var lecFolder = getOrCreateTabFolder(yearFolder, lectureName);
   var campusFolder = getOrCreateTabFolder(lecFolder, campusName);
   return campusFolder;
 }
@@ -3055,18 +3057,20 @@ function getDistributionFilesFolder_(lectureName, campusName) {
  * @aiCallable
  * @param {string} lectureId 講習ID（例: "2025-summer"）
  * @param {string} campusCode 校舎コード（例: "01"）
- * @param {string} lectureName 講習名（例: "2025年度 夏期講習"）
+ * @param {number|string} fy 年度（例: 2025）
+ * @param {string} lectureName 講習名（例: "夏期講習"）
  * @param {string} campusName 校舎名（例: "本町"）
- * @param {string} fileName ファイル名（例: "2025年度 冬期講習のご案内.pdf"）
+ * @param {string} fileName ファイル名（例: "2025年度_夏期講習_本町.pdf"）
  * @param {string} pdfBase64 Base64エンコードされたPDFバイナリ
  * @return {Object} {success, fileId, fileName, message}
  */
-function saveDistributionFile(lectureId, campusCode, lectureName, campusName, fileName, pdfBase64) {
+function saveDistributionFile(lectureId, campusCode, fy, lectureName, campusName, fileName, pdfBase64) {
   try {
     if (!lectureId || !campusCode) return { success: false, error: '講習IDまたは校舎コードが未指定です' };
+    var folderFy = fy || parseInt((lectureId || '').split('-')[0], 10) || '';
     var folderLecName = lectureName || lectureId;
     var folderCampusName = campusName || campusCode;
-    var folder = getDistributionFilesFolder_(folderLecName, folderCampusName);
+    var folder = getDistributionFilesFolder_(folderFy, folderLecName, folderCampusName);
     var decoded = Utilities.base64Decode(pdfBase64);
     var blob = Utilities.newBlob(decoded, 'application/pdf', fileName);
     var file = folder.createFile(blob);
@@ -3083,23 +3087,29 @@ function saveDistributionFile(lectureId, campusCode, lectureName, campusName, fi
  * @aiCallable
  * @param {string} lectureId 講習ID
  * @param {string} campusCode 校舎コード
+ * @param {number|string} fy 年度（例: 2025）
  * @param {string} lectureName 講習名（フォルダ名。未指定時は lectureId で検索）
  * @param {string} campusName 校舎名（フォルダ名。未指定時は campusCode で検索）
  * @return {Array} [{id, name, createdDate, size}] 新しい順
  */
-function listDistributionFiles(lectureId, campusCode, lectureName, campusName) {
+function listDistributionFiles(lectureId, campusCode, fy, lectureName, campusName) {
   try {
     var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
     if (!rootFolderId || !lectureId || !campusCode) return [];
 
     var root = DriveApp.getFolderById(rootFolderId);
 
-    var distIter = root.getFoldersByName('配布物');
-    if (!distIter.hasNext()) return [];
-    var distFolder = distIter.next();
+    var lecturesIter = root.getFoldersByName('講習');
+    if (!lecturesIter.hasNext()) return [];
+    var lecturesFolder = lecturesIter.next();
+
+    var fyLabel = (fy || parseInt((lectureId || '').split('-')[0], 10) || '') + '年度';
+    var yearIter = lecturesFolder.getFoldersByName(fyLabel);
+    if (!yearIter.hasNext()) return [];
+    var yearFolder = yearIter.next();
 
     var lecFolderName = lectureName || lectureId;
-    var lecIter = distFolder.getFoldersByName(lecFolderName);
+    var lecIter = yearFolder.getFoldersByName(lecFolderName);
     if (!lecIter.hasNext()) return [];
     var lecFolder = lecIter.next();
 

@@ -830,9 +830,7 @@
               pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
             });
             var pdfBase64 = pdf.output('datauristring').split(',')[1];
-            var now = new Date();
-            var dateStr = now.getFullYear() + ('0' + (now.getMonth() + 1)).slice(-2) + ('0' + now.getDate()).slice(-2);
-            var fileName = fy + '年度_' + lecName + '_' + campusName + '_' + dateStr + '.pdf';
+            var fileName = fy + '年度_' + lecName + '_' + campusName + '.pdf';
             google.script.run
               .withSuccessHandler(function(result) {
                 restoreBtn();
@@ -848,7 +846,7 @@
                 console.error('Drive保存失敗:', err);
                 appAlert('保存に失敗しました。');
               })
-              .saveDistributionFile(lectureId, campusCode, lecName, campusName, fileName, pdfBase64);
+              .saveDistributionFile(lectureId, campusCode, fy, lecName, campusName, fileName, pdfBase64);
             return;
           }
 
@@ -909,6 +907,7 @@
       var period = (lecturePeriods || []).filter(function(p) { return p.id === lectureId; })[0];
       var lecName = period ? period.name : lectureId;
       var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
 
       listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">⏳ 読み込み中...</div>';
 
@@ -920,7 +919,7 @@
           console.error('配布物一覧取得失敗:', err);
           listEl.innerHTML = '<div style="color:#e57373;font-size:12px;">読み込みに失敗しました</div>';
         })
-        .listDistributionFiles(lectureId, campusCode, lecName, campusName);
+        .listDistributionFiles(lectureId, campusCode, fy, lecName, campusName);
     }
 
     /**
