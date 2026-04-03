@@ -98,6 +98,10 @@ markdown# S-quire — プロジェクト設計書
 
 ### ドキュメント自動更新ルール
 
+**大原則：コードを変更したら、関連するすべての .md ファイルの記載内容を最新の状態に更新すること。**
+特定のトリガーに限らず、.md ファイルに記載されている内容と実際のコードに差異が生じた場合は、確認なしに更新する。
+対象: `CLAUDE.md` / `DATA.md` / `DESIGN.md` / `CODING.md` / `BUGS.md` / `README.md` / `FUNCTIONS-frontend.md` / `FUNCTIONS-backend.md`
+
 以下のトリガーで確認なしに更新する：
 
 | トリガー | 更新箇所 |
@@ -105,7 +109,8 @@ markdown# S-quire — プロジェクト設計書
 | 新しいフロントエンド関数を追加 | `FUNCTIONS-frontend.md` を更新 |
 | 新しいバックエンド関数を追加 | `FUNCTIONS-backend.md` を更新 |
 | タブ・サブタブを追加 | CLAUDE.md セクション8 ＋ 管理ガイド（index.html `admin-guide`） |
-| 新しいスクリプトプロパティ追加 | DATA.md ＋ 管理ガイド（index.html `admin-guide` のプロパティ一覧） |
+| スクリプトプロパティの追加・変更・削除・移行 | DATA.md ＋ 管理ガイド（index.html `admin-guide` のプロパティ一覧） |
+| Firestoreコレクションの追加・変更 | DATA.md（Firestoreコレクション構成） |
 | Driveフォルダ構成変更 | CLAUDE.md セクション4 ＋ 管理ガイド（index.html `admin-guide`） |
 | 未実装機能を実装 | CLAUDE.md セクション11 |
 | 新たな設計判断・制約 | DESIGN.md |

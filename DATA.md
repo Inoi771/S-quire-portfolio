@@ -9,29 +9,42 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 ## スクリプトプロパティ（ScriptProperties）
 
+### PROP_KEYS（code.js で定数定義）
+
 | キー | 内容 |
 |------|------|
 | `GEMINI_API_KEY` | Gemini API キー |
 | `APP_FOLDER_ID` | Google Drive ルートフォルダID（必須・未設定時全機能停止） |
 | `THEME_COLOR` | UIテーマカラー（デフォルト: `#43e97b`） |
 | `ADMIN_EMAILS` | Adminユーザーのメール（カンマ区切り） |
+| `HOLIDAY_CACHE` | 祝日キャッシュ（JSON。Googleカレンダーから毎日自動更新） |
 | `ACCESS_FOLDER_ID` | アクセス許可フォルダID（設定時は APP_FOLDER_ID より優先） |
-| `BASIC_TEST_DATES` | 基礎学力テスト日程上書き（JSON: `{"2025-1": "2025/10/01"}`） |
-| `BASIC_TEST_DETAILS` | 基礎学力テスト詳細テキスト上書き（JSON） |
-| `PUBLIC_HIGH_EXAM_DATES` | 公立高校一般選抜日程上書き（JSON: `{"2025": "2026/03/11"}`） |
-| `JUKU_EVENT_OVERRIDES` | 塾内部イベント上書き（JSON） |
-| `CLOSED_DAYS_OVERRIDES` | 休校日上書き（JSON: `{"add":[], "del":[]}`） |
-| `HOLIDAY_CACHE` | 祝日キャッシュ（JSON。毎日自動更新） |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API トークン |
-| `LINE_USER_MAPPING` | LINE UserID マッピング（JSON。Webhookで自動登録） |
-| `NOTIFICATION_METHODS` | 通知方法設定（JSON: `{"teacherId": "gmail"/"line"/"both"/"none"}`） |
+| `LINE_USER_MAPPING` | ⚠️ Firestore `staffs.lineUserId` に移行済み。マイグレーション用に残存 |
+| `NOTIFICATION_METHODS` | ⚠️ Firestore `staffs.notificationMethod` に移行済み。マイグレーション用に残存 |
 | `CAMPUS_NOTIFICATION_ROUTING` | 校舎別通知振り分け（JSON: `{"campusCode": ["teacherId1"]}`） |
 | `LINE_SCHEDULER_SETTINGS` | LINEスケジューラー設定（JSON） |
-| `LINE_SCHEDULER_NOTIF_PREFS` | ユーザー別通知方法設定（JSON） |
-| `FLYER_ALL_CONFIGS` | チラシ設定一括保存（JSON） |
-| `FORM_EMAIL_SENDER` | フォームメール送信元フィルター（デフォルト: `noreply@web-cms.jp`） |
-| `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列） |
+| `LINE_SCHEDULER_NOTIF_PREFS` | ⚠️ Firestore `staffs.schedulerNotifPrefs` に移行済み。マイグレーション用に残存 |
+| `TEACHER_ID_MAP` | 講師IDマッピング（JSON: `{teacherId: {emails:[], name}}`） |
+| `NOTIFICATION_EMAILS` | 講師別Gmail通知先メール（JSON: `{teacherId: "email"}`） |
+| `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列: `[{id, category, content, updatedAt}]`） |
 | `LECTURE_DEADLINE_OVERRIDES` | 講習日程締切手動上書き（JSON: `{"2025-summer": "2025-06-15"}`） |
+| `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `fir-quire`） |
+| `FIREBASE_CLIENT_EMAIL` | Firebase サービスアカウントメール |
+| `FIREBASE_PRIVATE_KEY` | Firebase サービスアカウント秘密鍵（PEM形式） |
+
+### 文字列リテラルで使用（PROP_KEYS 未定義だがコードで直接使用）
+
+| キー | 内容 | 使用ファイル |
+|------|------|------------|
+| `FIREBASE_WEB_API_KEY` | Firebase Web API キー（未設定時はハードコードのフォールバック使用） | auth.js |
+| `BASIC_TEST_DATES` | 基礎学力テスト日程上書き（JSON: `{"2025-1": "2025/10/01"}`） | schedule.js, features.js |
+| `BASIC_TEST_DETAILS` | 基礎学力テスト詳細テキスト上書き（JSON） | schedule.js |
+| `PUBLIC_HIGH_EXAM_DATES` | 公立高校一般選抜日程上書き（JSON: `{"2025": "2026/03/11"}`） | schedule.js, features.js |
+| `JUKU_EVENT_OVERRIDES` | 塾内部イベント上書き（JSON） | schedule.js |
+| `CLOSED_DAYS_OVERRIDES` | 休校日上書き（JSON: `{"add":[], "del":[]}`） | schedule.js, line.js |
+| `FORM_EMAIL_SENDER` | フォームメール送信元フィルター（デフォルト: `noreply@web-cms.jp`） | line.js |
+| `FLYER_ALL_CONFIGS` | ⚠️ 非推奨。Firestore `flyerAi` に移行済み。レガシー互換で残存 | features.js |
 
 ---
 
@@ -41,29 +54,40 @@ markdown# DATA.md — データ構造・プロパティ一覧
 |------|------|
 | `GRADES_TEST_NAMES_CONFIG` | テスト名リスト（JSON配列） |
 | `GRADES_CAMPUS_CODES_CONFIG` | 校舎コード・名前リスト（JSON: `[{code, name}]`） |
+| `GRADES_GRADE_CODES_CONFIG` | 学年コード・名前リスト（JSON: `[{code, name}]`） |
 | `GRADES_VISIBLE_CONFIG` | 表示する学年コードの配列（例: `["13","14","15"]`） |
-| `GRADES_SCHOOL_CONFIG` | 志望校リスト（JSON） |
+| `GRADES_SCHOOL_CONFIG` | 志望校リスト（JSON: `[{name, departments:[]}]`） |
+| `GRADES_SIGMA_CONFIG` | 偏差値計算用の標準偏差設定（JSON） |
 | `PRICING_TABLE_CONFIG` | 料金表データ（JSON） |
 | `LECTURE_PERIODS_CONFIG` | 講習期間設定（JSON: `[{id, name, startDate, endDate, gradeSettings}]`） |
-| `LECTURE_PRICING_CONFIG` | 講習別料金設定（JSON） |
-| `NORMAL_CLASS_CONFIG` | 通常授業設定（JSON） |
+| `LECTURE_PRICING_CONFIG` | 講習別料金設定（JSON: `{typeId: [{label, internal, external}]}`） |
+| `NORMAL_CLASS_CONFIG` | 通常授業設定（JSON: `[{grade, duration, count, internal, external}]`） |
 
 ---
 
 ## UserProperties（ユーザーごと）
 
-⚠️ `PropertiesService.getUserProperties()` は直接使用禁止。必ず `getUserProperty()` / `setUserProperty()` ヘルパーを使うこと（`_UP_{safeEmail}_{key}` 形式でScriptPropertiesに保存）。
+⚠️ `PropertiesService.getUserProperties()` は直接使用禁止。必ず `getUserProperty()` / `setUserProperty()` ヘルパーを使うこと。
+
+`STAFF_FIELD_MAP_`（settings.js）で定義された項目は Firestore `staffs` コレクションに自動ルーティングされる。それ以外は従来通り `_UP_{safeEmail}_{key}` 形式で ScriptProperties に保存。
+
+### Firestore `staffs` に移行済み（`getUserProperty()`/`setUserProperty()` 経由で自動ルーティング）
+
+| キー | Firestore フィールド | 内容 |
+|------|---------------------|------|
+| `DISPLAY_NAME` | `displayName` | 表示名 |
+| `SUBJECTS` | `subjects` | 担当教科（JSON配列） |
+| `PREFERRED_CAMPUSES` | `preferredCampuses` | 配属校舎コード配列（JSON） |
+| `AI_ASSISTANT_NAME` | `aiAssistantName` | AIアシスタント名（デフォルト: `イノイマン`） |
+| `AI_PERSONALITY` | `aiPersonality` | 喋り方（polite/friendly/energetic/cool/kansai/hakata/tohoku/nagoya/awa） |
+| `USER_THEME_COLOR` | `themeColor` | ユーザー個別テーマカラー |
+| `TEACHER_ID` | `teacherId` | 講師ID（`T{timestamp}_{random}`） |
+| `REGISTERED_EMAIL` | `email` | 登録メールアドレス |
+
+### `_UP_` ScriptProperties に保存（未移行）
 
 | キー | 内容 |
 |------|------|
-| `DISPLAY_NAME` | 表示名 |
-| `SUBJECTS` | 担当教科（JSON配列） |
-| `TEACHER_ID` | 講師ID（`T{timestamp}_{random}`） |
-| `REGISTERED_EMAIL` | 登録メールアドレス |
-| `AI_ASSISTANT_NAME` | AIアシスタント名（デフォルト: `イノイマン`） |
-| `AI_PERSONALITY` | 喋り方（polite/friendly/energetic/cool/kansai/hakata/tohoku/nagoya/awa） |
-| `USER_THEME_COLOR` | ユーザー個別テーマカラー |
-| `PREFERRED_CAMPUSES` | 配属校舎コード配列（JSON） |
 | `GEMINI_DAILY_DATE` | Gemini使用量：今日の日付 |
 | `GEMINI_DAILY_CALLS` | Gemini使用量：今日の呼び出し回数 |
 | `GEMINI_DAILY_TOKENS` | Gemini使用量：今日のトークン数 |
@@ -136,11 +160,14 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 | コレクション | DocId形式 | 用途 |
 |------------|---------|------|
+| `staffs` | `{teacherId}` | スタッフ情報（UserProperties から移行） |
+| `allowedUsers` | `{email}` | アクセス許可メールのホワイトリスト |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
 | `grades` | `{studentId}_{safe(testName)}` | 成績データ |
 | `schoolAverages` | `{year}_{safe(school)}_{safe(testName)}` | 学校別平均点 |
 | `testAnalysis` | `{year}_{safe(testName)}` | テスト全体AI分析 |
 | `studentAnalysis` | `{studentId}_{safe(testName)}` | 生徒別AI分析 |
+| `distCache` | `{year}_{safe(testName)}_dist` | 成績分析の分布キャッシュ |
 | `schedules` | `{year}_admin_{ms}` / `{year}_{school}_{type}_{date}` | 月間スケジュール |
 | `lectureEntries` | `{lectureId}_{campusCode}_{entryId}` | 講習日程 |
 | `lineSchedules` | `sch_{YYYYMM}_{type}` | LINEスケジューラー |
