@@ -163,7 +163,8 @@
           durationSlots: params.durationSlots || 9,
           subject: params.subject,
           grade: params.grade,
-          classLabel: params.classLabel || ''
+          classLabel: params.classLabel || '',
+          weekly: params.weekly || false
         };
       } else if (action === 'edit_lecture_entry') {
         execParams = {
