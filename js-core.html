@@ -537,8 +537,8 @@
     var btn = document.getElementById('setupInitBtn');
     var status = document.getElementById('setupStep4Status');
     var err = document.getElementById('setupStep4Error');
-    if (btn) { btn.disabled = true; btn.textContent = '初期化中...（1〜2分かかります）'; }
-    if (status) { status.style.display = 'block'; status.textContent = '⏳ フォルダ・シートを作成しています...'; }
+    if (btn) { btn.disabled = true; btn.textContent = '初期化中...'; }
+    if (status) { status.style.display = 'block'; status.textContent = '⏳ フォルダを作成しています...'; }
     if (err) err.style.display = 'none';
     google.script.run
       .withSuccessHandler(function(result) {
