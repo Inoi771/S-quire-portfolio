@@ -23,13 +23,7 @@ var PROP_KEYS = {
   HOLIDAY_CACHE: 'HOLIDAY_CACHE',             // 祝日キャッシュ（Googleカレンダーから取得・JSON）
   ACCESS_FOLDER_ID: 'ACCESS_FOLDER_ID',       // アクセス許可フォルダID（このフォルダの共有者がアプリ利用可能）
   LINE_CHANNEL_ACCESS_TOKEN: 'LINE_CHANNEL_ACCESS_TOKEN',          // LINE Messaging API チャンネルアクセストークン
-  LINE_USER_MAPPING: 'LINE_USER_MAPPING',                          // JSON: { "teacherId": "LINE_USER_ID" }
-  NOTIFICATION_METHODS: 'NOTIFICATION_METHODS',                    // JSON: { "teacherId": "gmail"/"line"/"both"/"none" }
-  CAMPUS_NOTIFICATION_ROUTING: 'CAMPUS_NOTIFICATION_ROUTING',             // JSON: { "campusCode": ["teacherId1", "teacherId2"] } 校舎別通知振り分け設定
   LINE_SCHEDULER_SETTINGS: 'LINE_SCHEDULER_SETTINGS',                     // JSON: LINEスケジューラーの種別ごとデフォルト設定
-  LINE_SCHEDULER_NOTIF_PREFS: 'LINE_SCHEDULER_NOTIF_PREFS',               // JSON: { "teacherId": { "meeting": "line"/"gmail"/"both"/"none", ... } } 種別ごと通知方法設定
-  TEACHER_ID_MAP: 'TEACHER_ID_MAP',                                        // JSON: { teacherId: { emails:[], name } } 講師ID→情報マッピング（全ユーザー共有）
-  NOTIFICATION_EMAILS: 'NOTIFICATION_EMAILS',                               // JSON: { "teacherId": "email@..." } Gmail通知先の個別メール設定
   AI_KNOWLEDGE_BASE: 'AI_KNOWLEDGE_BASE',                                   // JSON: [{id, category, content, updatedAt}] AIナレッジベース
   LECTURE_DEADLINE_OVERRIDES: 'LECTURE_DEADLINE_OVERRIDES',                 // JSON: { "lectureId": "YYYY-MM-DD" } 講習日程締切の手動上書き設定
   // Firebase / Firestore 設定

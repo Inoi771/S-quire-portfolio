@@ -226,9 +226,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `refreshHolidayCache()` — Googleカレンダーから祝日を取得しスクリプトプロパティ `HOLIDAY_CACHE` にJSON保存（`scheduledInitializeSheets()` から日次で呼ばれる）
 - `getCachedHolidays()` — `@aiCallable` キャッシュ済み祝日データを返す（アプリ起動時にフロントエンドが使用）
 - `getReAuthorizationUrl()` — GAS権限承認URLを取得する（oauthScopes追加後の再認証用。管理タブ「権限を承認する」ボタンから呼び出される）
-- `migrateNotificationEmailsToFirestore()` — NOTIFICATION_EMAILS を staffs.notificationEmail に移行（Admin のみ）
-- `migrateCampusRoutingToFirestore()` — CAMPUS_NOTIFICATION_ROUTING を Firestore config/notification_routing に移行（Admin のみ）
-
 ### セクション17: Gemini API 使用量トラッキング
 - `logGeminiUsage(operationName, usageMetadata)` — Gemini API呼び出し後に使用量をUserPropertiesに記録（日次・月次・操作一覧20件）。各API呼び出し関数の直後に挿入
 - `getMyGeminiUsage()` — `@aiCallable` 現在ユーザーのGemini API使用量（個人）を取得して返す（`{ mine: { today, month } }`）。AIアシスタントのプロンプト構築時にバックエンドから直接呼び出して使用量情報を注入
