@@ -166,8 +166,7 @@ function writeStaffToFirestore_(staff) {
  */
 function getSettings() {
   try {
-    // アプリフォルダ直下の assets フォルダから favicon.png と logo.png の公開URLを取得
-    var faviconUrl = '';
+    // アプリフォルダ直下の assets フォルダから logo.png の公開URLを取得
     var logoUrl = '';
     try {
       var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
@@ -176,23 +175,6 @@ function getSettings() {
         var assetsFolders = rootFolder.getFoldersByName('assets');
         if (assetsFolders.hasNext()) {
           var assetsFolder = assetsFolders.next();
-          // logo.png をファビコンとして使用（favicon.png より優先）
-          var logoFilesForFavicon = assetsFolder.getFilesByName('logo.png');
-          if (logoFilesForFavicon.hasNext()) {
-            var logoFileForFavicon = logoFilesForFavicon.next();
-            var logoFaviconBlob = logoFileForFavicon.getBlob();
-            faviconUrl = 'data:image/png;base64,' + Utilities.base64Encode(logoFaviconBlob.getBytes());
-          }
-          // logo.png がない場合は favicon.png にフォールバック
-          if (!faviconUrl) {
-            var faviconFiles = assetsFolder.getFilesByName('favicon.png');
-            if (faviconFiles.hasNext()) {
-              var faviconFile = faviconFiles.next();
-              var faviconBlob = faviconFile.getBlob();
-              var faviconBase64 = Utilities.base64Encode(faviconBlob.getBytes());
-              faviconUrl = 'data:image/png;base64,' + faviconBase64;
-            }
-          }
           var logoFiles = assetsFolder.getFilesByName('logo.png');
           if (logoFiles.hasNext()) {
             var logoFile = logoFiles.next();
@@ -205,25 +187,6 @@ function getSettings() {
     } catch (e) {
       Logger.log('❌ assets取得エラー: ' + e);
     }
-    // Drive にファビコン画像がない場合、外部URLから取得してCacheServiceでキャッシュ
-    if (!faviconUrl) {
-      try {
-        var faviconCache = CacheService.getScriptCache();
-        var cachedFavicon = faviconCache.get('FAVICON_BASE64');
-        if (cachedFavicon) {
-          faviconUrl = cachedFavicon;
-        } else {
-          var externalFaviconUrl = 'https://raw.githubusercontent.com/square1995/pronunciation-audio/main/images/gaslogo.png';
-          var faviconResp = UrlFetchApp.fetch(externalFaviconUrl, {muteHttpExceptions: true});
-          if (faviconResp.getResponseCode() === 200) {
-            faviconUrl = 'data:image/png;base64,' + Utilities.base64Encode(faviconResp.getContent());
-            faviconCache.put('FAVICON_BASE64', faviconUrl, 21600); // 6時間キャッシュ
-          }
-        }
-      } catch (e2) {
-        Logger.log('⚠ 外部ファビコン取得エラー: ' + e2);
-      }
-    }
 
     var settings = {
       geminiApiKey: getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定',
@@ -231,7 +194,6 @@ function getSettings() {
       themeColor: getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b',
       currentUser: getCurrentUserEmail(),
       displayName: getUserProperty('DISPLAY_NAME') || '',
-      faviconUrl: faviconUrl,
       logoUrl: logoUrl
     };
 
