@@ -13,22 +13,29 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 
 ### 講師ID発行フロー
 ```
-①LINE自己登録 → getOrCreateTeacherIdForEmail_(email, name) → TEACHER_ID_MAP に登録
-②管理者手動追加 → getOrCreateTeacherIdForEmail_(email, '') → TEACHER_ID_MAP に登録
-③初回アプリ起動 → getUserProfile() → 既存IDがあれば再利用、なければ新規生成 → UserProperties TEACHER_ID に保存
+①LINE自己登録 → doPost() → Firestore staffs に新規ドキュメント作成
+②管理者手動追加 → addAllowedUser() → Firestore staffs に新規ドキュメント作成
+③初回アプリ起動 → getUserProfile() → Firestore staffs を検索、なければ新規作成
 ```
 
-### TEACHER_ID_MAP 構造（ScriptProperties）
+### staffs コレクション構造（Firestore）
 ```json
 {
-  "T1707123456789_abc123def": { "email": "teacher@example.com", "name": "田中 花子" }
+  "teacherId": "T1707123456789_abc123def",
+  "email": "teacher@example.com",
+  "name": "田中 花子",
+  "notificationEmail": "",
+  "notificationMethod": "gmail",
+  "lineUserId": null
 }
 ```
+
+> ⚠️ `TEACHER_ID_MAP`（ScriptProperties）はレガシー。マイグレーション関数 `migrateStaffToFirestore()` でのみ参照される。
 
 ### 新機能実装時のルール
 
 1. 人物の参照はIDで行う（名前・メールを外部キーにしない）
-2. 表示名は動的に解決する（TEACHER_ID_MAPから毎回引く）
+2. 表示名は動的に解決する（Firestore staffs から毎回引く）
 3. IDは一度発行したら変更しない（ソフトデリートで対応）
 4. 新エンティティにも必ずIDをふる
 

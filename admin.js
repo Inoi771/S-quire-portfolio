@@ -1694,6 +1694,53 @@ function parseGeminiErrorMessage_(response) {
 // ========================================
 
 /**
+ * NOTIFICATION_EMAILS ScriptProperty から staffs.notificationEmail に移行する
+ * Admin のみ実行可能
+ * @return {Object} { success, migratedCount, message }
+ */
+function migrateNotificationEmailsToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  try {
+    var raw = getProperty(PROP_KEYS.NOTIFICATION_EMAILS);
+    if (!raw) return { success: true, migratedCount: 0, message: 'NOTIFICATION_EMAILS は空です（移行不要）' };
+    var map = JSON.parse(raw);
+    var count = 0;
+    Object.keys(map).forEach(function(teacherId) {
+      var email = map[teacherId];
+      if (!email) return;
+      var staff = getStaffByTeacherId_(teacherId);
+      if (staff) {
+        staff.notificationEmail = email.toLowerCase();
+        writeStaffToFirestore_(staff);
+        count++;
+      }
+    });
+    return { success: true, migratedCount: count, message: count + '件の通知メールを staffs に移行しました' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * CAMPUS_NOTIFICATION_ROUTING ScriptProperty から Firestore config/notification_routing に移行する
+ * Admin のみ実行可能
+ * @return {Object} { success, message }
+ */
+function migrateCampusRoutingToFirestore() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
+  try {
+    var raw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
+    if (!raw) return { success: true, message: 'CAMPUS_NOTIFICATION_ROUTING は空です（移行不要）' };
+    var routingMap = JSON.parse(raw);
+    routingMap.updatedAt = new Date().toISOString();
+    firestoreSet_('config', 'notification_routing', routingMap);
+    return { success: true, message: '通知振り分け設定を Firestore に移行しました' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * スクリプトプロパティからスタッフ情報を収集し、Firestore staffs コレクションに移行する
  * Admin のみ実行可能
  * @return {Object} { success, total, savedCount, skippedCount, errors, staffList }

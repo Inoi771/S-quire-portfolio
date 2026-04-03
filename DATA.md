@@ -22,11 +22,11 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API トークン |
 | `LINE_USER_MAPPING` | ⚠️ Firestore `staffs.lineUserId` に移行済み。マイグレーション用に残存 |
 | `NOTIFICATION_METHODS` | ⚠️ Firestore `staffs.notificationMethod` に移行済み。マイグレーション用に残存 |
-| `CAMPUS_NOTIFICATION_ROUTING` | 校舎別通知振り分け（JSON: `{"campusCode": ["teacherId1"]}`） |
+| `CAMPUS_NOTIFICATION_ROUTING` | ⚠️ Firestore `config/notification_routing` に移行済み。マイグレーション用に残存 |
 | `LINE_SCHEDULER_SETTINGS` | LINEスケジューラー設定（JSON） |
 | `LINE_SCHEDULER_NOTIF_PREFS` | ⚠️ Firestore `staffs.schedulerNotifPrefs` に移行済み。マイグレーション用に残存 |
 | `TEACHER_ID_MAP` | 講師IDマッピング（JSON: `{teacherId: {emails:[], name}}`） |
-| `NOTIFICATION_EMAILS` | 講師別Gmail通知先メール（JSON: `{teacherId: "email"}`） |
+| `NOTIFICATION_EMAILS` | ⚠️ Firestore `staffs.notificationEmail` に移行済み。マイグレーション用に残存 |
 | `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列: `[{id, category, content, updatedAt}]`） |
 | `LECTURE_DEADLINE_OVERRIDES` | 講習日程締切手動上書き（JSON: `{"2025-summer": "2025-06-15"}`） |
 | `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `fir-quire`） |
@@ -160,8 +160,9 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 | コレクション | DocId形式 | 用途 |
 |------------|---------|------|
-| `staffs` | `{teacherId}` | スタッフ情報（UserProperties から移行） |
+| `staffs` | `{teacherId}` | スタッフ情報（UserProperties から移行。`notificationEmail` フィールド含む） |
 | `allowedUsers` | `{email}` | アクセス許可メールのホワイトリスト |
+| `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
 | `grades` | `{studentId}_{safe(testName)}` | 成績データ |
 | `schoolAverages` | `{year}_{safe(school)}_{safe(testName)}` | 学校別平均点 |
