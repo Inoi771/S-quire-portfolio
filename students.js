@@ -4,34 +4,6 @@
 // ========================================
 // 生徒情報登録、成績入力、データ取得・分析
 
-/**
- * 成績管理用フォルダを取得
- * 「成績管理」フォルダへのアクセスポイント
- * @return {Folder|null} 成績管理フォルダ
- */
-function getGradesFolder() {
-  try {
-    var appFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-    
-    if (!appFolderId) {
-      Logger.log('❌ APP_FOLDER_IDが設定されていません');
-      return null;
-    }
-    
-    var rootFolder = DriveApp.getFolderById(appFolderId);
-    var gradesFolder = getFolderByName(rootFolder, '成績管理');
-    
-    if (!gradesFolder) {
-      Logger.log('❌ 成績管理フォルダが見つかりません');
-      return null;
-    }
-    
-    return gradesFolder;
-  } catch (error) {
-    Logger.log('❌ getGradesFolderエラー: ' + error);
-    return null;
-  }
-}
 
 /**
  * 成績管理フォルダ内の年度フォルダ一覧を取得
