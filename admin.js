@@ -23,7 +23,8 @@ function getAllScriptPropertiesForGUI() {
       'NOTIFICATION_METHODS',
       'NOTIFICATION_EMAILS',
       'LINE_SCHEDULER_NOTIF_PREFS',
-      'CAMPUS_NOTIFICATION_ROUTING'
+      'CAMPUS_NOTIFICATION_ROUTING',
+      'GRADES_GRADE_CODES_CONFIG'   // 定義のみで未使用
     ];
     var scriptProps = PropertiesService.getScriptProperties();
     DEPRECATED_KEYS.forEach(function(k) {
