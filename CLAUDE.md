@@ -311,7 +311,6 @@ MyProject/
 |-----------|--------|
 | `admin-users` | 👥 ユーザー管理 |
 | `admin-properties` | ⚙️ 設定 |
-| `admin-drive` | 📁 Drive |
 | `admin-logs` | 📋 ログ |
 | `admin-fixed-events` | 📅 固定イベント |
 | `admin-normal-config` | 📋 通常設定 |

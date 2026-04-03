@@ -1719,7 +1719,6 @@
             <button class="admin-tab-btn" data-subtab="admin-scheduler" onclick="switchAdminTab(this, 'scheduler'); initLineScheduler();">📩 LINE通知</button>
             <button class="admin-tab-btn" data-subtab="admin-chatbot" onclick="switchAdminTab(this, 'chatbot'); initChatbotAdmin();">🤖 チャットボット</button>
             <button class="admin-tab-btn" data-subtab="admin-properties" onclick="switchAdminTab(this, 'properties')">⚙️ 設定</button>
-<button class="admin-tab-btn" data-subtab="admin-drive" onclick="switchAdminTab(this, 'drive')">📁 Drive</button>
             <button class="admin-tab-btn" data-subtab="admin-logs" onclick="switchAdminTab(this, 'logs')">📋 ログ</button>
           </div>
         </div>
@@ -2052,47 +2051,6 @@
 
         </div>
 
-        <!-- ===== 📁 Drive タブ ===== -->
-        <div id="admin-drive" class="admin-tab-content" style="display: none;">
-          <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <h3>📁 Google Drive 管理</h3>
-            
-            <div style="margin-bottom: 30px;">
-              <h4>フォルダを探索</h4>
-              <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 20px;">
-                <input type="text" id="folderIdInput" placeholder="フォルダ ID を入力（未入力=ルート）" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
-                <button onclick="exploreDriveFolder()" style="padding: 10px 20px; background: #4facfe; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">探索</button>
-              </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px;">
-              <!-- フォルダ一覧 -->
-              <div>
-                <h4>📂 フォルダ</h4>
-                <div id="driveFoldersList" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px; background: #f8f9fa;">
-                  <!-- フォルダが表示される -->
-                </div>
-              </div>
-              
-              <!-- ファイル一覧 -->
-              <div>
-                <h4>📄 ファイル</h4>
-                <div id="driveFilesList" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px; background: #f8f9fa;">
-                  <!-- ファイルが表示される -->
-                </div>
-              </div>
-            </div>
-
-            <div style="padding: 20px; background: #f8f9fa; border-radius: 8px;">
-              <h4>📤 PDF をアップロード</h4>
-              <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px;">
-                <input type="file" id="pdfFileInput" accept=".pdf" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
-                <button onclick="uploadPDFFile()" style="padding: 10px 20px; background: var(--theme-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">アップロード</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- ===== 📋 ログタブ ===== -->
         <div id="admin-logs" class="admin-tab-content" style="display: none;">
           <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
@@ -2177,58 +2135,6 @@
                 📂 自動インポートを実行
               </button>
             </div>
-          </div>
-
-          <!-- ===== 📥 生徒一括インポート ===== -->
-          <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
-            <h3>📥 生徒一括インポート</h3>
-            <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
-              スプレッドシートからコピーしたデータを貼り付けて、生徒を一括登録できます。<br>
-              形式：<strong>校舎名（またはコード）</strong>・<strong>学年（例: 中1）</strong>・<strong>氏名（漢字）</strong> をタブ区切りで貼り付けてください。<br>
-              <span style="color:#999;">※ 氏名は「山田 太郎」のようにスペースで姓と名を区切ると自動分割されます。ふりがなは後から個別入力できます。</span>
-            </p>
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-              <label style="font-weight:600; font-size:13px; color:#333; white-space:nowrap;">登録年度：</label>
-              <input type="number" id="studentImportYear" value="2024" min="2020" max="2030" style="padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:14px; width:90px;">
-              <span style="color:#666; font-size:12px;">年度（例: 2024年度の生徒なら 2024）</span>
-            </div>
-            <textarea id="studentImportTextarea" placeholder="例：&#10;本校	中3	山田 太郎&#10;北校	中3	鈴木花子&#10;（Excelやスプレッドシートからコピー&amp;ペーストできます）" style="width:100%; height:140px; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:13px; box-sizing:border-box; resize:vertical; font-family: monospace;"></textarea>
-            <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-              <button onclick="previewStudentImport()" style="padding:10px 20px; background:#4facfe; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:14px;">
-                🔍 プレビュー確認
-              </button>
-              <button id="studentImportExecBtn" onclick="executeStudentImport()" style="padding:10px 20px; background:var(--theme-color); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:14px; display:none;">
-                ✅ インポート実行
-              </button>
-            </div>
-            <div id="studentImportPreview" style="margin-top:14px;"></div>
-            <div id="studentImportResult" style="margin-top:10px;"></div>
-          </div>
-
-          <!-- ===== 📊 成績一括インポート ===== -->
-          <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
-            <h3>📊 成績一括インポート</h3>
-            <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
-              スプレッドシートからコピーしたデータを貼り付けて、成績を一括登録できます。<br>
-              形式：<strong>テスト名・生徒ID・国語・社会・数学・理科・英語・合計点</strong> の順にタブ区切りで貼り付けてください。<br>
-              <span style="color:#999;">※ 生徒IDは10桁の数字です。Excelで開いて先頭ゼロが消えた場合は自動補完されます。</span>
-            </p>
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-              <label style="font-weight:600; font-size:13px; color:#333; white-space:nowrap;">対象年度：</label>
-              <input type="number" id="gradeImportYear" value="2024" min="2020" max="2030" style="padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:14px; width:90px;">
-              <span style="color:#666; font-size:12px;">年度（例: 2024年度のテストなら 2024）</span>
-            </div>
-            <textarea id="gradeImportTextarea" placeholder="例：&#10;１月実力テスト	0120251301	80	70	90	75	85	400&#10;（テスト名[TAB]生徒ID[TAB]国語[TAB]社会[TAB]数学[TAB]理科[TAB]英語[TAB]合計点）" style="width:100%; height:140px; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:13px; box-sizing:border-box; resize:vertical; font-family: monospace;"></textarea>
-            <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-              <button onclick="previewGradeImport()" style="padding:10px 20px; background:#4facfe; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:14px;">
-                🔍 プレビュー確認
-              </button>
-              <button id="gradeImportExecBtn" onclick="executeGradeImport()" style="padding:10px 20px; background:var(--theme-color); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:14px; display:none;">
-                ✅ インポート実行
-              </button>
-            </div>
-            <div id="gradeImportPreview" style="margin-top:14px;"></div>
-            <div id="gradeImportResult" style="margin-top:10px;"></div>
           </div>
 
         </div>
@@ -2663,11 +2569,9 @@
               <h3 style="margin:0 0 12px;">📁 Google Drive フォルダ構成</h3>
               <div style="background:#f8f9fa; border-radius:8px; padding:16px; font-family:monospace; font-size:13px; line-height:2;">
                 <div>📂 共有フォルダ（例：個別指導スクエア） ← <strong>ACCESS_FOLDER_ID</strong></div>
-                <div style="padding-left:24px;">スタッフをここに「編集者」として追加するとアプリを使える</div>
                 <div style="padding-left:24px;">└── 📂 S-quire ← <strong>APP_FOLDER_ID</strong></div>
                 <div style="padding-left:48px;">├── 📂 月間スケジュール/（年度フォルダ → 予定データ）</div>
                 <div style="padding-left:48px;">├── 📂 成績管理/（年度フォルダ → 成績データ）</div>
-                <div style="padding-left:48px;">├── 📂 生徒マスタ/（生徒一覧データ）</div>
                 <div style="padding-left:48px;">├── 📂 設定/（操作ログ・LINEスケジューラー・チラシAI等）</div>
                 <div style="padding-left:48px;">├── 📂 配布物/（内部配布物タブで「Driveに保存」した際に自動作成）</div>
                 <div style="padding-left:72px;">└── {lectureId}/{campusCode}/*.pdf</div>
@@ -2681,15 +2585,14 @@
             <div style="background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:20px;">
               <h3 style="margin:0 0 12px;">👥 スタッフのアクセス管理</h3>
               <div style="background:#e8f5e9; border-left:4px solid #43e97b; padding:12px 16px; border-radius:0 8px 8px 0; margin-bottom:12px;">
-                <p style="margin:0; font-size:13px; font-weight:600;">スタッフがアプリを使えるようにする方法</p>
+                <p style="margin:0; font-size:13px; font-weight:600;">スタッフのアクセス権限はアプリ内で管理します</p>
               </div>
               <ol style="font-size:14px; line-height:2; padding-left:20px; margin:0;">
-                <li>Google Drive で「共有フォルダ（ACCESS_FOLDER_ID）」を開く</li>
-                <li>右クリック → 「共有」をクリック</li>
-                <li>スタッフのGoogleアカウントのメールアドレスを入力</li>
-                <li>権限を「<strong>編集者</strong>」に設定して「送信」</li>
+                <li>管理タブ → 「👥 ユーザー管理」を開く</li>
+                <li>「アクセス許可ユーザー」欄にスタッフのGoogleアカウントのメールアドレスを追加</li>
+                <li>必要に応じてロール（Admin / Staff）を設定</li>
               </ol>
-              <p style="font-size:13px; color:#666; margin:12px 0 0;">※ アクセスを取り消す場合は、同じ共有設定から「アクセスを削除」してください。</p>
+              <p style="font-size:13px; color:#666; margin:12px 0 0;">※ アクセスを取り消す場合は、ユーザー管理からそのアカウントを削除してください。</p>
             </div>
 
             <!-- 💬 LINE通知の設定手順 -->
