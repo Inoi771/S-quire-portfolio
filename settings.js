@@ -311,6 +311,35 @@ function setUserProperty(key, value) {
 }
 
 /**
+ * Firestore 移行済みの _UP_ スクリプトプロパティを一括削除
+ * STAFF_FIELD_MAP_ のキーに対応する古い _UP_ キーをすべて削除する。
+ * アプリ起動時（getAppStartupData）に呼び出される。
+ */
+function cleanupMigratedUserProperties_() {
+  try {
+    var sp = PropertiesService.getScriptProperties();
+    var all = sp.getProperties();
+    var migratedKeys = Object.keys(STAFF_FIELD_MAP_);
+    var toDelete = Object.keys(all).filter(function(propKey) {
+      if (propKey.indexOf('_UP_') !== 0) return false;
+      // メール部分は小文字・アンダースコアのみ。キー部分は大文字。
+      // "_DISPLAY_NAME" のように末尾が "_" + 移行済みキーかチェック
+      return migratedKeys.some(function(mk) {
+        return propKey.slice(-(mk.length + 1)) === '_' + mk;
+      });
+    });
+    toDelete.forEach(function(k) {
+      try { sp.deleteProperty(k); } catch(e) {}
+    });
+    if (toDelete.length > 0) {
+      Logger.log('✓ cleanupMigratedUserProperties_: ' + toDelete.length + ' 件の古い _UP_ キーを削除');
+    }
+  } catch(e) {
+    // クリーンアップ失敗はサイレントに無視
+  }
+}
+
+/**
  * ユーザーが登録したメールアドレスを取得
  * staffs コレクションの email フィールドから取得する
  * @return {string} メールアドレス
@@ -791,6 +820,9 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
 
     // 未登録スタッフ判定（Admin と初回セットアップは除く）
     var isUnregistered = !isFirstSetup && !isAdminResult && !staff;
+
+    // 移行済み _UP_ キーの一括クリーンアップ（スタッフ登録済みの場合のみ）
+    if (staff) cleanupMigratedUserProperties_();
 
     Logger.log('✓ getAppStartupData: 完了（admin=' + isAdminResult + ', firstSetup=' + isFirstSetup + ', staff=' + !!staff + '）');
     return {
