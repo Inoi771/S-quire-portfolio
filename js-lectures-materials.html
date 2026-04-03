@@ -848,7 +848,7 @@
                 console.error('Drive保存失敗:', err);
                 appAlert('保存に失敗しました。');
               })
-              .saveDistributionFile(lectureId, campusCode, fileName, pdfBase64);
+              .saveDistributionFile(lectureId, campusCode, lecName, campusName, fileName, pdfBase64);
             return;
           }
 
@@ -906,6 +906,10 @@
         return;
       }
 
+      var period = (lecturePeriods || []).filter(function(p) { return p.id === lectureId; })[0];
+      var lecName = period ? period.name : lectureId;
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+
       listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">⏳ 読み込み中...</div>';
 
       google.script.run
@@ -916,7 +920,7 @@
           console.error('配布物一覧取得失敗:', err);
           listEl.innerHTML = '<div style="color:#e57373;font-size:12px;">読み込みに失敗しました</div>';
         })
-        .listDistributionFiles(lectureId, campusCode);
+        .listDistributionFiles(lectureId, campusCode, lecName, campusName);
     }
 
     /**
