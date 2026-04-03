@@ -1687,52 +1687,6 @@ function parseGeminiErrorMessage_(response) {
   return '予期しないAPIエラーが発生しました (HTTP ' + code + ')。管理者に報告してください';
 }
 
-/**
- * 【一時関数】管理者・スタッフ登録をリセットする（テスト用）
- * ADMIN_EMAILS を空にし、Firestore の staffs / allowedUsers / lectureEntries を全削除
- * スクリプトプロパティ・スケジュール・成績データ等はそのまま残す
- * @return {Object} { success, message, deletedCounts }
- */
-function resetUserRegistrations() {
-  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
-  try {
-    var counts = { staffs: 0, allowedUsers: 0, lectureEntries: 0 };
-
-    // 1. Firestore staffs を全削除
-    var staffDocs = firestoreQuery_('staffs', [], 500);
-    (staffDocs || []).forEach(function(doc) {
-      var docId = doc.teacherId || doc._id;
-      if (docId) { firestoreDelete_('staffs', docId); counts.staffs++; }
-    });
-
-    // 2. Firestore allowedUsers を全削除
-    var allowedDocs = firestoreQuery_('allowedUsers', [], 500);
-    (allowedDocs || []).forEach(function(doc) {
-      var docId = doc.email || doc._id;
-      if (docId) { firestoreDelete_('allowedUsers', docId); counts.allowedUsers++; }
-    });
-
-    // 3. Firestore lectureEntries を全削除
-    var lecDocs = firestoreQuery_('lectureEntries', [], 500);
-    (lecDocs || []).forEach(function(doc) {
-      var docId = doc._id;
-      if (docId) { firestoreDelete_('lectureEntries', docId); counts.lectureEntries++; }
-    });
-
-    // 4. ADMIN_EMAILS を空にする（これで初回ウィザードが表示される）
-    setProperty(PROP_KEYS.ADMIN_EMAILS, '');
-
-    // 5. config/notification_routing も削除（講師IDが変わるため）
-    try { firestoreDelete_('config', 'notification_routing'); } catch(e) {}
-
-    Logger.log('✓ resetUserRegistrations 完了: ' + JSON.stringify(counts));
-    return { success: true, message: 'リセット完了。ページを再読み込みすると初回ウィザードが表示されます。', deletedCounts: counts };
-  } catch (error) {
-    Logger.log('❌ resetUserRegistrationsエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
