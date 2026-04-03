@@ -144,7 +144,8 @@ markdown# S-quire — プロジェクト設計書
 
 | 項目 | 内容 |
 |------|------|
-| アプリ名 | S-quire |
+| アプリ名 | S-quire（読み：**スクワイア**） |
+| 名前の由来 | 「**Square**（個別指導スクエア）」＋「**Esquire**（従者・見習い騎士）」の造語。塾名を含みつつ、生徒を支える存在という意味 |
 | 種別 | Firebase Hosting（フロント） + Google Apps Script（バックエンドAPI） |
 | 用途 | 個別指導スクエア（個別指導塾）向け業務管理ダッシュボード |
 | 言語 | JavaScript (GAS) / HTML / CSS |
