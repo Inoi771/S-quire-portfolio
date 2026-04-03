@@ -128,7 +128,10 @@
 - `deleteAiKnowledgeEntry(entryId)` — ナレッジベースのエントリ削除（Admin のみ）
 - `getAiKnowledgeBaseForPrompt_()` — プロンプト用にナレッジベースをテキスト形式で返す内部ヘルパー
 - `applyConfigChange_(settings)` — config_changeの推奨設定をバックエンドで実際に適用する内部ヘルパー（themeColor, aiAssistantName, aiPersonality, displayName）
-- `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule）
+- `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule / create_lecture_entry / edit_lecture_entry / delete_lecture_entry）
+- `createLectureEntryAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを1件追加する内部ヘルパー
+- `editLectureEntryAI_(lectureId, campusCode, entryId, changes)` — AIアシスタントから講習エントリを1件編集する内部ヘルパー
+- `deleteLectureEntryAI_(lectureId, campusCode, entryId)` — AIアシスタントから講習エントリを1件削除する内部ヘルパー
 
 #### ⚠️【重要】Gemini API 呼び出し時の設計ルール
 
