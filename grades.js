@@ -418,11 +418,10 @@ function getGradesConfigForWeb() {
     var campusConfigJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
     var campusConfig = campusConfigJson ? JSON.parse(campusConfigJson) : [];
 
-    // 学年（GRADES 定数から全12学年を構築）
-    var allGrades = [];
-    for (var code in GRADES) {
-      allGrades.push({ code: code, name: GRADES[code] });
-    }
+    // 学年（GRADES 定数から全12学年を構築・数値順でソート）
+    var allGrades = Object.keys(GRADES)
+      .sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); })
+      .map(function(code) { return { code: code, name: GRADES[code] }; });
 
     // 表示学年フィルター
     var visibleJson = getScriptProperty(CONFIG_PROP_KEYS.GRADE_VISIBLE_CONFIG);
