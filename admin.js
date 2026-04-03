@@ -30,6 +30,13 @@ function getAllScriptPropertiesForGUI() {
     DEPRECATED_KEYS.forEach(function(k) {
       try { scriptProps.deleteProperty(k); } catch(e) {}
     });
+    // GEMINI_TEAM_* はチーム全体使用量追跡の廃止機能 → プレフィックスで一括削除
+    var allPropsForCleanup = scriptProps.getProperties();
+    Object.keys(allPropsForCleanup).forEach(function(k) {
+      if (k.indexOf('GEMINI_TEAM_') === 0) {
+        try { scriptProps.deleteProperty(k); } catch(e) {}
+      }
+    });
 
     var props = getAllProperties();
     var safProps = [];
@@ -37,8 +44,9 @@ function getAllScriptPropertiesForGUI() {
     for (var key in props) {
       // 廃止キー・内部自動管理キーは表示しない
       if (DEPRECATED_KEYS.indexOf(key) !== -1) continue;
-      if (key === 'HOLIDAY_CACHE') continue;       // 祝日キャッシュ（自動更新・編集不要）
-      if (key.indexOf('_UP_') === 0) continue;     // ユーザー個別データ（内部管理）
+      if (key === 'HOLIDAY_CACHE') continue;           // 祝日キャッシュ（自動更新・編集不要）
+      if (key.indexOf('_UP_') === 0) continue;        // ユーザー個別データ（内部管理）
+      if (key.indexOf('GEMINI_TEAM_') === 0) continue; // 廃止済み（上で削除済みのため通常到達しない）
 
       var value = props[key];
       var displayValue = value;
