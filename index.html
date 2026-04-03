@@ -2482,6 +2482,26 @@
                       <td style="padding:8px 12px;">アプリ全体のテーマカラー（16進数）。スタッフが個人設定している場合は個人設定が優先される</td>
                       <td style="padding:8px 12px; color:#666;">設定タブから変更推奨。例：#43e97b</td>
                     </tr>
+                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FIREBASE_PROJECT_ID</td>
+                      <td style="padding:8px 12px;">Firebase プロジェクトID（Firestore連携に必要）</td>
+                      <td style="padding:8px 12px; color:#666;">例：fir-quire</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FIREBASE_CLIENT_EMAIL</td>
+                      <td style="padding:8px 12px;">Firebase サービスアカウントのメールアドレス</td>
+                      <td style="padding:8px 12px; color:#666;">Firebaseコンソール → プロジェクト設定 → サービスアカウントで確認</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FIREBASE_PRIVATE_KEY</td>
+                      <td style="padding:8px 12px;">Firebase サービスアカウントの秘密鍵（PEM形式）</td>
+                      <td style="padding:8px 12px; color:#666;">GASエディタのスクリプトプロパティから直接設定推奨（長い文字列のため）</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FIREBASE_WEB_API_KEY</td>
+                      <td style="padding:8px 12px;">Firebase Web API キー（Firebase Auth に必要）</td>
+                      <td style="padding:8px 12px; color:#666;">Firebaseコンソール → プロジェクト設定 → 全般 → ウェブAPIキー</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -2504,14 +2524,24 @@
                       <td style="padding:8px 12px; color:#666;">LINE Developersで取得。下記LINE設定手順を参照</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">LINE_USER_MAPPING</td>
-                      <td style="padding:8px 12px;">スタッフのLINE User IDとの対応表（スタッフがLINE登録すると自動設定される）</td>
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">TEACHER_ID_MAP</td>
+                      <td style="padding:8px 12px;">講師ID→情報マッピング（JSON）。スタッフ登録時に自動設定される</td>
                       <td style="padding:8px 12px; color:#666;">手動設定不要。ユーザー管理タブで確認可</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">NOTIFICATION_METHODS</td>
-                      <td style="padding:8px 12px;">スタッフごとの通知方法設定（gmail / line / both / none）</td>
-                      <td style="padding:8px 12px; color:#666;">各スタッフが設定タブから変更。手動設定不要</td>
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">NOTIFICATION_EMAILS</td>
+                      <td style="padding:8px 12px;">講師別のGmail通知先メールアドレス（JSON）</td>
+                      <td style="padding:8px 12px; color:#666;">ユーザー管理タブから変更推奨</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">LINE_USER_MAPPING</td>
+                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.lineUserId）。マイグレーション用に残存</td>
+                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">NOTIFICATION_METHODS</td>
+                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.notificationMethod）。マイグレーション用に残存</td>
+                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee; background:#fafafa;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">CAMPUS_NOTIFICATION_ROUTING</td>
@@ -2524,9 +2554,9 @@
                       <td style="padding:8px 12px; color:#666;">LINE通知タブから変更推奨</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">LINE_SCHEDULER_NOTIF_PREFS</td>
-                      <td style="padding:8px 12px;">スタッフ別・種別別のLINEスケジューラー通知方法設定</td>
-                      <td style="padding:8px 12px; color:#666;">各スタッフが設定タブから変更。手動設定不要</td>
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">LINE_SCHEDULER_NOTIF_PREFS</td>
+                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.schedulerNotifPrefs）。マイグレーション用に残存</td>
+                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FORM_EMAIL_SENDER</td>
@@ -2643,9 +2673,13 @@
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">GEMINI_TEAM_DAILY_*<br>GEMINI_TEAM_MONTHLY_*</td>
                       <td style="padding:8px 12px; color:#888;">チーム全体のGemini API使用量トラッキング（日次・月次。自動更新）</td>
                     </tr>
-                    <tr style="background:#fafafa;">
+                    <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">GRADES_*_CONFIG</td>
-                      <td style="padding:8px 12px; color:#888;">成績管理の各種マスター設定（テスト名・校舎・学年・志望校）。管理タブ → 設定から変更</td>
+                      <td style="padding:8px 12px; color:#888;">成績管理の各種マスター設定（テスト名・校舎・学年コード・志望校・偏差値設定）。管理タブ → 設定から変更</td>
+                    </tr>
+                    <tr style="background:#fafafa;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">FLYER_ALL_CONFIGS</td>
+                      <td style="padding:8px 12px; color:#888;">チラシ設定（非推奨・Firestore flyerAi に移行済み。レガシー互換で残存）</td>
                     </tr>
                   </tbody>
                 </table>
