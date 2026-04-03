@@ -296,6 +296,12 @@ function setUserProperty(key, value) {
       }
       staff[firestoreField] = writeVal;
       writeStaffToFirestore_(staff);
+      // 古い _UP_ スクリプトプロパティを削除（移行クリーンアップ）
+      try {
+        var sp = PropertiesService.getScriptProperties();
+        sp.deleteProperty(getSafeUserKey_() + key);
+        sp.deleteProperty('_UP_anonymous_' + key);
+      } catch(e) {}
       return true;
     }
   }
