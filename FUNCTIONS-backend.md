@@ -226,6 +226,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `refreshHolidayCache()` — Googleカレンダーから祝日を取得しスクリプトプロパティ `HOLIDAY_CACHE` にJSON保存（`scheduledInitializeSheets()` から日次で呼ばれる）
 - `getCachedHolidays()` — `@aiCallable` キャッシュ済み祝日データを返す（アプリ起動時にフロントエンドが使用）
 - `getReAuthorizationUrl()` — GAS権限承認URLを取得する（oauthScopes追加後の再認証用。管理タブ「権限を承認する」ボタンから呼び出される）
+- `migrateNotificationEmailsToFirestore()` — NOTIFICATION_EMAILS を staffs.notificationEmail に移行（Admin のみ）
+- `migrateCampusRoutingToFirestore()` — CAMPUS_NOTIFICATION_ROUTING を Firestore config/notification_routing に移行（Admin のみ）
 
 ### セクション17: Gemini API 使用量トラッキング
 - `logGeminiUsage(operationName, usageMetadata)` — Gemini API呼び出し後に使用量をUserPropertiesに記録（日次・月次・操作一覧20件）。各API呼び出し関数の直後に挿入
@@ -359,10 +361,12 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `sendLineReply_(replyToken, message)` — LINE 返信送信（内部ヘルパー・doPost 内のみ使用）
 - `sendLineMessage(lineUserId, message)` — LINE プッシュ通知送信
 - `sendNotification(teacherId, subject, body)` — `@aiCallable` 通知送信（teacherId からメールを解決し Gmail/LINE/両方を自動判定）
-- `getNotificationSettings()` — `@aiCallable` 現在ユーザーの通知設定取得（isEligible・method・lineRegistered・registeredEmail）。isEligible は CAMPUS_NOTIFICATION_ROUTING に自分の teacherId が含まれるかで判定
-- `updateNotificationSettings(method)` — `@aiCallable` 通知方法更新（gmail/line/both/none）
-- `getNotificationMembers()` — CAMPUS_NOTIFICATION_ROUTING 内の全 teacherId を重複排除で取得（Admin のみ）
-- `getLineRegisteredUsers()` — LINE 経由で自己登録済みのユーザー一覧取得（Admin のみ・teacherId ベース）。TEACHER_ID_MAP から名前を取得
+- `getCampusRoutingMap_()` — Firestore config/notification_routing から校舎別通知振り分け設定を取得する内部ヘルパー
+- `setCampusRoutingMap_(routingMap)` — Firestore config/notification_routing に校舎別通知振り分け設定を保存する内部ヘルパー
+- `getNotificationSettings()` — `@aiCallable` 現在ユーザーの通知設定取得（isEligible・method・lineRegistered・registeredEmail）。isEligible は Firestore config/notification_routing に自分の teacherId が含まれるかで判定
+- `updateNotificationSettings(method, notificationEmail)` — `@aiCallable` 通知方法更新（gmail/line/both/none）。通知先メールは staffs.notificationEmail に保存
+- `getNotificationMembers()` — Firestore config/notification_routing 内の全 teacherId を重複排除で取得（Admin のみ）
+- `getLineRegisteredUsers()` — LINE 経由で自己登録済みのユーザー一覧取得（Admin のみ・teacherId ベース）。staffs から名前を取得
 - `getLineUserMapping()` — LINE User ID マッピング一覧取得（Admin のみ・確認用）
 - `getCampusNotificationRouting()` — 校舎ごとの通知振り分け設定を全件取得（Admin のみ・teacherIds 配列を返す）
 - `updateCampusNotificationRouting(campusCode, teacherIds)` — 指定校舎の通知振り分け先 teacherId 一覧を更新（Admin のみ）

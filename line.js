@@ -19,6 +19,29 @@ function getStaffByTeacherId_(teacherId) {
 }
 
 /**
+ * Firestore config/notification_routing から校舎別通知振り分け設定を取得する内部ヘルパー
+ * @return {Object} routingMap（例: {"01": ["T123", "T456"], "02": ["T789"]}）
+ */
+function getCampusRoutingMap_() {
+  var doc = firestoreGet_('config', 'notification_routing');
+  if (!doc) return {};
+  var map = {};
+  Object.keys(doc).forEach(function(k) {
+    if (k !== '_id' && k !== 'updatedAt') map[k] = doc[k];
+  });
+  return map;
+}
+
+/**
+ * Firestore config/notification_routing に校舎別通知振り分け設定を保存する内部ヘルパー
+ * @param {Object} routingMap 校舎コード→講師ID配列のマップ
+ */
+function setCampusRoutingMap_(routingMap) {
+  routingMap.updatedAt = new Date().toISOString();
+  firestoreSet_('config', 'notification_routing', routingMap);
+}
+
+/**
  * 現在ログイン中のユーザーの teacherId を取得する内部ヘルパー
  * settings.js の getCurrentStaff_() を使用して staffs から解決する
  * @return {string} teacherId
@@ -35,18 +58,15 @@ function getCurrentTeacherId_() {
 
 /**
  * teacherId からメールアドレスを取得する内部ヘルパー
- * NOTIFICATION_EMAILS に個別設定があればそちらを優先し、なければ staffs の email を返す
+ * staffs.notificationEmail があればそちらを優先し、なければ staffs.email を返す
  * @param {string} teacherId 講師ID
  * @return {string} メールアドレス（見つからない場合は空文字）
  */
 function getEmailByTeacherId_(teacherId) {
   if (!teacherId) return '';
-  // 通知専用メールが設定されている場合はそちらを優先
-  var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
-  if (notifEmails[teacherId]) return notifEmails[teacherId];
-  // staffs から email を返す
   var staff = getStaffByTeacherId_(teacherId);
-  return staff ? (staff.email || '') : '';
+  if (!staff) return '';
+  return staff.notificationEmail || staff.email || '';
 }
 
 /**
@@ -209,8 +229,7 @@ function getNotificationSettings() {
     var email = getCurrentUserEmail().toLowerCase();
 
     // 通知振り分け設定に含まれているか（= 通知設定を表示するか）
-    var routingRaw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = routingRaw ? JSON.parse(routingRaw) : {};
+    var routingMap = getCampusRoutingMap_();
     var isEligible = Object.keys(routingMap).some(function(code) {
       var arr = routingMap[code] || [];
       return arr.indexOf(teacherId) !== -1;
@@ -230,9 +249,8 @@ function getNotificationSettings() {
     // メールリスト（staffs は1ドキュメント1メール）
     var emails = registeredEmail ? [registeredEmail] : (email ? [email] : []);
 
-    // 現在の通知先メール（NOTIFICATION_EMAILS に保存済みの個別設定）
-    var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
-    var notificationEmail = notifEmails[teacherId] || (emails.length > 0 ? emails[0] : '');
+    // 現在の通知先メール（staffs.notificationEmail を優先）
+    var notificationEmail = (staff && staff.notificationEmail) ? staff.notificationEmail : (emails.length > 0 ? emails[0] : '');
 
     return {
       success: true,
@@ -268,8 +286,7 @@ function updateNotificationSettings(method, notificationEmail) {
     var teacherId = getCurrentTeacherId_();
 
     // 通知振り分け設定に含まれているか確認
-    var routingRaw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = routingRaw ? JSON.parse(routingRaw) : {};
+    var routingMap = getCampusRoutingMap_();
     var isEligible = Object.keys(routingMap).some(function(code) {
       var arr = routingMap[code] || [];
       return arr.indexOf(teacherId) !== -1;
@@ -285,11 +302,12 @@ function updateNotificationSettings(method, notificationEmail) {
       writeStaffToFirestore_(staff);
     }
 
-    // Gmail通知先メールアドレスを保存（指定があれば）
+    // Gmail通知先メールアドレスを staffs に保存（指定があれば）
     if (notificationEmail && (method === 'gmail' || method === 'both')) {
-      var notifEmails = safeJsonParse_(getProperty(PROP_KEYS.NOTIFICATION_EMAILS), {});
-      notifEmails[teacherId] = notificationEmail.toLowerCase();
-      setProperty(PROP_KEYS.NOTIFICATION_EMAILS, JSON.stringify(notifEmails));
+      if (staff) {
+        staff.notificationEmail = notificationEmail.toLowerCase();
+        writeStaffToFirestore_(staff);
+      }
     }
 
     var methodLabel = { gmail: 'Gmailのみ', line: 'LINEのみ', both: 'Gmail + LINE 両方', none: '通知しない' };
@@ -379,8 +397,7 @@ function updateLineSchedulerNotifPref(type, method) {
 function getNotificationMembers() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var routingRaw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = routingRaw ? JSON.parse(routingRaw) : {};
+    var routingMap = getCampusRoutingMap_();
 
     // 振り分け設定内の全 teacherId をユニークに収集
     var allIds = {};
@@ -490,8 +507,7 @@ function getLineRegisteredUsers() {
 function getCampusNotificationRouting() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var raw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = raw ? JSON.parse(raw) : {};
+    var routingMap = getCampusRoutingMap_();
     var campusConfigJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
     var campuses = campusConfigJson ? JSON.parse(campusConfigJson) : [];
     var result = campuses.map(function(campus) {
@@ -518,10 +534,9 @@ function updateCampusNotificationRouting(campusCode, teacherIds) {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
     if (!campusCode) return { success: false, error: '校舎コードを指定してください' };
-    var raw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = raw ? JSON.parse(raw) : {};
+    var routingMap = getCampusRoutingMap_();
     routingMap[campusCode] = teacherIds || [];
-    setProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING, JSON.stringify(routingMap));
+    setCampusRoutingMap_(routingMap);
     logAdminAction('通知振り分け更新', '校舎コード: ' + campusCode + ', 受信者数: ' + (teacherIds || []).length);
     return { success: true, message: '通知振り分け設定を更新しました' };
   } catch (error) {
@@ -562,8 +577,7 @@ function sendNotificationByContent(subject, body) {
     }
 
     // 振り分け設定を取得
-    var raw = getProperty(PROP_KEYS.CAMPUS_NOTIFICATION_ROUTING);
-    var routingMap = raw ? JSON.parse(raw) : {};
+    var routingMap = getCampusRoutingMap_();
     var recipients = routingMap[campusCode] || [];
     if (recipients.length === 0) {
       return { success: false, error: '校舎「' + campusName + '」の通知受信者が設定されていません' };

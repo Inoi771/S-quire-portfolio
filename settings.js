@@ -420,58 +420,6 @@ function getOrCreateTeacherId() {
 }
 
 /**
- * メールアドレスに対応する teacherId を TEACHER_ID_MAP から取得する。
- * 既存エントリがあれば再利用し、なければ新規生成して TEACHER_ID_MAP に保存する（内部ヘルパー）。
- * ScriptProperties に書き込むため、ユーザーが開いていない状態でも admin が呼び出せる。
- * @param {string} email 対象メールアドレス
- * @param {string} name 表示名（任意。指定した場合は最新値で更新）
- * @return {string} teacherId
- */
-function getOrCreateTeacherIdForEmail_(email, name) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-  } catch (e) {
-    throw new Error('講師IDの生成に失敗しました（ロック取得タイムアウト）');
-  }
-  try {
-    var emailLower = email.toLowerCase();
-    var map = safeJsonParse_(getProperty(PROP_KEYS.TEACHER_ID_MAP), {});
-
-    // 既存エントリをメールアドレスで逆引き（新旧フォーマット両対応）
-    var existingId = null;
-    Object.keys(map).forEach(function(tid) {
-      var entry = normalizeTeacherEntry_(map[tid]);
-      if (entry.emails.indexOf(emailLower) !== -1) {
-        existingId = tid;
-      }
-    });
-
-    if (existingId) {
-      // 表示名が変わった場合は更新
-      var existEntry = normalizeTeacherEntry_(map[existingId]);
-      if (name && existEntry.name !== name) {
-        existEntry.name = name;
-        map[existingId] = existEntry;
-        setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
-      }
-      return existingId;
-    }
-
-    // 新規生成（新フォーマット: emails配列）
-    var newId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    map[newId] = { emails: [emailLower], name: name || '' };
-    setProperty(PROP_KEYS.TEACHER_ID_MAP, JSON.stringify(map));
-    return newId;
-  } catch (error) {
-    Logger.log('❌ getOrCreateTeacherIdForEmail_エラー: ' + error);
-    throw new Error('講師IDの生成に失敗しました: ' + error);
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
  * メールアドレスを変更
  * @aiCallable
  * @param {string} newEmail 新しいメールアドレス
