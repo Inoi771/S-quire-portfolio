@@ -1814,24 +1814,6 @@
     function onSettingsLoaded(settings) {
       currentSettings = settings;
 
-      // ファビコン・アイコンを動的に設定（base64データURLでCSP制限を回避）
-      if (settings.faviconUrl) {
-        // 既存の apple-touch-icon タグのhrefをbase64で上書き更新
-        var appleIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
-        appleIcons.forEach(function(el) { el.href = settings.faviconUrl; });
-        // 既存の favicon タグを更新。なければ新規追加
-        var favicons = document.querySelectorAll('link[rel="icon"]');
-        if (favicons.length > 0) {
-          favicons.forEach(function(el) { el.href = settings.faviconUrl; });
-        } else {
-          var newFav = document.createElement('link');
-          newFav.rel = 'icon';
-          newFav.type = 'image/png';
-          newFav.href = settings.faviconUrl;
-          document.head.appendChild(newFav);
-        }
-      }
-
       // ヘッダーのロゴ画像を設定
       if (settings.logoUrl) {
         var logoImg = document.getElementById('appLogoImg');
