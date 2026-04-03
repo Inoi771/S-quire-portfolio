@@ -20,18 +20,15 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `HOLIDAY_CACHE` | 祝日キャッシュ（JSON。Googleカレンダーから毎日自動更新） |
 | `ACCESS_FOLDER_ID` | アクセス許可フォルダID（設定時は APP_FOLDER_ID より優先） |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API トークン |
-| `LINE_USER_MAPPING` | ⚠️ Firestore `staffs.lineUserId` に移行済み。マイグレーション用に残存 |
-| `NOTIFICATION_METHODS` | ⚠️ Firestore `staffs.notificationMethod` に移行済み。マイグレーション用に残存 |
-| `CAMPUS_NOTIFICATION_ROUTING` | ⚠️ Firestore `config/notification_routing` に移行済み。マイグレーション用に残存 |
 | `LINE_SCHEDULER_SETTINGS` | LINEスケジューラー設定（JSON） |
-| `LINE_SCHEDULER_NOTIF_PREFS` | ⚠️ Firestore `staffs.schedulerNotifPrefs` に移行済み。マイグレーション用に残存 |
-| `TEACHER_ID_MAP` | 講師IDマッピング（JSON: `{teacherId: {emails:[], name}}`） |
-| `NOTIFICATION_EMAILS` | ⚠️ Firestore `staffs.notificationEmail` に移行済み。マイグレーション用に残存 |
 | `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列: `[{id, category, content, updatedAt}]`） |
 | `LECTURE_DEADLINE_OVERRIDES` | 講習日程締切手動上書き（JSON: `{"2025-summer": "2025-06-15"}`） |
 | `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `fir-quire`） |
 | `FIREBASE_CLIENT_EMAIL` | Firebase サービスアカウントメール |
 | `FIREBASE_PRIVATE_KEY` | Firebase サービスアカウント秘密鍵（PEM形式） |
+
+> **Firestore に移行済み（PROP_KEYS から削除）:**
+> `TEACHER_ID_MAP` → `staffs` コレクション / `LINE_USER_MAPPING` → `staffs.lineUserId` / `NOTIFICATION_METHODS` → `staffs.notificationMethod` / `NOTIFICATION_EMAILS` → `staffs.notificationEmail` / `LINE_SCHEDULER_NOTIF_PREFS` → `staffs.schedulerNotifPrefs` / `CAMPUS_NOTIFICATION_ROUTING` → `config/notification_routing`
 
 ### 文字列リテラルで使用（PROP_KEYS 未定義だがコードで直接使用）
 
@@ -44,7 +41,6 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `JUKU_EVENT_OVERRIDES` | 塾内部イベント上書き（JSON） | schedule.js |
 | `CLOSED_DAYS_OVERRIDES` | 休校日上書き（JSON: `{"add":[], "del":[]}`） | schedule.js, line.js |
 | `FORM_EMAIL_SENDER` | フォームメール送信元フィルター（デフォルト: `noreply@web-cms.jp`） | line.js |
-| `FLYER_ALL_CONFIGS` | ⚠️ 非推奨。Firestore `flyerAi` に移行済み。レガシー互換で残存 | features.js |
 
 ---
 

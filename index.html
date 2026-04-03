@@ -2524,39 +2524,9 @@
                       <td style="padding:8px 12px; color:#666;">LINE Developersで取得。下記LINE設定手順を参照</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">TEACHER_ID_MAP</td>
-                      <td style="padding:8px 12px;">講師ID→情報マッピング（JSON）。スタッフ登録時に自動設定される</td>
-                      <td style="padding:8px 12px; color:#666;">手動設定不要。ユーザー管理タブで確認可</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">NOTIFICATION_EMAILS</td>
-                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.notificationEmail）。マイグレーション用に残存</td>
-                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">LINE_USER_MAPPING</td>
-                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.lineUserId）。マイグレーション用に残存</td>
-                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">NOTIFICATION_METHODS</td>
-                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.notificationMethod）。マイグレーション用に残存</td>
-                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">CAMPUS_NOTIFICATION_ROUTING</td>
-                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（config/notification_routing）。マイグレーション用に残存</td>
-                      <td style="padding:8px 12px; color:#888;">手動設定不要。ユーザー管理タブの「通知振り分け設定」から変更</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">LINE_SCHEDULER_SETTINGS</td>
                       <td style="padding:8px 12px;">LINEスケジューラーの種別ごとデフォルト設定（室長用・ミーティング・報告書）</td>
                       <td style="padding:8px 12px; color:#666;">LINE通知タブから変更推奨</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid #eee; background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">LINE_SCHEDULER_NOTIF_PREFS</td>
-                      <td style="padding:8px 12px; color:#888;">Firestoreに移行済み（staffs.schedulerNotifPrefs）。マイグレーション用に残存</td>
-                      <td style="padding:8px 12px; color:#888;">手動設定不要</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">FORM_EMAIL_SENDER</td>
@@ -2676,10 +2646,6 @@
                     <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">GRADES_*_CONFIG</td>
                       <td style="padding:8px 12px; color:#888;">成績管理の各種マスター設定（テスト名・校舎・学年コード・志望校・偏差値設定）。管理タブ → 設定から変更</td>
-                    </tr>
-                    <tr style="background:#fafafa;">
-                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#888; white-space:nowrap;">FLYER_ALL_CONFIGS</td>
-                      <td style="padding:8px 12px; color:#888;">チラシ設定（非推奨・Firestore flyerAi に移行済み。レガシー互換で残存）</td>
                     </tr>
                   </tbody>
                 </table>
