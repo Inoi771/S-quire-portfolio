@@ -67,37 +67,29 @@
         return false;
       }
 
-      // GASバックエンド経由で取得（Firebase SDK失敗時のフォールバック）
-      function fallbackToGas(fbError) {
-        console.log('Firebase SDK失敗、GASバックエンドにフォールバック:', fbError);
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (!applyYears(result)) {
-              applyFallback(result.error || null);
-            }
-          })
-          .withFailureHandler(function(err) {
-            applyFallback(err.message || String(err));
-          })
-          .getGradesYearFolders();
-      }
-
-      try {
-        fbGetGradesYearFolders().then(function(result) {
+      // GASバックエンド経由で取得（メイン。サービスアカウントで動作するためFirestoreルールの影響を受けない）
+      google.script.run
+        .withSuccessHandler(function(result) {
           if (!applyYears(result)) {
-            // Firebase SDKがエラーを返した場合、GASバックエンドにフォールバック
-            if (result.error) {
-              fallbackToGas(result.error);
-            } else {
-              applyFallback(null);
-            }
+            applyFallback(result.error || null);
           }
-        }).catch(function(err) {
-          fallbackToGas(err.message || String(err));
-        });
-      } catch(e) {
-        fallbackToGas(e.message || String(e));
-      }
+        })
+        .withFailureHandler(function(err) {
+          // GASも失敗した場合、Firebase SDKを試す
+          console.log('GASバックエンド失敗、Firebase SDKにフォールバック:', err);
+          try {
+            fbGetGradesYearFolders().then(function(result) {
+              if (!applyYears(result)) {
+                applyFallback(result.error || null);
+              }
+            }).catch(function(fbErr) {
+              applyFallback(fbErr.message || String(fbErr));
+            });
+          } catch(e) {
+            applyFallback(e.message || String(e));
+          }
+        })
+        .getGradesYearFolders();
     }
 
     function onGradesYearChanged() {
