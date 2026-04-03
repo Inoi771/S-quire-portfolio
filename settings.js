@@ -10,7 +10,7 @@ var _safeUserKey_ = null;
 
 /**
  * 現在ユーザーのScriptPropertyキープレフィックスを返す内部ヘルパー
- * staffs にマッピングされないキー（Gemini使用量等）で引き続き使用
+ * staffs にマッピングされないキーで引き続き使用
  * @return {string} "_UP_{safeEmail}_" 形式の文字列
  */
 function getSafeUserKey_() {

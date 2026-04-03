@@ -169,7 +169,7 @@ MyProject/
 ├── grades.js            成績マスタ設定CRUD（約630行）
 ├── students.js          生徒CRUD・成績データ（約1940行）
 ├── analysis.js          AI成績分析・生徒別AI分析（約1660行）
-├── settings.js          設定・プロフィール・引き継ぎ・Gemini使用量（約830行）
+├── settings.js          設定・プロフィール・引き継ぎ（約760行）
 ├── admin.js             Admin API・初期化・ユーティリティ（約1700行）
 ├── line.js              LINE通知・LINEスケジューラー（約1700行）
 ├── features.js          AIアシスタント・料金表・講習管理（約3510行）
@@ -265,10 +265,10 @@ MyProject/
 | `grades.js` | S7 | 成績マスタ設定CRUD |
 | `students.js` | S8 | 生徒CRUD・成績upsert・OCR |
 | `analysis.js` | S8-B | AI成績分析・生徒別AI分析 |
-| `settings.js` | S5+S6+S16+S17 | 設定・プロフィール・Gemini使用量 |
+| `settings.js` | S5+S6+S16 | 設定・プロフィール・引き継ぎ |
 | `admin.js` | S10+S11+S12 | Admin API・初期化・ユーティリティ |
-| `line.js` | S15+S18 | LINE通知・LINEスケジューラー |
-| `features.js` | S9+S19+S20 | AIアシスタント・料金表・講習管理 |
+| `line.js` | S15+S17 | LINE通知・LINEスケジューラー |
+| `features.js` | S9+S18+S19 | AIアシスタント・料金表・講習管理 |
 
 ---
 
