@@ -1853,7 +1853,7 @@ function getStudentPlacementData(year) {
 }
 
 /**
- * 生徒成績表PDFをDriveの 成績管理/{year}/{校舎名}/ フォルダに保存する
+ * 生徒成績表PDFをDriveの 成績表/{year}/{校舎名}/ フォルダに保存する
  * @aiCallable
  * @param {number} year 年度
  * @param {string} campusName 校舎名（フォルダ名として使用）
@@ -1863,11 +1863,10 @@ function getStudentPlacementData(year) {
  */
 function saveGradeReportPdf(year, campusName, studentName, pdfBase64) {
   try {
-    // Firestore移行済み。成績管理フォルダは廃止。ルートフォルダ配下の grade-reports に保存する。
     var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
     if (!rootFolderId) return { success: false, error: 'APP_FOLDER_IDが未設定' };
     var rootFolder = DriveApp.getFolderById(rootFolderId);
-    var reportsFolder = getOrCreateTabFolder(rootFolder, 'grade-reports');
+    var reportsFolder = getOrCreateTabFolder(rootFolder, '成績表');
     var yearFolder = getOrCreateYearFolder(reportsFolder, year);
 
     // 校舎名サブフォルダを取得または作成
