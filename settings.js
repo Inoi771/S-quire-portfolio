@@ -176,20 +176,21 @@ function getSettings() {
         var assetsFolders = rootFolder.getFoldersByName('assets');
         if (assetsFolders.hasNext()) {
           var assetsFolder = assetsFolders.next();
-          var faviconFiles = assetsFolder.getFilesByName('favicon.png');
-          if (faviconFiles.hasNext()) {
-            var faviconFile = faviconFiles.next();
-            var faviconBlob = faviconFile.getBlob();
-            var faviconBase64 = Utilities.base64Encode(faviconBlob.getBytes());
-            faviconUrl = 'data:image/png;base64,' + faviconBase64;
+          // logo.png をファビコンとして使用（favicon.png より優先）
+          var logoFilesForFavicon = assetsFolder.getFilesByName('logo.png');
+          if (logoFilesForFavicon.hasNext()) {
+            var logoFileForFavicon = logoFilesForFavicon.next();
+            var logoFaviconBlob = logoFileForFavicon.getBlob();
+            faviconUrl = 'data:image/png;base64,' + Utilities.base64Encode(logoFaviconBlob.getBytes());
           }
-          // favicon.png がない場合も logo.png をファビコンとして使用
+          // logo.png がない場合は favicon.png にフォールバック
           if (!faviconUrl) {
-            var logoFilesForFavicon = assetsFolder.getFilesByName('logo.png');
-            if (logoFilesForFavicon.hasNext()) {
-              var logoFileForFavicon = logoFilesForFavicon.next();
-              var logoFaviconBlob = logoFileForFavicon.getBlob();
-              faviconUrl = 'data:image/png;base64,' + Utilities.base64Encode(logoFaviconBlob.getBytes());
+            var faviconFiles = assetsFolder.getFilesByName('favicon.png');
+            if (faviconFiles.hasNext()) {
+              var faviconFile = faviconFiles.next();
+              var faviconBlob = faviconFile.getBlob();
+              var faviconBase64 = Utilities.base64Encode(faviconBlob.getBytes());
+              faviconUrl = 'data:image/png;base64,' + faviconBase64;
             }
           }
           var logoFiles = assetsFolder.getFilesByName('logo.png');
