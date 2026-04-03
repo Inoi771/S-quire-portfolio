@@ -41,39 +41,62 @@
         loadDropdownData();
       }
 
+      // 年度一覧の取得結果を画面に反映する共通処理
+      function applyYears(result) {
+        select.innerHTML = '';
+        if (result.success && result.years && result.years.length > 0) {
+          result.years.forEach(function(year) {
+            var opt = document.createElement('option');
+            opt.value = year;
+            opt.textContent = year + '年度';
+            select.appendChild(opt);
+          });
+          select.disabled = false;
+          gradesYearsLoaded = true;
+          if (result.years.indexOf(String(fy)) >= 0) {
+            select.value = String(fy);
+            currentFiscalYear = fy;
+          } else {
+            select.value = result.years[0];
+            currentFiscalYear = parseInt(result.years[0]);
+          }
+          status.textContent = result.years.length + '件の年度データを取得';
+          loadDropdownData();
+          return true;
+        }
+        return false;
+      }
+
+      // GASバックエンド経由で取得（Firebase SDK失敗時のフォールバック）
+      function fallbackToGas(fbError) {
+        console.log('Firebase SDK失敗、GASバックエンドにフォールバック:', fbError);
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (!applyYears(result)) {
+              applyFallback(result.error || null);
+            }
+          })
+          .withFailureHandler(function(err) {
+            applyFallback(err.message || String(err));
+          })
+          .getGradesYearFolders();
+      }
+
       try {
         fbGetGradesYearFolders().then(function(result) {
-          select.innerHTML = '';
-
-          if (result.success && result.years && result.years.length > 0) {
-            result.years.forEach(function(year) {
-              var opt = document.createElement('option');
-              opt.value = year;
-              opt.textContent = year + '年度';
-              select.appendChild(opt);
-            });
-            select.disabled = false;
-            gradesYearsLoaded = true;
-
-            // 年度の中から現在年度に一致するものを選択、なければ最新を選択
-            if (result.years.indexOf(String(fy)) >= 0) {
-              select.value = String(fy);
-              currentFiscalYear = fy;
+          if (!applyYears(result)) {
+            // Firebase SDKがエラーを返した場合、GASバックエンドにフォールバック
+            if (result.error) {
+              fallbackToGas(result.error);
             } else {
-              select.value = result.years[0];
-              currentFiscalYear = parseInt(result.years[0]);
+              applyFallback(null);
             }
-
-            status.textContent = result.years.length + '件の年度データを取得';
-            loadDropdownData();
-          } else {
-            applyFallback(result.error || null);
           }
         }).catch(function(err) {
-          applyFallback(err.message || String(err));
+          fallbackToGas(err.message || String(err));
         });
       } catch(e) {
-        applyFallback(e.message || String(e));
+        fallbackToGas(e.message || String(e));
       }
     }
 
