@@ -154,6 +154,30 @@
           dateStr: params.dateStr,
           details: params.details || ''
         };
+      } else if (action === 'create_lecture_entry') {
+        execParams = {
+          lectureId: params.lectureId,
+          campusCode: params.campusCode,
+          date: params.date,
+          startTime: params.startTime,
+          durationSlots: params.durationSlots || 9,
+          subject: params.subject,
+          grade: params.grade,
+          classLabel: params.classLabel || ''
+        };
+      } else if (action === 'edit_lecture_entry') {
+        execParams = {
+          lectureId: params.lectureId,
+          campusCode: params.campusCode,
+          entryId: params.entryId,
+          changes: params.changes || {}
+        };
+      } else if (action === 'delete_lecture_entry') {
+        execParams = {
+          lectureId: params.lectureId,
+          campusCode: params.campusCode,
+          entryId: params.entryId
+        };
       }
 
       google.script.run
