@@ -301,8 +301,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `saveFlyerImageTags(fileId, tags)` — `@aiCallable` チラシ画像の説明タグを保存する（upsert）。戻り値: `{success, message}`
 - `getAllFlyerImageTags_()` — 画像タグシートから全タグを一括取得してマップで返す内部ヘルパー
 - `deleteFlyerImageTags_(fileId)` — 画像タグシートから指定ファイルIDの行を削除する内部ヘルパー
-- `getFlyerConfig(lectureId, campusCode)` — 【非推奨】旧チラシ設定取得（AI生成方式に移行済み）
-- `saveFlyerConfig(lectureId, campusCode, configJson)` — 【非推奨】旧チラシ設定保存（AI生成方式に移行済み）
 - `getFlyerAiSheet_()` — AIチラシデータ保存用シート「チラシAI」を取得/作成する内部ヘルパー
 - `FLYER_DESIGN_PALETTE_` — チラシAI生成用の季節コンテキスト定数（バックエンド専用。spring/summer/winter/general。季節の雰囲気（mood）をAIに伝えるが、配色はAIが自由に選択）
 - `FLYER_TYPE_SEASON_MAP_` — 講習typeId → 季節キーのマッピング定数（バックエンド用）
