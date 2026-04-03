@@ -112,9 +112,9 @@ function loadDropdownData(onComplete) {
       // プロフィール欄の校舎チェックボックスを更新（設定タブが開いていれば即時反映）
       renderPreferredCampusCheckboxes();
 
-      // 学年ドロップダウン（情報入力）
+      // 学年ドロップダウン（情報入力）― 学年表示切替の設定によらず全学年を表示
       var gradeOptions = '<option value="">選択してください</option>';
-      result.grades.forEach(function(g) {
+      result.allGrades.forEach(function(g) {
         gradeOptions += '<option value="' + g.code + '">' + g.name + '</option>';
       });
       document.getElementById('input-grade').innerHTML = gradeOptions;
