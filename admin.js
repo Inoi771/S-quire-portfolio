@@ -787,15 +787,13 @@ function getDefaultDept(schoolName, schoolLookup) {
 function recordOperationLog(action, details, status) {
   try {
     var now = new Date();
-    var userEmail = getCurrentUserEmail();
-    var teacherId = '';
-    try { teacherId = getCurrentTeacherId_(); } catch(e) {}
+    var teacherId = getCurrentTeacherId_() || '';
     var userRole = isAdmin() ? '🔐 Admin' : '👤 User';
     // タイムスタンプ＋ランダム文字列でユニークなDocID生成
     var docId = 'log_' + now.getTime() + '_' + Math.random().toString(36).substring(2, 7);
     firestoreSet_('operationLogs', docId, {
       timestamp: now.toISOString(),
-      userId: teacherId || userEmail,
+      userId: teacherId,
       userRole: userRole,
       action: action || '',
       details: JSON.stringify(details),
