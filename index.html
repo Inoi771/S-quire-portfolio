@@ -127,6 +127,10 @@
           <div style="color:#adb5bd; font-size:12px; margin-bottom:4px;">現在ログイン中のアカウント</div>
           <div id="setupCurrentEmail" style="color:#fff; font-size:15px; font-weight:600; word-break:break-all;">読み込み中...</div>
         </div>
+        <div style="margin-bottom:20px;">
+          <label style="color:#adb5bd; font-size:13px; display:block; margin-bottom:6px;">表示名（あなたの名前）</label>
+          <input id="setupAdminName" type="text" placeholder="例：田中 花子" style="width:100%; padding:12px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#fff; font-size:15px; box-sizing:border-box;">
+        </div>
         <p style="color:#6c757d; font-size:13px; margin:0 0 20px; line-height:1.6;">このアカウントが管理者になります。管理者はアプリの全機能（設定変更・ユーザー管理・データ管理）を使えます。</p>
         <button onclick="registerFirstAdmin()" style="width:100%; padding:14px; background:linear-gradient(135deg,#43e97b,#38f9d7); border:none; border-radius:10px; color:#1a1a2e; font-size:16px; font-weight:700; cursor:pointer;">このアカウントを管理者として登録する</button>
         <div id="setupStep1Error" style="display:none; color:#ff6b6b; margin-top:12px; text-align:center; font-size:14px;"></div>

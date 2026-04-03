@@ -21,7 +21,7 @@
 - `addAdminEmail(newEmail)` — Admin 追加（Admin のみ）
 - `removeAdminEmail(emailToRemove)` — Admin 削除（自分自身は不可、最低1人保持）
 - `getSetupStatus()` — 初回セットアップが必要かを返す（`isFirstSetup`, `currentUserEmail`, `hasAppFolder`）。ADMIN_EMAILS が空なら `isFirstSetup: true`
-- `initializeFirstAdmin()` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録する（2回目以降は拒否）
+- `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Firestore staffs 作成（firebaseUid 含む）＋ allowedUsers 登録を一括で行う
 - `getAllowedUsers()` — Driveフォルダの共有ユーザー一覧を取得（Admin のみ。ACCESS_FOLDER_ID 優先）
 - `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加）
 - `removeUserAccess(email)` — ユーザーのアプリアクセスを削除（Admin のみ。オーナーと自分自身は削除不可）
