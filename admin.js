@@ -15,26 +15,45 @@ function getAllScriptPropertiesForGUI() {
     if (!isAdmin()) {
       return { success: false, error: 'Admin のみアクセス可能' };
     }
-    
+
+    // Firestore 移行済みで不要になった廃止キー → 存在すれば自動削除
+    var DEPRECATED_KEYS = [
+      'TEACHER_ID_MAP',
+      'LINE_USER_MAPPING',
+      'NOTIFICATION_METHODS',
+      'NOTIFICATION_EMAILS',
+      'LINE_SCHEDULER_NOTIF_PREFS',
+      'CAMPUS_NOTIFICATION_ROUTING'
+    ];
+    var scriptProps = PropertiesService.getScriptProperties();
+    DEPRECATED_KEYS.forEach(function(k) {
+      try { scriptProps.deleteProperty(k); } catch(e) {}
+    });
+
     var props = getAllProperties();
     var safProps = [];
-    
+
     for (var key in props) {
+      // 廃止キー・内部自動管理キーは表示しない
+      if (DEPRECATED_KEYS.indexOf(key) !== -1) continue;
+      if (key === 'HOLIDAY_CACHE') continue;       // 祝日キャッシュ（自動更新・編集不要）
+      if (key.indexOf('_UP_') === 0) continue;     // ユーザー個別データ（内部管理）
+
       var value = props[key];
       var displayValue = value;
       var isMasked = false;
-      
+
       // API キーなどはマスク
-      if (key.includes('KEY') || key.includes('SECRET') || key.includes('PASSWORD')) {
+      if (key.indexOf('KEY') !== -1 || key.indexOf('SECRET') !== -1 || key.indexOf('PASSWORD') !== -1) {
         displayValue = '***マスク済み***';
         isMasked = true;
       }
-      
+
       // 長い値は省略
       if (displayValue.length > 50) {
         displayValue = displayValue.substring(0, 47) + '...';
       }
-      
+
       safProps.push({
         key: key,
         value: displayValue,
@@ -42,9 +61,9 @@ function getAllScriptPropertiesForGUI() {
         actualLength: value.length
       });
     }
-    
+
     return { success: true, properties: safProps };
-    
+
   } catch (error) {
     Logger.log('❌ getAllScriptPropertiesForGUIエラー: ' + error);
     return { success: false, error: error.toString() };
