@@ -1049,69 +1049,155 @@
         <!-- ===== 📄 配布物サブタブ ===== -->
         <div id="lectures-materials" class="lecture-sub-content" style="display: none; padding: 16px;">
 
-          <!-- セレクター行 -->
-          <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center;">
-            <select id="mat-campus-select" onchange="updateMatPreviewOnCampusChange()"
-              style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; min-width: 110px; background: white;">
-              <option value="">校舎</option>
-            </select>
+          <!-- 内部タブナビゲーション -->
+          <div id="matSubTabNav" style="display: flex; border-bottom: 2px solid #e0e0e0; margin-bottom: 16px; gap: 0;">
+            <button class="mat-sub-tab" data-tab="mat-tab-entry" onclick="switchMatSubTab('mat-tab-entry', this)"
+              style="padding: 8px 16px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #667eea; border-bottom: 2px solid #667eea; margin-bottom: -2px;">
+              📝 申込用紙
+            </button>
+            <button class="mat-sub-tab" data-tab="mat-tab-email" onclick="switchMatSubTab('mat-tab-email', this)"
+              style="padding: 8px 16px; border: none; background: none; cursor: pointer; font-size: 13px; color: #999; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+              📧 メール送信用
+            </button>
+            <button class="mat-sub-tab" data-tab="mat-tab-web" onclick="switchMatSubTab('mat-tab-web', this)"
+              style="padding: 8px 16px; border: none; background: none; cursor: pointer; font-size: 13px; color: #999; border-bottom: 2px solid transparent; margin-bottom: -2px;">
+              🌐 HP掲載用
+            </button>
           </div>
 
-          <!-- 学年別挨拶文（編集可能） -->
-          <div style="margin-bottom: 14px;">
-            <label style="font-size: 13px; color: #555; display: block; margin-bottom: 6px; font-weight: 600;">
-              学年別挨拶文（編集可能・PDFに反映されます）
-            </label>
-            <div id="mat-greetings-container" style="display: flex; flex-direction: column; gap: 8px;">
-              <!-- JS（initLecturesMaterials）で動的生成 -->
+          <!-- タブ1: 申込用紙 -->
+          <div id="mat-tab-entry">
+
+            <!-- セレクター行 -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center;">
+              <select id="mat-campus-select" onchange="updateMatPreviewOnCampusChange()"
+                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; min-width: 110px; background: white;">
+                <option value="">校舎</option>
+              </select>
             </div>
-          </div>
 
-          <!-- PDFボタン行（料金表と同スタイル） -->
-          <div style="margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📧 メール送信用PDF</div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-              <div style="display: flex; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
-                <button id="matPdfBtn" onclick="generateMaterialsPDF('download')"
-                  style="padding: 10px 18px; background: #667eea; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 14px;">
-                  📥 PDFダウンロード
-                </button>
-                <button id="matPdfArrowBtn" onclick="generateMaterialsPDF('print')"
-                  style="padding: 10px 13px; background: #5a6fd6; color: white; border: none; border-left: 1px solid rgba(255,255,255,0.3); cursor: pointer; font-size: 14px;" title="印刷">
-                  🖨️
+            <!-- 学年別挨拶文（編集可能） -->
+            <div style="margin-bottom: 14px;">
+              <label style="font-size: 13px; color: #555; display: block; margin-bottom: 6px; font-weight: 600;">
+                学年別挨拶文（編集可能・PDFに反映されます）
+              </label>
+              <div id="mat-greetings-container" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- JS（initLecturesMaterials）で動的生成 -->
+              </div>
+            </div>
+
+            <!-- PDFボタン行 -->
+            <div style="margin-bottom: 12px;">
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <div style="display: flex; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
+                  <button id="matPdfBtn" onclick="generateMaterialsPDF('download')"
+                    style="padding: 10px 18px; background: #667eea; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 14px;">
+                    📥 PDFダウンロード
+                  </button>
+                  <button id="matPdfArrowBtn" onclick="generateMaterialsPDF('print')"
+                    style="padding: 10px 13px; background: #5a6fd6; color: white; border: none; border-left: 1px solid rgba(255,255,255,0.3); cursor: pointer; font-size: 14px;" title="印刷">
+                    🖨️
+                  </button>
+                </div>
+                <button id="matSaveToCloudBtn" onclick="saveMatPDFToDrive()"
+                  style="padding: 10px 16px; background: #fff; color: #43a047; border: 1.5px solid #43a047; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.08);">
+                  ☁️ Driveに保存
                 </button>
               </div>
-              <button id="matSaveToCloudBtn" onclick="saveMatPDFToDrive()"
-                style="padding: 10px 16px; background: #fff; color: #43a047; border: 1.5px solid #43a047; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.08);">
-                ☁️ Driveに保存
-              </button>
             </div>
-          </div>
 
-          <p style="color: #aaa; font-size: 12px; margin: 0 0 16px;">上部で講習を選択し、校舎を選んでPDFを出力してください。</p>
+            <p style="color: #aaa; font-size: 12px; margin: 0 0 16px;">上部で講習を選択し、校舎を選んでPDFを出力してください。</p>
 
-          <!-- 保存済みファイル一覧 -->
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📁 Driveの保存済みファイル</div>
-            <div id="mat-files-list" style="min-height: 32px;">
-              <div style="color: #bbb; font-size: 12px;">講習と校舎を選択するとリストが表示されます</div>
+            <!-- 保存済みファイル一覧 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📁 Driveの保存済みファイル</div>
+              <div id="mat-files-list" style="min-height: 32px;">
+                <div style="color: #bbb; font-size: 12px;">講習と校舎を選択するとリストが表示されます</div>
+              </div>
             </div>
-          </div>
 
-          <!-- プレビューエリア -->
-          <div>
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📄 プレビュー</div>
-            <div id="mat-preview-container"
-              style="width: 100%; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: white;">
-              <div id="mat-preview-inner"
-                style="width: 794px; background: white; transform-origin: top left;
-                       font-family: 'Meiryo','ヒラギノ角ゴ ProN W3','MS Gothic',sans-serif;">
-                <div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">
-                  講習を選択するとプレビューが表示されます
+            <!-- プレビューエリア -->
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📄 プレビュー</div>
+              <div id="mat-preview-container"
+                style="width: 100%; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: white;">
+                <div id="mat-preview-inner"
+                  style="width: 794px; background: white; transform-origin: top left;
+                         font-family: 'Meiryo','ヒラギノ角ゴ ProN W3','MS Gothic',sans-serif;">
+                  <div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">
+                    講習を選択するとプレビューが表示されます
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- タブ2: メール送信用（準備中） -->
+          <div id="mat-tab-email" style="display: none;">
+            <div style="padding: 60px 20px; text-align: center; color: #aaa; font-size: 15px;">
+              🚧 このタブは準備中です。
+            </div>
+          </div>
+
+          <!-- タブ3: HP掲載用 -->
+          <div id="mat-tab-web" style="display: none;">
+
+            <!-- 校舎セレクト -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center;">
+              <select id="mat-web-campus-select" onchange="onMatWebCampusChange()"
+                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; min-width: 110px; background: white;">
+                <option value="">校舎</option>
+              </select>
+            </div>
+
+            <!-- PDFボタン（成績表と同じドロップダウンパターン） -->
+            <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <div style="position: relative;">
+                <div style="display: flex;">
+                  <button id="matWebPdfBtn" onclick="generateWebPublishPDF('download')" disabled
+                    style="padding: 10px 18px; background: #667eea; color: white; border: none; border-radius: 6px 0 0 6px; cursor: not-allowed; font-weight: 600; font-size: 14px; opacity: 0.5;">
+                    📥 PDF
+                  </button>
+                  <button id="matWebPdfArrowBtn" onclick="toggleMatWebPdfMenu(event)" disabled
+                    style="padding: 10px 13px; background: #5a6fd6; color: white; border: none; border-left: 1px solid rgba(255,255,255,0.3); border-radius: 0 6px 6px 0; cursor: not-allowed; font-size: 12px; opacity: 0.5;">
+                    ▼
+                  </button>
+                </div>
+                <div id="matWebPdfMenu" style="display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 200; min-width: 160px; overflow: hidden;">
+                  <button onclick="generateWebPublishPDF('download'); closeMatWebPdfMenu();"
+                    style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 16px; background: none; border: none; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; color: #333;">
+                    📥 ダウンロード
+                  </button>
+                  <button onclick="generateWebPublishPDF('print'); closeMatWebPdfMenu();"
+                    style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 16px; background: none; border: none; cursor: pointer; font-size: 14px; color: #333;">
+                    🖨️ 印刷
+                  </button>
+                </div>
+              </div>
+              <button id="matWebSaveBtn" onclick="saveWebPublishPDFToDrive()" disabled
+                style="padding: 10px 16px; background: #fff; color: #43a047; border: 1.5px solid #43a047; border-radius: 8px; cursor: not-allowed; font-weight: 600; font-size: 13px; opacity: 0.5; box-shadow: 0 2px 4px rgba(0,0,0,0.08);">
+                ☁️ Driveに保存
+              </button>
+            </div>
+
+            <p style="color: #aaa; font-size: 12px; margin: 0 0 16px;">上部で講習を選択し、校舎を選ぶと日程一覧が表示されます。</p>
+
+            <!-- プレビューエリア -->
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">📄 プレビュー</div>
+              <div id="mat-web-preview-container"
+                style="width: 100%; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: white;">
+                <div id="mat-web-preview-inner"
+                  style="width: 794px; background: white; transform-origin: top left;
+                         font-family: 'Meiryo','ヒラギノ角ゴ ProN W3','MS Gothic',sans-serif;">
+                  <div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">
+                    講習と校舎を選択すると日程が表示されます
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- ===== 🎨 外部チラシサブタブ（AI生成方式） ===== -->

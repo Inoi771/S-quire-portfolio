@@ -197,6 +197,18 @@
 - `loadDistributionFilesList()` — Drive保存済みファイル一覧を `listDistributionFiles` から取得して `#mat-files-list` に描画する
 - `renderDistributionFilesList(files)` — 保存済みファイル一覧HTMLを生成して `#mat-files-list` に注入する（「開く」リンク・「削除」ボタン付き）
 - `deleteDistributionFileUI(fileId)` — 確認ダイアログ後に `deleteDistributionFile` を呼び出してファイルを削除し、一覧を再取得する
+- `switchMatSubTab(tabId, btn)` — 内部タブ（申込用紙/メール送信用/HP掲載用）を切り替える。`mat-tab-web` 選択時は `initMatWebPublish()` を呼ぶ
+- `initMatWebPublish()` — HP掲載用タブ初期化（校舎セレクト構築・リサイズリスナー登録）
+- `buildMatWebCampusSelect()` — HP掲載用の校舎セレクト（`#mat-web-campus-select`）を `buildCampusOptions()` で構築
+- `onMatWebCampusChange()` — HP掲載用 校舎変更時にエントリ取得（キャッシュ優先）→ `updateMatWebPreview()` を呼ぶ
+- `updateMatWebPreview(entries, campusCode)` — HP掲載用プレビューを更新し、データあり時はボタンを有効化
+- `buildWebPublishDocHTML(entries, campusCode)` — HP掲載用 日程一覧HTMLを生成（ヘッダー＋テーブル、日付/時刻/科目/学年/講師/コマ数列）
+- `generateWebPublishPDF(mode)` — HP掲載用PDFを生成してダウンロードまたは印刷（`finalizeMaterialsPdf_` を再利用）
+- `toggleMatWebPdfMenu(event)` — HP掲載用PDFドロップダウンメニューの表示切替
+- `closeMatWebPdfMenu()` — HP掲載用PDFドロップダウンメニューを閉じる
+- `saveWebPublishPDFToDrive()` — HP掲載用 Drive保存（準備中・トースト表示のみ）
+- `setMatWebBtnsEnabled(enabled)` — HP掲載用 PDFボタン・Driveボタンの有効/無効を切り替える
+- `resizeMatWebPreview()` — HP掲載用プレビューを794px基準でコンテナ幅にスケーリングする
 
 **【外部チラシサブタブ（AI生成方式）】** (`js-lectures-flyer.html`)
 - `TYPE_TEMPLATE_MAP` — 講習typeId → 季節キーのマッピング（seasonKey算出・画像自動選択に使用）

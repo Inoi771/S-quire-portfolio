@@ -345,11 +345,13 @@
     var scoreEl = document.getElementById('score-campus');
     var reportEl = document.getElementById('report-campus');
     var matEl = document.getElementById('mat-campus-select');
+    var matWebEl = document.getElementById('mat-web-campus-select');
     var flyerEl = document.getElementById('flyerAiCampusSelect');
     if (inputEl) inputEl.innerHTML = opts;
     if (scoreEl) scoreEl.innerHTML = opts;
     if (reportEl) reportEl.innerHTML = opts;
     if (matEl) matEl.innerHTML = buildCampusOptions(arr, '校舎');
+    if (matWebEl) matWebEl.innerHTML = buildCampusOptions(arr, '校舎');
     if (flyerEl) {
       var commonOpt = '<option value="">校舎を選択</option><option value="common">📋 共通</option>';
       flyerEl.innerHTML = commonOpt + buildCampusOptions(arr);

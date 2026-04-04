@@ -77,6 +77,9 @@
         window.addEventListener('resize', resizeMatPreview);
         window._matResizeListenerAdded = true;
       }
+
+      // 最初のタブを選択状態にする
+      switchMatSubTab('mat-tab-entry', null);
     }
 
     /**
@@ -976,5 +979,357 @@
           })
           .deleteDistributionFile(fileId);
       });
+    }
+
+    // ========================================
+    // 【内部タブ切替】申込用紙 / メール送信用 / HP掲載用
+    // ========================================
+
+    var matWebEntriesCache = {};  // HP掲載用エントリキャッシュ: "lectureId_campusCode" → entries[]
+
+    /**
+     * 配布物内部タブを切り替える
+     * @param {string} tabId 'mat-tab-entry' | 'mat-tab-email' | 'mat-tab-web'
+     * @param {Element|null} btn クリックされたボタン要素
+     */
+    function switchMatSubTab(tabId, btn) {
+      var tabs = ['mat-tab-entry', 'mat-tab-email', 'mat-tab-web'];
+      tabs.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = (id === tabId) ? 'block' : 'none';
+      });
+
+      // タブボタンのアクティブスタイルを更新
+      var nav = document.getElementById('matSubTabNav');
+      if (nav) {
+        var buttons = nav.querySelectorAll('.mat-sub-tab');
+        buttons.forEach(function(b) {
+          var isActive = b.getAttribute('data-tab') === tabId;
+          b.style.color = isActive ? '#667eea' : '#999';
+          b.style.fontWeight = isActive ? '600' : 'normal';
+          b.style.borderBottom = isActive ? '2px solid #667eea' : '2px solid transparent';
+        });
+      }
+
+      if (tabId === 'mat-tab-web') {
+        initMatWebPublish();
+      }
+    }
+
+    // ========================================
+    // 【HP掲載用】
+    // ========================================
+
+    // 学年コード → 表示名マップ
+    var MAT_WEB_GRADE_LABEL_ = {
+      '07': '小6', '08': '小5', '09': '小4', '10': '小3', '11': '小2', '12': '小1',
+      '13': '中1', '14': '中2', '15': '中3',
+      '16': '高1', '17': '高2', '18': '高3'
+    };
+
+    /**
+     * HP掲載用タブを初期化する（校舎セレクト構築）
+     */
+    function initMatWebPublish() {
+      if (campusData && Object.keys(campusData).length > 0) {
+        buildMatWebCampusSelect();
+      } else {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.campuses) {
+              result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
+            }
+            buildMatWebCampusSelect();
+          })
+          .withFailureHandler(function(err) { console.error('HP掲載用 校舎取得失敗:', err); })
+          .getGradesConfigForWeb();
+      }
+
+      if (!window._matWebResizeListenerAdded) {
+        window.addEventListener('resize', resizeMatWebPreview);
+        window._matWebResizeListenerAdded = true;
+      }
+    }
+
+    /**
+     * HP掲載用 校舎セレクトを構築する
+     */
+    function buildMatWebCampusSelect() {
+      var campuses = Object.keys(campusData || {}).map(function(code) {
+        return { code: code, name: campusData[code] };
+      });
+      document.getElementById('mat-web-campus-select').innerHTML = buildCampusOptions(campuses, '校舎');
+    }
+
+    /**
+     * HP掲載用 校舎変更ハンドラ：エントリ取得→プレビュー更新
+     */
+    function onMatWebCampusChange() {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-web-campus-select').value;
+
+      if (!lectureId || !campusCode) {
+        var inner = document.getElementById('mat-web-preview-inner');
+        if (inner) inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">講習と校舎を選択すると日程が表示されます</div>';
+        setMatWebBtnsEnabled(false);
+        return;
+      }
+
+      var inner = document.getElementById('mat-web-preview-inner');
+      if (inner) inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">⏳ 読み込み中...</div>';
+
+      var cacheKey = lectureId + '_' + campusCode;
+      if (matWebEntriesCache[cacheKey]) {
+        updateMatWebPreview(matWebEntriesCache[cacheKey], campusCode);
+        return;
+      }
+
+      fbGetLectureScheduleEntries(lectureId, campusCode)
+        .then(function(entries) {
+          matWebEntriesCache[cacheKey] = entries || [];
+          updateMatWebPreview(matWebEntriesCache[cacheKey], campusCode);
+        })
+        .catch(function(err) {
+          console.error('HP掲載用 エントリ取得失敗:', err);
+          var inner2 = document.getElementById('mat-web-preview-inner');
+          if (inner2) inner2.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#e57373;font-size:14px;">データの取得に失敗しました</div>';
+        });
+    }
+
+    /**
+     * HP掲載用プレビューを更新する
+     * @param {Array} entries エントリ配列
+     * @param {string} campusCode 校舎コード
+     */
+    function updateMatWebPreview(entries, campusCode) {
+      var inner = document.getElementById('mat-web-preview-inner');
+      if (!inner) return;
+
+      if (!entries || entries.length === 0) {
+        inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">日程データがありません</div>';
+        setMatWebBtnsEnabled(false);
+        return;
+      }
+
+      inner.innerHTML = buildWebPublishDocHTML(entries, campusCode);
+      resizeMatWebPreview();
+      setMatWebBtnsEnabled(true);
+    }
+
+    /**
+     * HP掲載用 日程表HTMLを生成する（プレビュー・PDF共用）
+     * @param {Array} entries エントリ配列
+     * @param {string} campusCode 校舎コード
+     * @return {string} HTML文字列
+     */
+    function buildWebPublishDocHTML(entries, campusCode) {
+      var lectureId = currentLectureId;
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+
+      // 日付昇順 → 時刻昇順 → 学年コード昇順 でソート
+      var sorted = (entries || []).slice().sort(function(a, b) {
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        if (a.startTime !== b.startTime) return a.startTime < b.startTime ? -1 : 1;
+        return String(a.grade || '') < String(b.grade || '') ? -1 : 1;
+      });
+
+      // 時刻 HH:MM に durationSlots×10分を加算して終了時刻を返す
+      function endTime_(start, slots) {
+        var parts = (start || '00:00').split(':');
+        var h = parseInt(parts[0], 10) || 0;
+        var m = parseInt(parts[1], 10) || 0;
+        var totalMin = h * 60 + m + (slots || 0) * 10;
+        var eh = Math.floor(totalMin / 60);
+        var em = totalMin % 60;
+        return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
+      }
+
+      // 日付を "M/D(曜)" 形式に変換
+      var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
+      function fmtDate_(d) {
+        var dt = new Date(d + 'T00:00:00');
+        return (dt.getMonth() + 1) + '/' + dt.getDate() + '(' + DOW_[dt.getDay()] + ')';
+      }
+
+      // 学年コードを表示名に変換
+      function gradeLabel_(code) {
+        var c = String(code || '').padStart(2, '0');
+        return MAT_WEB_GRADE_LABEL_[c] || code || '';
+      }
+
+      var html = '';
+      html += '<div style="padding:20px 24px;background:white;min-height:1122px;">';
+
+      // ヘッダー
+      html += '<div style="border-bottom:2px solid #667eea;padding-bottom:10px;margin-bottom:16px;">';
+      html += '<div style="font-size:18px;font-weight:700;color:#333;">' + escapeHtmlMat_(fy + '年度 ' + lecName) + ' 日程一覧</div>';
+      html += '<div style="font-size:13px;color:#666;margin-top:4px;">' + escapeHtmlMat_(campusName) + '　全 ' + sorted.length + ' コマ</div>';
+      html += '</div>';
+
+      // テーブル
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="background:#667eea;color:white;">';
+      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">日付</th>';
+      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">時刻</th>';
+      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">科目</th>';
+      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">学年</th>';
+      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">講師</th>';
+      html += '<th style="padding:7px 10px;text-align:center;border:1px solid #5a6fd6;white-space:nowrap;">コマ数</th>';
+      html += '</tr></thead><tbody>';
+
+      sorted.forEach(function(e, idx) {
+        var bg = idx % 2 === 0 ? '#fff' : '#f7f8ff';
+        var end = endTime_(e.startTime, e.durationSlots);
+        var timeStr = (e.startTime || '') + ' 〜 ' + end;
+        var clabel = e.classLabel ? '　' + e.classLabel : '';
+        html += '<tr style="background:' + bg + ';">';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(fmtDate_(e.date)) + '</td>';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(timeStr) + '</td>';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;">' + escapeHtmlMat_(e.subject || '') + escapeHtmlMat_(clabel) + '</td>';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(gradeLabel_(e.grade)) + '</td>';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;">' + escapeHtmlMat_(e.teacherName || '') + '</td>';
+        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;text-align:center;">' + ((e.durationSlots || 0) * 10 / 90).toFixed(1) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * HP掲載用PDFを生成してダウンロードまたは印刷する
+     * @param {string} mode 'download' または 'print'
+     */
+    function generateWebPublishPDF(mode) {
+      var lectureId = currentLectureId;
+      var campusCode = document.getElementById('mat-web-campus-select').value;
+
+      if (!lectureId) { appAlert('上部で講習を選択してください。'); return; }
+      if (!campusCode) { appAlert('校舎を選択してください。'); return; }
+
+      var btn = document.getElementById('matWebPdfBtn');
+      var arrowBtn = document.getElementById('matWebPdfArrowBtn');
+      btn.textContent = '⏳ 生成中...';
+      btn.disabled = true;
+      arrowBtn.disabled = true;
+
+      function restoreBtn() {
+        btn.textContent = '📥 PDF';
+        btn.disabled = false;
+        arrowBtn.disabled = false;
+      }
+
+      var printWindow = null;
+      if (mode === 'print') {
+        printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write('<html><body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;color:#555;font-size:16px;">⏳ 日程表を生成中...</body></html>');
+        }
+      }
+
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+      var docTitle = fy + '年度 ' + lecName + ' ' + campusName + ' 日程表';
+
+      var cacheKey = lectureId + '_' + campusCode;
+      var entries = matWebEntriesCache[cacheKey] || [];
+
+      if (entries.length === 0) {
+        restoreBtn();
+        if (printWindow) printWindow.close();
+        appAlert('日程データがありません。');
+        return;
+      }
+
+      var pageHtml = buildWebPublishDocHTML(entries, campusCode);
+
+      var container = document.createElement('div');
+      container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
+      document.body.appendChild(container);
+      container.innerHTML = pageHtml;
+
+      html2canvas(container, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        windowWidth: 840,
+        useCORS: true
+      }).then(function(canvas) {
+        document.body.removeChild(container);
+        restoreBtn();
+        finalizeMaterialsPdf_(mode, [canvas], printWindow, docTitle);
+      }).catch(function(e) {
+        document.body.removeChild(container);
+        restoreBtn();
+        if (printWindow) printWindow.close();
+        console.error('HP掲載用PDF生成エラー:', e);
+        appAlert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+      });
+    }
+
+    /**
+     * HP掲載用PDFドロップダウンメニューの表示/非表示を切り替える
+     */
+    function toggleMatWebPdfMenu(event) {
+      event.stopPropagation();
+      var menu = document.getElementById('matWebPdfMenu');
+      if (!menu) return;
+      var isVisible = menu.style.display !== 'none';
+      menu.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        setTimeout(function() {
+          document.addEventListener('click', closeMatWebPdfMenu, { once: true });
+        }, 0);
+      }
+    }
+
+    /**
+     * HP掲載用PDFドロップダウンメニューを閉じる
+     */
+    function closeMatWebPdfMenu() {
+      var menu = document.getElementById('matWebPdfMenu');
+      if (menu) menu.style.display = 'none';
+    }
+
+    /**
+     * HP掲載用 Drive保存（将来実装）
+     */
+    function saveWebPublishPDFToDrive() {
+      showToast('Drive保存機能は準備中です。');
+    }
+
+    /**
+     * HP掲載用 PDFボタン・Driveボタンの有効/無効を切り替える
+     * @param {boolean} enabled
+     */
+    function setMatWebBtnsEnabled(enabled) {
+      var ids = ['matWebPdfBtn', 'matWebPdfArrowBtn', 'matWebSaveBtn'];
+      ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.disabled = !enabled;
+        el.style.cursor = enabled ? 'pointer' : 'not-allowed';
+        el.style.opacity = enabled ? '1' : '0.5';
+      });
+    }
+
+    /**
+     * HP掲載用プレビューをコンテナ幅に合わせてスケーリングする（794px基準）
+     */
+    function resizeMatWebPreview() {
+      var container = document.getElementById('mat-web-preview-container');
+      var inner = document.getElementById('mat-web-preview-inner');
+      if (!container || !inner) return;
+      var containerW = container.offsetWidth;
+      if (containerW < 10) return;
+      var scale = containerW / 794;
+      inner.style.transform = 'scale(' + scale + ')';
+      inner.style.transformOrigin = 'top left';
+      container.style.height = Math.round(inner.scrollHeight * scale) + 'px';
     }
 </script>
