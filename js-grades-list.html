@@ -177,6 +177,11 @@
             container.innerHTML = '<p style="padding:16px;color:#e53935;">エラー: ' + result.error + '</p>';
             return;
           }
+          if (!result.students || result.students.length === 0) {
+            container.innerHTML = '<p style="padding:24px;color:#999;text-align:center;font-size:14px;">📭 ' + year + '年度のデータはまだありません。</p>';
+            document.getElementById('list-count-label').style.display = 'none';
+            return;
+          }
           listTableData = result.students;
           listSortCol   = null;
           listSortAsc   = true;
