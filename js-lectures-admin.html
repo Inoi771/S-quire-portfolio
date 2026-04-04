@@ -1346,15 +1346,77 @@
         if (!mergedCustom.some(function(m) { return m.label === r.label; })) mergedCustom.push(r);
       });
 
+
+      // 既存データから中3・高校生の custom rows を分類して読み込む
+      var nyushiData = pricingData['nyushi'] || { rows: [] };
+      var nyushiCustomRows = (nyushiData.rows || []).filter(function(r) { return r.type === 'custom'; });
+      var summerAllCustom = (summerData.rows || []).filter(function(r) { return r.type === 'custom'; });
+      var chu3CustomRows = nyushiCustomRows.filter(function(r) { return (r.label || '').indexOf('中3') !== -1; });
+      var koCustomRows = summerAllCustom.filter(function(r) { return (r.label || '').indexOf('中3') === -1; });
+      // nyushi にない夏期の中3行も追加
+      nyushiCustomRows.forEach(function(r) {
+        if ((r.label || '').indexOf('中3') !== -1 && !chu3CustomRows.some(function(c) { return c.label === r.label; })) chu3CustomRows.push(r);
+      });
+
+      var typeCheckStyle = 'display:inline-flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;margin-right:6px;color:#555;';
+      var TYPE_NAMES_SHORT = { spring: '春期', summer: '夏期', kiso1: '基礎(1)', kiso2: '基礎(2)', winter: '冬期', nyushi: '入試前' };
+
+      // ===== 中3 追加行セクション =====
+      var chu3Scopes = (pricingData['nyushi'] && pricingData['nyushi'].sectionScopes && pricingData['nyushi'].sectionScopes.custom)
+        || { campusScope: 'all', campusCodes: [] };
       html += '<div style="margin-bottom:22px;">'
-        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#f5f0e0;border-radius:6px;margin-bottom:8px;">■ 高校生 回数別料金（追加行: 春・夏・冬 共通）</div>'
-        + '<div style="font-size:12px;color:#888;margin-bottom:6px;">春期・夏期・冬期に共通で適用。基礎対策・入試前は中3のみのため除外。「高1」を含む行は春期には適用しません。</div>'
+        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#e8f5e9;border-radius:6px;margin-bottom:8px;">■ 中3 追加行（多教科セットなど）</div>'
+        + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
+        + '<span style="font-size:11px;color:#888;margin-right:4px;">適用する講習：</span>';
+      var chu3Defaults = { spring: false, summer: true, kiso1: false, kiso2: false, winter: true, nyushi: true };
+      ALL_TYPES.forEach(function(tid) {
+        html += '<label style="' + typeCheckStyle + '">'
+          + '<input type="checkbox" class="chu3-apply-cb" value="' + tid + '"' + (chu3Defaults[tid] ? ' checked' : '') + '>'
+          + escapeHtml(TYPE_NAMES_SHORT[tid]) + '</label>';
+      });
+      html += '</div>'
         + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
-        + buildLecScopeUi_("custom", sectionScopes.custom)
+        + buildLecScopeUi_("custom_chu3", chu3Scopes)
+        + '<button onclick="addUnifiedChu3Row_()" '
+        + 'style="background:none;border:1px solid #4caf50;color:#4caf50;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:600;">＋ 行を追加</button>'
+        + '</div>'
+        + buildLecScopeCampusCheckboxes_("custom_chu3", chu3Scopes)
+        + '<table id="unified-chu3-table" style="width:100%;border-collapse:collapse;font-size:12px;">'
+        + '<thead><tr style="background:#f1f8e9;">'
+        + '<th style="' + thSt + 'text-align:left;">ラベル</th>'
+        + '<th style="' + thSt + 'width:68px;">1コマ(分)</th>'
+        + '<th style="' + thSt + 'width:55px;">回数</th>'
+        + '<th style="' + thSt + '">内部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:62px;">税込み</th>'
+        + '<th style="' + thSt + '">外部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:62px;">税込み</th>'
+        + '<th style="' + thSt + 'width:30px;"></th>'
+        + '</tr></thead>'
+        + '<tbody id="unified-chu3-tbody">';
+      chu3CustomRows.forEach(function(row, idx) { html += buildLecCustomRowHtml_(idx, row); });
+      html += '</tbody></table></div>';
+
+      // ===== 高校生 回数別料金セクション =====
+      var koScopes = (springData.sectionScopes && springData.sectionScopes.custom)
+        || { campusScope: 'all', campusCodes: [] };
+      html += '<div style="margin-bottom:22px;">'
+        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#f5f0e0;border-radius:6px;margin-bottom:8px;">■ 高校生 回数別料金（標準校舎）</div>'
+        + '<div style="font-size:12px;color:#888;margin-bottom:6px;">「高1」を含む行は春期に自動除外されます。</div>'
+        + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
+        + '<span style="font-size:11px;color:#888;margin-right:4px;">適用する講習：</span>';
+      var koDefs = { spring: true, summer: true, kiso1: false, kiso2: false, winter: true, nyushi: false };
+      ALL_TYPES.forEach(function(tid) {
+        html += '<label style="' + typeCheckStyle + '">'
+          + '<input type="checkbox" class="ko-apply-cb" value="' + tid + '"' + (koDefs[tid] ? ' checked' : '') + '>'
+          + escapeHtml(TYPE_NAMES_SHORT[tid]) + '</label>';
+      });
+      html += '</div>'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+        + buildLecScopeUi_("custom", koScopes)
         + '<button onclick="addUnifiedCustomRow_()" '
         + 'style="background:none;border:1px solid #22c55e;color:#22c55e;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:600;">＋ 行を追加</button>'
         + '</div>'
-        + buildLecScopeCampusCheckboxes_("custom", sectionScopes.custom)
+        + buildLecScopeCampusCheckboxes_("custom", koScopes)
         + '<table id="unified-custom-table" style="width:100%;border-collapse:collapse;font-size:12px;">'
         + '<thead><tr style="background:#fdf8ee;">'
         + '<th style="' + thSt + 'text-align:left;">ラベル</th>'
@@ -1367,14 +1429,9 @@
         + '<th style="' + thSt + 'width:30px;"></th>'
         + '</tr></thead>'
         + '<tbody id="unified-custom-tbody">';
-
-      mergedCustom.forEach(function(row, idx) { html += buildLecCustomRowHtml_(idx, row); });
+      koCustomRows.forEach(function(row, idx) { html += buildLecCustomRowHtml_(idx, row); });
       html += '</tbody></table></div>';
 
-      // === 中3 多教科・その他個別設定の注記 ===
-      html += '<div style="font-size:12px;color:#888;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:4px;padding:8px 12px;margin-bottom:16px;">'
-        + '💡 中3の多教科セット料金・入試前の個別設定は、上の日程一覧の「⚙️ 料金・設定」ボタンから各講習ごとに設定できます。'
-        + '</div>';
 
       // === 保存ボタン ===
       html += '<div style="display:flex;align-items:center;gap:12px;padding-bottom:8px;">'
@@ -1427,6 +1484,36 @@
     }
 
     /**
+     * 統合パネルの追加行（中3用）に空の行を追加する
+     */
+    function addUnifiedChu3Row_() {
+      var tbody = document.getElementById('unified-chu3-tbody');
+      if (!tbody) return;
+      var idx = tbody.querySelectorAll('tr').length;
+      var tmp = document.createElement('tbody');
+      tmp.innerHTML = buildLecCustomRowHtml_(idx, { type: 'custom', label: '', duration: 8, count: 1, internal: 0, external: 0 });
+      var newTr = tmp.querySelector('tr');
+      if (newTr) tbody.appendChild(newTr);
+    }
+
+    /**
+     * 指定した section-key の校舎スコープ設定をDOMから収集する
+     * @param {string} key セクションキー（'custom','custom_ko','custom_chu3' など）
+     * @return {Object} { campusScope, campusCodes }
+     */
+    function getScopeForKey_(key) {
+      var btn = document.querySelector('.lec-scope-toggle[data-section-key="' + key + '"]');
+      var scope = btn ? btn.dataset.scope : 'all';
+      var codes = [];
+      if (scope === 'specific') {
+        document.querySelectorAll('.lec-campus-chk[data-section-key="' + key + '"]:checked').forEach(function(chk) {
+          codes.push(chk.value);
+        });
+      }
+      return { campusScope: scope, campusCodes: codes };
+    }
+
+    /**
      * 統合パネルのフォームデータを収集し、全講習タイプ別 rows を構築する
      * @return {Object} { allTypes: { spring:{rows,sectionScopes}, ... } }
      */
@@ -1435,7 +1522,6 @@
       var KO_TYPES   = ['spring', 'summer', 'winter'];
       var CHU3_ONLY  = ['kiso1', 'kiso2', 'nyushi'];
       var STD_GRADES = ['sho', 'chu1', 'chu2', 'chu3'];
-      var KO_GRADES  = ['ko1', 'ko2', 'ko3'];
 
       var allTypeRows = {};
       ALL_TYPES.forEach(function(tid) { allTypeRows[tid] = []; });
@@ -1443,6 +1529,24 @@
       function getInputVal(tr, field) {
         var el = tr.querySelector('[data-input-field="' + field + '"]');
         return parseInt(el ? el.value : '0') || 0;
+      }
+
+      function collectCustomTbody(tbodyId) {
+        var rows = [];
+        var tbody = document.getElementById(tbodyId);
+        if (!tbody) return rows;
+        tbody.querySelectorAll('tr[data-row-type="custom"]').forEach(function(tr) {
+          var label    = (tr.querySelector('[data-field="label"]').value || '').trim();
+          var durMin   = parseInt(tr.querySelector('[data-field="duration-min"]').value) || 80;
+          var cnt      = parseInt(tr.querySelector('[data-field="count"]').value) || 0;
+          var internal = parseInt(tr.querySelector('[data-field="internal"]').value) || 0;
+          var external = parseInt(tr.querySelector('[data-field="external"]').value) || 0;
+          var extNaCb  = tr.querySelector('[data-field="external-na"]');
+          var extNa    = extNaCb ? extNaCb.checked : false;
+          if (!label && !internal && !external && !extNa) return;
+          rows.push({ type: 'custom', label: label, duration: Math.round(durMin / 10), count: cnt, internal: internal, external: external, externalNa: extNa });
+        });
+        return rows;
       }
 
       // 小学生〜中3 の収集
@@ -1488,35 +1592,44 @@
         });
       }
 
-      // 高校生 回数別（custom rows: KO_TYPES に適用、高1は春期除外）
-      var customTbody = document.getElementById('unified-custom-tbody');
-      if (customTbody) {
-        customTbody.querySelectorAll('tr[data-row-type="custom"]').forEach(function(tr) {
-          var label    = (tr.querySelector('[data-field="label"]').value || '').trim();
-          var durMin   = parseInt(tr.querySelector('[data-field="duration-min"]').value) || 90;
-          var cnt      = parseInt(tr.querySelector('[data-field="count"]').value) || 0;
-          var internal = parseInt(tr.querySelector('[data-field="internal"]').value) || 0;
-          var external = parseInt(tr.querySelector('[data-field="external"]').value) || 0;
-          var extNaCb  = tr.querySelector('[data-field="external-na"]');
-          var extNa    = extNaCb ? extNaCb.checked : false;
-          if (!label && !internal && !external && !extNa) return;
-          var row = { type: 'custom', label: label, duration: Math.round(durMin / 10), count: cnt, internal: internal, external: external, externalNa: extNa };
-          var isKo1 = label.indexOf('高1') !== -1;
-          KO_TYPES.forEach(function(tid) {
-            if (isKo1 && tid === 'spring') return;  // 高1 は春期に含めない
-            allTypeRows[tid].push(row);
-          });
-        });
-      }
+      // 中3 追加行（チェック済み講習タイプに適用）
+      var chu3Rows = collectCustomTbody('unified-chu3-tbody');
+      var chu3Types = [];
+      document.querySelectorAll('.chu3-apply-cb:checked').forEach(function(cb) { chu3Types.push(cb.value); });
+      chu3Rows.forEach(function(row) {
+        chu3Types.forEach(function(tid) { allTypeRows[tid].push(row); });
+      });
 
-      // sectionScopes を収集（統合パネルの shozui / custom ボタンから）
-      var sectionScopes = collectLecSectionScopes_();
-      // standard スコープは統合パネルでは常に "all"
-      sectionScopes.standard = { campusScope: 'all', campusCodes: [] };
+      // 高校生 回数別（チェック済み講習タイプに適用、高1は春期除外）
+      var koRows = collectCustomTbody('unified-custom-tbody');
+      var koTypes = [];
+      document.querySelectorAll('.ko-apply-cb:checked').forEach(function(cb) { koTypes.push(cb.value); });
+      koRows.forEach(function(row) {
+        var isKo1 = (row.label || '').indexOf('高1') !== -1;
+        koTypes.forEach(function(tid) {
+          if (isKo1 && tid === 'spring') return;  // 高1 は春期に含めない
+          allTypeRows[tid].push(row);
+        });
+      });
+
+      // スコープ収集
+      var stdScope  = { campusScope: 'all', campusCodes: [] };
+      var shzScope  = getScopeForKey_('shozui');
+      var koScope   = getScopeForKey_('custom');
+      var chu3Scope = getScopeForKey_('custom_chu3');
 
       var allTypes = {};
       ALL_TYPES.forEach(function(tid) {
-        allTypes[tid] = { rows: allTypeRows[tid], sectionScopes: sectionScopes };
+        // 各タイプの sectionScopes: chu3の追加行は chu3Scope, 高校生は koScope
+        var isChu3Only = CHU3_ONLY.indexOf(tid) !== -1;
+        allTypes[tid] = {
+          rows: allTypeRows[tid],
+          sectionScopes: {
+            standard: stdScope,
+            shozui:   shzScope,
+            custom:   isChu3Only ? chu3Scope : koScope
+          }
+        };
       });
       return allTypes;
     }
