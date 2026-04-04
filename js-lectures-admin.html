@@ -106,6 +106,14 @@
                  + '</tr></thead><tbody>';
 
       rows.forEach(function(row, ri) {
+        var isFirst = (ri === 0);
+        var isLast  = (ri === rows.length - 1);
+        var upBtn   = isFirst
+          ? '<button disabled style="background:none;border:none;color:#ccc;font-size:11px;cursor:default;padding:1px 3px;">↑</button>'
+          : '<button onclick="moveNcRow_(this,-1)" title="上へ" style="background:none;border:none;cursor:pointer;color:#555;font-size:11px;padding:1px 3px;">↑</button>';
+        var downBtn = isLast
+          ? '<button disabled style="background:none;border:none;color:#ccc;font-size:11px;cursor:default;padding:1px 3px;">↓</button>'
+          : '<button onclick="moveNcRow_(this,1)" title="下へ" style="background:none;border:none;cursor:pointer;color:#555;font-size:11px;padding:1px 3px;">↓</button>';
         tableHtml += '<tr>';
         for (var ci = 0; ci < colCount; ci++) {
           var cellVal = (row[ci] !== undefined && row[ci] !== null) ? row[ci] : '';
@@ -114,7 +122,7 @@
                      + 'style="width:100%;min-width:40px;border:none;font-size:12px;padding:2px 4px;" placeholder="—">'
                      + '</td>';
         }
-        tableHtml += '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;"></td>'
+        tableHtml += '<td style="border:1px solid #ddd;padding:2px 2px;text-align:center;white-space:nowrap;">' + upBtn + downBtn + '</td>'
                    + '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;">'
                    + '<button onclick="deleteNcRow_(this)" title="行を削除" style="background:none;border:none;cursor:pointer;color:#e57373;font-size:14px;line-height:1;">✕</button>'
                    + '</td></tr>';
@@ -219,7 +227,11 @@
                    + 'style="width:100%;min-width:40px;border:none;font-size:12px;padding:2px 4px;" placeholder="—">'
                    + '</td>';
       }
-      cellsHtml += '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;"></td>'
+      // 追加行は常に末尾なので ↑は有効・↓は当面disabled（DOMに追加後に前行の↓を更新不要）
+      cellsHtml += '<td style="border:1px solid #ddd;padding:2px 2px;text-align:center;white-space:nowrap;">'
+               + '<button onclick="moveNcRow_(this,-1)" title="上へ" style="background:none;border:none;cursor:pointer;color:#555;font-size:11px;padding:1px 3px;">↑</button>'
+               + '<button disabled style="background:none;border:none;color:#ccc;font-size:11px;cursor:default;padding:1px 3px;">↓</button>'
+               + '</td>'
                + '<td style="border:1px solid #ddd;padding:3px 4px;text-align:center;">'
                + '<button onclick="deleteNcRow_(this)" title="行を削除" style="background:none;border:none;cursor:pointer;color:#e57373;font-size:14px;line-height:1;">✕</button>'
                + '</td>';
@@ -233,6 +245,27 @@
     function deleteNcRow_(btn) {
       var tr = btn.closest('tr');
       if (tr) tr.remove();
+    }
+
+    /**
+     * セクション内の行を上下に移動する
+     * @param {HTMLElement} btn ボタン要素
+     * @param {number} dir -1=上、1=下
+     */
+    function moveNcRow_(btn, dir) {
+      var tr = btn.closest('tr');
+      var tbody = tr ? tr.closest('tbody') : null;
+      if (!tr || !tbody) return;
+      var rows = tbody.querySelectorAll('tr');
+      var idx = Array.prototype.indexOf.call(rows, tr);
+      var targetIdx = idx + dir;
+      if (targetIdx < 0 || targetIdx >= rows.length) return;
+      var target = rows[targetIdx];
+      if (dir === -1) {
+        tbody.insertBefore(tr, target);
+      } else {
+        tbody.insertBefore(tr, target.nextSibling);
+      }
     }
 
     /**
