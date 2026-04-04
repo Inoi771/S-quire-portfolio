@@ -456,7 +456,11 @@
             return;
           }
 
-          var html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+          var html = '<div style="margin-bottom:12px;text-align:right;">'
+                   + '<button onclick="showUnifiedPricingPanel_()" '
+                   + 'style="background:var(--theme-color);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600;">📊 料金一括設定</button>'
+                   + '</div>'
+                   + '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
                    + '<thead><tr style="background:#f5f5f5;">'
                    + '<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;">講習名</th>'
                    + '<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e0e0e0;font-weight:600;color:#444;">開始日</th>'
@@ -625,6 +629,7 @@
 
     var lecPricingCache_ = null;  // バックエンドから取得した料金データのキャッシュ
     var lecCampusMap_   = null;  // 校舎コード→名前マップ（通常設定と共用）
+    var unifiedPricingCache_ = null;  // 統合料金設定パネル用キャッシュ
 
     // 学年キー定義（フロントエンド用）
     var LEC_GRADE_KEYS_ALL_ = ['sho', 'chu1', 'chu2', 'chu3', 'ko1', 'ko2', 'ko3'];
@@ -1125,5 +1130,426 @@
     function updateLecPricingTax_(input) {
       updateLecUnifiedTax_(input);
     }
+
+    // ========================================
+    // 【統合料金設定パネル】
+    // ========================================
+
+    /**
+     * 統合料金設定パネルを表示する（学年ファースト一括設定UI）
+     * 管理タブ > 講習設定 の「📊 料金一括設定」ボタンから呼び出す
+     */
+    function showUnifiedPricingPanel_() {
+      var panel = document.getElementById('admin-lec-grade-panel');
+      if (!panel) return;
+      panel.innerHTML = '<div style="color:#999;font-size:14px;padding:10px;">読み込み中...</div>';
+      panel.dataset.currentLectureId = '';
+      panel.dataset.currentTypeId = '';
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      var loaded = { pricing: null, campuses: ncCampusMap_ };
+      function tryRender_() {
+        if (loaded.pricing === null || loaded.campuses === null) return;
+        lecCampusMap_ = loaded.campuses;
+        if (loaded.pricing.success && loaded.pricing.data) {
+          unifiedPricingCache_ = loaded.pricing.data;
+          renderUnifiedPricingPanel_(loaded.pricing.data);
+        } else {
+          panel.innerHTML = '<div style="color:#e57373;padding:10px;">データ取得に失敗しました</div>';
+        }
+      }
+
+      google.script.run
+        .withSuccessHandler(function(r) { loaded.pricing = r || { success: false }; tryRender_(); })
+        .withFailureHandler(function() { loaded.pricing = { success: false }; tryRender_(); })
+        .getLecturePricingConfig();
+
+      if (!ncCampusMap_) {
+        google.script.run
+          .withSuccessHandler(function(r) { loaded.campuses = (r && r.success) ? r.data : {}; tryRender_(); })
+          .withFailureHandler(function() { loaded.campuses = {}; tryRender_(); })
+          .getCampusConfigForWeb();
+      } else {
+        loaded.campuses = ncCampusMap_;
+      }
+    }
+
+    /**
+     * 統合料金設定パネルの内容を描画する
+     * @param {Object} pricingData getLecturePricingConfig()が返すデータ
+     */
+    function renderUnifiedPricingPanel_(pricingData) {
+      var panel = document.getElementById('admin-lec-grade-panel');
+      if (!panel) return;
+
+      var ALL_TYPES  = ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'];
+      var KO_TYPES   = ['spring', 'summer', 'winter'];
+      var CHU3_ONLY  = ['kiso1', 'kiso2', 'nyushi'];
+      var STD_GRADES = ['sho', 'chu1', 'chu2', 'chu3'];
+      var KO_GRADES  = ['ko1', 'ko2', 'ko3'];
+      var TYPE_NAMES = { spring: '春期', summer: '夏期', kiso1: '基礎(1)', kiso2: '基礎(2)', winter: '冬期', nyushi: '入試前' };
+
+      var thSt = 'padding:6px 8px;text-align:center;font-weight:600;color:#444;border-bottom:2px solid #ddd;font-size:11px;white-space:nowrap;';
+      var tdSt = 'padding:5px 3px;text-align:center;';
+      var inSt = 'padding:3px 4px;border:1px solid #ccc;border-radius:3px;font-size:12px;';
+
+      // 各学年の「全講習共通」判定
+      function getGradeStatus(gk) {
+        var valsByType = {};
+        ALL_TYPES.forEach(function(tid) {
+          if (CHU3_ONLY.indexOf(tid) !== -1 && gk !== 'chu3') return;
+          var td = pricingData[tid];
+          if (!td || !td.rows) return;
+          var row = td.rows.find(function(r) { return r.type === 'standard' && r.gradeKey === gk; });
+          if (row) valsByType[tid] = { duration: row.duration || 0, count: row.count || 0, internal: row.internal || 0, external: row.external || 0 };
+        });
+        var keys = Object.keys(valsByType);
+        var defDur = gk === 'sho' ? 5 : (['ko1','ko2','ko3'].indexOf(gk) !== -1 ? 9 : 8);
+        if (keys.length === 0) return { useForAll: true, vals: { duration: defDur, count: 4, internal: 0, external: 0 }, perType: {} };
+        var first = valsByType[keys[0]];
+        var allSame = keys.every(function(k) {
+          var v = valsByType[k];
+          return v.duration === first.duration && v.count === first.count && v.internal === first.internal && v.external === first.external;
+        });
+        return { useForAll: allSame, vals: first, perType: valsByType };
+      }
+
+      // 入力セル（duration-min, count, internal, external）を生成
+      function buildInputCells(vals) {
+        var dur = (vals.duration || 0) * 10;
+        var cnt = vals.count || 0;
+        var internal = vals.internal || 0;
+        var external = vals.external || 0;
+        var intTax = Math.floor(internal * 1.1);
+        var extTax = Math.floor(external * 1.1);
+        return '<td style="' + tdSt + '"><input type="number" data-input-field="duration" value="' + dur + '" min="10" max="300" step="10" style="' + inSt + 'width:58px;text-align:center;"></td>'
+          + '<td style="' + tdSt + '"><input type="number" data-input-field="count" value="' + cnt + '" min="0" max="20" style="' + inSt + 'width:46px;text-align:center;"></td>'
+          + '<td style="' + tdSt + '"><input type="number" data-input-field="internal" value="' + internal + '" min="0" step="100" oninput="updateUnifiedTax_(this)" style="' + inSt + 'width:78px;text-align:right;"></td>'
+          + '<td style="' + tdSt + 'color:#888;font-size:11px;" data-tax-field="internal">' + intTax.toLocaleString() + '</td>'
+          + '<td style="' + tdSt + '"><input type="number" data-input-field="external" value="' + external + '" min="0" step="100" oninput="updateUnifiedTax_(this)" style="' + inSt + 'width:78px;text-align:right;"></td>'
+          + '<td style="' + tdSt + 'color:#888;font-size:11px;" data-tax-field="external">' + extTax.toLocaleString() + '</td>';
+      }
+
+      // === ヘッダー ===
+      var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px;">'
+        + '<strong style="font-size:15px;color:#333;">📊 講習料金 一括設定</strong>'
+        + '<button onclick="document.getElementById('admin-lec-grade-panel').style.display='none'" '
+        + 'style="background:none;border:1px solid #ccc;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;color:#666;">閉じる</button>'
+        + '</div>'
+        + '<p style="font-size:12px;color:#888;margin-bottom:16px;line-height:1.5;">学年ごとに「全講習共通」にするか個別設定するか選択できます。税抜き入力→税込みを自動計算。保存すると料金表・配布物PDFに反映されます。</p>';
+
+      // === 小学生・中学生 ===
+      html += '<div style="margin-bottom:22px;">'
+        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#f0f0f0;border-radius:6px;margin-bottom:10px;">■ 小学生・中学生</div>';
+
+      STD_GRADES.forEach(function(gk) {
+        var status = getGradeStatus(gk);
+        var useForAll = status.useForAll;
+        var gradeLabel = LEC_GRADE_LABELS_[gk];
+
+        html += '<div style="border:1px solid #ddd;border-radius:6px;margin-bottom:8px;overflow:hidden;" data-grade-block="' + gk + '">'
+          // ヘッダー行
+          + '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#fafafa;border-bottom:1px solid #eee;">'
+          + '<span style="font-weight:600;font-size:13px;color:#333;">' + escapeHtml(gradeLabel) + '</span>'
+          + '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:#555;">'
+          + '<input type="checkbox" data-grade-all="' + gk + '" onchange="onGradeAllChange_(this)"' + (useForAll ? ' checked' : '') + '>'
+          + '全講習共通</label>'
+          + '</div>';
+
+        // 全講習共通入力（useForAll=true のとき表示）
+        html += '<div id="grade-common-' + gk + '" style="padding:8px 12px;' + (useForAll ? '' : 'display:none;') + '">'
+          + '<div style="font-size:11px;color:#aaa;margin-bottom:4px;">1コマ(分)　回数　内部生(税抜き)　税込み　外部生(税抜き)　税込み</div>'
+          + '<table style="width:100%;border-collapse:collapse;"><tbody>'
+          + '<tr data-grade-key="' + gk + '">' + buildInputCells(status.vals) + '</tr>'
+          + '</tbody></table></div>';
+
+        // 講習別入力（useForAll=false のとき表示）
+        html += '<div id="grade-pertype-' + gk + '" style="padding:8px 12px;' + (useForAll ? 'display:none;' : '') + '">'
+          + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+          + '<thead><tr style="background:#f5f5f5;">'
+          + '<th style="' + thSt + 'text-align:left;width:60px;">講習</th>'
+          + '<th style="' + thSt + 'width:62px;">1コマ(分)</th>'
+          + '<th style="' + thSt + 'width:50px;">回数</th>'
+          + '<th style="' + thSt + '">内部生(税抜き)</th>'
+          + '<th style="' + thSt + 'width:58px;">税込み</th>'
+          + '<th style="' + thSt + '">外部生(税抜き)</th>'
+          + '<th style="' + thSt + 'width:58px;">税込み</th>'
+          + '</tr></thead><tbody>';
+
+        ALL_TYPES.forEach(function(tid) {
+          if (CHU3_ONLY.indexOf(tid) !== -1 && gk !== 'chu3') return;
+          var defDur = gk === 'sho' ? 5 : 8;
+          var perVals = (status.perType && status.perType[tid]) || { duration: defDur, count: 4, internal: 0, external: 0 };
+          html += '<tr style="border-bottom:1px solid #eee;" data-grade-key="' + gk + '" data-type-id="' + tid + '">'
+            + '<td style="padding:5px 8px;font-size:11px;color:#666;white-space:nowrap;">' + escapeHtml(TYPE_NAMES[tid] || tid) + '</td>'
+            + buildInputCells(perVals)
+            + '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        html += '</div>';  // grade-block
+      });
+
+      html += '</div>';  // 小学生・中学生セクション
+
+      // === 勝瑞校 高校生料金（shozui rows: spring から読み込み、春・夏・冬に適用）===
+      var springData = pricingData['spring'] || { rows: [], sectionScopes: {} };
+      var springRows = springData.rows || [];
+      var sectionScopes = springData.sectionScopes || {};
+      var defaultScopes = {
+        standard: { campusScope: 'all', campusCodes: [] },
+        shozui:   { campusScope: 'specific', campusCodes: ['08'] },
+        custom:   { campusScope: 'all', campusCodes: [] }
+      };
+      ['standard','shozui','custom'].forEach(function(k) { sectionScopes[k] = sectionScopes[k] || defaultScopes[k]; });
+
+      var shozuiRows = springRows.filter(function(r) { return r.type === 'shozui'; });
+
+      html += '<div style="margin-bottom:22px;">'
+        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#e8f4fd;border-radius:6px;margin-bottom:8px;">■ 勝瑞校 高校生料金（春・夏・冬 共通）</div>'
+        + '<div style="font-size:12px;color:#888;margin-bottom:8px;">勝瑞校の高校生のみに適用。校舎チェックボックスで対象を選択してください。</div>'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+        + buildLecScopeUi_("shozui", sectionScopes.shozui)
+        + '</div>'
+        + buildLecScopeCampusCheckboxes_("shozui", sectionScopes.shozui)
+        + '<table id="unified-shozui-table" style="width:100%;border-collapse:collapse;font-size:12px;">'
+        + '<thead><tr style="background:#f0f7fd;">'
+        + '<th style="' + thSt + 'text-align:left;width:50px;">学年</th>'
+        + '<th style="' + thSt + 'width:62px;">1コマ(分)</th>'
+        + '<th style="' + thSt + 'width:50px;">回数</th>'
+        + '<th style="' + thSt + '">内部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:58px;">税込み</th>'
+        + '<th style="' + thSt + '">外部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:58px;">税込み</th>'
+        + '</tr></thead><tbody>';
+
+      KO_GRADES.forEach(function(gk) {
+        var ex = shozuiRows.find(function(r) { return r.gradeKey === gk; });
+        var vals = ex ? { duration: ex.duration||9, count: ex.count||4, internal: ex.internal||0, external: ex.external||0 }
+                      : { duration: 9, count: 4, internal: 0, external: 0 };
+        html += '<tr style="border-bottom:1px solid #eee;" data-row-type="shozui" data-grade-key="' + gk + '">'
+          + '<td style="padding:5px 8px;font-weight:500;">' + escapeHtml(LEC_GRADE_LABELS_[gk]) + '</td>'
+          + buildInputCells(vals)
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // === 高校生 回数別料金（custom rows: summer から読み込み、春・夏・冬に適用）===
+      // summer が最も行数が多い（高1も含む）ため代表として使用
+      var summerData = pricingData['summer'] || { rows: [] };
+      var summerCustomRows = (summerData.rows || []).filter(function(r) { return r.type === 'custom'; });
+      var springCustomRows = springRows.filter(function(r) { return r.type === 'custom'; });
+      // summer にない spring only の行を追加
+      var mergedCustom = summerCustomRows.slice();
+      springCustomRows.forEach(function(r) {
+        if (!mergedCustom.some(function(m) { return m.label === r.label; })) mergedCustom.push(r);
+      });
+
+      html += '<div style="margin-bottom:22px;">'
+        + '<div style="font-weight:700;font-size:13px;color:#444;padding:6px 12px;background:#f5f0e0;border-radius:6px;margin-bottom:8px;">■ 高校生 回数別料金（追加行: 春・夏・冬 共通）</div>'
+        + '<div style="font-size:12px;color:#888;margin-bottom:6px;">春期・夏期・冬期に共通で適用。基礎対策・入試前は中3のみのため除外。「高1」を含む行は春期には適用しません。</div>'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+        + buildLecScopeUi_("custom", sectionScopes.custom)
+        + '<button onclick="addUnifiedCustomRow_()" '
+        + 'style="background:none;border:1px solid #22c55e;color:#22c55e;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:600;">＋ 行を追加</button>'
+        + '</div>'
+        + buildLecScopeCampusCheckboxes_("custom", sectionScopes.custom)
+        + '<table id="unified-custom-table" style="width:100%;border-collapse:collapse;font-size:12px;">'
+        + '<thead><tr style="background:#fdf8ee;">'
+        + '<th style="' + thSt + 'text-align:left;">ラベル</th>'
+        + '<th style="' + thSt + 'width:68px;">1コマ(分)</th>'
+        + '<th style="' + thSt + 'width:55px;">回数</th>'
+        + '<th style="' + thSt + '">内部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:62px;">税込み</th>'
+        + '<th style="' + thSt + '">外部生(税抜き)</th>'
+        + '<th style="' + thSt + 'width:62px;">税込み</th>'
+        + '<th style="' + thSt + 'width:30px;"></th>'
+        + '</tr></thead>'
+        + '<tbody id="unified-custom-tbody">';
+
+      mergedCustom.forEach(function(row, idx) { html += buildLecCustomRowHtml_(idx, row); });
+      html += '</tbody></table></div>';
+
+      // === 中3 多教科・その他個別設定の注記 ===
+      html += '<div style="font-size:12px;color:#888;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:4px;padding:8px 12px;margin-bottom:16px;">'
+        + '💡 中3の多教科セット料金・入試前の個別設定は、上の日程一覧の「⚙️ 料金・設定」ボタンから各講習ごとに設定できます。'
+        + '</div>';
+
+      // === 保存ボタン ===
+      html += '<div style="display:flex;align-items:center;gap:12px;padding-bottom:8px;">'
+        + '<button onclick="saveUnifiedPricingAdmin_()" '
+        + 'style="padding:10px 28px;background:var(--theme-color);color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">保存する</button>'
+        + '<span id="unified-pricing-status" style="font-size:13px;color:#555;"></span>'
+        + '</div>';
+
+      panel.innerHTML = html;
+    }
+
+    /**
+     * 「全講習共通」チェックボックスの変更に応じて表示を切り替える
+     * @param {HTMLInputElement} cb チェックボックス要素
+     */
+    function onGradeAllChange_(cb) {
+      var gk = cb.dataset.gradeAll;
+      var commonDiv = document.getElementById('grade-common-' + gk);
+      var pertypeDiv = document.getElementById('grade-pertype-' + gk);
+      if (commonDiv) commonDiv.style.display = cb.checked ? '' : 'none';
+      if (pertypeDiv) pertypeDiv.style.display = cb.checked ? 'none' : '';
+    }
+
+    /**
+     * 統合パネルの税抜き入力時に税込みを自動更新する
+     * @param {HTMLInputElement} input 変更された入力要素
+     */
+    function updateUnifiedTax_(input) {
+      var val = parseInt(input.value) || 0;
+      var tax = Math.floor(val * 1.1);
+      var field = input.dataset.inputField;
+      if (!field) return;
+      var tr = input.closest('tr');
+      if (!tr) return;
+      var taxCell = tr.querySelector('[data-tax-field="' + field + '"]');
+      if (taxCell) taxCell.textContent = tax.toLocaleString();
+    }
+
+    /**
+     * 統合パネルの追加行テーブルに空の行を追加する
+     */
+    function addUnifiedCustomRow_() {
+      var tbody = document.getElementById('unified-custom-tbody');
+      if (!tbody) return;
+      var idx = tbody.querySelectorAll('tr').length;
+      var tmp = document.createElement('tbody');
+      tmp.innerHTML = buildLecCustomRowHtml_(idx, { type: 'custom', label: '', duration: 9, count: 1, internal: 0, external: 0 });
+      var newTr = tmp.querySelector('tr');
+      if (newTr) tbody.appendChild(newTr);
+    }
+
+    /**
+     * 統合パネルのフォームデータを収集し、全講習タイプ別 rows を構築する
+     * @return {Object} { allTypes: { spring:{rows,sectionScopes}, ... } }
+     */
+    function collectUnifiedPricingData_() {
+      var ALL_TYPES  = ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'];
+      var KO_TYPES   = ['spring', 'summer', 'winter'];
+      var CHU3_ONLY  = ['kiso1', 'kiso2', 'nyushi'];
+      var STD_GRADES = ['sho', 'chu1', 'chu2', 'chu3'];
+      var KO_GRADES  = ['ko1', 'ko2', 'ko3'];
+
+      var allTypeRows = {};
+      ALL_TYPES.forEach(function(tid) { allTypeRows[tid] = []; });
+
+      function getInputVal(tr, field) {
+        var el = tr.querySelector('[data-input-field="' + field + '"]');
+        return parseInt(el ? el.value : '0') || 0;
+      }
+
+      // 小学生〜中3 の収集
+      STD_GRADES.forEach(function(gk) {
+        var allCb = document.querySelector('[data-grade-all="' + gk + '"]');
+        var useForAll = allCb ? allCb.checked : true;
+
+        ALL_TYPES.forEach(function(tid) {
+          if (CHU3_ONLY.indexOf(tid) !== -1 && gk !== 'chu3') return;
+          var durMin, cnt, internal, external;
+          if (useForAll) {
+            var commonTr = document.querySelector('#grade-common-' + gk + ' tr[data-grade-key="' + gk + '"]');
+            if (!commonTr) return;
+            durMin   = getInputVal(commonTr, 'duration');
+            cnt      = getInputVal(commonTr, 'count');
+            internal = getInputVal(commonTr, 'internal');
+            external = getInputVal(commonTr, 'external');
+          } else {
+            var perTr = document.querySelector('#grade-pertype-' + gk + ' tr[data-grade-key="' + gk + '"][data-type-id="' + tid + '"]');
+            if (!perTr) return;
+            durMin   = getInputVal(perTr, 'duration');
+            cnt      = getInputVal(perTr, 'count');
+            internal = getInputVal(perTr, 'internal');
+            external = getInputVal(perTr, 'external');
+          }
+          allTypeRows[tid].push({ type: 'standard', gradeKey: gk, duration: Math.round(durMin / 10), count: cnt, internal: internal, external: external });
+        });
+      });
+
+      // 勝瑞校 高校生（shozui rows: KO_TYPES に適用）
+      var shozuiTbody = document.querySelector('#unified-shozui-table tbody');
+      if (shozuiTbody) {
+        shozuiTbody.querySelectorAll('tr[data-row-type="shozui"]').forEach(function(tr) {
+          var gk = tr.dataset.gradeKey;
+          var row = {
+            type: 'shozui', gradeKey: gk,
+            duration: Math.round(getInputVal(tr, 'duration') / 10),
+            count: getInputVal(tr, 'count'),
+            internal: getInputVal(tr, 'internal'),
+            external: getInputVal(tr, 'external')
+          };
+          KO_TYPES.forEach(function(tid) { allTypeRows[tid].push(row); });
+        });
+      }
+
+      // 高校生 回数別（custom rows: KO_TYPES に適用、高1は春期除外）
+      var customTbody = document.getElementById('unified-custom-tbody');
+      if (customTbody) {
+        customTbody.querySelectorAll('tr[data-row-type="custom"]').forEach(function(tr) {
+          var label    = (tr.querySelector('[data-field="label"]').value || '').trim();
+          var durMin   = parseInt(tr.querySelector('[data-field="duration-min"]').value) || 90;
+          var cnt      = parseInt(tr.querySelector('[data-field="count"]').value) || 0;
+          var internal = parseInt(tr.querySelector('[data-field="internal"]').value) || 0;
+          var external = parseInt(tr.querySelector('[data-field="external"]').value) || 0;
+          var extNaCb  = tr.querySelector('[data-field="external-na"]');
+          var extNa    = extNaCb ? extNaCb.checked : false;
+          if (!label && !internal && !external && !extNa) return;
+          var row = { type: 'custom', label: label, duration: Math.round(durMin / 10), count: cnt, internal: internal, external: external, externalNa: extNa };
+          var isKo1 = label.indexOf('高1') !== -1;
+          KO_TYPES.forEach(function(tid) {
+            if (isKo1 && tid === 'spring') return;  // 高1 は春期に含めない
+            allTypeRows[tid].push(row);
+          });
+        });
+      }
+
+      // sectionScopes を収集（統合パネルの shozui / custom ボタンから）
+      var sectionScopes = collectLecSectionScopes_();
+      // standard スコープは統合パネルでは常に "all"
+      sectionScopes.standard = { campusScope: 'all', campusCodes: [] };
+
+      var allTypes = {};
+      ALL_TYPES.forEach(function(tid) {
+        allTypes[tid] = { rows: allTypeRows[tid], sectionScopes: sectionScopes };
+      });
+      return allTypes;
+    }
+
+    /**
+     * 統合料金設定パネルのデータを一括保存する
+     */
+    function saveUnifiedPricingAdmin_() {
+      var statusEl = document.getElementById('unified-pricing-status');
+      if (statusEl) { statusEl.textContent = '保存中...'; statusEl.style.color = '#555'; }
+
+      var allTypes = collectUnifiedPricingData_();
+      var payload = JSON.stringify({ allTypes: allTypes });
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            if (statusEl) { statusEl.textContent = '❌ ' + (result ? result.error : '保存失敗'); statusEl.style.color = '#e57373'; }
+            return;
+          }
+          if (statusEl) { statusEl.textContent = '✓ 保存しました（料金表・配布物PDFに自動反映されます）'; statusEl.style.color = '#22c55e'; }
+          // キャッシュリセット
+          lecPricingCache_ = null;
+          unifiedPricingCache_ = null;
+          lectureTabInitialized = false;
+          if (typeof matLecPricingData !== 'undefined') matLecPricingData = null;
+          if (typeof pricingData !== 'undefined') pricingData = null;
+        })
+        .withFailureHandler(function(err) {
+          if (statusEl) { statusEl.textContent = '❌ ' + err; statusEl.style.color = '#e57373'; }
+        })
+        .saveUnifiedLecturePricing(payload);
+    }
+
 </script>
 
