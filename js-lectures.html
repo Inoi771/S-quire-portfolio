@@ -274,7 +274,14 @@
           document.getElementById('lectures-materials') &&
           document.getElementById('lectures-materials').style.display !== 'none') {
         matEntriesCache = {};
+        matWebEntriesCache = {};
         updateMatPreviewOnCampusChange();
+        // HP掲載用タブが表示中なら再取得
+        if (typeof onMatWebCampusChange === 'function' &&
+            document.getElementById('mat-tab-web') &&
+            document.getElementById('mat-tab-web').style.display !== 'none') {
+          onMatWebCampusChange();
+        }
       }
     }
 
