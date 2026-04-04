@@ -127,7 +127,14 @@
 - `getAiKnowledgeBase()` — AIナレッジベースの全エントリ取得（Admin のみ）
 - `saveAiKnowledgeEntry(entryJson)` — ナレッジベースのエントリ追加・更新（Admin のみ。idがあれば更新、なければ新規）
 - `deleteAiKnowledgeEntry(entryId)` — ナレッジベースのエントリ削除（Admin のみ）
-- `getAiKnowledgeBaseForPrompt_()` — プロンプト用にナレッジベースをテキスト形式で返す内部ヘルパー
+- `getAiKnowledgeBaseForPrompt_()` — プロンプト用にナレッジベース（手動KB＋自動学習）をテキスト形式で返す内部ヘルパー
+- `saveAutoLearnedKnowledge_(data)` — 会話から抽出された知識をFirestoreに自動保存する内部ヘルパー（重複チェック・上限30件チェック付き）
+- `isDuplicateKnowledge_(content)` — 新しい知識が既存の知識と重複しているか判定する内部ヘルパー（Jaccard類似度 > 0.6で重複判定）
+- `tokenizeForSimilarity_(text)` — テキストを2文字グラム（バイグラム）に分割する内部ヘルパー
+- `jaccardSimilarity_(tokensA, tokensB)` — 2つのトークン配列のJaccard類似度を計算する内部ヘルパー
+- `getAutoLearnedKnowledge()` — 自動学習エントリ一覧を取得（Admin のみ）
+- `editAutoLearnedKnowledge(docId, entryJson)` — 自動学習エントリを編集（Admin のみ）
+- `deleteAutoLearnedKnowledge(docId)` — 自動学習エントリを削除（Admin のみ）
 - `applyConfigChange_(settings)` — config_changeの推奨設定をバックエンドで実際に適用する内部ヘルパー（themeColor, aiAssistantName, aiPersonality, displayName）
 - `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule / create_lecture_entry / edit_lecture_entry / delete_lecture_entry）
 - `createLectureEntryAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを1件追加する内部ヘルパー

@@ -157,7 +157,7 @@ markdown# S-quire — プロジェクト設計書
 - **成績管理** — 生徒情報CRUD・成績入力・Gemini OCRで一括取り込み
 - **設定** — テーマカラー・プロフィール・AIアシスタント名
 - **管理（Admin のみ）** — スクリプトプロパティ管理・Driveファイル操作・ログ閲覧
-- **AI アシスタント** — ヘッダーのウィジェットから Gemini に質問・設定変更依頼
+- **AI アシスタント** — ヘッダーのウィジェットから Gemini に質問・設定変更依頼・会話から自動学習（自己成長機能）
 
 ---
 
@@ -173,9 +173,9 @@ MyProject/
 ├── settings.js          設定・プロフィール・引き継ぎ（約760行）
 ├── admin.js             Admin API・初期化・ユーティリティ（約1700行）
 ├── line.js              LINE通知・LINEスケジューラー（約1700行）
-├── features.js          AIアシスタント・料金表・講習管理（約3510行）
+├── features.js          AIアシスタント・料金表・講習管理・AI自動学習（約4360行）
 ├── backup.js            Firestoreバックアップ機能（Firestore→スプレッドシート定時バックアップ）（約330行）
-├── index.html           HTMLシェル（約3120行）
+├── index.html           HTMLシェル（約3240行）
 ├── styles.html          CSS（約1920行）
 ├── js-core.html         JS: 初期化・タブ制御・スケジュール・設定（約2340行）
 ├── js-lectures.html          JS: 講習管理タブ（約1660行）
@@ -192,7 +192,7 @@ MyProject/
 ├── js-admin-ext.html    JS: Admin続き・固定イベント・AIアシスタント（約2270行）
 ├── js-admin-lec-deadline.html JS: 講習日程締切管理（約200行）
 ├── js-ai-actions.html   JS: AIアシスタント アクション実行（約350行）
-├── js-admin-chatbot.html JS: チャットボット管理（約230行）
+├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
 ├── firebase-init.html   Firebase 初期化（<head>内ロード）

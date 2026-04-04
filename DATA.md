@@ -159,6 +159,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `flyerAi` | `{lectureId}_{campusCode}` | AIチラシHTML |
 | `imageTags` | `{driveFileId}` | チラシ用画像タグ |
 | `operationLogs` | `log_{ms}_{random5}` | 操作ログ |
+| `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ（会話から抽出した知識）。`category`, `content`, `reason`, `source`, `learnedAt` |
 
 **Firestore利用上の注意：**
 - 複合クエリ（AND）はコンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること

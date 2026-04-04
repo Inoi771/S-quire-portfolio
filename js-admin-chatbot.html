@@ -2,6 +2,8 @@
 // ===== 【チャットボット管理】ナレッジベース管理 =====
 
 var kbEntries_ = [];
+var kbAutoEntries_ = [];
+var kbCurrentTab_ = 'manual';
 
 /**
  * チャットボット管理サブタブの初期化
@@ -221,5 +223,265 @@ function deleteKbEntry(entryId) {
 function escapeHtmlKb_(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ===== 【自動学習管理】 =====
+
+/**
+ * 手動登録 / 自動学習 タブ切り替え
+ * @param {string} tab 'manual' or 'auto'
+ */
+function switchKbTab(tab) {
+  kbCurrentTab_ = tab;
+  var manualSection = document.getElementById('kbSectionManual');
+  var autoSection = document.getElementById('kbSectionAuto');
+  var manualBtn = document.getElementById('kbTabManual');
+  var autoBtn = document.getElementById('kbTabAuto');
+
+  if (tab === 'manual') {
+    manualSection.style.display = '';
+    autoSection.style.display = 'none';
+    manualBtn.style.borderBottomColor = 'var(--theme-color, #43e97b)';
+    manualBtn.style.color = 'var(--theme-color, #43e97b)';
+    autoBtn.style.borderBottomColor = 'transparent';
+    autoBtn.style.color = '#888';
+  } else {
+    manualSection.style.display = 'none';
+    autoSection.style.display = '';
+    manualBtn.style.borderBottomColor = 'transparent';
+    manualBtn.style.color = '#888';
+    autoBtn.style.borderBottomColor = 'var(--theme-color, #43e97b)';
+    autoBtn.style.color = 'var(--theme-color, #43e97b)';
+    initAutoLearnedAdmin();
+  }
+}
+
+/**
+ * 自動学習エントリの読み込み
+ */
+function initAutoLearnedAdmin() {
+  var list = document.getElementById('kbAutoEntriesList');
+  if (list) list.innerHTML = '<p style="color:#888; text-align:center;">読み込み中...</p>';
+  hideAutoLearnedForm();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        kbAutoEntries_ = result.entries || [];
+        renderAutoLearnedEntries(kbAutoEntries_);
+      } else {
+        list.innerHTML = '<p style="color:red;">読み込みに失敗しました: ' + (result ? result.error : '不明') + '</p>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('getAutoLearnedKnowledge error:', err);
+      list.innerHTML = '<p style="color:red;">エラー: ' + err + '</p>';
+    })
+    .getAutoLearnedKnowledge();
+}
+
+/**
+ * 自動学習エントリをカテゴリ別に描画
+ * @param {Array} entries エントリ配列
+ */
+function renderAutoLearnedEntries(entries) {
+  var list = document.getElementById('kbAutoEntriesList');
+  var stats = document.getElementById('kbAutoStats');
+  var warning = document.getElementById('kbAutoLimitWarning');
+  var countBadge = document.getElementById('kbAutoCount');
+
+  // バッジ更新
+  if (countBadge) {
+    if (entries.length > 0) {
+      countBadge.textContent = entries.length + '件';
+      countBadge.style.display = '';
+    } else {
+      countBadge.style.display = 'none';
+    }
+  }
+
+  // 上限警告
+  if (warning) {
+    warning.style.display = entries.length >= 30 ? '' : 'none';
+  }
+
+  if (!entries || entries.length === 0) {
+    list.innerHTML = '<p style="color:#888; text-align:center; padding: 20px 0;">AIはまだ何も学習していません。会話で塾のルールや情報を教えると、自動的に蓄積されます。</p>';
+    if (stats) stats.textContent = '0件';
+    return;
+  }
+
+  // 文字数カウント
+  var totalChars = 0;
+  entries.forEach(function(e) { totalChars += (e.content || '').length; });
+  if (stats) {
+    stats.textContent = entries.length + '件 / 約' + totalChars.toLocaleString() + '文字';
+    if (entries.length >= 25) {
+      stats.style.color = '#e74c3c';
+      stats.textContent += '（上限に近づいています）';
+    } else {
+      stats.style.color = '#888';
+    }
+  }
+
+  // カテゴリ別にグループ化
+  var groups = {};
+  entries.forEach(function(e) {
+    var cat = e.category || 'その他';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(e);
+  });
+
+  var html = '';
+  Object.keys(groups).forEach(function(cat) {
+    html += '<div style="margin-bottom: 16px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">';
+    html += '<div style="background: #e8f4fd; padding: 10px 14px; font-weight: bold; font-size: 14px;">🧠 ' + escapeHtmlKb_(cat) + ' （' + groups[cat].length + '件）</div>';
+    groups[cat].forEach(function(entry) {
+      var docId = entry._id || entry.id || '';
+      var learnedDate = entry.learnedAt ? new Date(entry.learnedAt).toLocaleDateString('ja-JP') : '';
+      html += '<div style="padding: 10px 14px; border-top: 1px solid #eee;">';
+      html += '<div style="display: flex; align-items: flex-start; gap: 10px;">';
+      html += '<div style="flex: 1;">';
+      html += '<div style="font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">' + escapeHtmlKb_(entry.content) + '</div>';
+      // 学習理由と日時
+      var meta = [];
+      if (entry.reason) meta.push('理由: ' + escapeHtmlKb_(entry.reason));
+      if (learnedDate) meta.push(learnedDate);
+      if (meta.length > 0) {
+        html += '<div style="font-size: 11px; color: #999; margin-top: 4px;">' + meta.join(' | ') + '</div>';
+      }
+      html += '</div>';
+      html += '<div style="display: flex; gap: 4px; flex-shrink: 0;">';
+      html += '<button onclick="editAutoLearned(\'' + docId + '\')" style="padding: 4px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">編集</button>';
+      html += '<button onclick="deleteAutoLearned(\'' + docId + '\')" style="padding: 4px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">削除</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  list.innerHTML = html;
+}
+
+/**
+ * 自動学習エントリの編集フォームを表示
+ * @param {string} docId ドキュメントID
+ */
+function editAutoLearned(docId) {
+  var entry = null;
+  for (var i = 0; i < kbAutoEntries_.length; i++) {
+    var eid = kbAutoEntries_[i]._id || kbAutoEntries_[i].id || '';
+    if (eid === docId) { entry = kbAutoEntries_[i]; break; }
+  }
+  if (!entry) return;
+
+  document.getElementById('kbAutoEntryId').value = docId;
+  document.getElementById('kbAutoContent').value = entry.content || '';
+
+  // カテゴリをセレクトから選択
+  var sel = document.getElementById('kbAutoCategorySelect');
+  var found = false;
+  for (var j = 0; j < sel.options.length; j++) {
+    if (sel.options[j].value === entry.category) { sel.value = entry.category; found = true; break; }
+  }
+  if (!found) {
+    sel.value = '__custom__';
+    document.getElementById('kbAutoCategoryCustom').style.display = '';
+    document.getElementById('kbAutoCategoryCustom').value = entry.category || '';
+  } else {
+    document.getElementById('kbAutoCategoryCustom').style.display = 'none';
+    document.getElementById('kbAutoCategoryCustom').value = '';
+  }
+
+  document.getElementById('kbAutoFormArea').style.display = 'block';
+  document.getElementById('kbAutoContent').focus();
+}
+
+/**
+ * 自動学習の編集フォームを閉じる
+ */
+function hideAutoLearnedForm() {
+  var form = document.getElementById('kbAutoFormArea');
+  if (form) form.style.display = 'none';
+}
+
+/**
+ * 自動学習カテゴリ選択変更ハンドラー
+ */
+function onKbAutoCategoryChange() {
+  var sel = document.getElementById('kbAutoCategorySelect');
+  var custom = document.getElementById('kbAutoCategoryCustom');
+  if (sel.value === '__custom__') {
+    custom.style.display = '';
+    custom.focus();
+  } else {
+    custom.style.display = 'none';
+    custom.value = '';
+  }
+}
+
+/**
+ * 自動学習エントリの編集を保存
+ */
+function saveAutoLearned() {
+  var sel = document.getElementById('kbAutoCategorySelect');
+  var category = sel.value === '__custom__'
+    ? document.getElementById('kbAutoCategoryCustom').value.trim()
+    : sel.value;
+  var content = document.getElementById('kbAutoContent').value.trim();
+  var docId = document.getElementById('kbAutoEntryId').value;
+
+  if (!category) { appAlert('カテゴリを選択してください。'); return; }
+  if (!content) { appAlert('内容を入力してください。'); return; }
+  if (!docId) { appAlert('エントリIDが見つかりません。'); return; }
+
+  var entry = { category: category, content: content };
+
+  var saveBtn = document.querySelector('#kbAutoFormArea button');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
+      if (result && result.success) {
+        hideAutoLearnedForm();
+        showToast(result.message, 'success');
+        initAutoLearnedAdmin();
+      } else {
+        appAlert('保存に失敗しました: ' + (result ? result.error : '不明'));
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存'; }
+      console.error('editAutoLearnedKnowledge error:', err);
+      appAlert('エラーが発生しました: ' + err);
+    })
+    .editAutoLearnedKnowledge(docId, JSON.stringify(entry));
+}
+
+/**
+ * 自動学習エントリを削除（確認ダイアログ付き）
+ * @param {string} docId ドキュメントID
+ */
+function deleteAutoLearned(docId) {
+  appConfirm('この学習データを削除しますか？\n削除するとAIの回答に反映されなくなります。').then(function(ok) {
+    if (!ok) return;
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          showToast(result.message, 'success');
+          initAutoLearnedAdmin();
+        } else {
+          appAlert('削除に失敗しました: ' + (result ? result.error : '不明'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.error('deleteAutoLearnedKnowledge error:', err);
+        appAlert('エラーが発生しました: ' + err);
+      })
+      .deleteAutoLearnedKnowledge(docId);
+  });
 }
 </script>
