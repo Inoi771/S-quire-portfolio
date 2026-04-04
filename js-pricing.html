@@ -145,8 +145,8 @@
         });
         html += '</tbody></table>';
 
-        // ノート（_fromNormalConfig セクションは「管理タブ」言及の管理メモのみ除外）
-        var displayNotes = isFromNormalConfig
+        // ノート（ロック済みセクションは「管理タブ」言及の管理メモのみ除外）
+        var displayNotes = isLocked
           ? (section.notes || []).filter(function(n) { return n.indexOf('管理タブ') === -1; })
           : (section.notes || []);
         if (displayNotes.length > 0) {
