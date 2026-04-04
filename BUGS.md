@@ -381,9 +381,9 @@ function fbGetSomething() {
 ```
 
 **チェックポイント**:
-- `deploy-firebase.yml` の deploy コマンドには必ず `firestore:rules` を含めること
+- `deploy-firebase.yml` の deploy コマンドは `--only hosting` のみ。`firestore:rules` を含めてはいけない（サービスアカウントに権限がなく 403 エラーになる）
+- Firestore Rules を変更する場合は Firebase コンソールから手動でデプロイすること
 - クライアント側の Firestore 読み取り関数には `fbCurrentUser` の認証チェックを入れること
-- `firestore.rules` を変更した場合、デプロイに含まれていることを確認すること
 
 ---
 
