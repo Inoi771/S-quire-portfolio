@@ -4,8 +4,6 @@
     // ========================================
 
     var pricingData = null;
-    var pricingEditMode = false;
-    var pricingIsAdmin = false;
     var currentPricingTab = null;
 
     /**
@@ -24,15 +22,6 @@
             pricingData = result.data;
             currentPricingTab = (pricingData.tabs && pricingData.tabs[0]) || null;
             renderPricingTable(pricingData);
-            // Admin なら編集ボタン表示
-            google.script.run
-              .withSuccessHandler(function(roleInfo) {
-                if (roleInfo.isAdmin) {
-                  pricingIsAdmin = true;
-                  document.getElementById('pricingEditToggle').style.display = 'inline';
-                }
-              })
-              .getUserRoleInfo();
           } else {
             output.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">読み込みに失敗しました: ' + (result.error || '') + '</p>';
           }
@@ -117,43 +106,18 @@
         } else {
           html += '<span>' + escapeHtml(section.name) + '</span>';
         }
-        if (pricingEditMode && !isLocked) {
-          html += '<span style="display:flex;gap:4px;">';
-          html += '<button class="pricing-edit-btn" onclick="movePricingSection(' + sIdx + ',-1)" title="セクションを上へ移動"' + (isFirstSection ? ' disabled style="opacity:0.3;"' : '') + '>▲</button>';
-          html += '<button class="pricing-edit-btn" onclick="movePricingSection(' + sIdx + ',1)" title="セクションを下へ移動"' + (isLastSection ? ' disabled style="opacity:0.3;"' : '') + '>▼</button>';
-          html += '<button class="pricing-edit-btn" onclick="editSectionName(' + sIdx + ')" title="セクション名を編集">✏️</button>';
-          html += '<button class="pricing-edit-btn" style="color:#e53935;border-color:#e53935;" onclick="deleteSection(' + sIdx + ')" title="セクションを削除">🗑️</button>';
-          html += '</span>';
-        }
         html += '</div>';
 
-        // rowspan 計算（閲覧モード用）
+        // rowspan 計算
         var rowSpans = computeRowSpans(section.rows);
 
         // テーブル
-        var effectiveEditMode = pricingEditMode && !isLocked;
         html += '<table class="pricing-table">';
         // ヘッダー
         html += '<thead><tr>';
-        section.headers.forEach(function(h, hIdx) {
-          if (effectiveEditMode) {
-            html += '<th style="min-width:80px;vertical-align:top;">';
-            html += '<input class="pricing-col-header-input" value="' + escapeHtml(h) + '" data-s="' + sIdx + '" data-h="' + hIdx + '" onchange="onPricingHeaderChange(this)">';
-            html += '<div style="display:flex;gap:2px;justify-content:center;margin-top:2px;">';
-            html += '<button class="pricing-col-btn pricing-col-insert-btn" onclick="insertPricingColumnAt(' + sIdx + ',' + hIdx + ')" title="この列の左に列を挿入">←＋</button>';
-            if (section.headers.length > 1) {
-              html += '<button class="pricing-col-btn pricing-col-del-btn" onclick="deletePricingColumn(' + sIdx + ',' + hIdx + ')" title="この列を削除">列✕</button>';
-            }
-            html += '</div>';
-            html += '</th>';
-          } else {
-            html += '<th>' + escapeHtml(h) + '</th>';
-          }
+        section.headers.forEach(function(h) {
+          html += '<th>' + escapeHtml(h) + '</th>';
         });
-        if (effectiveEditMode) {
-          html += '<th style="width:50px;vertical-align:middle;text-align:center;"><button class="pricing-col-btn pricing-col-insert-btn" onclick="addPricingColumn(' + sIdx + ')" title="末尾に列を追加" style="font-size:14px;padding:2px 6px;">＋</button></th>';
-          html += '<th style="width:60px;"></th>';
-        }
         html += '</tr></thead>';
 
         // 行
@@ -161,20 +125,7 @@
         section.rows.forEach(function(row, rIdx) {
           html += '<tr>';
           row.forEach(function(cell, cIdx) {
-            if (effectiveEditMode) {
-              if (cIdx === 0) {
-                // 1列目: 結合ボタン付き（2行目以降で、上の行と結合可能）
-                var isMerged = (cell === '' && rIdx > 0);
-                html += '<td class="pricing-label-cell" style="position:relative;">';
-                html += '<input class="pricing-cell-input" value="' + escapeHtml(cell) + '" data-s="' + sIdx + '" data-r="' + rIdx + '" data-c="0" onchange="onPricingCellChange(this)"' + (isMerged ? ' disabled style="opacity:0.4;"' : '') + '>';
-                if (rIdx > 0) {
-                  html += '<button class="pricing-merge-btn' + (isMerged ? ' merged' : '') + '" onclick="togglePricingMerge(' + sIdx + ',' + rIdx + ')" title="' + (isMerged ? '結合を解除' : '上の行と結合') + '">' + (isMerged ? '↑ 結合中' : '↑ 結合') + '</button>';
-                }
-                html += '</td>';
-              } else {
-                html += '<td><input class="pricing-cell-input" value="' + escapeHtml(cell) + '" data-s="' + sIdx + '" data-r="' + rIdx + '" data-c="' + cIdx + '" onchange="onPricingCellChange(this)"></td>';
-              }
-            } else if (cIdx === 0) {
+            if (cIdx === 0) {
               // 1列目: rowspan で結合
               if (rowSpans[rIdx] > 0) {
                 html += '<td class="pricing-label-cell"' + (rowSpans[rIdx] > 1 ? ' rowspan="' + rowSpans[rIdx] + '"' : '') + '>' + formatPriceCell(cell) + '</td>';
@@ -185,23 +136,9 @@
               html += '<td' + cls + '>' + formatPriceCell(cell) + '</td>';
             }
           });
-          if (effectiveEditMode) {
-            var isFirst = rIdx === 0;
-            var isLast = rIdx === section.rows.length - 1;
-            html += '<td style="white-space:nowrap;">';
-            html += '<button class="pricing-insert-row-btn" onclick="insertPricingRowAt(' + sIdx + ',' + rIdx + ')" title="この行の上に行を挿入">↑＋</button>';
-            html += '<button class="pricing-move-btn" onclick="movePricingRow(' + sIdx + ',' + rIdx + ',-1)" title="1行上へ移動"' + (isFirst ? ' disabled' : '') + '>↑</button>';
-            html += '<button class="pricing-move-btn" onclick="movePricingRow(' + sIdx + ',' + rIdx + ',1)" title="1行下へ移動"' + (isLast ? ' disabled' : '') + '>↓</button>';
-            html += '<button class="pricing-del-row-btn" onclick="deletePricingRow(' + sIdx + ',' + rIdx + ')" title="行を削除">✕</button>';
-            html += '</td>';
-          }
           html += '</tr>';
         });
         html += '</tbody></table>';
-
-        if (effectiveEditMode) {
-          html += '<button class="pricing-add-row-btn" onclick="addPricingRow(' + sIdx + ')">＋ 末尾に行を追加</button>';
-        }
 
         // ノート
         if (section.notes && section.notes.length > 0) {
@@ -221,15 +158,6 @@
         data.footerNotes.forEach(function(n) {
           html += '<p>' + escapeHtml(n) + '</p>';
         });
-        html += '</div>';
-      }
-
-      // 編集モード中ならセクション追加ボタンとフッター編集
-      if (pricingEditMode) {
-        html += '<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">';
-        html += '<button onclick="addNewSection()" style="background:#1976d2;color:white;border:none;border-radius:6px;padding:10px 18px;cursor:pointer;font-weight:600;font-size:13px;">＋ セクション追加</button>';
-        html += '<button onclick="editFooterNotes()" style="background:#546e7a;color:white;border:none;border-radius:6px;padding:10px 18px;cursor:pointer;font-weight:600;font-size:13px;">📝 フッター注記を編集</button>';
-        html += '<button onclick="editPricingTitle()" style="background:#546e7a;color:white;border:none;border-radius:6px;padding:10px 18px;cursor:pointer;font-weight:600;font-size:13px;">📝 タイトルを編集</button>';
         html += '</div>';
       }
 
@@ -255,41 +183,6 @@
     function escapeHtml(str) {
       if (!str) return '';
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-
-    /**
-     * 編集モードをトグル
-     */
-    function togglePricingEditMode() {
-      pricingEditMode = !pricingEditMode;
-      var btn = document.getElementById('pricingEditBtn');
-      if (pricingEditMode) {
-        btn.textContent = '💾 編集を終了して保存';
-        btn.style.background = '#43a047';
-      } else {
-        // 保存
-        btn.textContent = '⏳ 保存中...';
-        btn.disabled = true;
-        google.script.run
-          .withSuccessHandler(function(result) {
-            btn.textContent = '✏️ 編集モード';
-            btn.style.background = '#546e7a';
-            btn.disabled = false;
-            if (result.success) {
-              showMessage('success', '料金表を保存しました');
-            } else {
-              showMessage('error', '保存に失敗しました: ' + (result.error || ''));
-            }
-          })
-          .withFailureHandler(function(err) {
-            btn.textContent = '✏️ 編集モード';
-            btn.style.background = '#546e7a';
-            btn.disabled = false;
-            showMessage('error', '保存エラー: ' + err);
-          })
-          .savePricingConfig(JSON.stringify(pricingData));
-      }
-      renderPricingTable(pricingData);
     }
 
     /**
