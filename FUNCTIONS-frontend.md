@@ -153,6 +153,12 @@
 - `createWeeklyLecEntries(date, startSlot)` — 「毎週」チェック時の一括作成：同じ曜日・時刻で count 回分のエントリを毎週作成（休校日を自動スキップ）
 - `moveLecEntry(entryId, date, startSlot)` — 選択中エントリを指定日時に移動
 - `deleteLecEntry()` — 選択中エントリを削除
+- `showLecCalExportModal()` — カレンダーエクスポートモーダルを表示
+- `closeLecCalExportModal()` — カレンダーエクスポートモーダルを閉じる
+- `exportLecCalendar(mode)` — カレンダーエクスポート実行（'google' or 'ics'）。自分のエントリのみをICSファイルに変換してダウンロード。Googleモードではインポート画面も開く
+- `generateLecICS(entries, lectureName, teacherName)` — エントリ配列からRFC 5545準拠のICSファイル文字列を生成
+- `escapeICS(str)` — ICS用文字列エスケープ（RFC 5545）
+- `pad2ICS(n)` — 数値を2桁ゼロ埋め文字列にする（ICS用）
 - `refreshLecEntries()` — バックエンドからエントリを再取得して描画
 - `saveLecEntries()` — 現在の校舎のエントリをバックエンドに保存
 - `initLecturesAdmin()` — 管理タブ：講習設定パネル初期化（年度セレクト構築→一覧ロード）

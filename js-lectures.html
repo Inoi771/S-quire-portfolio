@@ -517,6 +517,153 @@
       document.getElementById('lecHelpModal').style.display = 'none';
     }
 
+    // ===== カレンダーエクスポート =====
+
+    /**
+     * カレンダーエクスポートモーダルを表示する
+     */
+    function showLecCalExportModal() {
+      document.getElementById('lecCalExportOverlay').style.display = 'block';
+      document.getElementById('lecCalExportModal').style.display = 'block';
+    }
+
+    /**
+     * カレンダーエクスポートモーダルを閉じる
+     */
+    function closeLecCalExportModal() {
+      document.getElementById('lecCalExportOverlay').style.display = 'none';
+      document.getElementById('lecCalExportModal').style.display = 'none';
+    }
+
+    /**
+     * ICS用文字列エスケープ（RFC 5545）
+     * @param {string} str
+     * @return {string}
+     */
+    function escapeICS(str) {
+      if (!str) return '';
+      return str.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+    }
+
+    /**
+     * 数値を2桁ゼロ埋め文字列にする
+     * @param {number} n
+     * @return {string}
+     */
+    function pad2ICS(n) {
+      return ('0' + n).slice(-2);
+    }
+
+    /**
+     * 講習エントリからICSファイル文字列を生成する
+     * @param {Array} entries エントリ配列
+     * @param {string} lectureName 講習名
+     * @param {string} teacherName 講師名
+     * @return {string} ICSファイル内容
+     */
+    function generateLecICS(entries, lectureName, teacherName) {
+      var lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//S-quire//LectureExport//JP',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'X-WR-TIMEZONE:Asia/Tokyo',
+        'BEGIN:VTIMEZONE',
+        'TZID:Asia/Tokyo',
+        'X-LIC-LOCATION:Asia/Tokyo',
+        'BEGIN:STANDARD',
+        'TZOFFSETFROM:+0900',
+        'TZOFFSETTO:+0900',
+        'TZNAME:JST',
+        'DTSTART:19700101T000000',
+        'END:STANDARD',
+        'END:VTIMEZONE'
+      ];
+
+      entries.sort(function(a, b) {
+        return (a.date + a.startTime).localeCompare(b.date + b.startTime);
+      });
+
+      entries.forEach(function(entry) {
+        var dateStr = entry.date.replace(/-/g, '');
+        var startParts = entry.startTime.split(':');
+        var startH = parseInt(startParts[0]);
+        var startM = parseInt(startParts[1]);
+        var totalEndMin = startH * 60 + startM + (entry.durationSlots * 10);
+        var endH = Math.floor(totalEndMin / 60);
+        var endM = totalEndMin % 60;
+
+        var dtStart = dateStr + 'T' + pad2ICS(startH) + pad2ICS(startM) + '00';
+        var dtEnd   = dateStr + 'T' + pad2ICS(endH) + pad2ICS(endM) + '00';
+
+        var summary = '【' + lectureName + '】' + entry.grade + ' ' + entry.subject;
+        if (entry.classLabel) summary += entry.classLabel;
+
+        var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
+          ? lecTeacherNameMap[entry.teacherId].name
+          : (entry.teacherName || teacherName);
+
+        lines.push('BEGIN:VEVENT');
+        lines.push('UID:' + entry.id + '@squire.app');
+        lines.push('DTSTART;TZID=Asia/Tokyo:' + dtStart);
+        lines.push('DTEND;TZID=Asia/Tokyo:' + dtEnd);
+        lines.push('SUMMARY:' + escapeICS(summary));
+        lines.push('DESCRIPTION:' + escapeICS('講師: ' + resolvedName));
+        lines.push('END:VEVENT');
+      });
+
+      lines.push('END:VCALENDAR');
+      return lines.join('\r\n');
+    }
+
+    /**
+     * カレンダーエクスポート実行
+     * @param {string} mode 'google' または 'ics'
+     */
+    function exportLecCalendar(mode) {
+      closeLecCalExportModal();
+
+      // 対象講師を決定（Admin代理操作時はそちらを優先）
+      var targetTeacherId = (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : myTeacherId;
+      var targetTeacherName = (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherName : myTeacherName;
+
+      // 全校舎から currentLectureId かつ対象講師のエントリを収集
+      var allEntries = [];
+      Object.keys(lectureEntries).forEach(function(campusCode) {
+        var entries = lectureEntries[campusCode] || [];
+        entries.forEach(function(e) {
+          if (e.lectureId === currentLectureId && e.teacherId === targetTeacherId) {
+            allEntries.push(e);
+          }
+        });
+      });
+
+      if (allEntries.length === 0) {
+        showToast('エクスポートするコマがありません', 'error');
+        return;
+      }
+
+      // 講習名を取得
+      var lectureName = '';
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      if (lp) lectureName = lp.name;
+
+      // ICS生成＆ダウンロード
+      var icsContent = generateLecICS(allEntries, lectureName, targetTeacherName);
+      var filename = lectureName + '_' + targetTeacherName + '.ics';
+      downloadFile(icsContent, filename, 'text/calendar;charset=utf-8');
+
+      showToast(allEntries.length + '件のコマをエクスポートしました', 'success');
+
+      // Googleカレンダーモード：インポート画面を新タブで開く
+      if (mode === 'google') {
+        setTimeout(function() {
+          window.open('https://calendar.google.com/calendar/u/0/r/settings/export', '_blank');
+        }, 500);
+      }
+    }
+
     /**
      * 表示ボタン押下時：チェック済み校舎のタブを生成してグリッドを表示する
      */
