@@ -57,7 +57,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `PRICING_TABLE_CONFIG` | 料金表データ（JSON） |
 | `LECTURE_PERIODS_CONFIG` | 講習期間設定（JSON: `[{id, name, startDate, endDate, gradeSettings}]`） |
 | `LECTURE_PRICING_CONFIG` | 講習別料金設定（JSON: `{typeId: [{label, internal, external}]}`） |
-| `NORMAL_CLASS_CONFIG` | 通常授業設定（JSON: `[{grade, duration, count, internal, external}]`） |
+| `NORMAL_CLASS_CONFIG` | 通常授業設定（JSON: `{version:2, sections:[{id, name, campusScope:"all"\|"specific", campusCodes:[], headers:[], rows:[][], notes:[]}]}`）。保存時に料金表へ自動同期。 |
 
 ---
 

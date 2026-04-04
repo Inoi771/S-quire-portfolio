@@ -248,6 +248,7 @@
     function collectFlyerAiContext_(campusCode, callback) {
       var includeSchedule = document.getElementById('flyerAiIncludeSchedule').checked;
       var includePricing = document.getElementById('flyerAiIncludePricing').checked;
+      var includeNormalPricing = !!(document.getElementById('flyerAiIncludeNormalPricing') && document.getElementById('flyerAiIncludeNormalPricing').checked);
 
       var context = '';
 
@@ -274,10 +275,11 @@
       var remaining = 0;
       var scheduleText = '';
       var pricingText = '';
+      var normalPricingText = '';
 
       function finish() {
         if (remaining > 0) return;
-        callback(context + scheduleText + pricingText);
+        callback(context + scheduleText + pricingText + normalPricingText);
       }
 
       // 日程データ（マークダウンテーブル形式）
@@ -318,14 +320,18 @@
             if (result && result.success && result.data) {
               var typeId = currentLectureId ? currentLectureId.split('-').slice(1).join('-') : '';
               if (typeId && result.data[typeId]) {
-                var rows = result.data[typeId];
-                if (Array.isArray(rows) && rows.length > 0) {
+                // result.data[typeId] は {rows:[...]} 形式
+                var typeEntry = result.data[typeId];
+                var rows = Array.isArray(typeEntry) ? typeEntry : (typeEntry.rows || []);
+                if (rows.length > 0) {
                   pricingText = '\n\n【講習別料金データ】\n';
                   pricingText += '以下の料金データを見やすいテーブルでチラシに組み込んでください。\n';
-                  pricingText += '| 学年 | 内部生（税抜） | 外部生（税抜） |\n';
-                  pricingText += '|------|--------------|--------------|\n';
+                  pricingText += '| 学年 | 内部生（税抜） |\n';
+                  pricingText += '|------|---------------|\n';
                   rows.forEach(function(r) {
-                    pricingText += '| ' + (r.label || r.gradeKey || '') + ' | ¥' + (r.internal || 0).toLocaleString() + ' | ¥' + (r.external || 0).toLocaleString() + ' |\n';
+                    if (r.type === 'standard' || r.type === 'custom') {
+                      pricingText += '| ' + (r.label || r.gradeKey || '') + ' | ¥' + (r.internal || 0).toLocaleString() + ' |\n';
+                    }
                   });
                 }
               }
@@ -335,6 +341,32 @@
           })
           .withFailureHandler(function() { remaining--; finish(); })
           .getLecturePricingConfig();
+      }
+
+      // 通常料金データ（AIコンテキスト用）
+      if (includeNormalPricing) {
+        remaining++;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success && result.data && result.data.length > 0) {
+              normalPricingText = '\n\n【通常授業料金データ】\n';
+              normalPricingText += '以下の通常授業料金を参考情報としてチラシに含めることができます。\n';
+              result.data.forEach(function(sec) {
+                normalPricingText += '\n■ ' + sec.name + '\n';
+                if (sec.headers && sec.headers.length > 0) {
+                  normalPricingText += '| ' + sec.headers.join(' | ') + ' |\n';
+                  normalPricingText += '|' + sec.headers.map(function() { return '------'; }).join('|') + '|\n';
+                }
+                (sec.rows || []).forEach(function(row) {
+                  normalPricingText += '| ' + row.join(' | ') + ' |\n';
+                });
+              });
+            }
+            remaining--;
+            finish();
+          })
+          .withFailureHandler(function() { remaining--; finish(); })
+          .getNormalClassSectionsForWeb(campusCode === 'common' ? null : campusCode);
       }
 
       if (remaining === 0) finish();
