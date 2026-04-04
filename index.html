@@ -1952,47 +1952,103 @@
         <!-- ===== 🤖 チャットボットタブ ===== -->
         <div id="admin-chatbot" class="admin-tab-content" style="display: none;">
           <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-              <h3 style="margin: 0;">🤖 AIチャットボット ナレッジベース</h3>
-              <span id="kbStats" style="font-size: 12px; color: #888;"></span>
-            </div>
-            <p style="font-size: 13px; color: #666; margin: 0 0 16px 0; line-height: 1.6;">
-              ここに登録した情報をもとに、AIアシスタントが講師・スタッフの質問に回答します。<br>
-              該当する情報がない質問には「管理者にご確認ください」と案内します。
-            </p>
-            <div style="margin-bottom: 16px;">
-              <button onclick="showKbEntryForm()" style="padding: 8px 16px; background: var(--theme-color, #43e97b); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">＋ 追加</button>
+            <h3 style="margin: 0 0 12px 0;">🤖 AIチャットボット ナレッジベース</h3>
+
+            <!-- 手動登録 / 自動学習 タブ切り替え -->
+            <div style="display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0;">
+              <button id="kbTabManual" onclick="switchKbTab('manual')" style="padding: 10px 20px; background: none; border: none; border-bottom: 2px solid var(--theme-color, #43e97b); margin-bottom: -2px; cursor: pointer; font-size: 14px; font-weight: bold; color: var(--theme-color, #43e97b);">手動登録 <span id="kbManualCount" style="font-size: 12px; color: #888;"></span></button>
+              <button id="kbTabAuto" onclick="switchKbTab('auto')" style="padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; font-size: 14px; font-weight: bold; color: #888;">自動学習 <span id="kbAutoCount" style="font-size: 12px; background: #e74c3c; color: white; border-radius: 10px; padding: 1px 7px; display: none;">0</span></button>
             </div>
 
-            <!-- 追加/編集フォーム -->
-            <div id="kbFormArea" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e0e0e0;">
-              <input type="hidden" id="kbEntryId" value="">
-              <div style="margin-bottom: 12px;">
-                <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">カテゴリ</label>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                  <select id="kbCategorySelect" onchange="onKbCategorySelectChange()" style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
-                    <option value="">選択してください</option>
-                    <option value="塾のルール">塾のルール</option>
-                    <option value="行事・イベント">行事・イベント</option>
-                    <option value="授業について">授業について</option>
-                    <option value="その他">その他</option>
-                    <option value="__custom__">＋ 新しいカテゴリ</option>
-                  </select>
-                  <input type="text" id="kbCategoryCustom" placeholder="カテゴリ名を入力" style="display: none; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
+            <!-- ===== 手動登録セクション ===== -->
+            <div id="kbSectionManual">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <p style="font-size: 13px; color: #666; margin: 0; line-height: 1.6;">
+                  ここに登録した情報をもとに、AIアシスタントが講師・スタッフの質問に回答します。
+                </p>
+                <span id="kbStats" style="font-size: 12px; color: #888;"></span>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <button onclick="showKbEntryForm()" style="padding: 8px 16px; background: var(--theme-color, #43e97b); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">＋ 追加</button>
+              </div>
+
+              <!-- 追加/編集フォーム -->
+              <div id="kbFormArea" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e0e0e0;">
+                <input type="hidden" id="kbEntryId" value="">
+                <div style="margin-bottom: 12px;">
+                  <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">カテゴリ</label>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <select id="kbCategorySelect" onchange="onKbCategorySelectChange()" style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
+                      <option value="">選択してください</option>
+                      <option value="塾のルール">塾のルール</option>
+                      <option value="行事・イベント">行事・イベント</option>
+                      <option value="授業について">授業について</option>
+                      <option value="その他">その他</option>
+                      <option value="__custom__">＋ 新しいカテゴリ</option>
+                    </select>
+                    <input type="text" id="kbCategoryCustom" placeholder="カテゴリ名を入力" style="display: none; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
+                  </div>
+                </div>
+                <div style="margin-bottom: 12px;">
+                  <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">内容</label>
+                  <textarea id="kbContent" rows="3" placeholder="例: 授業の振替は前日までに連絡が必要。当日キャンセルの場合は振替不可。" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button onclick="saveKbEntry()" style="padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存</button>
+                  <button onclick="hideKbForm()" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">キャンセル</button>
                 </div>
               </div>
-              <div style="margin-bottom: 12px;">
-                <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">内容</label>
-                <textarea id="kbContent" rows="3" placeholder="例: 授業の振替は前日までに連絡が必要。当日キャンセルの場合は振替不可。" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
-              </div>
-              <div style="display: flex; gap: 8px;">
-                <button onclick="saveKbEntry()" style="padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存</button>
-                <button onclick="hideKbForm()" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">キャンセル</button>
-              </div>
+
+              <!-- エントリ一覧 -->
+              <div id="kbEntriesList"></div>
             </div>
 
-            <!-- エントリ一覧 -->
-            <div id="kbEntriesList"></div>
+            <!-- ===== 自動学習セクション ===== -->
+            <div id="kbSectionAuto" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <p style="font-size: 13px; color: #666; margin: 0; line-height: 1.6;">
+                  AIが会話から自動的に学習した知識です。不要なものは削除できます。
+                </p>
+                <span id="kbAutoStats" style="font-size: 12px; color: #888;"></span>
+              </div>
+
+              <!-- 上限警告 -->
+              <div id="kbAutoLimitWarning" style="display: none; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #856404;">
+                ⚠️ 自動学習エントリが上限（30件）に達しています。新しい学習は一時停止中です。不要なエントリを削除してください。
+              </div>
+
+              <!-- 自動学習 編集フォーム -->
+              <div id="kbAutoFormArea" style="display: none; background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e0e0e0;">
+                <input type="hidden" id="kbAutoEntryId" value="">
+                <div style="margin-bottom: 12px;">
+                  <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">カテゴリ</label>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <select id="kbAutoCategorySelect" onchange="onKbAutoCategoryChange()" style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
+                      <option value="">選択してください</option>
+                      <option value="塾のルール">塾のルール</option>
+                      <option value="行事・イベント">行事・イベント</option>
+                      <option value="授業について">授業について</option>
+                      <option value="運営">運営</option>
+                      <option value="その他">その他</option>
+                      <option value="__custom__">＋ 新しいカテゴリ</option>
+                    </select>
+                    <input type="text" id="kbAutoCategoryCustom" placeholder="カテゴリ名を入力" style="display: none; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 140px;">
+                  </div>
+                </div>
+                <div style="margin-bottom: 12px;">
+                  <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">内容</label>
+                  <textarea id="kbAutoContent" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button onclick="saveAutoLearned()" style="padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存</button>
+                  <button onclick="hideAutoLearnedForm()" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">キャンセル</button>
+                </div>
+              </div>
+
+              <!-- 自動学習エントリ一覧 -->
+              <div id="kbAutoEntriesList"></div>
+            </div>
+
           </div>
         </div>
 

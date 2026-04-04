@@ -301,6 +301,14 @@
 - `onKbCategorySelectChange()` — カテゴリセレクト変更時ハンドラー（自由入力切替）
 - `saveKbEntry()` — エントリ保存（追加/更新）
 - `deleteKbEntry(entryId)` — エントリ削除（確認ダイアログ付き）
+- `switchKbTab(tab)` — 手動登録 / 自動学習 タブ切り替え
+- `initAutoLearnedAdmin()` — 自動学習エントリの読み込み
+- `renderAutoLearnedEntries(entries)` — 自動学習エントリをカテゴリ別に描画
+- `editAutoLearned(docId)` — 自動学習エントリの編集フォーム表示
+- `hideAutoLearnedForm()` — 自動学習の編集フォームを閉じる
+- `onKbAutoCategoryChange()` — 自動学習カテゴリ選択変更ハンドラー
+- `saveAutoLearned()` — 自動学習エントリの編集を保存
+- `deleteAutoLearned(docId)` — 自動学習エントリを削除（確認ダイアログ付き）
 
 **【AIアシスタント アクション実行】** (`js-ai-actions.html`)
 - `dispatchAiAction_(result)` — app_actionのメインディスパッチャー。handleAIWidgetResponseから呼ばれる

@@ -777,6 +777,25 @@ Student names in user messages are redacted for privacy:
 [User Message]
 ${resolvedUserMessage}
 
+[Knowledge Learning — Self-Improvement]
+You can learn new facts about this juku from conversations. When a user:
+1. Corrects you ("違う、実際は〜", "それは間違い、正しくは〜")
+2. Teaches operational facts ("うちの塾は〜", "ルールとして〜", "〜のことなんだけど")
+3. Shares procedures ("〜の場合は〜する", "〜のやり方は〜")
+4. Provides scheduling/policy info ("夏期講習は〜から", "テスト前は〜")
+
+Include an optional field "learned_knowledge" in your JSON response:
+"learned_knowledge":{"category":"category name","content":"the fact in concise 1-2 sentences","reason":"why this is useful to remember"}
+
+Rules:
+- Only extract FACTUAL information about the juku, its rules, or operations
+- Do NOT extract personal opinions, temporary states, or conversation filler
+- Do NOT extract information already present in 【塾のナレッジベース】
+- Keep content concise (1-2 sentences max, in Japanese)
+- Use appropriate categories: 塾のルール, 行事・イベント, 授業について, 運営, その他
+- If nothing is learnable, omit the field entirely (do not include null or empty)
+- This field can be added to ANY response type (config_change, qa_help, app_action, other)
+
 [Response Format]
 Classify the user's intent and return ONLY one of the following JSON formats. All "message", "answer", "response", and "explanation" fields MUST be in Japanese.
 
@@ -934,6 +953,23 @@ Example: {"success":true,"type":"app_action","action":"submit_grade","confirmed"
           } catch (cfgErr) {
             Logger.log('⚠ config_change 適用エラー: ' + cfgErr);
           }
+        }
+
+        // 自動学習: Geminiが知識を抽出した場合はFirestoreに保存
+        if (aiResponse.learned_knowledge && aiResponse.learned_knowledge.content) {
+          try {
+            var lk = aiResponse.learned_knowledge;
+            // 生徒名が含まれている場合はサニタイズ（個人情報保護）
+            var sanitizedContent = resolveStudentNamesInMessage_(lk.content, studentMaster, campusConfig);
+            saveAutoLearnedKnowledge_({
+              category: lk.category || 'その他',
+              content: sanitizedContent,
+              reason: lk.reason || ''
+            });
+          } catch (lkErr) {
+            Logger.log('⚠ 自動学習保存エラー: ' + lkErr);
+          }
+          delete aiResponse.learned_knowledge;
         }
 
         return aiResponse;
@@ -1144,20 +1180,43 @@ function deleteAiKnowledgeEntry(entryId) {
  * @return {string} プロンプト用テキスト
  */
 function getAiKnowledgeBaseForPrompt_() {
-  var raw = getProperty(PROP_KEYS.AI_KNOWLEDGE_BASE);
-  if (!raw) return '';
-  var entries = JSON.parse(raw);
-  if (entries.length === 0) return '';
+  // 手動KBエントリを取得
+  var allEntries = [];
+  try {
+    var raw = getProperty(PROP_KEYS.AI_KNOWLEDGE_BASE);
+    if (raw) {
+      var manualEntries = JSON.parse(raw);
+      manualEntries.forEach(function(e) {
+        allEntries.push({ category: e.category, content: e.content });
+      });
+    }
+  } catch (e) {
+    Logger.log('⚠ 手動KB取得スキップ: ' + e);
+  }
+
+  // Firestore自動学習エントリを取得（全件有効）
+  try {
+    var autoEntries = firestoreQuery_('aiLearnedKnowledge', []);
+    if (autoEntries && autoEntries.length > 0) {
+      autoEntries.forEach(function(e) {
+        allEntries.push({ category: e.category || 'その他', content: e.content });
+      });
+    }
+  } catch (e) {
+    Logger.log('⚠ 自動学習KB取得スキップ: ' + e);
+  }
+
+  if (allEntries.length === 0) return '';
 
   // カテゴリ別にグループ化
   var categories = {};
-  entries.forEach(function(e) {
+  allEntries.forEach(function(e) {
     if (!categories[e.category]) categories[e.category] = [];
     categories[e.category].push(e.content);
   });
 
   var lines = ['\n\n【塾のナレッジベース】',
-    '以下は管理者が登録した塾の情報です。ユーザーの質問に該当する情報があればこれを元に回答してください。',
+    '以下は塾の情報です（管理者登録＋AIが会話から学習した知識）。ユーザーの質問に該当する情報があればこれを元に回答してください。',
     '該当する情報がない場合は「その件については管理者にご確認ください」と案内してください。'];
 
   Object.keys(categories).forEach(function(cat) {
@@ -1168,6 +1227,205 @@ function getAiKnowledgeBaseForPrompt_() {
   });
 
   return lines.join('\n');
+}
+
+// ----------------------------------------
+// AI自動学習（会話からの知識蓄積）
+// ----------------------------------------
+
+/**
+ * 会話から抽出された知識をFirestoreに自動保存する内部ヘルパー
+ * 重複チェック・上限チェック付き
+ * @param {Object} data { category, content, reason }
+ */
+function saveAutoLearnedKnowledge_(data) {
+  if (!data || !data.content) return;
+
+  // 上限チェック（30件を超えたら新規学習を一時停止）
+  try {
+    var existing = firestoreQuery_('aiLearnedKnowledge', []);
+    if (existing && existing.length >= 30) {
+      Logger.log('⚠ 自動学習上限（30件）に達しているため保存スキップ');
+      return;
+    }
+  } catch (e) {
+    Logger.log('⚠ 自動学習件数チェックスキップ: ' + e);
+  }
+
+  // 重複チェック
+  if (isDuplicateKnowledge_(data.content)) {
+    Logger.log('⚠ 重複する知識のため保存スキップ: ' + data.content.substring(0, 50));
+    return;
+  }
+
+  var docId = 'lk_' + Date.now();
+  var doc = {
+    category: data.category || 'その他',
+    content: data.content,
+    reason: data.reason || '',
+    source: 'conversation',
+    learnedAt: new Date().toISOString()
+  };
+
+  firestoreSet_('aiLearnedKnowledge', docId, doc);
+  Logger.log('✅ 自動学習保存: ' + docId + ' / ' + data.content.substring(0, 50));
+}
+
+/**
+ * 新しい知識が既存の知識と重複しているか判定する内部ヘルパー
+ * 手動KB（ScriptProperties）と自動学習済み（Firestore）の両方をチェック
+ * Jaccard類似度 > 0.6 で重複と判定
+ * @param {string} newContent 新しい知識の内容
+ * @return {boolean} 重複している場合 true
+ */
+function isDuplicateKnowledge_(newContent) {
+  if (!newContent) return false;
+
+  var newTokens = tokenizeForSimilarity_(newContent);
+  if (newTokens.length === 0) return false;
+
+  // 手動KBのエントリをチェック
+  try {
+    var raw = getProperty(PROP_KEYS.AI_KNOWLEDGE_BASE);
+    if (raw) {
+      var manualEntries = JSON.parse(raw);
+      for (var i = 0; i < manualEntries.length; i++) {
+        if (jaccardSimilarity_(newTokens, tokenizeForSimilarity_(manualEntries[i].content)) > 0.6) {
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log('⚠ 手動KB重複チェックスキップ: ' + e);
+  }
+
+  // Firestoreの自動学習エントリをチェック
+  try {
+    var autoEntries = firestoreQuery_('aiLearnedKnowledge', []);
+    if (autoEntries && autoEntries.length > 0) {
+      for (var j = 0; j < autoEntries.length; j++) {
+        if (jaccardSimilarity_(newTokens, tokenizeForSimilarity_(autoEntries[j].content)) > 0.6) {
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log('⚠ Firestore重複チェックスキップ: ' + e);
+  }
+
+  return false;
+}
+
+/**
+ * テキストをトークン（単語）に分割する内部ヘルパー
+ * 日本語は2文字グラムを使用
+ * @param {string} text 入力テキスト
+ * @return {Array<string>} トークン配列
+ */
+function tokenizeForSimilarity_(text) {
+  if (!text) return [];
+  // 句読点・記号を除去し正規化
+  var cleaned = text.replace(/[\s、。！？!?.,;:（）()「」『』【】\-—・]/g, '');
+  if (cleaned.length < 2) return [cleaned];
+  // 2文字グラム（バイグラム）に分割
+  var tokens = [];
+  for (var i = 0; i < cleaned.length - 1; i++) {
+    tokens.push(cleaned.substring(i, i + 2));
+  }
+  return tokens;
+}
+
+/**
+ * 2つのトークン配列のJaccard類似度を計算する内部ヘルパー
+ * @param {Array<string>} tokensA トークン配列A
+ * @param {Array<string>} tokensB トークン配列B
+ * @return {number} 0.0〜1.0 の類似度
+ */
+function jaccardSimilarity_(tokensA, tokensB) {
+  if (!tokensA || !tokensB || tokensA.length === 0 || tokensB.length === 0) return 0;
+  var setA = {};
+  tokensA.forEach(function(t) { setA[t] = true; });
+  var setB = {};
+  tokensB.forEach(function(t) { setB[t] = true; });
+
+  var intersection = 0;
+  Object.keys(setA).forEach(function(t) {
+    if (setB[t]) intersection++;
+  });
+
+  var union = Object.keys(setA).length + Object.keys(setB).length - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * 自動学習エントリ一覧を取得する（Admin のみ）
+ * @return {Object} { success, entries }
+ */
+function getAutoLearnedKnowledge() {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    var entries = firestoreQuery_('aiLearnedKnowledge', []);
+    // 新しい順にソート
+    entries.sort(function(a, b) {
+      return (b.learnedAt || '').localeCompare(a.learnedAt || '');
+    });
+    return { success: true, entries: entries };
+  } catch (error) {
+    Logger.log('❌ getAutoLearnedKnowledgeエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 自動学習エントリを編集する（Admin のみ）
+ * @param {string} docId ドキュメントID
+ * @param {string} entryJson JSON文字列 { category, content }
+ * @return {Object} { success, message }
+ */
+function editAutoLearnedKnowledge(docId, entryJson) {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    var entry = JSON.parse(entryJson);
+    if (!entry.category || !entry.content) {
+      return { success: false, error: 'カテゴリと内容は必須です' };
+    }
+
+    // 既存ドキュメントを取得して更新フィールドだけ上書き
+    var existing = firestoreGet_('aiLearnedKnowledge', docId);
+    if (!existing) {
+      return { success: false, error: '指定されたエントリが見つかりません' };
+    }
+    existing.category = entry.category;
+    existing.content = entry.content;
+    existing.updatedAt = new Date().toISOString();
+    firestoreSet_('aiLearnedKnowledge', docId, existing);
+    return { success: true, message: '更新しました' };
+  } catch (error) {
+    Logger.log('❌ editAutoLearnedKnowledgeエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 自動学習エントリを削除する（Admin のみ）
+ * @param {string} docId ドキュメントID
+ * @return {Object} { success, message }
+ */
+function deleteAutoLearnedKnowledge(docId) {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    firestoreDelete_('aiLearnedKnowledge', docId);
+    return { success: true, message: '削除しました' };
+  } catch (error) {
+    Logger.log('❌ deleteAutoLearnedKnowledgeエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
 }
 
 // 【セクション19】料金表管理
