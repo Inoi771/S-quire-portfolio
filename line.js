@@ -175,7 +175,7 @@ function sendNotification(teacherId, subject, body) {
 
     // staffs から通知方法と LINE User ID を取得
     var staff = getStaffByTeacherId_(teacherId);
-    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'gmail';
+    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'line';
 
     if (method === 'none') {
       Logger.log('⚠ sendNotification: ' + teacherId + ' は通知オフ設定');
@@ -237,7 +237,7 @@ function getNotificationSettings() {
 
     // staffs から通知方法・LINE User ID を取得
     var staff = getStaffByTeacherId_(teacherId);
-    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'gmail';
+    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'line';
 
     var lineUserId = staff ? (staff.lineUserId || '') : '';
     var lineRegistered = !!lineUserId;
