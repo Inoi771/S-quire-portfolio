@@ -145,10 +145,13 @@
         });
         html += '</tbody></table>';
 
-        // ノート（_fromNormalConfig セクションは管理者向けメモのため非表示）
-        if (!isFromNormalConfig && section.notes && section.notes.length > 0) {
+        // ノート（_fromNormalConfig セクションは「管理タブ」言及の管理メモのみ除外）
+        var displayNotes = isFromNormalConfig
+          ? (section.notes || []).filter(function(n) { return n.indexOf('管理タブ') === -1; })
+          : (section.notes || []);
+        if (displayNotes.length > 0) {
           html += '<div class="pricing-notes">';
-          section.notes.forEach(function(n) {
+          displayNotes.forEach(function(n) {
             html += '<p>' + escapeHtml(n) + '</p>';
           });
           html += '</div>';
