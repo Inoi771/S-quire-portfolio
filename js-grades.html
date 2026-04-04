@@ -45,6 +45,11 @@
       function applyYears(result) {
         select.innerHTML = '';
         if (result.success && result.years && result.years.length > 0) {
+          // 現在年度がリストになければ先頭に追加（安全ネット）
+          var fyStr = String(fy);
+          if (result.years.indexOf(fyStr) < 0) {
+            result.years.unshift(fyStr);
+          }
           result.years.forEach(function(year) {
             var opt = document.createElement('option');
             opt.value = year;
@@ -53,13 +58,8 @@
           });
           select.disabled = false;
           gradesYearsLoaded = true;
-          if (result.years.indexOf(String(fy)) >= 0) {
-            select.value = String(fy);
-            currentFiscalYear = fy;
-          } else {
-            select.value = result.years[0];
-            currentFiscalYear = parseInt(result.years[0]);
-          }
+          select.value = fyStr;
+          currentFiscalYear = fy;
           status.textContent = result.years.length + '件の年度データを取得';
           loadDropdownData();
           return true;

@@ -19,15 +19,11 @@ function getGradesYearFolders() {
     docs.forEach(function(doc) {
       if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
     });
+    // 現在年度は成績データがなくても常に含める（新年度開始直後対応）
+    yearSet[String(getCurrentFiscalYear())] = true;
+
     var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
     years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-
-    // データがない場合は現在の年度を返す（新年度開始直後など）
-    if (years.length === 0) {
-      var fy = getCurrentFiscalYear();
-      Logger.log('⚠ getGradesYearFolders: gradesデータなし。現在年度 ' + fy + ' を返します');
-      return { success: true, years: [String(fy)] };
-    }
 
     return { success: true, years: years };
   } catch (error) {
