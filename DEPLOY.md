@@ -90,6 +90,7 @@
 | ファイル | 役割 |
 |---------|------|
 | `.github/workflows/deploy-to-gas.yml` | GASデプロイワークフロー |
+| `.github/workflows/deploy-firebase.yml` | Firebase Hostingデプロイワークフロー |
 | `.github/workflows/merge-to-main.yml` | mainブランチへの自動マージ |
 | `.clasp.json` | GASプロジェクトとの紐付け |
 | `appsscript.json` | GASマニフェスト |
@@ -102,3 +103,13 @@
 |------------|---------|
 | `merge-to-main.yml` | `claude/*` ブランチへのあらゆるプッシュ |
 | `deploy-to-gas.yml` | `.js`/`.html`/`appsscript.json`/`.github/workflows/*.yml` が変更された時のみ |
+| `deploy-firebase.yml` | `*.html`/`firebase.json`/`scripts/build.js`/`package.json`/`.github/workflows/deploy-firebase.yml` が変更された時のみ |
+
+---
+
+## Firebase デプロイの注意事項
+
+- **`deploy-firebase.yml` は Hosting のみデプロイする（`--only hosting`）**
+- Firestore Rules のデプロイはサービスアカウントに `firebaserules.googleapis.com` の権限がないため、CI からは実行できない
+- Firestore Rules を変更する場合は Firebase コンソールから手動でデプロイすること
+- `firestore.rules` を `paths` に含めないこと（含めると Hosting デプロイが無駄に走る）

@@ -381,27 +381,9 @@ function fbGetSomething() {
 ```
 
 **チェックポイント**:
-- `deploy-firebase.yml` の deploy ステップは Hosting と Rules を分けること（後述の serviceusage 権限エラーを参照）
+- `deploy-firebase.yml` の deploy コマンドは `--only hosting` のみ。`firestore:rules` を含めてはいけない（サービスアカウントに権限がなく 403 エラーになる）
+- Firestore Rules を変更する場合は Firebase コンソールから手動でデプロイすること
 - クライアント側の Firestore 読み取り関数には `fbCurrentUser` の認証チェックを入れること
-- `firestore.rules` を変更した場合、`check-rules` ステップで `changed=true` が出力されることを確認すること
-
-**追加の注意点（serviceusage 権限エラー・2026-04発生）:**
-`firebase deploy --only hosting,firestore:rules` を1つのコマンドで実行すると、
-サービスアカウントに `roles/serviceusage.serviceUsageConsumer` がない場合に
-`serviceusage.googleapis.com` への403エラーでデプロイ全体が失敗する。
-
-```yaml
-# ❌ 1コマンドにまとめると serviceusage チェックで 403 エラーになる
-firebase deploy --only hosting,firestore:rules --project fir-quire
-
-# ✅ 分けてデプロイ。Rules は firestore.rules が変更された時のみ実行する
-firebase deploy --only hosting --project fir-quire
-# （firestore.rules 変更時のみ）
-firebase deploy --only firestore:rules --project fir-quire
-```
-
-`deploy-firebase.yml` では `git diff --name-only HEAD~1 HEAD` で `firestore.rules` の変更を検出し、
-変更があった時のみ Rules デプロイステップを実行するよう条件分岐を入れること。
 
 ---
 
