@@ -183,8 +183,8 @@
           var method = result.method || 'line';
           var radio = document.querySelector('input[name="notificationMethod"][value="' + method + '"]');
           if (radio) radio.checked = true;
-          // Gmail通知先メール選択を設定
-          updateNotifEmailSelect_(result.emails || [], result.notificationEmail || '', method);
+          // Gmail通知先メールチェックボックスを設定
+          updateNotifEmailSelect_(result.emails || [], result.notificationEmails || [], method);
         }
       }
 
@@ -196,23 +196,32 @@
       if (emailHint) emailHint.textContent = result.registeredEmail || 'your@email.com';
     }
 
-    // Gmail通知先メール選択欄を更新する
-    function updateNotifEmailSelect_(emails, currentEmail, method) {
+    // Gmail通知先メールチェックボックスを更新する
+    function updateNotifEmailSelect_(emails, selectedEmails, method) {
       var row = document.getElementById('notifEmailSelectRow');
       if (!row) return;
-      // メールが1件以下 or Gmail以外の方法ならセレクトを非表示
-      var showSelect = (method === 'gmail' || method === 'both') && emails.length > 1;
-      row.style.display = showSelect ? '' : 'none';
-      if (!showSelect) return;
-      var sel = document.getElementById('notifEmailSelect');
-      if (!sel) return;
-      sel.innerHTML = '';
+      // メールが2件以上 かつ Gmail含む方法の場合のみ表示
+      var showCheckboxes = (method === 'gmail' || method === 'both') && emails.length > 1;
+      row.style.display = showCheckboxes ? '' : 'none';
+      if (!showCheckboxes) return;
+      var container = document.getElementById('notifEmailCheckboxes');
+      if (!container) return;
+      // selectedEmails を配列に正規化（未選択なら全メール選択）
+      if (!Array.isArray(selectedEmails)) selectedEmails = selectedEmails ? [selectedEmails] : [];
+      if (selectedEmails.length === 0) selectedEmails = emails.slice();
+      container.innerHTML = '';
       emails.forEach(function(e) {
-        var opt = document.createElement('option');
-        opt.value = e;
-        opt.textContent = e;
-        if (e === currentEmail) opt.selected = true;
-        sel.appendChild(opt);
+        var label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:4px 0;';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = e;
+        cb.className = 'notif-email-cb';
+        cb.checked = selectedEmails.indexOf(e) !== -1;
+        cb.onchange = function() { saveNotificationSettings(); };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(e));
+        container.appendChild(label);
       });
     }
 
@@ -234,9 +243,11 @@
         updateLineGuideVisibility(isRegistered);
         // メール選択欄の表示切り替え
         if (preloadedNotificationSettings && preloadedNotificationSettings.emails) {
-          var sel = document.getElementById('notifEmailSelect');
-          var currentEmail = sel ? sel.value : (preloadedNotificationSettings.notificationEmail || '');
-          updateNotifEmailSelect_(preloadedNotificationSettings.emails, currentEmail, e.target.value);
+          // 現在チェック済みのメール一覧を取得
+          var checkedEmails = [];
+          document.querySelectorAll('.notif-email-cb:checked').forEach(function(cb) { checkedEmails.push(cb.value); });
+          if (checkedEmails.length === 0) checkedEmails = preloadedNotificationSettings.notificationEmails || [];
+          updateNotifEmailSelect_(preloadedNotificationSettings.emails, checkedEmails, e.target.value);
         }
       }
     });
@@ -247,9 +258,10 @@
       var method = selected.value;
       var msgSpan = document.getElementById('notificationMessage');
       if (msgSpan) { msgSpan.style.color = '#888'; msgSpan.textContent = '保存中...'; }
-      // Gmail通知先メールアドレス（複数登録時のみ選択可能）
-      var sel = document.getElementById('notifEmailSelect');
-      var notifEmail = sel && sel.style.display !== 'none' ? sel.value : '';
+      // Gmail通知先メールアドレス（チェックボックスで選択）
+      var checkedEmails = [];
+      document.querySelectorAll('.notif-email-cb:checked').forEach(function(cb) { checkedEmails.push(cb.value); });
+      var notifEmail = checkedEmails.length > 0 ? checkedEmails.join(',') : '';
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -293,13 +305,15 @@
       if (!result || !result.success) return;
       var eligible = result.eligible || {};
       var prefs = result.prefs || {};
+      var emails = result.emails || [];
+      var schedulerNotifEmails = result.schedulerNotifEmails || {};
       var anyEligible = eligible.meeting || eligible.report || eligible.shitsucho;
 
       // LINEスケジューラーブロックの表示
       var block = document.getElementById('lineNotifSchedulerBlock');
       if (block) block.style.display = anyEligible ? '' : 'none';
 
-      // 各種別行の表示とラジオ設定
+      // 各種別行の表示とラジオ設定 + メールチェックボックス
       var rowIds = { meeting: 'lineNotifMeetingRow', report: 'lineNotifReportRow', shitsucho: 'lineNotifShitsuchoRow' };
       ['meeting', 'report', 'shitsucho'].forEach(function(type) {
         var rowEl = document.getElementById(rowIds[type]);
@@ -309,7 +323,38 @@
           var val = prefs[type] || 'line';
           var radio = document.querySelector('input[name="notifPref_' + type + '"][value="' + val + '"]');
           if (radio) radio.checked = true;
+          // メールチェックボックスを描画
+          var selectedForType = schedulerNotifEmails[type] || [];
+          updateSchedulerEmailCheckboxes_(type, emails, selectedForType, val);
         }
+      });
+    }
+
+    // スケジューラー種別ごとのメールチェックボックスを描画
+    function updateSchedulerEmailCheckboxes_(type, emails, selectedEmails, method) {
+      var row = document.getElementById('schedulerEmailRow_' + type);
+      if (!row) return;
+      var showCheckboxes = (method === 'gmail' || method === 'both') && emails.length > 1;
+      row.style.display = showCheckboxes ? '' : 'none';
+      if (!showCheckboxes) return;
+      var container = document.getElementById('schedulerEmailCheckboxes_' + type);
+      if (!container) return;
+      if (!Array.isArray(selectedEmails)) selectedEmails = selectedEmails ? [selectedEmails] : [];
+      // 未選択の場合、全メール選択状態にする
+      if (selectedEmails.length === 0) selectedEmails = emails.slice();
+      container.innerHTML = '';
+      emails.forEach(function(e) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:4px 0;';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = e;
+        cb.className = 'scheduler-email-cb-' + type;
+        cb.checked = selectedEmails.indexOf(e) !== -1;
+        cb.onchange = function() { saveLineSchedulerNotifPref(type); };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(e));
+        container.appendChild(label);
       });
     }
 
@@ -319,6 +364,20 @@
       var method = selected.value;
       var msgSpan = document.getElementById('lineNotifMsg_' + type);
       if (msgSpan) { msgSpan.style.color = '#888'; msgSpan.textContent = '保存中...'; }
+      // メールチェックボックスの表示切り替え
+      if (preloadedLineSchedulerNotifPrefs && preloadedLineSchedulerNotifPrefs.emails) {
+        var checkedEmails = [];
+        document.querySelectorAll('.scheduler-email-cb-' + type + ':checked').forEach(function(cb) { checkedEmails.push(cb.value); });
+        if (checkedEmails.length === 0) {
+          var se = (preloadedLineSchedulerNotifPrefs.schedulerNotifEmails || {})[type] || [];
+          checkedEmails = se.length > 0 ? se : preloadedLineSchedulerNotifPrefs.emails.slice();
+        }
+        updateSchedulerEmailCheckboxes_(type, preloadedLineSchedulerNotifPrefs.emails, checkedEmails, method);
+      }
+      // チェック済みメール収集
+      var notifEmails = [];
+      document.querySelectorAll('.scheduler-email-cb-' + type + ':checked').forEach(function(cb) { notifEmails.push(cb.value); });
+      var notifEmailsStr = notifEmails.join(',');
       google.script.run
         .withSuccessHandler(function(result) {
           if (msgSpan) {
@@ -336,7 +395,7 @@
         .withFailureHandler(function(err) {
           if (msgSpan) { msgSpan.style.color = '#c62828'; msgSpan.textContent = '❌ 保存失敗'; }
         })
-        .updateLineSchedulerNotifPref(type, method);
+        .updateLineSchedulerNotifPref(type, method, notifEmailsStr);
     }
 
     // 校舎ごとの通知振り分け設定を読み込んで表示する

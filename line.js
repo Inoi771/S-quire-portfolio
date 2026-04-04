@@ -58,7 +58,7 @@ function getCurrentTeacherId_() {
 
 /**
  * teacherId からメールアドレスを取得する内部ヘルパー
- * staffs.notificationEmail があればそちらを優先し、なければ staffs.email を返す
+ * staffs.notificationEmails → notificationEmail → email の順で優先
  * @param {string} teacherId 講師ID
  * @return {string} メールアドレス（見つからない場合は空文字）
  */
@@ -66,7 +66,28 @@ function getEmailByTeacherId_(teacherId) {
   if (!teacherId) return '';
   var staff = getStaffByTeacherId_(teacherId);
   if (!staff) return '';
+  // 複数通知メール設定がある場合は先頭を返す（後方互換）
+  if (Array.isArray(staff.notificationEmails) && staff.notificationEmails.length > 0) {
+    return staff.notificationEmails[0];
+  }
   return staff.notificationEmail || staff.email || '';
+}
+
+/**
+ * teacherId から通知先メールアドレス一覧を取得する内部ヘルパー
+ * notificationEmails 配列 → notificationEmail → email の順で優先
+ * @param {string} teacherId 講師ID
+ * @return {string[]} メールアドレス配列
+ */
+function getNotificationEmailsByTeacherId_(teacherId) {
+  if (!teacherId) return [];
+  var staff = getStaffByTeacherId_(teacherId);
+  if (!staff) return [];
+  if (Array.isArray(staff.notificationEmails) && staff.notificationEmails.length > 0) {
+    return staff.notificationEmails.slice();
+  }
+  var single = staff.notificationEmail || staff.email || '';
+  return single ? [single] : [];
 }
 
 /**
@@ -170,8 +191,8 @@ function sendNotification(teacherId, subject, body) {
     teacherId = (teacherId || '').trim();
     if (!teacherId) return { success: false, error: '送信先の講師IDが空です' };
 
-    // teacherId からメールアドレスを取得
-    var toEmail = getEmailByTeacherId_(teacherId);
+    // teacherId から通知先メールアドレス一覧を取得
+    var toEmails = getNotificationEmailsByTeacherId_(teacherId);
 
     // staffs から通知方法と LINE User ID を取得
     var staff = getStaffByTeacherId_(teacherId);
@@ -185,15 +206,17 @@ function sendNotification(teacherId, subject, body) {
     var sentGmail = false;
     var sentLine = false;
 
-    // Gmail 送信
+    // Gmail 送信（選択された全メールアドレスに送信）
     if (method === 'gmail' || method === 'both') {
-      if (toEmail) {
-        try {
-          MailApp.sendEmail(toEmail, subject, body);
-          sentGmail = true;
-        } catch (mailError) {
-          Logger.log('❌ Gmail送信失敗: ' + mailError);
-        }
+      if (toEmails.length > 0) {
+        toEmails.forEach(function(addr) {
+          try {
+            MailApp.sendEmail(addr, subject, body);
+            sentGmail = true;
+          } catch (mailError) {
+            Logger.log('❌ Gmail送信失敗 (' + addr + '): ' + mailError);
+          }
+        });
       } else {
         Logger.log('⚠ メールアドレス未登録: ' + teacherId);
       }
@@ -246,11 +269,21 @@ function getNotificationSettings() {
     // 登録メールアドレス
     var registeredEmail = (staff && staff.email) ? staff.email : email;
 
-    // メールリスト（staffs は1ドキュメント1メール）
-    var emails = registeredEmail ? [registeredEmail] : (email ? [email] : []);
+    // メールリスト（staffs.emails 配列があればそちらを使用）
+    var emails = [];
+    if (staff && Array.isArray(staff.emails) && staff.emails.length > 0) {
+      emails = staff.emails.slice();
+    } else if (registeredEmail) {
+      emails = [registeredEmail];
+    } else if (email) {
+      emails = [email];
+    }
 
-    // 現在の通知先メール（staffs.notificationEmail を優先）
-    var notificationEmail = (staff && staff.notificationEmail) ? staff.notificationEmail : (emails.length > 0 ? emails[0] : '');
+    // 現在の通知先メール（notificationEmails 配列 → notificationEmail → emails[0]）
+    var notificationEmails = (staff && Array.isArray(staff.notificationEmails) && staff.notificationEmails.length > 0)
+      ? staff.notificationEmails
+      : (staff && staff.notificationEmail) ? [staff.notificationEmail]
+      : (emails.length > 0 ? [emails[0]] : []);
 
     return {
       success: true,
@@ -260,7 +293,7 @@ function getNotificationSettings() {
       lineUserIdMasked: lineUserIdMasked,
       registeredEmail: registeredEmail,
       emails: emails,
-      notificationEmail: notificationEmail
+      notificationEmails: notificationEmails
     };
 
   } catch (error) {
@@ -305,7 +338,17 @@ function updateNotificationSettings(method, notificationEmail) {
     // Gmail通知先メールアドレスを staffs に保存（指定があれば）
     if (notificationEmail && (method === 'gmail' || method === 'both')) {
       if (staff) {
-        staff.notificationEmail = notificationEmail.toLowerCase();
+        // カンマ区切り文字列 or 配列 → 配列として保存
+        var emailArr = [];
+        if (typeof notificationEmail === 'string') {
+          emailArr = notificationEmail.split(',').map(function(e) { return e.trim().toLowerCase(); }).filter(Boolean);
+        } else if (Array.isArray(notificationEmail)) {
+          emailArr = notificationEmail.map(function(e) { return String(e).trim().toLowerCase(); }).filter(Boolean);
+        }
+        if (emailArr.length > 0) {
+          staff.notificationEmails = emailArr;
+          staff.notificationEmail = emailArr[0]; // 後方互換
+        }
         writeStaffToFirestore_(staff);
       }
     }
@@ -347,7 +390,18 @@ function getLineSchedulerNotifPrefs() {
       shitsucho: myPrefs.shitsucho || 'line'
     };
 
-    return { success: true, lineRegistered: lineRegistered, prefs: prefs, eligible: eligible };
+    // メールアドレス一覧（チェックボックス表示用）
+    var emails = [];
+    if (staff && Array.isArray(staff.emails) && staff.emails.length > 0) {
+      emails = staff.emails.slice();
+    } else if (staff && staff.email) {
+      emails = [staff.email];
+    }
+
+    // 種別ごとの選択済み通知先メール
+    var schedulerNotifEmails = (staff && staff.schedulerNotifEmails) ? staff.schedulerNotifEmails : {};
+
+    return { success: true, lineRegistered: lineRegistered, prefs: prefs, eligible: eligible, emails: emails, schedulerNotifEmails: schedulerNotifEmails };
   } catch (error) {
     Logger.log('❌ getLineSchedulerNotifPrefs エラー: ' + error);
     return { success: false, error: error.toString() };
@@ -361,7 +415,7 @@ function getLineSchedulerNotifPrefs() {
  * @param {string} method 通知方法 ('line'/'gmail'/'both'/'none')
  * @return {Object} { success, message }
  */
-function updateLineSchedulerNotifPref(type, method) {
+function updateLineSchedulerNotifPref(type, method, notifEmails) {
   try {
     var validTypes = ['meeting', 'report', 'shitsucho'];
     var validMethods = ['line', 'gmail', 'both', 'none'];
@@ -379,6 +433,19 @@ function updateLineSchedulerNotifPref(type, method) {
     if (staff) {
       if (!staff.schedulerNotifPrefs) staff.schedulerNotifPrefs = {};
       staff.schedulerNotifPrefs[type] = method;
+      // 種別ごとの通知先メール保存
+      if (notifEmails && (method === 'gmail' || method === 'both')) {
+        var emailArr = [];
+        if (typeof notifEmails === 'string') {
+          emailArr = notifEmails.split(',').map(function(e) { return e.trim().toLowerCase(); }).filter(Boolean);
+        } else if (Array.isArray(notifEmails)) {
+          emailArr = notifEmails.map(function(e) { return String(e).trim().toLowerCase(); }).filter(Boolean);
+        }
+        if (emailArr.length > 0) {
+          if (!staff.schedulerNotifEmails) staff.schedulerNotifEmails = {};
+          staff.schedulerNotifEmails[type] = emailArr;
+        }
+      }
       writeStaffToFirestore_(staff);
     }
     var methodLabel = { line: 'LINEのみ', gmail: 'メールのみ', both: 'LINE+メール両方', none: '通知しない' };
@@ -1555,12 +1622,17 @@ function sendScheduledLineMessageNow(id) {
         }
       }
       if (pref === 'gmail' || pref === 'both') {
-        var toEmail = getEmailByTeacherId_(tid);
-        if (toEmail) {
-          try {
-            MailApp.sendEmail(toEmail, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
-            sentCount++;
-          } catch(e) { failedRecipients.push(tid + '(mail): ' + e); }
+        // 種別ごとの通知先メール → お問い合わせ通知メール → デフォルトメール
+        var schedEmails = (staff && staff.schedulerNotifEmails && Array.isArray(staff.schedulerNotifEmails[msgType]) && staff.schedulerNotifEmails[msgType].length > 0)
+          ? staff.schedulerNotifEmails[msgType]
+          : getNotificationEmailsByTeacherId_(tid);
+        if (schedEmails.length > 0) {
+          schedEmails.forEach(function(addr) {
+            try {
+              MailApp.sendEmail(addr, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
+              sentCount++;
+            } catch(e) { failedRecipients.push(tid + '(mail:' + addr + '): ' + e); }
+          });
         }
       }
     });
@@ -1636,12 +1708,16 @@ function checkAndSendDueLineMessages() {
           }
         }
         if (pref === 'gmail' || pref === 'both') {
-          var toEmail = getEmailByTeacherId_(tid);
-          if (toEmail) {
-            try {
-              MailApp.sendEmail(toEmail, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
-              rowSent++;
-            } catch(e) { errors.push(tid + '(mail): ' + e); }
+          var schedEmails2 = (staff && staff.schedulerNotifEmails && Array.isArray(staff.schedulerNotifEmails[msgType]) && staff.schedulerNotifEmails[msgType].length > 0)
+            ? staff.schedulerNotifEmails[msgType]
+            : getNotificationEmailsByTeacherId_(tid);
+          if (schedEmails2.length > 0) {
+            schedEmails2.forEach(function(addr) {
+              try {
+                MailApp.sendEmail(addr, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
+                rowSent++;
+              } catch(e) { errors.push(tid + '(mail:' + addr + '): ' + e); }
+            });
           }
         }
       });
