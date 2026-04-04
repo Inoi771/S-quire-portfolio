@@ -315,8 +315,9 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `saveFlyerAiData(lectureId, campusCode, html, chatHistoryJson)` — `@aiCallable` スプレッドシートにチラシHTML＋会話履歴保存。campusCode `'common'` = 共通
 - `loadFlyerAiData(lectureId, campusCode)` — `@aiCallable` 保存済みAIチラシデータ読み込み。戻り値: `{ success, html, chatHistory, updatedAt }`
 - `getDefaultLecturePricing_()` — 講習タイプ別のデフォルト料金データを返す内部ヘルパー（税抜き金額。spring/summer/kiso1/kiso2/winter/nyushi）
-- `getLecturePricingConfig()` — `@aiCallable` 講習別料金設定を取得（未設定ならデフォルトで初期化）。戻り値: `{ success, data: { typeId: [{label, internal, external}] } }`
-- `saveLecturePricing(typeId, rowsJson)` — 指定講習タイプの料金設定を保存（Admin のみ。rowsJson: `[{label, internal, external}]`）
+- `getLecturePricingConfig()` — `@aiCallable` 講習別料金設定を取得（未設定ならデフォルトで初期化）。戻り値: `{ success, data: { typeId: {rows:[{type,gradeKey,duration,count,internal,external}], sectionScopes:{...}} } }`
+- `saveLecturePricing(typeId, lectureDataJson)` — 指定講習タイプの料金設定を保存（Admin のみ。lectureDataJson: `{rows:[...], sectionScopes:{...}}`）
+- `saveUnifiedLecturePricing(payloadJson)` — `@aiCallable` 全講習タイプの料金設定を一括保存（Admin のみ。統合UI用。payloadJson: `{allTypes:{spring:{rows,sectionScopes},...}}`）
 - `normalizeLecDate_(val)` — Sheets日付値をYYYY-MM-DD文字列に正規化する内部ヘルパー
 - `normalizeLecTime_(val)` — Sheets時刻値をHH:MM文字列に正規化する内部ヘルパー
 - `getLectureScheduleSpreadsheet_()` — 講習スケジュール用スプレッドシートを取得/作成する内部ヘルパー

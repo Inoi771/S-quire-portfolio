@@ -3280,6 +3280,47 @@ function saveLecturePricing(typeId, lectureDataJson) {
 }
 
 /**
+ * 全講習タイプの料金設定を一括保存する（統合UIから呼び出し）
+ * @param {string} payloadJson JSON: { allTypes: { spring:{rows,sectionScopes}, summer:{...}, ... } }
+ * @return {Object} { success, message }
+ * @aiCallable
+ */
+function saveUnifiedLecturePricing(payloadJson) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var payload = JSON.parse(payloadJson);
+    if (!payload || !payload.allTypes) return { success: false, error: 'データ形式が不正です' };
+
+    var props = PropertiesService.getScriptProperties();
+    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
+    var all = json ? JSON.parse(json) : getDefaultLecturePricing_();
+
+    // 旧フォーマット移行
+    var needsMigration = false;
+    ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'].forEach(function(tid) {
+      if (Array.isArray(all[tid])) needsMigration = true;
+    });
+    if (needsMigration) all = migrateLecturePricingData_(all);
+
+    // 全タイプを一括更新
+    ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'].forEach(function(typeId) {
+      var typePayload = payload.allTypes[typeId];
+      if (typePayload && Array.isArray(typePayload.rows)) {
+        all[typeId] = typePayload;
+      }
+    });
+
+    props.setProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(all));
+    syncLecturePricingToTable_(all);
+
+    return { success: true, message: '全講習の料金設定を保存しました' };
+  } catch (error) {
+    Logger.log('❌ saveUnifiedLecturePricingエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 講習別料金設定を元に料金表（PRICING_TABLE_CONFIG）の講習セクションを自動生成・更新する内部ヘルパー
  * 既存の auto_ プレフィックスのセクションと旧 seasonal / seasonal_high セクションを置き換える
  * @param {Object} pricingData { typeId: {rows: [...]} }

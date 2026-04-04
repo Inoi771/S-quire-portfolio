@@ -167,8 +167,16 @@
 - `editLectureDatesAdmin(lectureId, currentStart, currentEnd)` — 管理タブ：日程編集インラインUIを表示
 - `saveLectureDatesAdmin(fiscalYear, typeId)` — 管理タブ：日程上書き保存
 - `resetLectureDatesAdmin(fiscalYear, typeId)` — 管理タブ：日程をデフォルト（自動計算）に戻す
-- `showLecGradeSettingsPanel(lectureId)` — 学年別設定パネルを表示（コマ時間・回数の入力テーブル）
-- `saveLecGradeSettingsAdmin(lectureId)` — 学年別設定パネルの入力値をバックエンドに保存
+- `showLecGradeSettingsPanel(lectureId)` — 講習タイプ別の料金・学年別設定パネルを表示（既存の個別設定UI）
+- `renderLecUnifiedPanel_(lectureId, typeId, lp, typeData)` — 講習タイプ別料金パネルの中身を描画（標準料金・勝瑞校料金・追加行の3セクション）
+- `saveLecGradeSettingsAdmin(lectureId)` — 講習タイプ別料金設定パネルの入力値をバックエンドに保存
+- `showUnifiedPricingPanel_()` — 統合料金設定パネルを表示（学年ファースト一括設定UI。「📊 料金一括設定」ボタンから呼び出し）
+- `renderUnifiedPricingPanel_(pricingData)` — 統合料金設定パネルの内容を描画（小学生〜中3「全講習共通」トグル・勝瑞校料金・高校生追加行）
+- `onGradeAllChange_(cb)` — 「全講習共通」チェックボックスの変更に応じて common/pertype 表示を切り替える
+- `updateUnifiedTax_(input)` — 統合パネルの税抜き入力時に税込みを自動更新する（data-input-field / data-tax-field 属性使用）
+- `addUnifiedCustomRow_()` — 統合パネルの追加行テーブルに空の行を追加（#unified-custom-tbody）
+- `collectUnifiedPricingData_()` — 統合パネルのフォームデータを収集し全タイプ別rows を構築して返す
+- `saveUnifiedPricingAdmin_()` — 統合料金設定を `saveUnifiedLecturePricing()` で一括保存
 - `showLecPricingPanel(typeId)` — 講習別料金設定パネルを表示（バックエンドから料金データを取得して描画）
 - `renderLecPricingPanel_(typeId, typeName, rows)` — 料金設定パネルの中身を描画（テーブル＋行追加/削除＋保存ボタン）
 - `buildLecPricingRowHtml_(idx, row)` — 料金設定の1行分のHTML生成（税抜き入力・税込み自動計算表示）
