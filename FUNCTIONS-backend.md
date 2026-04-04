@@ -266,8 +266,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `setupScheduledLineTrigger()` — checkAndSendDueLineMessages を毎時実行するトリガーを設定（Admin のみ）
 - `deleteScheduledLineTrigger()` — checkAndSendDueLineMessages のトリガーをすべて削除（Admin のみ）
 - `getScheduledLineTriggerStatus()` — トリガーの稼働状態を確認。戻り値: `{ success, active }`
-- `getLineSchedulerNotifPrefs()` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法設定を種別ごとに取得。戻り値: `{ success, lineRegistered, prefs: {meeting,report,shitsucho}, eligible: {meeting,report,shitsucho} }`
-- `updateLineSchedulerNotifPref(type, method)` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法を種別ごとに更新（type: 'meeting'/'report'/'shitsucho'、method: 'line'/'gmail'/'both'/'none'）。戻り値: `{ success, message }`
+- `getLineSchedulerNotifPrefs()` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法設定を種別ごとに取得。戻り値: `{ success, lineRegistered, prefs: {meeting,report,shitsucho}, eligible: {meeting,report,shitsucho}, emails: string[], schedulerNotifEmails: {type: string[]} }`
+- `updateLineSchedulerNotifPref(type, method, notifEmails)` — `@aiCallable` 現在ユーザーのLINEスケジューラー通知方法を種別ごとに更新（type: 'meeting'/'report'/'shitsucho'、method: 'line'/'gmail'/'both'/'none'、notifEmails: カンマ区切りメール）。戻り値: `{ success, message }`
 
 ### セクション19: 講習管理
 
@@ -363,11 +363,12 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `handleApiCall_(body)` — Firebase Hosting からの `google.script.run` 代替 API コールを処理（doPost 内部ヘルパー）。Firebase ID トークンを検証しユーザーコンテキストを設定後、`globalThis[funcName]` で関数を動的ディスパッチ。末尾 `_` の内部関数は呼び出し禁止
 - `sendLineReply_(replyToken, message)` — LINE 返信送信（内部ヘルパー・doPost 内のみ使用）
 - `sendLineMessage(lineUserId, message)` — LINE プッシュ通知送信
-- `sendNotification(teacherId, subject, body)` — `@aiCallable` 通知送信（teacherId からメールを解決し Gmail/LINE/両方を自動判定）
+- `sendNotification(teacherId, subject, body)` — `@aiCallable` 通知送信（teacherId からメールを解決し Gmail/LINE/両方を自動判定。複数通知メール設定時は全アドレスに送信）
+- `getNotificationEmailsByTeacherId_(teacherId)` — teacherId から通知先メールアドレス一覧を取得する内部ヘルパー。notificationEmails配列 → notificationEmail → email の順で優先
 - `getCampusRoutingMap_()` — Firestore config/notification_routing から校舎別通知振り分け設定を取得する内部ヘルパー
 - `setCampusRoutingMap_(routingMap)` — Firestore config/notification_routing に校舎別通知振り分け設定を保存する内部ヘルパー
-- `getNotificationSettings()` — `@aiCallable` 現在ユーザーの通知設定取得（isEligible・method・lineRegistered・registeredEmail）。isEligible は Firestore config/notification_routing に自分の teacherId が含まれるかで判定
-- `updateNotificationSettings(method, notificationEmail)` — `@aiCallable` 通知方法更新（gmail/line/both/none）。通知先メールは staffs.notificationEmail に保存
+- `getNotificationSettings()` — `@aiCallable` 現在ユーザーの通知設定取得（isEligible・method・lineRegistered・registeredEmail・emails配列・notificationEmails配列）。isEligible は Firestore config/notification_routing に自分の teacherId が含まれるかで判定
+- `updateNotificationSettings(method, notificationEmail)` — `@aiCallable` 通知方法更新（gmail/line/both/none）。notificationEmail はカンマ区切り文字列で複数メール指定可。staffs.notificationEmails 配列に保存
 - `getNotificationMembers()` — Firestore config/notification_routing 内の全 teacherId を重複排除で取得（Admin のみ）
 - `getLineRegisteredUsers()` — LINE 経由で自己登録済みのユーザー一覧取得（Admin のみ・teacherId ベース）。staffs から名前を取得
 - `getLineUserMapping()` — LINE User ID マッピング一覧取得（Admin のみ・確認用）

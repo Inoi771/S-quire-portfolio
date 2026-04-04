@@ -249,6 +249,16 @@
 - `initStudentAnalysisPanel()` — 生徒別AI分析パネルの年度・テスト名ドロップダウン初期化
 - `generateAllAnalysesAdmin()` — テスト全体分析＋生徒別AI分析を1回のAPIコールで一括生成するボタンハンドラー（確認ダイアログ付き）
 
+**【通知設定】** (`js-admin.html`)
+- `loadNotificationSettings()` — お問い合わせ転送通知の設定をバックエンドから取得して表示
+- `applyNotificationSettingsUI(result)` — 通知設定の結果をUIに反映（LINE登録状態・ラジオボタン・メールチェックボックス）
+- `updateNotifEmailSelect_(emails, selectedEmails, method)` — お問い合わせ転送通知のメールチェックボックスを描画（複数メール登録時のみ表示）
+- `saveNotificationSettings()` — 通知方法＋選択メールアドレスをバックエンドに保存
+- `loadLineSchedulerNotifPrefs()` — LINEスケジューラー通知設定をバックエンドから取得して表示
+- `applyLineSchedulerNotifUI(result)` — スケジューラー通知の結果をUIに反映（種別ごとのラジオボタン・メールチェックボックス）
+- `updateSchedulerEmailCheckboxes_(type, emails, selectedEmails, method)` — スケジューラー種別ごとのメールチェックボックスを描画
+- `saveLineSchedulerNotifPref(type)` — スケジューラー種別の通知方法＋選択メールをバックエンドに保存
+
 **【講習日程締切管理】** (`js-admin-lec-deadline.html`)
 - `initLectureDeadlineDatesAdmin()` — 講習日程締切管理セクションの年度セレクタ初期化・データ読み込み
 - `loadLectureDeadlineDates()` — バックエンドから上書き設定を取得してテーブル描画
