@@ -623,12 +623,89 @@
 
     // --- 講習設定 統合UI（学年別設定 + 料金設定） ---
 
-    var lecPricingCache_ = null; // バックエンドから取得した料金データのキャッシュ
+    var lecPricingCache_ = null;  // バックエンドから取得した料金データのキャッシュ
+    var lecCampusMap_   = null;  // 校舎コード→名前マップ（通常設定と共用）
 
     // 学年キー定義（フロントエンド用）
     var LEC_GRADE_KEYS_ALL_ = ['sho', 'chu1', 'chu2', 'chu3', 'ko1', 'ko2', 'ko3'];
     var LEC_GRADE_LABELS_ = { sho: '小学生', chu1: '中1', chu2: '中2', chu3: '中3', ko1: '高1', ko2: '高2', ko3: '高3' };
     var LEC_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
+
+    /**
+     * 講習設定の校舎スコープ切り替えボタンHTMLを生成する
+     * @param {string} sectionKey "standard" | "shozui" | "custom"
+     * @param {Object} scopeData {campusScope, campusCodes}
+     * @return {string} HTML文字列
+     */
+    function buildLecScopeUi_(sectionKey, scopeData) {
+      var scope      = (scopeData && scopeData.campusScope) || 'all';
+      var scopeLabel = scope === 'specific' ? '特定校舎' : '全校舎';
+      var scopeColor = scope === 'specific' ? '#ff8c00' : '#2d6a4f';
+      var scopeBg    = scope === 'specific' ? '#fff3e0' : '#d8f3dc';
+      return '<button class="lec-scope-toggle" data-section-key="' + sectionKey + '" data-scope="' + scope + '" '
+           + 'onclick="toggleLecScope_(this)" '
+           + 'style="border:none;border-radius:10px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;'
+           + 'color:' + scopeColor + ';background:' + scopeBg + ';">' + scopeLabel + '</button>';
+    }
+
+    /**
+     * 講習設定の校舎チェックボックス一覧HTMLを生成する
+     * @param {string} sectionKey "standard" | "shozui" | "custom"
+     * @param {Object} scopeData {campusScope, campusCodes}
+     * @return {string} HTML文字列
+     */
+    function buildLecScopeCampusCheckboxes_(sectionKey, scopeData) {
+      var campusMap = lecCampusMap_ || {};
+      var campusIds = Object.keys(campusMap);
+      if (campusIds.length === 0) return '';
+      var scope  = (scopeData && scopeData.campusScope) || 'all';
+      var codes  = (scopeData && scopeData.campusCodes) || [];
+      var display = scope === 'specific' ? 'flex' : 'none';
+      var html = '<div class="lec-campus-selector" data-section-key="' + sectionKey + '" '
+               + 'style="display:' + display + ';flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:4px 0;">';
+      campusIds.forEach(function(code) {
+        var checked = codes.indexOf(code) !== -1 ? ' checked' : '';
+        html += '<label style="font-size:12px;display:flex;align-items:center;gap:3px;cursor:pointer;">'
+              + '<input type="checkbox" class="lec-campus-chk" data-section-key="' + sectionKey + '" value="' + escapeHtml(code) + '"' + checked + '>'
+              + escapeHtml(campusMap[code] || code) + '</label>';
+      });
+      return html + '</div>';
+    }
+
+    /**
+     * 講習設定の校舎スコープを切り替える
+     * @param {HTMLElement} btn スコープトグルボタン
+     */
+    function toggleLecScope_(btn) {
+      var sectionKey = btn.dataset.sectionKey;
+      var newScope = btn.dataset.scope === 'all' ? 'specific' : 'all';
+      btn.dataset.scope = newScope;
+      btn.textContent   = newScope === 'specific' ? '特定校舎' : '全校舎';
+      btn.style.color   = newScope === 'specific' ? '#ff8c00' : '#2d6a4f';
+      btn.style.background = newScope === 'specific' ? '#fff3e0' : '#d8f3dc';
+      var sel = document.querySelector('.lec-campus-selector[data-section-key="' + sectionKey + '"]');
+      if (sel) sel.style.display = newScope === 'specific' ? 'flex' : 'none';
+    }
+
+    /**
+     * 講習設定パネルの校舎スコープ設定をDOMから収集する
+     * @return {Object} { standard: {campusScope, campusCodes}, shozui: {...}, custom: {...} }
+     */
+    function collectLecSectionScopes_() {
+      var scopes = {};
+      ['standard', 'shozui', 'custom'].forEach(function(key) {
+        var btn = document.querySelector('.lec-scope-toggle[data-section-key="' + key + '"]');
+        var scope = btn ? btn.dataset.scope : 'all';
+        var campusCodes = [];
+        if (scope === 'specific') {
+          document.querySelectorAll('.lec-campus-chk[data-section-key="' + key + '"]:checked').forEach(function(chk) {
+            campusCodes.push(chk.value);
+          });
+        }
+        scopes[key] = { campusScope: scope, campusCodes: campusCodes };
+      });
+      return scopes;
+    }
 
     /**
      * 統合設定パネルを表示する（学年別設定 + 料金設定を1テーブルで）
@@ -649,20 +726,40 @@
       panel.style.display = 'block';
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+      var loaded = { pricing: null, campuses: ncCampusMap_ }; // ncCampusMap_が既ロードなら再利用
+      function tryRenderLecPanel_() {
+        if (loaded.pricing === null || loaded.campuses === null) return;
+        lecCampusMap_ = loaded.campuses;
+        if (loaded.pricing.success && loaded.pricing.data) {
+          lecPricingCache_ = loaded.pricing.data;
+          var typeData = loaded.pricing.data[typeId] || { rows: [] };
+          renderLecUnifiedPanel_(lectureId, typeId, lp, typeData);
+        } else {
+          panel.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">料金データの取得に失敗しました</div>';
+        }
+      }
+
       google.script.run
         .withSuccessHandler(function(result) {
-          if (result && result.success && result.data) {
-            lecPricingCache_ = result.data;
-            var typeData = result.data[typeId] || { rows: [] };
-            renderLecUnifiedPanel_(lectureId, typeId, lp, typeData);
-          } else {
-            panel.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">料金データの取得に失敗しました</div>';
-          }
+          loaded.pricing = result || { success: false };
+          tryRenderLecPanel_();
         })
         .withFailureHandler(function(err) {
-          panel.innerHTML = '<div style="color:#e57373;font-size:14px;padding:10px;">エラー: ' + err + '</div>';
+          loaded.pricing = { success: false, error: err };
+          tryRenderLecPanel_();
         })
         .getLecturePricingConfig();
+
+      if (!ncCampusMap_) {
+        // 通常設定タブがまだ開かれていない場合は別途取得
+        google.script.run
+          .withSuccessHandler(function(result) {
+            loaded.campuses = (result && result.success) ? result.data : {};
+            tryRenderLecPanel_();
+          })
+          .withFailureHandler(function() { loaded.campuses = {}; tryRenderLecPanel_(); })
+          .getCampusConfigForWeb();
+      }
     }
 
     /**
@@ -677,6 +774,16 @@
       if (!panel) return;
 
       var rows = (typeData && typeData.rows) ? typeData.rows : [];
+      // 校舎スコープ設定（デフォルト: standard=全校舎, shozui=勝瑞校のみ, custom=全校舎）
+      var sectionScopes = typeData.sectionScopes || {};
+      var defaultScopes = {
+        standard: { campusScope: 'all',      campusCodes: [] },
+        shozui:   { campusScope: 'specific', campusCodes: ['08'] },
+        custom:   { campusScope: 'all',      campusCodes: [] }
+      };
+      ['standard','shozui','custom'].forEach(function(k) {
+        sectionScopes[k] = sectionScopes[k] || defaultScopes[k];
+      });
       var isChuu3Only = LEC_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
       var isSpring = lp.name.indexOf('春期') !== -1;
       var standardGrades = isChuu3Only ? ['chu3'] : LEC_GRADE_KEYS_ALL_;
@@ -691,7 +798,11 @@
 
       // ===== 標準料金セクション =====
       html += '<div style="margin-bottom:18px;">'
-            + '<div style="font-weight:600;font-size:13px;color:#555;margin-bottom:6px;padding:4px 8px;background:#f0f0f0;border-radius:4px;">【標準料金】</div>'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
+            + '<div style="font-weight:600;font-size:13px;color:#555;padding:4px 8px;background:#f0f0f0;border-radius:4px;">【標準料金】</div>'
+            + buildLecScopeUi_("standard", sectionScopes.standard)
+            + '</div>'
+            + buildLecScopeCampusCheckboxes_("standard", sectionScopes.standard)
             + '<table id="admin-lec-standard-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
             + '<thead><tr style="background:#f5f5f5;">'
             + '<th style="' + thStyle + 'text-align:left;width:70px;">学年</th>'
@@ -731,7 +842,11 @@
       // ===== 勝瑞校料金セクション（中3のみ対象の講習は表示しない）=====
       if (!isChuu3Only) {
         html += '<div style="margin-bottom:18px;">'
-              + '<div style="font-weight:600;font-size:13px;color:#555;margin-bottom:6px;padding:4px 8px;background:#e8f4fd;border-radius:4px;">【勝瑞校料金（高校生のみ）】</div>'
+              + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
+              + '<div style="font-weight:600;font-size:13px;color:#555;padding:4px 8px;background:#e8f4fd;border-radius:4px;">【勝瑞校料金（高校生のみ）】</div>'
+              + buildLecScopeUi_("shozui", sectionScopes.shozui)
+              + '</div>'
+              + buildLecScopeCampusCheckboxes_("shozui", sectionScopes.shozui)
               + '<table id="admin-lec-shozui-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
               + '<thead><tr style="background:#f0f7fd;">'
               + '<th style="' + thStyle + 'text-align:left;width:70px;">学年</th>'
@@ -771,11 +886,15 @@
 
       // ===== 追加行セクション =====
       html += '<div style="margin-bottom:18px;">'
-            + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'
             + '<div style="font-weight:600;font-size:13px;color:#555;padding:4px 8px;background:#f5f0e0;border-radius:4px;">【追加行】</div>'
+            + '<div style="display:flex;align-items:center;gap:6px;">'
+            + buildLecScopeUi_("custom", sectionScopes.custom)
             + '<button onclick="addLecCustomRow_()" '
             + 'style="background:none;border:1px solid #22c55e;color:#22c55e;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;font-weight:600;">＋ 行を追加</button>'
             + '</div>'
+            + '</div>'
+            + buildLecScopeCampusCheckboxes_("custom", sectionScopes.custom)
             + '<table id="admin-lec-custom-table" style="width:100%;border-collapse:collapse;font-size:13px;">'
             + '<thead><tr style="background:#fdf8ee;">'
             + '<th style="' + thStyle + 'text-align:left;">ラベル</th>'
@@ -969,7 +1088,8 @@
         newSettings[labelKey] = { duration: r.duration, count: r.count };
       });
 
-      var lecturePricingPayload = JSON.stringify({ rows: rows });
+      var sectionScopes = collectLecSectionScopes_();
+      var lecturePricingPayload = JSON.stringify({ rows: rows, sectionScopes: sectionScopes });
 
       google.script.run
         .withSuccessHandler(function(result) {
@@ -983,7 +1103,7 @@
           if (lp) lp.gradeSettings = newSettings;
           lectureTabInitialized = false;
           // 料金キャッシュを更新
-          if (lecPricingCache_) lecPricingCache_[typeId] = { rows: rows };
+          if (lecPricingCache_) lecPricingCache_[typeId] = { rows: rows, sectionScopes: sectionScopes };
           // 配布物タブのキャッシュをリセット
           if (typeof matLecPricingData !== 'undefined') matLecPricingData = null;
           // 料金表キャッシュもリセット

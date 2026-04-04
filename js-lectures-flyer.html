@@ -320,18 +320,23 @@
             if (result && result.success && result.data) {
               var typeId = currentLectureId ? currentLectureId.split('-').slice(1).join('-') : '';
               if (typeId && result.data[typeId]) {
-                // result.data[typeId] は {rows:[...]} 形式
+                // result.data[typeId] は {rows:[...], sectionScopes:{...}} 形式
                 var typeEntry = result.data[typeId];
                 var rows = Array.isArray(typeEntry) ? typeEntry : (typeEntry.rows || []);
+                var sectionScopes = typeEntry.sectionScopes || {};
                 if (rows.length > 0) {
                   pricingText = '\n\n【講習別料金データ】\n';
                   pricingText += '以下の料金データを見やすいテーブルでチラシに組み込んでください。\n';
                   pricingText += '| 学年 | 内部生（税抜） |\n';
                   pricingText += '|------|---------------|\n';
                   rows.forEach(function(r) {
-                    if (r.type === 'standard' || r.type === 'custom') {
-                      pricingText += '| ' + (r.label || r.gradeKey || '') + ' | ¥' + (r.internal || 0).toLocaleString() + ' |\n';
+                    if (r.type !== 'standard' && r.type !== 'custom') return;
+                    // 校舎スコープでフィルタリング
+                    var scope = sectionScopes[r.type];
+                    if (scope && scope.campusScope === 'specific' && campusCode !== 'common') {
+                      if (!scope.campusCodes || scope.campusCodes.indexOf(campusCode) === -1) return;
                     }
+                    pricingText += '| ' + (r.label || r.gradeKey || '') + ' | ¥' + (r.internal || 0).toLocaleString() + ' |\n';
                   });
                 }
               }
