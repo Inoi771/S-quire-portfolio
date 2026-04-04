@@ -161,6 +161,10 @@
 - `pad2ICS(n)` — 数値を2桁ゼロ埋め文字列にする（ICS用）
 - `refreshLecEntries()` — バックエンドからエントリを再取得して描画
 - `saveLecEntries()` — 現在の校舎のエントリをバックエンドに保存
+- `fetchAllCampusEntries()` — 全校舎の講習エントリを取得してキャッシュし、重複チェックを実行する
+- `checkAndDisplayDuplicates()` — ローカル＋キャッシュのエントリから重複を検出してパネルを更新する。①同一講師（全校舎）②同一学年（同一校舎内）の2種類を判定
+- `hasTimeConflict(a, b)` — 2つのエントリが時間的に重複するかを判定（前後10分バッファ込み）
+- `renderDuplicatePanel(duplicates)` — 重複検出結果をパネルに描画（重複なしなら非表示）
 - `initLecturesAdmin()` — 管理タブ：講習設定パネル初期化（年度セレクト構築→一覧ロード）
 - `buildAdminLecYearSelect()` — 管理タブ：年度セレクトを構築（現在FYと翌FY）
 - `loadLecturePeriodsAdmin()` — 管理タブ：選択年度の講習期間一覧描画（6種固定・削除なし・「日程を編集」「学年別設定」ボタン付き）
@@ -319,6 +323,12 @@
 - `triggerAdminSubTabInit_(tabName)` — 管理サブタブの初期化関数をトリガーする内部ヘルパー
 - `navigateToGradeAnalysis_fromAI(year, testName)` — 分析タブへ自動ナビゲート・テスト名選択・分析ロード
 - `navigateToLectures_fromAI(lectureId, campusCode)` — 講習管理タブへ自動ナビゲート・講習選択・校舎チェック
+
+**【Firebase SDK クライアントサイド関数】** (`firebase-schedule.html`)
+- `fbGetScheduleData()` — スケジュールデータ（イベント・休日等）を取得
+- `fbGetLectureScheduleEntries(lectureId, campusCode)` — 指定講習・校舎のエントリを取得
+- `fbGetAllLectureEntries(lectureId)` — 全校舎の講習エントリを一括取得（重複チェック用。campusCodeフィルタなし）
+- `fbSaveLectureScheduleEntries(lectureId, campusCode, entries)` — エントリを一括保存（全置換方式・権限チェック付き）
 
 **【Firebase SDK クライアントサイド関数】** (`firebase-students.html`)
 - `fbGetGradeAnalysis(year, testName)` — テスト全体AI分析をFirestoreから直接取得（`testAnalysis`コレクション）
