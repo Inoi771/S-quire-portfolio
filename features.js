@@ -3559,7 +3559,11 @@ function syncNormalConfigToPricingTable_(normalData) {
     });
 
     // 通常設定のセクションを先頭（通常授業タブ）に追加
+    var campusConfig = getCampusConfig();
     var newSections = (normalData.sections || []).map(function(sec) {
+      var resolvedNames = (sec.campusCodes || []).map(function(code) {
+        return campusConfig[code] || code;
+      });
       return {
         id: 'nc_' + sec.id,
         tab: '通常授業',
@@ -3569,7 +3573,8 @@ function syncNormalConfigToPricingTable_(normalData) {
         notes: (sec.notes || []),
         _fromNormalConfig: true,
         campusScope: sec.campusScope,
-        campusCodes: sec.campusCodes
+        campusCodes: sec.campusCodes,
+        campusResolvedNames: resolvedNames
       };
     });
 
