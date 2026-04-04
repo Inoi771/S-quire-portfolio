@@ -3376,36 +3376,115 @@ function syncLecturePricingToTable_(pricingData) {
 // ========================================
 // 【セクション21】通常授業設定
 // ========================================
-// 通常授業（講習ではない定期授業）の学年別コマ時間・回数・料金設定
+// 通常授業（講習ではない定期授業）の料金・セクション管理
+// データ形式: {version:2, sections:[{id,name,campusScope,campusCodes,headers,rows,notes}]}
+// campusScope: "all"（全校舎共通）または "specific"（特定校舎のみ）
 
 /**
  * 通常授業設定のデフォルト値を返す内部ヘルパー
- * @return {Array} [{grade, duration, count, internal, external}]
+ * @return {Object} {version:2, sections:[...]}
  */
 function getDefaultNormalClassConfig_() {
-  var gradeList = [
-    { grade: '小1', duration: 5 },
-    { grade: '小2', duration: 5 },
-    { grade: '小3', duration: 5 },
-    { grade: '小4', duration: 5 },
-    { grade: '小5', duration: 5 },
-    { grade: '小6', duration: 5 },
-    { grade: '中1', duration: 8 },
-    { grade: '中2', duration: 8 },
-    { grade: '中3', duration: 8 },
-    { grade: '高1', duration: 9 },
-    { grade: '高2', duration: 9 },
-    { grade: '高3', duration: 9 }
-  ];
-  return gradeList.map(function(g) {
-    return { grade: g.grade, duration: g.duration, count: 4, internal: 0, external: 0 };
-  });
+  return {
+    version: 2,
+    sections: [
+      {
+        id: 'regular',
+        name: '個別指導料金',
+        campusScope: 'all',
+        campusCodes: [],
+        headers: ['学年', 'コース', '1科目', 'テキスト代'],
+        rows: [
+          ['小学生', '算・国・英', '6,000 (6,600)', '1,750 (1,925)'],
+          ['', '英・数・国（3人）', '11,000 (12,100)', '1,750 (1,925)'],
+          ['', '英・数・国（6人）', '9,500 (10,450)', '1,750 (1,925)'],
+          ['中学生', '理', '8,000 (8,800)', '1,750 (1,925)'],
+          ['', '社', '8,000 (8,800)', '2,250 (2,475)'],
+          ['', '英単語テスト', '1,000 (1,100)', '1,000 (1,100)'],
+          ['', '基礎数学', '3,500 (3,850)', ''],
+          ['高校生', '1年・2年', '13,500 (14,850)', '毎月1,000 (1,100)'],
+          ['', '3年', '14,500 (15,950)', '毎月1,000 (1,100)']
+        ],
+        notes: [
+          '※割引',
+          '小学生…3科目受講で、2,000 (2,200) 円割引',
+          '中学生…3人クラス3科目受講で、2,000 (2,200)円割引',
+          '3人クラス2科目・6人クラス1科目受講で、1,500 (1,650) 円割引',
+          '3人クラス1科目・6人クラス2科目受講で、1,000 (1,100) 円割引',
+          '高校生…3科目受講で、2,000 (2,200) 円割引',
+          '4科目受講で、4,000 (4,400) 円割引',
+          '5科目受講で、6,000 (6,600) 円割引'
+        ]
+      },
+      {
+        id: 'shozui',
+        name: '※勝瑞校',
+        campusScope: 'specific',
+        campusCodes: ['08'],
+        headers: ['学年', '科目', '月額', '教材費'],
+        rows: [
+          ['高1', '英語', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '数学', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '5,000 (5,500)', '毎月1,000 (1,100)'],
+          ['高2', '英語', '14,000 (15,400)', '毎月1,000 (1,100)'],
+          ['', '数学', '15,000 (16,500)', '毎月1,000 (1,100)'],
+          ['', '理科(物・化)', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '6,000 (6,600)', '毎月1,000 (1,100)'],
+          ['高3', '英語', '16,000 (17,600)', '毎月1,000 (1,100)'],
+          ['', '数学', '17,000 (18,700)', '毎月1,000 (1,100)'],
+          ['', '理科(物・化)', '14,000 (15,400)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '7,000 (7,700)', '毎月1,000 (1,100)']
+        ],
+        notes: ['※演習クラスは、授業料に含まれている。別で受講することも可。']
+      },
+      {
+        id: 'individual',
+        name: '完全個別',
+        campusScope: 'all',
+        campusCodes: [],
+        headers: ['', '1科目', '2科目', '3科目', 'テキスト代'],
+        rows: [
+          ['小学生', '12,000 (13,200)', '', '', '1,750 (1,925)'],
+          ['中学生', '18,000 (19,800)', '', '', '1,750 (1,925)'],
+          ['高校生', '24,000 (26,400)', '46,000 (50,600)', '68,000 (74,800)', '毎月 500 (550)']
+        ],
+        notes: ['※高校生は1科目を週2回受講した場合は2科目として計算すること']
+      },
+      {
+        id: 'enrollment',
+        name: '入塾金・諸経費',
+        campusScope: 'all',
+        campusCodes: [],
+        headers: ['項目', '対象', '金額', '', ''],
+        rows: [
+          ['入塾金', '全学年・全クラス', '10,000 (11,000)', '兄弟姉妹割引', ''],
+          ['諸経費', '小学生', '2,000 (2,200)', '2人同時通塾', '3,000 (3,300)'],
+          ['', '中学生・高校生', '3,000 (3,300)', '3人同時通塾', '6,000 (6,600)'],
+          ['', '', '', '※上の子の料金から割引', '']
+        ],
+        notes: []
+      }
+    ]
+  };
+}
+
+/**
+ * 旧形式（配列）を新形式（セクションベース）にマイグレーションする内部ヘルパー
+ * @param {Array} oldRows [{grade, duration, count, internal, external}]
+ * @return {Object} {version:2, sections:[...]}
+ */
+function migrateNormalClassConfig_(oldRows) {
+  var def = getDefaultNormalClassConfig_();
+  // 旧データから duration/count のみ引き継ぎ（料金は外部生がいたので捨てる）
+  // ただし旧データに意味のある内部生料金があれば、デフォルトセクションを置き換えるのは難しいため
+  // デフォルト値をそのまま使い、旧データを別プロパティに退避
+  return def;
 }
 
 /**
  * 通常授業の設定データを取得する
  * @aiCallable
- * @return {Object} {success, data: [{grade, duration, count, internal, external}]}
+ * @return {Object} {success, data: {version, sections}}
  */
 function getNormalClassConfig() {
   try {
@@ -3414,6 +3493,12 @@ function getNormalClassConfig() {
     var data;
     if (json) {
       data = JSON.parse(json);
+      // 旧形式（配列）→ 新形式へマイグレーション
+      if (Array.isArray(data)) {
+        props.setProperty('NORMAL_CLASS_CONFIG_LEGACY', json); // 旧データを退避
+        data = migrateNormalClassConfig_(data);
+        props.setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
+      }
     } else {
       data = getDefaultNormalClassConfig_();
       props.setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
@@ -3427,18 +3512,101 @@ function getNormalClassConfig() {
 
 /**
  * 通常授業の設定データを保存する（Admin のみ）
- * @param {string} rowsJson JSON文字列 [{grade, duration, count, internal, external}]
+ * 保存後に料金表タブへ自動同期する
+ * @param {string} jsonData JSON文字列 {version, sections:[{id,name,campusScope,campusCodes,headers,rows,notes}]}
  * @return {Object} {success, message}
  */
-function saveNormalClassConfig(rowsJson) {
+function saveNormalClassConfig(jsonData) {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-    var rows = JSON.parse(rowsJson);
-    if (!Array.isArray(rows)) return { success: false, error: 'データの形式が不正です' };
-    PropertiesService.getScriptProperties().setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(rows));
+    var data = JSON.parse(jsonData);
+    if (!data || !Array.isArray(data.sections)) return { success: false, error: 'データの形式が不正です' };
+    data.version = 2;
+    PropertiesService.getScriptProperties().setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
+    // 料金表タブへ自動同期
+    syncNormalConfigToPricingTable_(data);
     return { success: true, message: '通常授業設定を保存しました' };
   } catch (error) {
     Logger.log('❌ saveNormalClassConfigエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 通常設定を PRICING_TABLE_CONFIG の通常授業タブへ同期する内部ヘルパー
+ * 既存の _fromNormalConfig マーカー付きセクション + 旧手動通常授業セクション(regular/shozui/individual/enrollment)を削除して差し替える
+ * @param {Object} normalData {version, sections:[...]}
+ */
+function syncNormalConfigToPricingTable_(normalData) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var tableJson = props.getProperty(CONFIG_PROP_KEYS.PRICING_CONFIG);
+    if (!tableJson) {
+      Logger.log('⚠ syncNormalConfigToPricingTable_: PRICING_CONFIG 未設定のためスキップ');
+      return;
+    }
+    var tableData = JSON.parse(tableJson);
+
+    // 通常授業タブが存在することを確認
+    if (!tableData.tabs) tableData.tabs = ['通常授業', '講習'];
+    if (tableData.tabs.indexOf('通常授業') === -1) tableData.tabs.unshift('通常授業');
+
+    // 旧手動セクション（通常授業タブ）と _fromNormalConfig セクションをすべて削除
+    var LEGACY_NORMAL_IDS = ['regular', 'shozui', 'individual', 'enrollment'];
+    tableData.sections = (tableData.sections || []).filter(function(s) {
+      if (s._fromNormalConfig) return false;
+      if (s.tab === '通常授業' && LEGACY_NORMAL_IDS.indexOf(s.id) !== -1) return false;
+      return true;
+    });
+
+    var linkedNote = '🔗 管理タブ「通常設定」と連動中 — この表は管理タブ「通常設定」で変更してください';
+
+    // 通常設定のセクションを先頭（通常授業タブ）に追加
+    var newSections = (normalData.sections || []).map(function(sec) {
+      return {
+        id: 'nc_' + sec.id,
+        tab: '通常授業',
+        name: sec.name,
+        headers: sec.headers,
+        rows: sec.rows,
+        notes: (sec.notes || []).concat([linkedNote]),
+        _fromNormalConfig: true,
+        campusScope: sec.campusScope,
+        campusCodes: sec.campusCodes
+      };
+    });
+
+    // 通常授業セクションを先頭に、その他（講習等）はそのまま後ろに
+    var otherSections = tableData.sections.filter(function(s) { return s.tab !== '通常授業'; });
+    tableData.sections = newSections.concat(otherSections);
+
+    props.setProperty(CONFIG_PROP_KEYS.PRICING_CONFIG, JSON.stringify(tableData));
+    Logger.log('✅ 通常設定 → 料金表 同期完了: ' + newSections.length + ' セクション');
+  } catch (e) {
+    Logger.log('❌ syncNormalConfigToPricingTable_エラー: ' + e);
+  }
+}
+
+/**
+ * 通常設定の全セクションを返す（配布物・チラシ・AIから参照用）
+ * @aiCallable
+ * @param {string} [campusCode] 校舎コード。指定した場合、その校舎に該当するセクションのみ返す
+ * @return {Object} {success, data: [{id,name,campusScope,campusCodes,headers,rows,notes}]}
+ */
+function getNormalClassSectionsForWeb(campusCode) {
+  try {
+    var result = getNormalClassConfig();
+    if (!result.success) return result;
+    var sections = result.data.sections || [];
+    if (campusCode) {
+      sections = sections.filter(function(sec) {
+        if (sec.campusScope === 'all') return true;
+        return (sec.campusCodes || []).indexOf(String(campusCode)) !== -1;
+      });
+    }
+    return { success: true, data: sections };
+  } catch (error) {
+    Logger.log('❌ getNormalClassSectionsForWebエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }

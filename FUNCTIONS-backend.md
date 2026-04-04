@@ -76,6 +76,7 @@
 - `countGradesByTestName_(testName)` — テスト名を使用中の成績データ件数を全年度から返す内部ヘルパー
 - `countGradesBySchool_(schoolName)` — 志望校名を使用中の成績データ件数を全年度から返す内部ヘルパー
 - `getGradesConfigForWeb()` — `@aiCallable` 成績管理設定取得
+- `getCampusConfigForWeb()` — `@aiCallable` 校舎マスタをフロントエンド向けに返す（`{code: name, ...}` 辞書形式）
 - `getTestNamesConfig()` / `getCampusConfig()` / `getGradeConfig()` / `getSchoolConfig()` — 各設定取得
 
 ### セクション8: 成績管理（生徒・成績データ）
@@ -327,6 +328,14 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `deleteDistributionFile(fileId)` — `@aiCallable` 配布物PDFをDriveのゴミ箱に移動して削除する。戻り値: `{success, message}`
 - `translateToImagePrompt_(japanesePrompt)` — 日本語プロンプトをGemini Flashで画像生成用の英語プロンプトに翻訳する内部ヘルパー
 - `generateImageWithImagen(japanesePrompt, aspectRatio)` — `@aiCallable` Imagen 4.0 Ultra で画像を生成し、Drive の assets/flyer フォルダに保存する。日本語プロンプトを受け取り英語に翻訳してから Imagen に渡す。戻り値: `{success, fileId, fileName, base64, mimeType, englishPrompt}`
+
+### セクション21: 通常授業設定（features.js）
+- `getDefaultNormalClassConfig_()` — デフォルトの通常授業設定（セクションベース `{version:2, sections:[...]}`）を返す内部ヘルパー
+- `migrateNormalClassConfig_(oldRows)` — 旧形式（配列）を新形式（セクションベース）にマイグレーションする内部ヘルパー
+- `getNormalClassConfig()` — `@aiCallable` 通常授業設定を取得（旧形式の場合は自動マイグレーション）
+- `saveNormalClassConfig(jsonData)` — 通常授業設定を保存（Admin のみ）。保存後に料金表へ自動同期（`syncNormalConfigToPricingTable_` を呼ぶ）
+- `syncNormalConfigToPricingTable_(normalData)` — 通常設定を PRICING_TABLE_CONFIG の通常授業タブへ同期する内部ヘルパー。`_fromNormalConfig:true` マーカーで管理
+- `getNormalClassSectionsForWeb(campusCode)` — `@aiCallable` 通常授業料金セクションを返す。campusCode 指定時は校舎スコープでフィルタ（配布物・チラシ・AI参照用）
 
 ### セクション18: 料金表管理
 - `getDefaultPricingData_()` — デフォルトの料金表データを返す内部ヘルパー

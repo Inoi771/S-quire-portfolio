@@ -402,6 +402,20 @@ function updateVisibleGrades(visibleCodes) {
 }
 
 /**
+ * 校舎マスタをフロントエンド向けに返す
+ * @aiCallable
+ * @return {Object} {success, data: {code: name, ...}}
+ */
+function getCampusConfigForWeb() {
+  try {
+    return { success: true, data: getCampusConfig() };
+  } catch (error) {
+    Logger.log('❌ getCampusConfigForWebエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 成績管理設定を取得（Web API）
  * 成績管理タブで使用するドロップダウンデータを返す
  * @aiCallable

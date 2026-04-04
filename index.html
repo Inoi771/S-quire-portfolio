@@ -1106,6 +1106,20 @@
               </div>
             </div>
 
+            <!-- 通常料金表 追加オプション -->
+            <div style="margin-bottom: 14px; padding: 10px 14px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
+              <label style="font-size: 13px; font-weight: 600; color: #555; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="matIncludeNormalPricing" onchange="toggleNormalPricingSectionList_()" style="width: 15px; height: 15px;">
+                📋 通常料金表を追加ページとして含める
+              </label>
+              <div id="mat-normal-pricing-sections" style="display: none; margin-top: 10px; padding-left: 4px;">
+                <div style="font-size: 12px; color: #888; margin-bottom: 6px;">含めるセクションを選択（校舎スコープは自動適用されます）:</div>
+                <div id="mat-normal-pricing-section-list" style="display: flex; flex-direction: column; gap: 5px;">
+                  <div style="color: #bbb; font-size: 12px;">読み込み中...</div>
+                </div>
+              </div>
+            </div>
+
             <p style="color: #aaa; font-size: 12px; margin: 0 0 16px;">上部で講習を選択し、校舎を選んでPDFを出力してください。</p>
 
             <!-- 保存済みファイル一覧 -->
@@ -1229,6 +1243,9 @@
               </label>
               <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; min-height: 44px;">
                 <input type="checkbox" id="flyerAiIncludePricing" style="width: 18px; height: 18px;"> 料金データを含める
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; min-height: 44px;">
+                <input type="checkbox" id="flyerAiIncludeNormalPricing" style="width: 18px; height: 18px;"> 通常料金データを含める
               </label>
             </div>
             <!-- 画像 -->
