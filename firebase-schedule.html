@@ -81,6 +81,43 @@ function fbGetLectureScheduleEntries(lectureId, campusCode) {
 }
 
 /**
+ * 全校舎の講習スケジュールエントリを一括取得（重複チェック用）
+ * campusCode フィルタなしで lectureId のみでクエリする
+ * @param {string} lectureId 講習ID
+ * @return {Promise<Array>} エントリ配列（全校舎分）
+ */
+function fbGetAllLectureEntries(lectureId) {
+  return fbDb.collection('lectureEntries')
+    .where('lectureId', '==', String(lectureId))
+    .get()
+    .then(function(snapshot) {
+      var entries = [];
+      snapshot.forEach(function(docSnap) {
+        var doc = docSnap.data();
+        entries.push({
+          id:            doc.entryId || docSnap.id || '',
+          lectureId:     doc.lectureId     || '',
+          campusCode:    doc.campusCode    || '',
+          date:          doc.date          || '',
+          startTime:     doc.startTime     || '',
+          durationSlots: Number(doc.durationSlots) || 9,
+          subject:       doc.subject       || '',
+          grade:         doc.grade         || '',
+          teacherName:   doc.teacherName   || '',
+          teacherEmail:  doc.teacherEmail  || '',
+          classLabel:    doc.classLabel    || null,
+          teacherId:     doc.teacherId     || ''
+        });
+      });
+      return entries;
+    })
+    .catch(function(err) {
+      console.error('fbGetAllLectureEntriesエラー:', err);
+      return [];
+    });
+}
+
+/**
  * 講習スケジュールエントリを一括保存（Firebase SDK）
  * google.script.run.saveLectureScheduleEntries の代替
  * 全置換方式: 既存エントリを全削除してから新エントリを書き込む（writeBatch使用）

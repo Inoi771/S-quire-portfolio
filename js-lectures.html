@@ -735,6 +735,9 @@
         ? currentLectureCampus : checked[0];
       switchLectureCampusTab(campusToShow);
 
+      // 全校舎エントリを取得（重複チェック用）
+      fetchAllCampusEntries();
+
       // 自動更新タイマーをリセット・開始（30秒ごとに全校舎を静かに再取得）
       if (lecAutoRefreshTimer) { clearInterval(lecAutoRefreshTimer); }
       lecAutoRefreshTimer = setInterval(function() {
@@ -743,6 +746,8 @@
         if (!schedEl || schedEl.style.display === 'none') return;
         // 現在表示中の校舎を取得してサイレント更新
         silentRefreshLecEntries(currentLectureCampus);
+        // 全校舎キャッシュも更新（他ユーザーの変更を検出）
+        fetchAllCampusEntries();
       }, 30000);
     }
 
@@ -1564,6 +1569,7 @@
         });
       });
       updateLecRemainingCounter();
+      checkAndDisplayDuplicates();
     }
 
     /**
@@ -1772,6 +1778,8 @@
             renderLecEntries(currentLectureCampus);
             showLecStatusMsg('');
           }
+          // 全校舎キャッシュも更新（他校舎の重複チェック用）
+          fetchAllCampusEntries();
         })
         .catch(function(err) {
           console.error('getLectureScheduleEntries エラー:', err);
@@ -1797,6 +1805,8 @@
             pendingChanges = false;
             updateSaveButtonLabel();
             showLecStatusMsg('✓ 保存しました', '#22c55e');
+            // 保存後に全校舎キャッシュを更新（他校舎との重複チェックを最新化）
+            fetchAllCampusEntries();
           } else {
             showLecStatusMsg('❌ ' + (result ? result.error : '保存失敗'), '#e57373');
           }
@@ -1806,6 +1816,177 @@
           console.error('fbSaveLectureScheduleEntries エラー:', err);
           showLecStatusMsg('❌ 保存失敗: ' + err, '#e57373');
         });
+    }
+
+    // ===== 重複チェック機能 =====
+
+    /**
+     * 全校舎の講習エントリを取得してキャッシュし、重複チェックを実行する
+     */
+    function fetchAllCampusEntries() {
+      if (!currentLectureId) return;
+      fbGetAllLectureEntries(currentLectureId)
+        .then(function(entries) {
+          allCampusEntriesCache = entries || [];
+          checkAndDisplayDuplicates();
+        })
+        .catch(function(err) {
+          console.error('fetchAllCampusEntries エラー:', err);
+        });
+    }
+
+    /**
+     * 重複を検出して表示パネルを更新する
+     * ローカル（未保存）のエントリを優先し、他校舎分はキャッシュを使用する
+     */
+    function checkAndDisplayDuplicates() {
+      if (!currentLectureId) {
+        renderDuplicatePanel([]);
+        return;
+      }
+
+      // ローカルエントリを優先した統合リストを構築
+      // ローカルに存在する校舎はローカルデータを使い、それ以外はキャッシュから取得
+      var localCampuses = {};
+      Object.keys(lectureEntries).forEach(function(cc) {
+        localCampuses[cc] = true;
+      });
+
+      var allEntries = [];
+      // ローカルの校舎エントリを追加
+      Object.keys(lectureEntries).forEach(function(cc) {
+        var entries = lectureEntries[cc] || [];
+        entries.forEach(function(e) {
+          if (e.lectureId === currentLectureId) {
+            allEntries.push(e);
+          }
+        });
+      });
+      // キャッシュからローカルにない校舎のエントリを追加
+      allCampusEntriesCache.forEach(function(e) {
+        if (e.lectureId === currentLectureId && !localCampuses[e.campusCode]) {
+          allEntries.push(e);
+        }
+      });
+
+      var duplicates = [];
+
+      // ① 同一人物（teacherId）の重複 — 全校舎対象
+      var byTeacherDate = {};
+      allEntries.forEach(function(e) {
+        if (!e.teacherId) return;
+        var key = e.teacherId + '_' + e.date;
+        if (!byTeacherDate[key]) byTeacherDate[key] = [];
+        byTeacherDate[key].push(e);
+      });
+      Object.keys(byTeacherDate).forEach(function(key) {
+        var group = byTeacherDate[key];
+        if (group.length < 2) return;
+        for (var i = 0; i < group.length; i++) {
+          for (var j = i + 1; j < group.length; j++) {
+            if (hasTimeConflict(group[i], group[j])) {
+              duplicates.push({
+                type: 'teacher',
+                entryA: group[i],
+                entryB: group[j]
+              });
+            }
+          }
+        }
+      });
+
+      // ② 同一学年（grade）の重複 — 同一校舎内のみ
+      var byCampusGradeDate = {};
+      allEntries.forEach(function(e) {
+        var key = e.campusCode + '_' + e.grade + '_' + e.date;
+        if (!byCampusGradeDate[key]) byCampusGradeDate[key] = [];
+        byCampusGradeDate[key].push(e);
+      });
+      Object.keys(byCampusGradeDate).forEach(function(key) {
+        var group = byCampusGradeDate[key];
+        if (group.length < 2) return;
+        for (var i = 0; i < group.length; i++) {
+          for (var j = i + 1; j < group.length; j++) {
+            // 同一講師ペアは①で検出済みなのでスキップ
+            if (group[i].teacherId && group[i].teacherId === group[j].teacherId) continue;
+            if (hasTimeConflict(group[i], group[j])) {
+              duplicates.push({
+                type: 'grade',
+                entryA: group[i],
+                entryB: group[j]
+              });
+            }
+          }
+        }
+      });
+
+      renderDuplicatePanel(duplicates);
+    }
+
+    /**
+     * 2つのエントリが時間的に重複するかを判定する（10分バッファ込み）
+     * @param {Object} a エントリA
+     * @param {Object} b エントリB
+     * @return {boolean} 重複している場合 true
+     */
+    function hasTimeConflict(a, b) {
+      var startA = timeToSlot(a.startTime);
+      var endA   = startA + a.durationSlots;
+      var startB = timeToSlot(b.startTime);
+      var endB   = startB + b.durationSlots;
+      // 前後10分（1スロット）のバッファが必要
+      return (startA - 1) < endB && (endA + 1) > startB;
+    }
+
+    /**
+     * 重複検出結果をパネルに描画する
+     * @param {Array} duplicates 重複ペアの配列
+     */
+    function renderDuplicatePanel(duplicates) {
+      var panel = document.getElementById('lec-duplicate-panel');
+      var list  = document.getElementById('lec-duplicate-list');
+      if (!panel || !list) return;
+
+      if (duplicates.length === 0) {
+        panel.style.display = 'none';
+        list.innerHTML = '';
+        return;
+      }
+
+      panel.style.display = 'block';
+      var html = '';
+      duplicates.forEach(function(dup) {
+        var a = dup.entryA;
+        var b = dup.entryB;
+        var campusNameA = campusData[a.campusCode] || a.campusCode;
+        var campusNameB = campusData[b.campusCode] || b.campusCode;
+        // 講師名を動的解決
+        var nameA = (a.teacherId && lecTeacherNameMap[a.teacherId]) ? lecTeacherNameMap[a.teacherId].name : (a.teacherName || '');
+        var nameB = (b.teacherId && lecTeacherNameMap[b.teacherId]) ? lecTeacherNameMap[b.teacherId].name : (b.teacherName || '');
+        // 日付フォーマット（M/D）
+        var dateParts = a.date.split('-');
+        var dateLabel = parseInt(dateParts[1]) + '/' + parseInt(dateParts[2]);
+        // 時間帯
+        var endA = slotToTimeStr(timeToSlot(a.startTime) + a.durationSlots);
+        var endB = slotToTimeStr(timeToSlot(b.startTime) + b.durationSlots);
+
+        if (dup.type === 'teacher') {
+          html += '<div style="margin-bottom:8px; padding:8px 10px; background:#fff8e1; border-radius:6px; border-left:3px solid #ff9800;">'
+            + '<div style="font-weight:600; color:#e65100; margin-bottom:4px;">👤 講師重複: ' + nameA + '</div>'
+            + '<div style="color:#555; font-size:12px; line-height:1.6;">'
+            + campusNameA + ': ' + a.grade + ' ' + a.subject + (a.classLabel || '') + ' ' + dateLabel + ' ' + a.startTime + '〜' + endA
+            + '<br>' + campusNameB + ': ' + b.grade + ' ' + b.subject + (b.classLabel || '') + ' ' + dateLabel + ' ' + b.startTime + '〜' + endB
+            + '</div></div>';
+        } else {
+          html += '<div style="margin-bottom:8px; padding:8px 10px; background:#e8f5e9; border-radius:6px; border-left:3px solid #4caf50;">'
+            + '<div style="font-weight:600; color:#2e7d32; margin-bottom:4px;">📚 学年重複: ' + a.grade + '（' + campusNameA + '）</div>'
+            + '<div style="color:#555; font-size:12px; line-height:1.6;">'
+            + nameA + ' ' + a.subject + (a.classLabel || '') + ' ' + dateLabel + ' ' + a.startTime + '〜' + endA
+            + '<br>' + nameB + ' ' + b.subject + (b.classLabel || '') + ' ' + dateLabel + ' ' + b.startTime + '〜' + endB
+            + '</div></div>';
+        }
+      });
+      list.innerHTML = html;
     }
 
 </script>

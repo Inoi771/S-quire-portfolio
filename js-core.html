@@ -188,6 +188,7 @@
     var lecAdminTeacherName  = '';       // 管理者が選択中の講師名
     var lecAdminTeacherId = '';          // 管理者が選択中の講師の teacherId
     var lecTeacherNameMap = {};          // teacherId → { email, name } マップ（getTeacherNamesMap から取得）
+    var allCampusEntriesCache = [];      // 全校舎エントリキャッシュ（重複チェック用）
 
   // ===== 汎用ダイアログ（confirm/alert 代替） =====
 
