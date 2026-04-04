@@ -251,6 +251,9 @@
           currentLectureScrollTop = 0;
         }
       }
+      // 重複チェックキャッシュをリセット
+      allCampusEntriesCache = [];
+      renderDuplicatePanel([]);
       // クラス選択をリセット
       selectedLecClass = null;
       ['A', 'B', 'C'].forEach(function(c) {
