@@ -132,7 +132,7 @@
             var d = '-';
             if (v !== null && v !== undefined) {
               var num = parseFloat(v);
-              d = isNaN(num) ? String(v) : num.toFixed(1);
+              d = isNaN(num) ? String(v) : String(Math.round(num));
             }
             var isLastCol = fi === fields.length - 1;
             html += '<td style="' + cellBorder(false, true, false, isLastCol) + 'padding:3px 4px 5px; text-align:center; font-size:11px; font-weight:bold;">' + d + '</td>';
@@ -290,7 +290,7 @@
           fields.forEach(function(f, fi) {
             var v = dev[f], d = '-', devColor = '#5e35b1';
             if (v !== null && v !== undefined) {
-              var n = parseFloat(v); d = isNaN(n) ? String(v) : n.toFixed(1);
+              var n = parseFloat(v); d = isNaN(n) ? String(v) : String(Math.round(n));
               if (!isNaN(n)) { devColor = n >= 55 ? '#1565c0' : (n < 45 ? '#c62828' : '#5e35b1'); }
             }
             html += '<td style="padding:3px 4px 5px;text-align:center;font-size:11px;font-weight:bold;color:' + devColor + ';border-bottom:2px solid #ddd;border-right:' + (fi < 5 ? '1px solid #e0e0e0' : 'none') + ';">' + d + '</td>';
