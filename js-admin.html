@@ -58,6 +58,26 @@
         .getAllowedUsers();
     }
 
+    function syncAllowedUsers() {
+      appConfirm('全ユーザーのFirestoreアクセス権を再登録しますか？').then(function(ok) {
+        if (!ok) return;
+        showMessage('allowedUsersMessage', '⏳ 再同期中...', 'info');
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showMessage('allowedUsersMessage', '✅ ' + result.message, 'success');
+              loadAllowedUsers();
+            } else {
+              showMessage('allowedUsersMessage', '❌ ' + (result.error || '再同期に失敗しました'), 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showMessage('allowedUsersMessage', '❌ エラー: ' + err, 'error');
+          })
+          .initFirestoreAllowedUsers();
+      });
+    }
+
     function removeAllowedUser(email) {
       appConfirm(email + ' のアクセスを削除しますか？\n\n※ GoogleDriveフォルダの共有も解除されます').then(function(ok) {
         if (!ok) return;
