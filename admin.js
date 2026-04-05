@@ -1726,19 +1726,44 @@ function resetAllAccessPermissions() {
     return { success: false, error: '管理者権限が必要です' };
   }
   try {
-    // 1. allowedUsers コレクション全件取得して削除
-    var docs = firestoreQuery_('allowedUsers', [], 500);
-    var deletedCount = 0;
-    if (docs && docs.length > 0) {
-      var delWrites = docs.map(function(doc) {
-        return { collection: 'allowedUsers', docId: doc._id, delete: true };
+    // 削除対象メールを収集（クエリに依存せず既知のメールを直接削除）
+    var emailsToDelete = {};
+
+    // ADMIN_EMAILS から収集
+    var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
+    adminRaw.split(',').forEach(function(e) {
+      var em = e.trim().toLowerCase();
+      if (em) emailsToDelete[em] = true;
+    });
+
+    // staffs コレクションから全スタッフのメールを収集
+    try {
+      var staffs = firestoreQuery_('staffs', [], 500);
+      (staffs || []).forEach(function(s) {
+        if (s.email) emailsToDelete[s.email.toLowerCase()] = true;
+        (s.emails || []).forEach(function(em) {
+          if (em) emailsToDelete[em.toLowerCase()] = true;
+        });
       });
-      firestoreBatchWrite_(delWrites);
-      deletedCount = docs.length;
+    } catch (e) {
+      Logger.log('⚠ resetAllAccessPermissions: staffs取得エラー（続行）: ' + e);
     }
-    // 2. ADMIN_EMAILS を空にする
+
+    // allowedUsers を各メールのドキュメントを直接削除
+    var deletedCount = 0;
+    Object.keys(emailsToDelete).forEach(function(email) {
+      try {
+        firestoreDelete_('allowedUsers', email);
+        deletedCount++;
+        Logger.log('✓ allowedUsers 削除: ' + email);
+      } catch (e) {
+        Logger.log('⚠ allowedUsers 削除失敗 (' + email + '): ' + e);
+      }
+    });
+
+    // ADMIN_EMAILS を空にする
     setProperty(PROP_KEYS.ADMIN_EMAILS, '');
-    Logger.log('✅ resetAllAccessPermissions: allowedUsers ' + deletedCount + '件削除、ADMIN_EMAILS をクリア');
+    Logger.log('✅ resetAllAccessPermissions: ' + deletedCount + '件削除、ADMIN_EMAILS をクリア');
     return { success: true, deletedCount: deletedCount };
   } catch (error) {
     Logger.log('❌ resetAllAccessPermissions エラー: ' + error);
