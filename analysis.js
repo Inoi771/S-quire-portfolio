@@ -489,9 +489,11 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
       + '   - trend: historicalYearsの直近1年と今年度の該当教科jukuAvgを比較した方向性\n'
       + '     ・今年度 > 前年度なら "up"、今年度 < 前年度なら "down"、差が1点未満または前年度データなしなら "stable"\n'
       + '   - roundDifficulty: prevRoundDataがある場合にその教科の学校平均の変化から易化・難化を判定\n'
-      + '     ・変化量・他教科との整合性・全体傾向を踏まえた総合的な判断（単純な数値しきい値は使わない）\n'
-      + '     ・prevRoundDataなし、またはどちらかのschoolAvgがnullなら "null"（文字列）\n'
-      + '     ・それ以外は "easier"/"harder"/"same" のいずれか\n\n'
+      + '     ・教科ごとに独立して判定すること（全体傾向や他教科の結果で上書きしない）\n'
+      + '     ・前回テストとの学校平均の差（今回 - 前回）で以下の5段階で判定:\n'
+      + '       +3点以上: "easier" / +1点以上+3点未満: "slightly_easier" / -1点超+1点未満: "same"\n'
+      + '       -3点超-1点以下: "slightly_harder" / -3点以下: "harder"\n'
+      + '     ・prevRoundDataなし、またはどちらかのschoolAvgがnullなら "null"（文字列）\n\n'
       + '3. historicalTrend（過去推移）\n'
       + '   - historicalYearsがある場合に塾平均の複数年変化を記述（2〜3文）\n'
       + '   - 学校平均データがある年は、その変化から年度ごとのテスト難化・易化傾向にも言及する\n'
@@ -914,7 +916,8 @@ function generateStudentAnalyses(year, testName) {
       + '- passAssessment: 志望校合格判定（probability.gradeがA〜E、percentが確率%。schoolDeviationが志望校偏差値）\n'
       + '- schoolAverages: 生徒の在籍校の推定平均点。必ず「およそ〇点」と表現すること（実際の学校平均と異なる場合があるため）\n'
       + '- 複数テストがある場合、schoolAveragesの各テスト間の変化から教科ごとの易化・難化を判定できる\n'
-      + '  （前テストより学校平均が3点以上上がれば易化、3点以上下がれば難化、それ以外はsame）\n'
+      + '  （今回 - 前回の差で5段階判定: +3点以上="easier" / +1〜3点未満="slightly_easier" / -1〜+1点="same" / -1〜-3点="slightly_harder" / -3点以下="harder"）\n'
+      + '  教科ごとに独立して判定すること（全体傾向や他教科の結果で上書きしない）\n'
       + '- テストが複数ある場合はdisplayTestNamesの順で推移を分析すること\n'
       + '- 生徒IDで回答すること（氏名は渡していない）\n\n';
     if (testNameTrimmed.indexOf('第3回基礎学力テスト') !== -1) {
@@ -1560,7 +1563,8 @@ function generateAllAnalyses(year, testName, skipExisting) {
       + '- passAssessment: 志望校合格判定（probability.gradeがA〜E、percentが確率%）\n'
       + '- schoolAverages: 生徒の在籍校の推定平均点。必ず「およそ〇点」と表現すること（実際の学校平均と異なる場合があるため）\n'
       + '- 複数テストがある場合、schoolAveragesの各テスト間の変化から教科ごとの易化・難化を判定できる\n'
-      + '  （前テストより学校平均が3点以上上がれば易化、3点以上下がれば難化、それ以外はsame）\n'
+      + '  （今回 - 前回の差で5段階判定: +3点以上="easier" / +1〜3点未満="slightly_easier" / -1〜+1点="same" / -1〜-3点="slightly_harder" / -3点以下="harder"）\n'
+      + '  教科ごとに独立して判定すること（全体傾向や他教科の結果で上書きしない）\n'
       + '- テストが複数ある場合はdisplayTestNamesの順で推移を分析すること\n'
       + '- 生徒IDで回答すること（氏名は渡していない）\n\n';
     if (testNameTrimmed.indexOf('第3回基礎学力テスト') !== -1) {
