@@ -214,7 +214,7 @@
 - `buildMatWebCampusSelect()` — HP掲載用の校舎セレクト（`#mat-web-campus-select`）を `buildCampusOptions()` で構築
 - `onMatWebCampusChange()` — HP掲載用 校舎変更時にエントリ取得（キャッシュ優先）→ `updateMatWebPreview()` を呼ぶ
 - `updateMatWebPreview(entries, campusCode)` — HP掲載用プレビューを更新し、データあり時はボタンを有効化
-- `buildWebPublishDocHTML(entries, campusCode)` — HP掲載用 日程一覧HTMLを生成（ヘッダー＋テーブル、日付/時刻/科目/学年/講師/コマ数列）
+- `buildWebPublishDocHTML(entries, campusCode)` — HP掲載用 日程表HTMLを生成（A4縦1枚・学年ごとに独立した表を縦並び・教科×時刻グループでrowspan結合・モノクロ黒線のみ）。`MAT_WEB_GRADE_DEF_` を参照し、小学生/中1〜3/高1〜3の7表を出力。内部ヘルパー: `fmtDates_(sortedDates)`（M/D(曜)形式・同月省略）
 - `generateWebPublishPDF(mode)` — HP掲載用PDFを生成してダウンロードまたは印刷（`finalizeMaterialsPdf_` を再利用）
 - `toggleMatWebPdfMenu(event)` — HP掲載用PDFドロップダウンメニューの表示切替
 - `closeMatWebPdfMenu()` — HP掲載用PDFドロップダウンメニューを閉じる
