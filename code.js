@@ -307,9 +307,14 @@ function doPost(e) {
           }
         }
       } else {
-        // メールアドレス以外のメッセージへの案内
-        Logger.log('メールアドレスなし → 案内メッセージを送信');
-        sendLineMessage(lineUserId, '📧 登録するには、このアカウントにメールアドレスを送信してください。\n表示名も一緒に送ると管理画面に名前が表示されます。\n\n例（メールのみ）:\ntanaka@example.com\n\n例（表示名あり）:\ntanaka@example.com 田中花子\n田中花子 tanaka@example.com');
+        // メールアドレス以外のメッセージ → 未登録ユーザーにのみ案内を送信
+        var knownStaff = firestoreQuery_('staffs', [fsFilter_('lineUserId', 'EQUAL', lineUserId)], 1);
+        if (knownStaff && knownStaff.length > 0) {
+          Logger.log('登録済みユーザーのため案内スキップ: ' + lineUserId);
+        } else {
+          Logger.log('未登録ユーザー → 案内メッセージを送信');
+          sendLineMessage(lineUserId, '📧 登録するには、このアカウントにメールアドレスを送信してください。\n表示名も一緒に送ると管理画面に名前が表示されます。\n\n例（メールのみ）:\ntanaka@example.com\n\n例（表示名あり）:\ntanaka@example.com 田中花子\n田中花子 tanaka@example.com');
+        }
       }
     }
 
