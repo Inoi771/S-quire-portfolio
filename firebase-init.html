@@ -21,31 +21,5 @@
     .catch(function() {
       // 複数タブ同時起動時など有効化できない場合があるが問題なし
     });
-
-  // Firestore 権限エラー（permission-denied）時にIDトークンを強制リフレッシュして
-  // 1回だけ自動再試行する。Query.get() と DocumentReference.get() の両方をラップ。
-  function wrapGetWithRetry_(proto) {
-    var originalGet = proto.get;
-    proto.get = function() {
-      var self = this;
-      var args = arguments;
-      return originalGet.apply(self, args).catch(function(err) {
-        if (err.code === 'permission-denied' && window.fbCurrentUser) {
-          return window.fbCurrentUser.getIdToken(true).then(function() {
-            return originalGet.apply(self, args);
-          });
-        }
-        throw err;
-      });
-    };
-  }
-  // Firebase v8 SDK の内部プロトタイプを取得してラップ
-  try {
-    var tempQuery = window.fbDb.collection('_').where('_x', '==', 1);
-    wrapGetWithRetry_(Object.getPrototypeOf(tempQuery));
-    wrapGetWithRetry_(Object.getPrototypeOf(window.fbDb.collection('_').doc('_')));
-  } catch (e) {
-    // ラップに失敗しても通常動作には影響なし
-  }
 })();
 </script>
