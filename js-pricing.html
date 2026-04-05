@@ -116,7 +116,8 @@
         // rowspan 計算
         var rowSpans = computeRowSpans(section.rows);
 
-        // テーブル
+        // テーブル（横スクロール対応ラッパー）
+        html += '<div class="pricing-table-wrap">';
         html += '<table class="pricing-table">';
         // ヘッダー
         html += '<thead><tr>';
@@ -144,6 +145,7 @@
           html += '</tr>';
         });
         html += '</tbody></table>';
+        html += '</div>'; // .pricing-table-wrap
 
         // ノート（ロック済みセクションは「管理タブ」言及の管理メモのみ除外）
         var displayNotes = isLocked
@@ -170,6 +172,25 @@
       }
 
       output.innerHTML = html;
+
+      // 横スクロール可能なテーブルにヒント（右端フェード）を付与
+      var wraps = output.querySelectorAll('.pricing-table-wrap');
+      wraps.forEach(function(wrap) {
+        function checkScroll() {
+          if (wrap.scrollWidth > wrap.clientWidth + 2) {
+            wrap.classList.add('has-scroll');
+            if (wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 4) {
+              wrap.classList.add('scrolled-end');
+            } else {
+              wrap.classList.remove('scrolled-end');
+            }
+          } else {
+            wrap.classList.remove('has-scroll');
+          }
+        }
+        wrap.addEventListener('scroll', checkScroll, { passive: true });
+        checkScroll();
+      });
     }
 
     /**
