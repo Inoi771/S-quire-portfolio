@@ -32,6 +32,9 @@
    * @param {Function|null} failureFn
    */
   function callGas_(funcName, args, successFn, failureFn) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 20000);
+
     getToken_().then(function(idToken) {
       return fetch(GAS_EXEC_URL, {
         method: 'POST',
@@ -42,7 +45,8 @@
           args: args,
           idToken: idToken || ''
         }),
-        redirect: 'follow'
+        redirect: 'follow',
+        signal: controller.signal
       });
     })
     .then(function(res) { return res.json(); })
@@ -55,8 +59,13 @@
     })
     .catch(function(err) {
       console.error('[gas-bridge] fetch エラー:', funcName, err);
+      var msg = err.name === 'AbortError'
+        ? '通信がタイムアウトしました。再度お試しください。'
+        : '通信エラーが発生しました。再度お試しください。';
+      if (typeof showToast === 'function') showToast(msg, 'error');
       if (failureFn) failureFn(err);
-    });
+    })
+    .finally(function() { clearTimeout(timeoutId); });
   }
 
   /**

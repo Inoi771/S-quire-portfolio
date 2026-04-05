@@ -82,6 +82,10 @@
       background: #f9f9f9;
       color: var(--theme-color);
     }
+    .tab-button:active {
+      background: #f0f0f0;
+      color: var(--theme-color);
+    }
     
     .tab-button.active {
       color: var(--theme-color);
@@ -353,12 +357,15 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
-      min-height: unset;
       transition: background 0.3s;
     }
-    
+
     .month-controls button:hover {
       background: var(--theme-color-light);
+    }
+    .month-controls button:active {
+      background: var(--theme-color-light);
+      transform: scale(0.96);
     }
     
     .current-month {
@@ -385,12 +392,15 @@
       cursor: pointer;
       font-size: 12px;
       font-weight: 600;
-      min-height: unset;
       transition: background 0.3s;
     }
-    
+
     .export-button:hover {
       background: var(--theme-color-light);
+    }
+    .export-button:active {
+      background: var(--theme-color-light);
+      transform: scale(0.96);
     }
     
     .export-button.ics {
@@ -412,7 +422,7 @@
     }
     .month-table th {
       background: #fff;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
       padding: 6px 4px;
       border-bottom: 2px solid #eee;
@@ -452,9 +462,9 @@
       margin-bottom: 2px;
       border-left-width: 3px;
     }
-    .month-table .event-name { font-size: 11px; }
-    .month-table .event-school { font-size: 10px; }
-    .month-table .event-details { font-size: 10px; }
+    .month-table .event-name { font-size: 12.5px; }
+    .month-table .event-school { font-size: 11.5px; }
+    .month-table .event-details { font-size: 11.5px; }
     
     /* スクロールロールの週ラベル */
     .week-roll-label {
@@ -483,11 +493,14 @@
       cursor: pointer;
       font-size: 12px;
       font-weight: 600;
-      min-height: unset;
       flex-shrink: 0;
     }
     .month-jump-btn:hover {
       background: var(--theme-color-light);
+    }
+    .month-jump-btn:active {
+      background: var(--theme-color-light);
+      transform: scale(0.96);
     }
 
     /* ===== 週ドラムピッカー ===== */
@@ -610,6 +623,10 @@
     }
     
     .event-item:hover {
+      transform: translateX(3px);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+    .event-item:active {
       transform: translateX(3px);
       box-shadow: 0 2px 5px rgba(0,0,0,0.15);
     }
@@ -892,6 +909,9 @@
     .ai-input-group button:hover {
       background: #00f2fe;
     }
+    .ai-input-group button:active {
+      background: #00d4fe;
+    }
     
     .ai-response {
       background: #f8f9fa;
@@ -932,6 +952,9 @@
     .admin-tab-btn:hover {
       color: #4facfe;
     }
+    .admin-tab-btn:active {
+      color: #4facfe;
+    }
     
     .admin-tab-btn.active {
       color: #4facfe;
@@ -958,14 +981,18 @@
       background: #ff6b6b;
       color: white;
       border: none;
-      padding: 4px 10px;
+      padding: 8px 14px;
       border-radius: 3px;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 13px;
     }
     
     .user-item button:hover, .property-item button:hover, .sheet-item button:hover, .drive-item button:hover {
       background: #ff5252;
+    }
+    .user-item button:active, .property-item button:active, .sheet-item button:active, .drive-item button:active {
+      background: #ff5252;
+      transform: scale(0.96);
     }
     
     .property-item {
@@ -1098,7 +1125,6 @@
       .export-button {
         font-size: 12px;
         padding: 8px 10px;
-        min-height: unset;
       }
 
       /* スケジュールサブタブ */
