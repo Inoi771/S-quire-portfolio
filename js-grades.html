@@ -1219,6 +1219,10 @@ function calculateTotal() {
           var rdHtml = '';
           if (subj.roundDifficulty === 'easier') {
             rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#2196f3; color:white; vertical-align:middle;">易化</span>';
+          } else if (subj.roundDifficulty === 'slightly_easier') {
+            rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#90caf9; color:white; vertical-align:middle;">やや易化</span>';
+          } else if (subj.roundDifficulty === 'slightly_harder') {
+            rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#ef9a9a; color:white; vertical-align:middle;">やや難化</span>';
           } else if (subj.roundDifficulty === 'harder') {
             rdHtml = ' <span style="font-size:10px; padding:1px 6px; border-radius:3px; background:#f44336; color:white; vertical-align:middle;">難化</span>';
           } else if (subj.roundDifficulty === 'same') {
