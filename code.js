@@ -46,7 +46,8 @@ var CONFIG_PROP_KEYS = {
   LECTURE_PERIODS_CONFIG: 'LECTURE_PERIODS_CONFIG',      // JSON: 講習期間設定 [{id, name, startDate, endDate}]
   LECTURE_PRICING_CONFIG: 'LECTURE_PRICING_CONFIG',      // JSON: 講習別料金設定 {typeId: [{label, internal, external}]}
   GRADE_VISIBLE_CONFIG: 'GRADES_VISIBLE_CONFIG',         // JSON: 表示する学年コードの配列（例: ["13","14","15"]）
-  NORMAL_CLASS_CONFIG: 'NORMAL_CLASS_CONFIG'             // JSON: 通常授業設定 [{grade, duration, count, internal, external}]
+  NORMAL_CLASS_CONFIG: 'NORMAL_CLASS_CONFIG',             // JSON: 通常授業設定 [{grade, duration, count, internal, external}]
+  LECTURE_GREETINGS_CONFIG: 'LECTURE_GREETINGS_CONFIG'    // JSON: 講習別学年挨拶文 {typeId: {gradeKey: "挨拶文"}}
 };
 
 /**

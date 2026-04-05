@@ -190,10 +190,15 @@
 - `saveLecPricingAdmin_(typeId)` — 料金設定をバックエンドに保存
 
 **【配布物サブタブ】**
-- `initLecturesMaterials()` — 内部配布物サブタブ初期化（校舎セレクト・学年別挨拶文textarea構築、料金表データキャッシュ取得）
+- `matGreetingsData_` — 講習別学年挨拶文キャッシュ `{ typeId: { gradeKey: "挨拶文" } }`
+- `MAT_CHU3_ONLY_TYPES_` — 中3限定講習タイプ `['kiso1', 'kiso2', 'nyushi']`
+- `initLecturesMaterials()` — 内部配布物サブタブ初期化（校舎セレクト・挨拶文データ取得、料金表データキャッシュ取得）
 - `buildMatCampusSelect()` — `buildCampusOptions()` を使って校舎セレクトを構築（配属校舎が先頭）
-- `buildMatGreetingTextareas_()` — `MAT_GRADE_GROUPS_` をループして `#mat-greetings-container` に学年別textareaを動的生成（既に子要素があればスキップ）
-- `getMatGreeting_(gradeKey)` — `mat-greeting-{key}` textareaの値を返すヘルパー（未生成時はデフォルト文にフォールバック）
+- `getMatCurrentTypeId_()` — 現在の講習タイプIDを取得する。currentLectureId から年度を除去して返す
+- `openMatGreetingModal_()` — 挨拶文編集モーダルを開く。講習タイプに応じて表示学年を切り替え（kiso1/kiso2/nyushi は中3のみ）
+- `closeMatGreetingModal_()` — 挨拶文編集モーダルを閉じる
+- `saveMatGreetings_()` — モーダル内の挨拶文を保存する。matGreetingsData_ にマージしてバックエンドに一括送信
+- `getMatGreeting_(gradeKey)` — 保存済みデータ → デフォルト文の順でフォールバック。講習タイプ別に取得
 - `generateMaterialsPDF(mode)` — 学年ページを逐次 html2canvas → canvases[] に積んで `finalizeMaterialsPdf_` で出力（mode='download'/'print'）
 - `finalizeMaterialsPdf_(mode, canvases, printWindow, docTitle)` — 配布物PDF/印刷出力（`finalizePdf` の配布物専用版。`docTitle` 引数でタイトルを動的指定）
 - `buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring)` — 学年グループをループして学年ごとのページHTMLを連結（データなし学年はスキップ）

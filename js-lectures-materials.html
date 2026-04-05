@@ -7,6 +7,10 @@
     var matLecPricingData = null;  // 講習別料金データのキャッシュ（typeId → {rows:[{type,gradeKey,duration,count,internal,external}]}）
     var matEntriesCache = {};  // プレビュー用エントリキャッシュ: "lectureId_campusCode" → entries[]
     var matNormalSectionsCache = null; // 通常授業料金セクションキャッシュ [{id,name,campusScope,campusCodes,headers,rows,notes}]
+    var matGreetingsData_ = null;  // 講習別学年挨拶文キャッシュ { typeId: { gradeKey: "挨拶文" } }
+
+    // 中3限定講習タイプ（基礎学力テスト・入試直前）
+    var MAT_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
 
     // 学年グループ定義（PDFページ単位・申込欄の isHigh で高校生フォームに切替）
     var MAT_GRADE_GROUPS_ = [
@@ -41,7 +45,6 @@
       // 校舎セレクト: campusData が利用可能なら即時、そうでなければフェッチ
       if (campusData && Object.keys(campusData).length > 0) {
         buildMatCampusSelect();
-        buildMatGreetingTextareas_();
         updateMatPreview();
       } else {
         google.script.run
@@ -50,11 +53,28 @@
               result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
             }
             buildMatCampusSelect();
-            buildMatGreetingTextareas_();
             updateMatPreview();
           })
           .withFailureHandler(function(err) { console.error('配布物 校舎取得失敗:', err); })
           .getGradesConfigForWeb();
+      }
+
+      // 講習別挨拶文データのキャッシュ（1回のみフェッチ）
+      if (!matGreetingsData_) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success && result.data) {
+              matGreetingsData_ = result.data;
+            } else {
+              matGreetingsData_ = {};
+            }
+            updateMatPreview();
+          })
+          .withFailureHandler(function(err) {
+            console.error('配布物 挨拶文取得失敗:', err);
+            matGreetingsData_ = {};
+          })
+          .getLectureGreetings();
       }
 
       // 講習別料金データのキャッシュ（1回のみフェッチ。ロード後にプレビュー再描画）
@@ -536,16 +556,46 @@
     // ========== 配布物 HTML 生成ヘルパー ==========
 
     /**
-     * 学年別挨拶文textareaを #mat-greetings-container に動的生成する
-     * 既に子要素があればスキップ（再生成防止・ユーザーの編集内容を保持）
+     * 現在の講習タイプIDを取得する（currentLectureId から年度を除去）
+     * @return {string} typeId（例: 'summer', 'kiso1'）。未選択なら空文字
      */
-    function buildMatGreetingTextareas_() {
-      var container = document.getElementById('mat-greetings-container');
-      if (!container || container.children.length > 0) return;
+    function getMatCurrentTypeId_() {
+      if (!currentLectureId) return '';
+      return (currentLectureId || '').replace(/^\d{4}-/, '');
+    }
 
-      MAT_GRADE_GROUPS_.forEach(function(grp) {
+    /**
+     * 挨拶文編集モーダルを開く
+     * 選択中の講習タイプに応じて表示する学年を切り替える
+     */
+    function openMatGreetingModal_() {
+      var typeId = getMatCurrentTypeId_();
+      if (!typeId) {
+        appAlert('先に上部で講習を選択してください。');
+        return;
+      }
+
+      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var groups = isChu3Only
+        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
+        : MAT_GRADE_GROUPS_;
+
+      // タイトルに講習名を表示
+      var lecTypeNames = { spring: '春期講習', summer: '夏期講習', kiso1: '第1回基礎学力テスト対策講座', kiso2: '第2回基礎学力テスト対策講座', winter: '冬期講習', nyushi: '入試直前講習' };
+      var titleEl = document.getElementById('matGreetingModalTitle');
+      if (titleEl) titleEl.textContent = '✏️ ' + (lecTypeNames[typeId] || typeId) + ' 挨拶文';
+
+      // 保存済みデータを取得（なければデフォルト）
+      var saved = (matGreetingsData_ && matGreetingsData_[typeId]) ? matGreetingsData_[typeId] : {};
+
+      // モーダル本体にテキストエリアを動的生成
+      var body = document.getElementById('matGreetingModalBody');
+      if (!body) return;
+      body.innerHTML = '';
+
+      groups.forEach(function(grp) {
         var wrap = document.createElement('div');
-        wrap.style.cssText = 'border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;';
+        wrap.style.cssText = 'border:1px solid #e0e0e0;border-radius:6px;overflow:hidden;margin-bottom:8px;';
 
         var lbl = document.createElement('div');
         lbl.style.cssText = 'background:#f5f5f5;padding:4px 10px;font-size:12px;font-weight:600;color:#555;border-bottom:1px solid #e0e0e0;';
@@ -553,25 +603,85 @@
         wrap.appendChild(lbl);
 
         var ta = document.createElement('textarea');
-        ta.id = 'mat-greeting-' + grp.key;
-        ta.rows = 4;
-        ta.setAttribute('oninput', 'updateMatPreview()');
-        ta.style.cssText = 'width:100%;padding:8px 10px;border:none;border-radius:0;font-size:12px;resize:vertical;box-sizing:border-box;line-height:1.6;font-family:inherit;display:block;';
-        ta.value = MAT_DEFAULT_GREETINGS_[grp.key] || '';
+        ta.id = 'mat-greeting-modal-' + grp.key;
+        ta.rows = 5;
+        ta.style.cssText = 'width:100%;padding:8px 10px;border:none;border-radius:0;font-size:13px;resize:vertical;box-sizing:border-box;line-height:1.6;font-family:inherit;display:block;';
+        ta.value = saved[grp.key] || MAT_DEFAULT_GREETINGS_[grp.key] || '';
         wrap.appendChild(ta);
 
-        container.appendChild(wrap);
+        body.appendChild(wrap);
       });
+
+      // モーダルを表示
+      var overlay = document.getElementById('matGreetingOverlay');
+      var modal = document.getElementById('matGreetingModal');
+      if (overlay) overlay.style.display = 'block';
+      if (modal) { modal.style.display = 'flex'; modal.style.flexDirection = 'column'; }
     }
 
     /**
-     * 指定学年グループの挨拶文を返す（textareaの値 → デフォルト文の順でフォールバック）
+     * 挨拶文編集モーダルを閉じる
+     */
+    function closeMatGreetingModal_() {
+      var overlay = document.getElementById('matGreetingOverlay');
+      var modal = document.getElementById('matGreetingModal');
+      if (overlay) overlay.style.display = 'none';
+      if (modal) modal.style.display = 'none';
+    }
+
+    /**
+     * モーダル内の挨拶文を保存する
+     * matGreetingsData_ に現在のタイプのデータをマージしてから全データを送信
+     */
+    function saveMatGreetings_() {
+      var typeId = getMatCurrentTypeId_();
+      if (!typeId) return;
+
+      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var groups = isChu3Only
+        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
+        : MAT_GRADE_GROUPS_;
+
+      // 現在のタイプのデータを収集
+      var typeData = {};
+      groups.forEach(function(grp) {
+        var ta = document.getElementById('mat-greeting-modal-' + grp.key);
+        if (ta) typeData[grp.key] = ta.value;
+      });
+
+      // キャッシュにマージ
+      if (!matGreetingsData_) matGreetingsData_ = {};
+      matGreetingsData_[typeId] = typeData;
+
+      // 全データを一括送信
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            showToast('挨拶文を保存しました');
+            updateMatPreview();
+            closeMatGreetingModal_();
+          } else {
+            appAlert('保存に失敗しました: ' + ((result && result.error) || '不明なエラー'));
+          }
+        })
+        .withFailureHandler(function(err) {
+          appAlert('保存に失敗しました: ' + err);
+        })
+        .saveLectureGreetings(JSON.stringify(matGreetingsData_));
+    }
+
+    /**
+     * 指定学年グループの挨拶文を返す（保存済みデータ → デフォルト文の順でフォールバック）
+     * 現在の講習タイプに基づいて取得する
      * @param {string} gradeKey MAT_GRADE_GROUPS_ の key（例: 'chu1'）
      * @return {string} 挨拶文
      */
     function getMatGreeting_(gradeKey) {
-      var ta = document.getElementById('mat-greeting-' + gradeKey);
-      return ta ? ta.value : (MAT_DEFAULT_GREETINGS_[gradeKey] || '');
+      var typeId = getMatCurrentTypeId_();
+      if (typeId && matGreetingsData_ && matGreetingsData_[typeId] && matGreetingsData_[typeId][gradeKey] !== undefined) {
+        return matGreetingsData_[typeId][gradeKey];
+      }
+      return MAT_DEFAULT_GREETINGS_[gradeKey] || '';
     }
 
     /**
@@ -587,7 +697,12 @@
      */
     function buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring) {
       var pages = [];
-      MAT_GRADE_GROUPS_.forEach(function(grp) {
+      var typeId = getMatCurrentTypeId_();
+      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var targetGroups = isChu3Only
+        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
+        : MAT_GRADE_GROUPS_;
+      targetGroups.forEach(function(grp) {
         var grpEntries = (entries || []).filter(function(e) {
           var gc = String(e.grade || '').trim();
           if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
