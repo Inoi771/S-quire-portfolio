@@ -1211,6 +1211,18 @@
       '16': '高1', '17': '高2', '18': '高3'
     };
 
+    // 学年グループ定義（HP掲載用日程表）
+    var MAT_WEB_GRADE_DEF_ = [
+      { label: '小学生', codes: ['07', '08', '09', '10', '11', '12'],
+        subjects: ['英語', '算数', '国語', '理科', '社会'] },
+      { label: '中１', codes: ['13'], subjects: ['英語', '数学', '国語', '理科', '社会'] },
+      { label: '中２', codes: ['14'], subjects: ['英語', '数学', '国語', '理科', '社会'] },
+      { label: '中３', codes: ['15'], subjects: ['英語', '数学', '国語', '理科', '社会'] },
+      { label: '高１', codes: ['16'], subjects: ['英語', '数学', '国語', '物理', '化学'] },
+      { label: '高２', codes: ['17'], subjects: ['英語', '数学', '国語', '物理', '化学'] },
+      { label: '高３', codes: ['18'], subjects: ['英語', '数学', '国語', '物理', '化学'] },
+    ];
+
     /**
      * HP掲載用タブを初期化する（校舎セレクト構築）
      */
@@ -1302,7 +1314,8 @@
 
     /**
      * HP掲載用 日程表HTMLを生成する（プレビュー・PDF共用）
-     * @param {Array} entries エントリ配列
+     * 学年ごとに独立した表を縦並びで出力。A4（794×1123px）1枚に収まる設計。
+     * @param {Array} entries エントリ配列（校舎の全エントリ）
      * @param {string} campusCode 校舎コード
      * @return {string} HTML文字列
      */
@@ -1312,13 +1325,7 @@
       var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
       var fy = parseInt((lectureId || '').split('-')[0], 10);
       var lecName = period ? period.name : lectureId;
-
-      // 日付昇順 → 時刻昇順 → 学年コード昇順 でソート
-      var sorted = (entries || []).slice().sort(function(a, b) {
-        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-        if (a.startTime !== b.startTime) return a.startTime < b.startTime ? -1 : 1;
-        return String(a.grade || '') < String(b.grade || '') ? -1 : 1;
-      });
+      var allEntries = entries || [];
 
       // 時刻 HH:MM に durationSlots×10分を加算して終了時刻を返す
       function endTime_(start, slots) {
@@ -1331,55 +1338,110 @@
         return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
       }
 
-      // 日付を "M/D(曜)" 形式に変換
-      var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
-      function fmtDate_(d) {
-        var dt = new Date(d + 'T00:00:00');
-        return (dt.getMonth() + 1) + '/' + dt.getDate() + '(' + DOW_[dt.getDay()] + ')';
+      // 日付配列（昇順ソート済み）を "7/28(金)・29(土)・8/1(火)" 形式に変換
+      // prevMonth は関数スコープ内で初期化し、呼び出しごとに必ずリセット（バグ防止）
+      function fmtDates_(sortedDates) {
+        var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
+        var prevMonth = -1;
+        return sortedDates.map(function(d) {
+          var dt = new Date(d + 'T00:00:00');
+          var mo = dt.getMonth() + 1;
+          var day = dt.getDate();
+          var dow = DOW_[dt.getDay()];
+          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          prevMonth = mo;
+          return str;
+        }).join('・');
       }
 
-      // 学年コードを表示名に変換
-      function gradeLabel_(code) {
-        var c = String(code || '').padStart(2, '0');
-        return MAT_WEB_GRADE_LABEL_[c] || code || '';
+      // 学年コードを正規化（padStart 2桁）
+      function normGrade_(code) {
+        return String(code || '').padStart(2, '0');
       }
+
+      // 共通CSSスタイル
+      var cellBase = 'border:1px solid black;padding:3px 6px;font-size:8.5px;vertical-align:middle;';
+      var cellSubject = cellBase + 'width:56px;text-align:center;font-weight:bold;white-space:nowrap;';
+      var cellDate = cellBase + 'word-break:break-word;';
+      var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
 
       var html = '';
-      html += '<div style="padding:20px 24px;background:white;min-height:1122px;">';
+      html += '<div style="width:794px;height:1123px;padding:20px 24px;box-sizing:border-box;background:white;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;overflow:hidden;">';
 
-      // ヘッダー
-      html += '<div style="border-bottom:2px solid #667eea;padding-bottom:10px;margin-bottom:16px;">';
-      html += '<div style="font-size:18px;font-weight:700;color:#333;">' + escapeHtmlMat_(fy + '年度 ' + lecName) + ' 日程一覧</div>';
-      html += '<div style="font-size:13px;color:#666;margin-top:4px;">' + escapeHtmlMat_(campusName) + '　全 ' + sorted.length + ' コマ</div>';
+      // タイトル行
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid black;padding-bottom:5px;margin-bottom:8px;">';
+      html += '<div style="font-size:13px;font-weight:bold;">' + escapeHtmlMat_(fy + '年度　' + lecName + '　日程表') + '</div>';
+      html += '<div style="font-size:11px;font-weight:bold;">' + escapeHtmlMat_(campusName) + '</div>';
       html += '</div>';
 
-      // テーブル
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead><tr style="background:#667eea;color:white;">';
-      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">日付</th>';
-      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">時刻</th>';
-      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">科目</th>';
-      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">学年</th>';
-      html += '<th style="padding:7px 10px;text-align:left;border:1px solid #5a6fd6;white-space:nowrap;">講師</th>';
-      html += '<th style="padding:7px 10px;text-align:center;border:1px solid #5a6fd6;white-space:nowrap;">コマ数</th>';
-      html += '</tr></thead><tbody>';
+      // 学年ごとの表を縦並びで出力
+      MAT_WEB_GRADE_DEF_.forEach(function(gradeDef) {
+        // この学年グループに対応するエントリを抽出
+        var gradeEntries = allEntries.filter(function(e) {
+          return gradeDef.codes.indexOf(normGrade_(e.grade)) !== -1;
+        });
+        if (gradeEntries.length === 0) return; // エントリなし → スキップ
 
-      sorted.forEach(function(e, idx) {
-        var bg = idx % 2 === 0 ? '#fff' : '#f7f8ff';
-        var end = endTime_(e.startTime, e.durationSlots);
-        var timeStr = (e.startTime || '') + ' 〜 ' + end;
-        var clabel = e.classLabel ? '　' + e.classLabel : '';
-        html += '<tr style="background:' + bg + ';">';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(fmtDate_(e.date)) + '</td>';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(timeStr) + '</td>';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;">' + escapeHtmlMat_(e.subject || '') + escapeHtmlMat_(clabel) + '</td>';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;white-space:nowrap;">' + escapeHtmlMat_(gradeLabel_(e.grade)) + '</td>';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;">' + escapeHtmlMat_(e.teacherName || '') + '</td>';
-        html += '<td style="padding:6px 10px;border:1px solid #e0e0e0;text-align:center;">' + ((e.durationSlots || 0) * 10 / 90).toFixed(1) + '</td>';
+        html += '<table style="width:100%;border-collapse:collapse;border:2px solid black;margin-bottom:5px;">';
+
+        // 学年ヘッダー行
+        html += '<thead>';
+        html += '<tr><th colspan="3" style="border:2px solid black;padding:4px 8px;font-size:9.5px;font-weight:bold;text-align:left;background:white;">';
+        html += escapeHtmlMat_(gradeDef.label);
+        html += '</th></tr>';
+
+        // 列見出し行
+        html += '<tr style="border-bottom:1px solid black;">';
+        html += '<th style="' + cellSubject + 'border-bottom:1px solid black;">教科</th>';
+        html += '<th style="' + cellDate + 'border-bottom:1px solid black;text-align:center;font-weight:bold;">日付</th>';
+        html += '<th style="' + cellTime + 'border-bottom:1px solid black;">時間</th>';
         html += '</tr>';
+        html += '</thead><tbody>';
+
+        // 教科ループ（学年定義の順）
+        gradeDef.subjects.forEach(function(subject) {
+          var subEntries = gradeEntries.filter(function(e) { return (e.subject || '') === subject; });
+          if (subEntries.length === 0) return; // この教科のエントリなし → スキップ
+
+          // (startTime, durationSlots) でグループ化し、各グループに日付を集約
+          var timeGroupMap = {};
+          var timeGroupOrder = [];
+          subEntries.forEach(function(e) {
+            var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+            if (!timeGroupMap[key]) {
+              timeGroupMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+              timeGroupOrder.push(key);
+            }
+            if (timeGroupMap[key].dates.indexOf(e.date) === -1) {
+              timeGroupMap[key].dates.push(e.date);
+            }
+          });
+
+          // 各グループの日付を昇順ソート
+          timeGroupOrder.forEach(function(key) {
+            timeGroupMap[key].dates.sort();
+          });
+
+          var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
+          var rowCount = groups.length;
+
+          groups.forEach(function(grp, idx) {
+            var timeStr = (grp.startTime || '') + '～' + endTime_(grp.startTime, grp.durationSlots);
+            var dateStr = fmtDates_(grp.dates);
+            html += '<tr>';
+            if (idx === 0) {
+              // 教科名セル（rowspan で複数時刻グループを結合）
+              html += '<td rowspan="' + rowCount + '" style="' + cellSubject + '">' + escapeHtmlMat_(subject) + '</td>';
+            }
+            html += '<td style="' + cellDate + '">' + escapeHtmlMat_(dateStr) + '</td>';
+            html += '<td style="' + cellTime + '">' + escapeHtmlMat_(timeStr) + '</td>';
+            html += '</tr>';
+          });
+        });
+
+        html += '</tbody></table>';
       });
 
-      html += '</tbody></table>';
       html += '</div>';
       return html;
     }
