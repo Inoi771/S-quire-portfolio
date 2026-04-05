@@ -9,6 +9,7 @@ on:
     paths:
       - '*.html'
       - 'firebase.json'
+      - 'firestore.rules'
       - 'scripts/build.js'
       - 'package.json'
       - '.github/workflows/deploy-firebase.yml'
@@ -39,8 +40,8 @@ jobs:
       - name: ビルド（HTMLファイルを public/ にインライン展開）
         run: npm run build
 
-      - name: Firebase Hosting にデプロイ
-        run: firebase deploy --only hosting --project fir-quire
+      - name: Firebase Hosting + Firestoreルール をデプロイ
+        run: firebase deploy --only hosting,firestore:rules --project fir-quire
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
 
