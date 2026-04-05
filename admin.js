@@ -1714,6 +1714,38 @@ function parseGeminiErrorMessage_(response) {
   return '予期しないAPIエラーが発生しました (HTTP ' + code + ')。管理者に報告してください';
 }
 
+/**
+ * アクセス許可を全リセット（初回ウィザード再実行用）
+ * - Firestore allowedUsers コレクションを全削除
+ * - ADMIN_EMAILS スクリプトプロパティを空にする
+ * - その他のデータ（staffs / students / grades 等）は変更しない
+ * @return {Object} { success, deletedCount, error }
+ */
+function resetAllAccessPermissions() {
+  if (!isAdmin()) {
+    return { success: false, error: '管理者権限が必要です' };
+  }
+  try {
+    // 1. allowedUsers コレクション全件取得して削除
+    var docs = firestoreQuery_('allowedUsers', [], 500);
+    var deletedCount = 0;
+    if (docs && docs.length > 0) {
+      var delWrites = docs.map(function(doc) {
+        return { collection: 'allowedUsers', docId: doc._id, delete: true };
+      });
+      firestoreBatchWrite_(delWrites);
+      deletedCount = docs.length;
+    }
+    // 2. ADMIN_EMAILS を空にする
+    setProperty(PROP_KEYS.ADMIN_EMAILS, '');
+    Logger.log('✅ resetAllAccessPermissions: allowedUsers ' + deletedCount + '件削除、ADMIN_EMAILS をクリア');
+    return { success: true, deletedCount: deletedCount };
+  } catch (error) {
+    Logger.log('❌ resetAllAccessPermissions エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
