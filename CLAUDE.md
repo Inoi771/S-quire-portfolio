@@ -159,6 +159,12 @@ markdown# S-quire — プロジェクト設計書
 - **管理（Admin のみ）** — スクリプトプロパティ管理・Driveファイル操作・ログ閲覧
 - **AI アシスタント** — ヘッダーのウィジェットから Gemini に質問・設定変更依頼・会話から自動学習（自己成長機能）
 
+### 利用者
+- **管理者（Admin）**: アプリの設定・ユーザー管理を行う（通常1〜2名）
+- **スタッフ（講師）**: 日常業務で使用する主要ユーザー。スケジュール確認・成績入力・AI機能等を利用
+- **全員がスマートフォンで操作**。ITに不慣れなスタッフが多いため、UIは直感的・シンプルであること
+- 管理者以外のスタッフも全機能（管理タブ以外）にアクセスできる
+
 ---
 
 ## 2. ファイル構成
@@ -218,6 +224,8 @@ MyProject/
 | PropertiesService | 設定値の永続化 |
 | UrlFetchApp | Gemini API呼び出し |
 | Gemini API (gemini-3.1-flash-lite-preview) | スケジュール抽出・OCR・AIアシスタント |
+| Firebase Auth | ユーザー認証（Googleログイン） |
+| Firestore | クライアント直接読み書き＋セキュリティルール |
 
 ---
 
@@ -340,6 +348,9 @@ MyProject/
 - **fitToScreen**: 新しい `position:fixed` 要素追加時は必ず補正処理を追加
 - **UserProperties禁止**: `PropertiesService.getUserProperties()` 直接使用禁止。`getUserProperty()` / `setUserProperty()` を使うこと
 - **ANYONE_ANONYMOUS**: GASデプロイは1つのみ。アクセス設定の変更に注意
+- **allowedUsers ホワイトリスト**: Firestoreセキュリティルールは `allowedUsers` コレクションにメールが登録されたユーザーのみアクセス許可。アプリ起動時（`getAppStartupData`）・ユーザー追加時・メール追加時に自動登録される
+- **gas-bridge タイムアウト**: GAS APIコールは90秒でタイムアウト（GASコールドスタートで30秒以上かかることがある）。タイムアウト・通信エラー時はトースト通知を表示
+- **firebase-init.html の制約**: Firestore SDKのプロトタイプ（Query.prototype.get 等）を書き換えてはいけない（enablePersistence との干渉でエラーが発生する）
 
 ---
 
@@ -377,6 +388,10 @@ MyProject/
 - Excel (.xlsx/.xls) は自動インポート非対応（CSV か Google Sheets に変換が必要）
 - `Session.getActiveUser().getEmail()` は常に空文字列を返す。ユーザー識別は Firebase ID トークン検証（`verifyFirebaseIdToken_`）＋ `setFirebaseEmailContext_()` で行う
 - `deploy-to-gas.yml` は `.js`/`.html`/`appsscript.json` が変更された時のみ実行。新ファイル種別を追加する場合は `paths` への追記も必要
+- `deploy-firebase.yml` は必ず `--only hosting` のみ。`firestore:rules` を含めると403エラーでデプロイ全体が失敗する（サービスアカウントに権限がない）
+- `deploy-firebase.yml` の `paths` トリガーに `firestore.rules` を含めてはいけない
+- Firestoreセキュリティルールの変更は Firebase コンソールから手動でのみ可能
+- Firestoreセキュリティルールは `request.auth != null` だけでなく `allowedUsers` コレクションのホワイトリストも確認する。リポジトリの `firestore.rules` は本番と一致させること
 
 ---
 

@@ -145,7 +145,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | コレクション | DocId形式 | 用途 |
 |------------|---------|------|
 | `staffs` | `{teacherId}` | スタッフ情報。`emails` 配列（複数メール対応）・`firebaseUids` 配列（複数UID対応）・`notificationEmail`（通知先） |
-| `allowedUsers` | `{email}` | アクセス許可メールのホワイトリスト |
+| `allowedUsers` | `{email}`（小文字メールアドレス） | Firestoreセキュリティルール用ホワイトリスト。登録されたメールのユーザーのみFirestoreデータにアクセス可。フィールド: `email`(string), `addedAt`(ISO 8601文字列)。自動登録: `getAppStartupData()`, `addUserAccess()`, `linkUserById()`, `addEmailToTeacher()`。自動削除: `removeUserAccess()`, `removeEmailFromTeacher()`。GASサーバー側（サービスアカウント）からのみ書き込み可。クライアントSDKからは書き込み不可（`allow write: if false`） |
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
 | `grades` | `{studentId}_{safe(testName)}` | 成績データ |
@@ -164,3 +164,15 @@ markdown# DATA.md — データ構造・プロパティ一覧
 **Firestore利用上の注意：**
 - 複合クエリ（AND）はコンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること
 - `firestoreQuery_` の結果には `_id` フィールドが自動付加される
+
+---
+
+## Firestore セキュリティルール
+
+本番のFirestoreルールは以下の構成（Firebase コンソールで管理。CIからはデプロイ不可）：
+
+1. `allowedUsers/{email}`: 自分のドキュメントのみ読み取り可。書き込みはサービスアカウント（GAS）のみ
+2. その他全コレクション: `request.auth != null` かつ `allowedUsers` にメールが存在するユーザーのみアクセス可
+
+リポジトリの `firestore.rules` は本番と一致させること（ただしCIからはデプロイされない）。
+ルールの変更は必ず Firebase コンソールから手動で行うこと。

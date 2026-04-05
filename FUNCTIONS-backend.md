@@ -50,6 +50,7 @@
 ### セクション5: 設定管理
 - `getSettings()` — `@aiCallable` 設定取得（ロゴ・ファビコンを base64 で返す）
 - `updateSettings(settingsData)` — 設定更新（APIキー・フォルダIDは Admin のみ）。受け付けるキー: `geminiApiKey`, `appFolderId`, `accessFolderId`, `themeColor`
+- `getAppStartupData(firebaseEmail, firebaseUid)` — アプリ起動時の一括データ取得。スタッフ照合・テーマカラー・Admin判定等を返す。スタッフまたはAdminの場合は `allowedUsers` に自動登録
 
 ### セクション6: プロフィール管理
 - `getUserProperty(key)` — ユーザープロパティ取得（`STAFF_FIELD_MAP_` に含まれるキーは Firestore staffs から取得）
@@ -405,5 +406,15 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `registerBlockedAccount_(ss, oldEmail, newEmail, transferCode)` — 旧アカウントをブロック対象として記録する内部ヘルパー
 - `checkAccountBlocked()` — `@aiCallable` 現在のアカウントがブロック済みかチェック。アプリ起動時にフロントエンドから呼び出される
 - `unblockAccount(email)` — ブロック済みアカウントを解除する（Admin のみ。誤ブロック時の復旧用）
+
+---
+
+## gas-bridge.html（Firebase Hosting 用シム）
+
+Firebase Hosting 環境で `google.script.run` を `fetch()` に変換する。
+- GAS API デプロイ URL に対して `text/plain` POST（CORS プリフライト回避）
+- Firebase ID トークンをリクエストに含めてユーザー認証
+- **90秒タイムアウト**（AbortController）。GASコールドスタートで30秒以上かかることがある
+- タイムアウト・通信エラー時は `showToast()` でユーザーに通知
 
 ---
