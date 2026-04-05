@@ -109,7 +109,26 @@
 
 ## Firebase デプロイの注意事項
 
-- **`deploy-firebase.yml` は Hosting のみデプロイする（`--only hosting`）**
-- Firestore Rules のデプロイはサービスアカウントに `firebaserules.googleapis.com` の権限がないため、CI からは実行できない
-- Firestore Rules を変更する場合は Firebase コンソールから手動でデプロイすること
-- `firestore.rules` を `paths` に含めないこと（含めると Hosting デプロイが無駄に走る）
+### 絶対に守るべきルール
+
+| ルール | 理由 |
+|--------|------|
+| `deploy-firebase.yml` のコマンドは `--only hosting` のみ | `firestore:rules` を含めるとサービスアカウントに `firebaserules.googleapis.com` の権限がないため **403 エラーでデプロイ全体が失敗する** |
+| `deploy-firebase.yml` の `paths` に `firestore.rules` を含めない | 含めるとルール変更時に Hosting デプロイが無駄に走る |
+| Firestore Rules の変更は Firebase コンソールから手動で行う | CI からはデプロイ不可 |
+| リポジトリの `firestore.rules` は本番と一致させる | ドキュメントとしての役割。CIからはデプロイされないが、本番との差異があると混乱の原因になる |
+
+### Firestore セキュリティルール（本番）
+
+本番のルールは `allowedUsers` コレクションによるホワイトリスト方式：
+- 認証済み（`request.auth != null`）かつ `allowedUsers` コレクションにメールが登録されているユーザーのみアクセス可能
+- `allowedUsers` への書き込みはサービスアカウント（GAS バックエンド）のみ
+- ユーザーのアクセス権は以下の場面で自動管理される：
+  - **登録**: アプリ起動時（`getAppStartupData`）・ユーザー追加時・メール追加時・講師ID紐付け時
+  - **削除**: ユーザーアクセス削除時・メール削除時
+
+### 過去に起きたデプロイ失敗パターン
+
+1. `--only hosting,firestore:rules` → 403 エラーでデプロイ全体失敗
+2. `firestore.rules` を `paths` に追加 → 不要な Hosting デプロイ発火
+3. `firebase-init.html` で Firestore SDK プロトタイプを書き換え → `enablePersistence` と干渉してエラー

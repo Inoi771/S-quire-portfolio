@@ -221,6 +221,25 @@ if (/^\d+$/.test(code) && code.length < 2) code = code.padStart(2, '0');
 
 ---
 
+## allowedUsers ホワイトリスト（Firestore セキュリティモデル）
+
+Firestore セキュリティルールは2段階で認証する：
+1. Firebase Auth で認証済み（`request.auth != null`）
+2. `allowedUsers` コレクションにユーザーのメールアドレスが登録されている
+
+**自動登録の仕組み**:
+- `getAppStartupData()`: アプリ起動時にスタッフまたはAdminと判定されたら自動登録
+- `addUserAccess()` / `linkUserById()` / `addEmailToTeacher()`: ユーザー追加・メール追加時に自動登録
+- `removeUserAccess()` / `removeEmailFromTeacher()`: ユーザー削除・メール削除時に自動削除
+
+**設計上の注意点**:
+- クライアント SDK からは `allowedUsers` に書き込み不可（Firestore ルールで `allow write: if false`）
+- GAS サーバー側（サービスアカウント）からのみ書き込み可能
+- 1人のスタッフが複数メールアドレスを持てる（`staffs.emails` 配列）。各メールが個別に `allowedUsers` に登録される
+- `firebase-init.html` で Firestore SDK のプロトタイプ（`Query.prototype.get` 等）を書き換えてはいけない（`enablePersistence` との干渉でエラー発生）
+
+---
+
 ## @aiCallable タグ規約
 
 - `isAdmin()` チェックがない Web API 関数には `@aiCallable` を付与
