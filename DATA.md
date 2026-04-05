@@ -57,6 +57,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `PRICING_TABLE_CONFIG` | 料金表データ（JSON） |
 | `LECTURE_PERIODS_CONFIG` | 講習期間設定（JSON: `[{id, name, startDate, endDate, gradeSettings}]`） |
 | `LECTURE_PRICING_CONFIG` | 講習別料金設定（JSON: `{typeId: [{label, internal, external}]}`） |
+| `LECTURE_GREETINGS_CONFIG` | 講習別学年挨拶文（JSON: `{typeId: {gradeKey: "挨拶文", ...}, ...}`）。typeId: spring/summer/kiso1/kiso2/winter/nyushi。gradeKey: sho/chu1/chu2/chu3/ko1/ko2/ko3（kiso1/kiso2/nyushi は chu3 のみ）。年度不問・永続保存。使用: `getLectureGreetings()` / `saveLectureGreetings()` |
 | `NORMAL_CLASS_CONFIG` | 通常授業設定（JSON: `{version:2, sections:[{id, name, campusScope:"all"\|"specific", campusCodes:[], headers:[], rows:[][], notes:[]}]}`）。保存時に料金表へ自動同期。 |
 
 ---

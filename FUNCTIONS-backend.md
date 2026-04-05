@@ -327,6 +327,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLecturePricingConfig()` — `@aiCallable` 講習別料金設定を取得（未設定ならデフォルトで初期化）。戻り値: `{ success, data: { typeId: {rows:[{type,gradeKey,duration,count,internal,external}], sectionScopes:{...}} } }`
 - `saveLecturePricing(typeId, lectureDataJson)` — 指定講習タイプの料金設定を保存（Admin のみ。lectureDataJson: `{rows:[...], sectionScopes:{...}}`）
 - `saveUnifiedLecturePricing(payloadJson)` — `@aiCallable` 全講習タイプの料金設定を一括保存（Admin のみ。統合UI用。payloadJson: `{allTypes:{spring:{rows,sectionScopes},...}}`）
+- `getLectureGreetings()` — `@aiCallable` 講習別学年挨拶文を取得。戻り値: `{ success: boolean, data: { typeId: { gradeKey: "挨拶文" } } }`
+- `saveLectureGreetings(dataJson)` — 講習別学年挨拶文を保存（Admin のみ。dataJson: JSON文字列）。戻り値: `{ success: boolean, message: string }`
 - `normalizeLecDate_(val)` — Sheets日付値をYYYY-MM-DD文字列に正規化する内部ヘルパー
 - `normalizeLecTime_(val)` — Sheets時刻値をHH:MM文字列に正規化する内部ヘルパー
 - `getLectureScheduleSpreadsheet_()` — 講習スケジュール用スプレッドシートを取得/作成する内部ヘルパー

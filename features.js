@@ -3579,6 +3579,46 @@ function saveUnifiedLecturePricing(payloadJson) {
 }
 
 /**
+ * 講習別学年挨拶文を取得する（年度不問・全講習タイプ分）
+ * @aiCallable
+ * @return {Object} { success: boolean, data: { typeId: { gradeKey: "挨拶文", ... }, ... } }
+ */
+function getLectureGreetings() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG);
+    var data = json ? JSON.parse(json) : {};
+    Logger.log('✓ getLectureGreetings: 取得完了');
+    return { success: true, data: data };
+  } catch (error) {
+    Logger.log('❌ getLectureGreetingsエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 講習別学年挨拶文を保存する（年度不問・全講習タイプ分を一括保存）
+ * @param {string} dataJson JSON文字列 { typeId: { gradeKey: "挨拶文", ... }, ... }
+ * @return {Object} { success: boolean, message: string }
+ */
+function saveLectureGreetings(dataJson) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var data = JSON.parse(dataJson);
+    if (!data || typeof data !== 'object') {
+      return { success: false, error: 'データ形式が不正です' };
+    }
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG, JSON.stringify(data));
+    Logger.log('✓ saveLectureGreetings: 保存完了');
+    return { success: true, message: '挨拶文を保存しました' };
+  } catch (error) {
+    Logger.log('❌ saveLectureGreetingsエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 講習別料金設定を元に料金表（PRICING_TABLE_CONFIG）の講習セクションを自動生成・更新する内部ヘルパー
  * 既存の auto_ プレフィックスのセクションと旧 seasonal / seasonal_high セクションを置き換える
  * @param {Object} pricingData { typeId: {rows: [...]} }
