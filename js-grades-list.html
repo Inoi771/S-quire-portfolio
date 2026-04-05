@@ -1266,7 +1266,7 @@
           hasAnyAvg = true;
           fields.forEach(function(f) {
             var avgVal = avg[f];
-            var displayAvg = (avgVal !== '' && avgVal !== null && avgVal !== undefined) ? (typeof avgVal === 'number' ? Math.round(avgVal * 10) / 10 : avgVal) : '-';
+            var displayAvg = (avgVal !== '' && avgVal !== null && avgVal !== undefined) ? (typeof avgVal === 'number' ? (Math.round(avgVal * 10) / 10).toFixed(1) : avgVal) : '-';
             html += '<td style="padding: 4px 6px; text-align: center; border-bottom: ' + (dev ? 'none' : '1px solid #eee') + '; font-size: 11px; color: #999;">' + displayAvg + '</td>';
           });
           html += '</tr>';
@@ -1278,7 +1278,7 @@
           html += '<td style="padding: 4px 8px 10px; border-bottom: 1px solid #eee; font-size: 11px; color: #7e57c2; white-space: nowrap; font-weight: 600;">偏差値</td>';
           fields.forEach(function(f) {
             var devVal = dev[f];
-            var displayDev = (devVal !== null && devVal !== undefined) ? devVal : '-';
+            var displayDev = (devVal !== null && devVal !== undefined) ? (typeof devVal === 'number' ? devVal.toFixed(1) : devVal) : '-';
             var devColor = '#7e57c2';
             if (typeof devVal === 'number') {
               if (devVal >= 55) devColor = '#1976d2';
