@@ -734,6 +734,15 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
     // 移行済み _UP_ キーの一括クリーンアップ（スタッフ登録済みの場合のみ）
     if (staff) cleanupMigratedUserProperties_();
 
+    // Firestore allowedUsers に自動登録（スタッフまたはAdminの場合）
+    if (email && (staff || isAdminResult)) {
+      try {
+        firestoreSet_('allowedUsers', email.toLowerCase(), { email: email.toLowerCase(), addedAt: new Date().toISOString() });
+      } catch (e) {
+        Logger.log('⚠ getAppStartupData: allowedUsers 自動登録失敗（機能への影響なし）: ' + e);
+      }
+    }
+
     Logger.log('✓ getAppStartupData: 完了（admin=' + isAdminResult + ', firstSetup=' + isFirstSetup + ', staff=' + !!staff + '）');
     return {
       success: true,
