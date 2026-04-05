@@ -839,27 +839,48 @@ function initializeFirstAdmin(displayName) {
     // 1. ADMIN_EMAILS に登録
     setProperty(PROP_KEYS.ADMIN_EMAILS, emailLower);
 
-    // 2. 講師ID発行 & Firestore staffs に登録
-    var teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    // 2. 既存の staffs ドキュメントを検索して再利用（リセット後の再登録でも重複を作らない）
     var firebaseUid = _firebaseUidContext_ || null;
-    firestoreSet_('staffs', teacherId, {
-      teacherId: teacherId,
-      email: emailLower,
-      emails: [emailLower],
-      name: name,
-      firebaseUid: firebaseUid,
-      firebaseUids: firebaseUid ? [firebaseUid] : [],
-      lineUserId: null,
-      displayName: name,
-      subjects: [],
-      preferredCampuses: [],
-      aiAssistantName: '',
-      aiPersonality: '',
-      themeColor: '',
-      notificationMethod: 'gmail',
-      notificationEmail: '',
-      addedAt: new Date().toISOString()
-    });
+    var existingStaff = resolveStaffByUid_(firebaseUid, emailLower);
+    var teacherId;
+    if (existingStaff) {
+      // 既存ドキュメントの名前を更新して再利用
+      teacherId = existingStaff.teacherId || existingStaff._id;
+      existingStaff.name = name;
+      existingStaff.displayName = name;
+      existingStaff.email = emailLower;
+      if (!existingStaff.emails) existingStaff.emails = [];
+      if (existingStaff.emails.indexOf(emailLower) === -1) existingStaff.emails.push(emailLower);
+      if (firebaseUid) {
+        if (!existingStaff.firebaseUids) existingStaff.firebaseUids = [];
+        if (existingStaff.firebaseUids.indexOf(firebaseUid) === -1) existingStaff.firebaseUids.push(firebaseUid);
+        existingStaff.firebaseUid = firebaseUid;
+      }
+      existingStaff.updatedAt = new Date().toISOString();
+      writeStaffToFirestore_(existingStaff);
+      Logger.log('✓ initializeFirstAdmin: 既存 staffs ドキュメントを更新 teacherId=' + teacherId);
+    } else {
+      // 新規作成
+      teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      firestoreSet_('staffs', teacherId, {
+        teacherId: teacherId,
+        email: emailLower,
+        emails: [emailLower],
+        name: name,
+        firebaseUid: firebaseUid,
+        firebaseUids: firebaseUid ? [firebaseUid] : [],
+        lineUserId: null,
+        displayName: name,
+        subjects: [],
+        preferredCampuses: [],
+        aiAssistantName: '',
+        aiPersonality: '',
+        themeColor: '',
+        notificationMethod: 'gmail',
+        notificationEmail: '',
+        addedAt: new Date().toISOString()
+      });
+    }
 
     // 3. allowedUsers に登録
     firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
