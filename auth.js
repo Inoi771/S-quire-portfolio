@@ -494,6 +494,28 @@ function removeUserAccess(email) {
       } catch (fsErr) {
         Logger.log('⚠ removeUserAccess: staffs 削除失敗: ' + fsErr);
       }
+
+      // 通知振り分け設定からも自動削除
+      try {
+        var routingMap = getCampusRoutingMap_();
+        var routingChanged = false;
+        Object.keys(routingMap).forEach(function(campusCode) {
+          var ids = routingMap[campusCode];
+          if (Array.isArray(ids)) {
+            var idx = ids.indexOf(teacherId);
+            if (idx !== -1) {
+              ids.splice(idx, 1);
+              routingChanged = true;
+            }
+          }
+        });
+        if (routingChanged) {
+          setCampusRoutingMap_(routingMap);
+          Logger.log('✓ removeUserAccess: 通知振り分けから ' + teacherId + ' を削除');
+        }
+      } catch (routingErr) {
+        Logger.log('⚠ removeUserAccess: 通知振り分け削除失敗: ' + routingErr);
+      }
     }
 
     // Firestore allowedUsers から全メールを削除
