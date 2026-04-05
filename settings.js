@@ -725,8 +725,9 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       }
     }
 
-    var geminiApiKey = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
-    var appFolderId  = getProperty(PROP_KEYS.APP_FOLDER_ID) || '';
+    var geminiApiKey   = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
+    var appFolderId    = getProperty(PROP_KEYS.APP_FOLDER_ID) || '';
+    var accessFolderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || '';
 
     // 未登録スタッフ判定（Admin と初回セットアップは除く）
     var isUnregistered = !isFirstSetup && !isAdminResult && !staff;
@@ -756,6 +757,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       displayName: displayName,
       geminiApiKey: geminiApiKey,
       appFolderId: appFolderId,
+      accessFolderId: accessFolderId,
       aiAssistantName: aiAssistantName,
       aiPersonality: aiPersonality,
       preferredCampuses: preferredCampuses

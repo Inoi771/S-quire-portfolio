@@ -421,8 +421,10 @@
   /**
    * セットアップウィザードを表示する
    * @param {string} email 現在ログイン中のメールアドレス
+   * @param {string} appFolderId 既存の APP_FOLDER_ID（リセット後の再セットアップ時に事前入力）
+   * @param {string} accessFolderId 既存の ACCESS_FOLDER_ID（同上）
    */
-  function showSetupWizard(email) {
+  function showSetupWizard(email, appFolderId, accessFolderId) {
     var wizard = document.getElementById('setupWizard');
     if (wizard) wizard.style.display = 'block';
     var emailEl = document.getElementById('setupCurrentEmail');
@@ -430,6 +432,15 @@
     // スプラッシュを非表示
     var splash = document.getElementById('splashScreen');
     if (splash) splash.style.display = 'none';
+    // 既存のフォルダIDがあれば Step 2 の入力欄を事前入力
+    if (appFolderId) {
+      var appInput = document.getElementById('setupAppFolderId');
+      if (appInput) appInput.value = appFolderId;
+    }
+    if (accessFolderId) {
+      var accessInput = document.getElementById('setupAccessFolderId');
+      if (accessInput) accessInput.value = accessFolderId;
+    }
   }
 
   /** ステップインジケーターのドットを更新する */
@@ -629,7 +640,7 @@
   function applyStartupData_(data) {
     // 初回セットアップチェック
     if (data.isFirstSetup) {
-      showSetupWizard(data.currentUserEmail);
+      showSetupWizard(data.currentUserEmail, data.appFolderId || '', data.accessFolderId || '');
       return;
     }
 
