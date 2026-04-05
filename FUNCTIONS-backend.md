@@ -28,7 +28,7 @@
 - `removeUserAccess(email)` — ユーザーのアプリアクセスを完全削除（Admin のみ。オーナーと自分自身は削除不可）。`staff.emails` 配列の全メールを Drive共有・allowedUsers・ADMIN_EMAILS から一括削除し、staffs ドキュメントも削除
 - `getTeacherEmails()` — `@aiCallable` 現在の講師の `emails` 配列を取得（設定タブのメール管理UIで使用）
 - `addEmailToTeacher(newEmail)` — `@aiCallable` 現在の講師に新しいメールアドレスを追加（`emails` 配列＋ `allowedUsers` ＋ Drive共有）
-- `removeEmailFromTeacher(emailToRemove)` — `@aiCallable` 現在の講師からメールアドレスを削除（最低1件は残す制約付き）
+- `removeEmailFromTeacher(emailToRemove)` — `@aiCallable` 現在の講師からメールアドレスを削除（最低1件は残す制約付き。`allowedUsers` ＋ Drive共有も削除）
 - `linkUserById(teacherId)` — `@aiCallable` 講師IDを入力してスタッフ紐付け（初回アクセス時）。`emails`/`firebaseUids` 配列に現在のメール・UIDを追加し、allowedUsers にも登録
 - `createAccessDeniedHtml(email)` — アクセス拒否ページのHTMLを生成
 
@@ -65,6 +65,7 @@
 - `savePreferredCampuses(campusCodes)` — `@aiCallable` 配属校舎リストを保存（UserProperties `PREFERRED_CAMPUSES`）
 - `resetUserThemeColor()` — `@aiCallable` ユーザー個別テーマカラー（`USER_THEME_COLOR`）を削除してシステムデフォルトに戻す。戻り値: `{ success, themeColor }`
 - `saveProfilePhoto(base64Image, mimeType)` — `@aiCallable` プロフィール写真をDriveの`assets/profile-photos/{teacherId}.jpg`に保存（既存ファイルは上書き）。戻り値: `{ success, message }`
+- `getAppStartupData(firebaseEmail, firebaseUid)` — アプリ起動時に必要なデータを一括取得（isAdmin・isFirstSetup・staff情報・設定・校舎マスタ等）。allowedUsers に自動登録（スタッフまたはAdminの場合）。`cleanupMigratedUserProperties_()` も起動時に呼び出す
 
 ### セクション7: 成績管理（マスター設定）
 - `getScriptProperty(key)` / `setScriptProperty(key, value)` — セクション7専用のプロパティラッパー
