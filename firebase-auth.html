@@ -56,10 +56,22 @@ fbAuth.onAuthStateChanged(function(user) {
       splash.style.display = 'flex';
     }
 
-    // 待機中のアプリ起動コールバックを実行
-    var cbs = window.fbAuthCallbacks.slice();
-    window.fbAuthCallbacks = [];
-    cbs.forEach(function(cb) { cb(); });
+    // allowedUsers に自分のエントリを書き込んでからコールバックを実行
+    // （Firestoreセキュリティルール: allowedUsers に登録されたユーザーのみ他コレクションにアクセス可）
+    var _fbAuthEmail = (user.email || '').toLowerCase();
+    var _fbAuthProceed = function() {
+      var cbs = window.fbAuthCallbacks.slice();
+      window.fbAuthCallbacks = [];
+      cbs.forEach(function(cb) { cb(); });
+    };
+    if (_fbAuthEmail && window.fbDb) {
+      window.fbDb.collection('allowedUsers').doc(_fbAuthEmail)
+        .set({ email: _fbAuthEmail, addedAt: new Date().toISOString() })
+        .then(_fbAuthProceed)
+        .catch(_fbAuthProceed); // エラー（ルール未更新など）でも続行
+    } else {
+      _fbAuthProceed();
+    }
 
   } else {
     // 未ログイン
