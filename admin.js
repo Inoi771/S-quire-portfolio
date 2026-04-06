@@ -1714,62 +1714,6 @@ function parseGeminiErrorMessage_(response) {
   return '予期しないAPIエラーが発生しました (HTTP ' + code + ')。管理者に報告してください';
 }
 
-/**
- * アクセス許可を全リセット（初回ウィザード再実行用）
- * - Firestore allowedUsers コレクションを全削除
- * - ADMIN_EMAILS スクリプトプロパティを空にする
- * - その他のデータ（staffs / students / grades 等）は変更しない
- * @return {Object} { success, deletedCount, error }
- */
-function resetAllAccessPermissions() {
-  if (!isAdmin()) {
-    return { success: false, error: '管理者権限が必要です' };
-  }
-  try {
-    // 削除対象メールを収集（クエリに依存せず既知のメールを直接削除）
-    var emailsToDelete = {};
-
-    // ADMIN_EMAILS から収集
-    var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
-    adminRaw.split(',').forEach(function(e) {
-      var em = e.trim().toLowerCase();
-      if (em) emailsToDelete[em] = true;
-    });
-
-    // staffs コレクションから全スタッフのメールを収集
-    try {
-      var staffs = firestoreQuery_('staffs', [], 500);
-      (staffs || []).forEach(function(s) {
-        if (s.email) emailsToDelete[s.email.toLowerCase()] = true;
-        (s.emails || []).forEach(function(em) {
-          if (em) emailsToDelete[em.toLowerCase()] = true;
-        });
-      });
-    } catch (e) {
-      Logger.log('⚠ resetAllAccessPermissions: staffs取得エラー（続行）: ' + e);
-    }
-
-    // allowedUsers を各メールのドキュメントを直接削除
-    var deletedCount = 0;
-    Object.keys(emailsToDelete).forEach(function(email) {
-      try {
-        firestoreDelete_('allowedUsers', email);
-        deletedCount++;
-        Logger.log('✓ allowedUsers 削除: ' + email);
-      } catch (e) {
-        Logger.log('⚠ allowedUsers 削除失敗 (' + email + '): ' + e);
-      }
-    });
-
-    // ADMIN_EMAILS を空にする
-    setProperty(PROP_KEYS.ADMIN_EMAILS, '');
-    Logger.log('✅ resetAllAccessPermissions: ' + deletedCount + '件削除、ADMIN_EMAILS をクリア');
-    return { success: true, deletedCount: deletedCount };
-  } catch (error) {
-    Logger.log('❌ resetAllAccessPermissions エラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
 
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
