@@ -609,8 +609,9 @@
             btnSkip.disabled = false;
             btnOverwrite.disabled = false;
             var isAbort = (err.name === 'AbortError' || String(err).indexOf('AbortError') >= 0);
+            var retryMsg = skipExisting ? '「未分析のみ生成」' : '「全員を上書き生成」';
             var errMsg = isAbort
-              ? 'バックグラウンドで処理中です。数分後に分析タブを確認してください。まだ表示されない場合は「未分析のみ生成」で再実行してください。'
+              ? 'バックグラウンドで処理中です。数分後に分析タブを確認し、まだ残っている場合は同じ' + retryMsg + 'を再度押してください。'
               : '通信エラー: ' + err;
             var color = isAbort ? '#f57c00' : '#e53935';
             var icon = isAbort ? '⏳' : '❌';
