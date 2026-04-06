@@ -351,6 +351,7 @@ MyProject/
 - **allowedUsers ホワイトリスト**: Firestoreセキュリティルールは `allowedUsers` コレクションにメールが登録されたユーザーのみアクセス許可。アプリ起動時（`getAppStartupData`）・ユーザー追加時・メール追加時に自動登録される
 - **gas-bridge タイムアウト**: GAS APIコールは90秒でタイムアウト（GASコールドスタートで30秒以上かかることがある）。タイムアウト・通信エラー時はトースト通知を表示
 - **firebase-init.html の制約**: Firestore SDKのプロトタイプ（Query.prototype.get 等）を書き換えてはいけない（enablePersistence との干渉でエラーが発生する）
+- **Firestore読み取り最小化**: Firestoreは読み取り回数を最小化する設計を必ず検討すること。具体的には、集計・一覧用の読み取り専用ドキュメントを活用し、書き込み時に+1回で読み取り時に数百回→1回にする設計を優先する。サブコレクション＋親ドキュメントに集計を持たせる構造が有効
 
 ---
 
