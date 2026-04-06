@@ -7,6 +7,7 @@
 // 実行内メモリキャッシュ（GAS実行ごとにリセットされるため古いデータのリスクなし）
 var _dataSheetCache = {};
 var _masterDataCache = {};
+var _studentListWithGradesCache = {};
 
 
 /**
@@ -258,6 +259,8 @@ function getDataSheetData(year) {
  * @return {Object} { success, students } 生徒ごとの成績データ
  */
 function getStudentListWithGrades(year, testName) {
+  var cacheKey = String(year) + '|' + String(testName || '').trim();
+  if (_studentListWithGradesCache[cacheKey]) return _studentListWithGradesCache[cacheKey];
   try {
 
     var masterData = getMasterData(year);
@@ -338,7 +341,9 @@ function getStudentListWithGrades(year, testName) {
       };
     });
 
-    return { success: true, students: students };
+    var result = { success: true, students: students };
+    _studentListWithGradesCache[cacheKey] = result;
+    return result;
   } catch (error) {
     Logger.log('❌ getStudentListWithGradesエラー: ' + error);
     return { success: false, error: error.toString() };
