@@ -8,6 +8,7 @@
 var _dataSheetCache = {};
 var _masterDataCache = {};
 var _studentListWithGradesCache = {};
+var _masterDataRawDocs = null; // students コレクション生ドキュメントキャッシュ（年度問わず共有）
 
 
 /**
@@ -142,9 +143,13 @@ function getMasterData(year) {
     var cacheKey = String(year);
     if (_masterDataCache[cacheKey]) return _masterDataCache[cacheKey];
 
-    var docs = firestoreQuery_('students', [
-      fsFilter_('isDeleted', 'EQUAL', false)
-    ]);
+    // 生ドキュメントを年度問わず共有キャッシュから取得（クエリ内容は年度によらず同じ）
+    if (!_masterDataRawDocs) {
+      _masterDataRawDocs = firestoreQuery_('students', [
+        fsFilter_('isDeleted', 'EQUAL', false)
+      ]);
+    }
+    var docs = _masterDataRawDocs;
 
     var results = [];
     docs.forEach(function(doc) {
