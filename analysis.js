@@ -1611,15 +1611,12 @@ function generateAllAnalyses(year, testName, skipExisting) {
 
     // ==========================================
     // API呼び出し（常にバッチ処理: 全体分析1コール + 生徒別分析Nコール）
-    // ※かつては40人以下を単一コールで処理していたが、失敗時に何も保存されない問題があったため廃止。
-    //   常にStep1（全体分析）→Step2（生徒別分析）の2段階に分けることで、
-    //   Step2が失敗しても全体分析は保存済みとなり、skipExisting=trueでのリトライが効率化される。
+    // バッチサイズを10人に設定し、各バッチ完了後に即座保存することで
+    // GASタイムアウト時も完了済みバッチの結果が確実に保持される。
     // ==========================================
-    var BATCH_SIZE = 40;
+    var BATCH_SIZE = 10;
     var now = new Date().toISOString();
     var savedCount = 0;
-
-    var totalBatches = Math.ceil(studentsData.length / BATCH_SIZE);
 
     // Step1: 全体分析（generateGradeAnalysis に委譲。scoreDistribution も含めて保存される）
     var gradeResult = generateGradeAnalysis(year, testName, skipGradeAnalysis);
@@ -1627,8 +1624,7 @@ function generateAllAnalyses(year, testName, skipExisting) {
       return { success: false, error: 'テスト全体分析の生成に失敗しました: ' + gradeResult.error };
     }
 
-    // Step2: 生徒別分析をバッチ処理
-    var allStudentAiResults = {};
+    // Step2: 生徒別分析をバッチ処理（バッチごとに即座保存）
     for (var bi = 0; bi < studentsData.length; bi += BATCH_SIZE) {
       var batch = studentsData.slice(bi, Math.min(bi + BATCH_SIZE, studentsData.length));
       var batchNum = Math.floor(bi / BATCH_SIZE) + 1;
@@ -1636,17 +1632,15 @@ function generateAllAnalyses(year, testName, skipExisting) {
       if (!batchResult.success) {
         Logger.log('⚠ バッチ ' + batchNum + ' 失敗: ' + batchResult.error + '（スキップして続行）');
       } else {
-        var batchIds = Object.keys(batchResult.analyses);
-        batchIds.forEach(function(id) { allStudentAiResults[id] = batchResult.analyses[id]; });
+        // バッチ完了後に即座保存（タイムアウトしても保存済み分は消えない）
+        savedCount += saveStudentAnalyses_(batch, batchResult.analyses, year, testNameTrimmed, displayTestNames, now);
+        Logger.log('✓ バッチ ' + batchNum + ' 保存完了: ' + savedCount + '人累計');
       }
-      // 次のバッチがある場合のみ待機（RPM15回/分の制限対策）
+      // 次のバッチがある場合のみ待機（RPM制限対策）
       if (bi + BATCH_SIZE < studentsData.length) {
         Utilities.sleep(4500);
       }
     }
-
-    // Step3: 全生徒分析を一括保存
-    savedCount = saveStudentAnalyses_(studentsData, allStudentAiResults, year, testNameTrimmed, displayTestNames, now);
 
     return { success: true, studentCount: savedCount, skippedCount: skippedStudentCount, generatedAt: now };
   } catch (error) {
