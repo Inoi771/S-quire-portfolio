@@ -98,7 +98,7 @@
 - `restoreStudent(studentId)` — `@aiCallable` 生徒復元
 - `ocrAndSaveGradeSheet(base64Image, mimeType, year)` — `@aiCallable` 成績画像OCR一括保存
 - `getGradeDataByStudentAndTest(year, studentId, testName)` — `@aiCallable` 既存成績1件取得
-- `submitGradeData(year, studentId, testName, scores, skipSummaryUpdate)` — `@aiCallable` 成績 upsert + gradesMeta年度更新 + gradeSummaries再計算（skipSummaryUpdate=trueで一括時スキップ）
+- `submitGradeData(year, studentId, testName, scores, skipCacheUpdate)` — `@aiCallable` 成績 upsert + gradesMeta年度更新 + 全キャッシュ再構築（skipCacheUpdate=trueで一括時スキップ）
 - `getStudentsWithGradesByTest(year, campusCode, testName)` — `@aiCallable` 指定テスト名の成績がある生徒一覧を校舎でフィルタして返す（成績表タブ用）
 - `getStudentGradeReport(year, studentId)` — `@aiCallable` 成績表用：指定生徒の全テスト成績と学校別平均を取得
 - `bulkImportStudents(studentsJson, importYear)` — 生徒を一括インポート（Admin のみ。ふりがな省略可。JSON文字列 `[{campusCode, gradeCode, sei, mei}]`。importYear 省略時は現在年度。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）
@@ -111,6 +111,9 @@
 - `rebuildGradeSummary(year, testName)` — gradeSummaries を再計算して保存
 - `rebuildAllGradeSummaries()` — Admin専用。全年度×全テスト名の gradeSummaries を一括再構築
 - `getCampusAverages(year, testName)` — `@aiCallable` 校舎別平均点（gradeSummariesファストパス＋フォールバック）
+- `rebuildGradeListCache(year, testName)` — 一覧表キャッシュを再構築（gradeListCache）
+- `rebuildGradeReportCache(year)` — 成績表キャッシュを再構築（gradeReportCache）
+- `rebuildAllCaches(year)` — Admin専用。指定年度の gradeSummaries + gradeListCache + gradeReportCache を一括再構築
 ### セクション8-B: AI成績分析・生徒別AI分析（analysis.js）
 - `getAnalysisSheet(year)` — AI分析シート取得/作成ヘルパー
 - `getGradeAnalysis(year, testName)` — `@aiCallable` 保存済みAI分析データの取得（`{ exists, analysis, generatedAt }`）

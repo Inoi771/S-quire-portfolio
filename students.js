@@ -826,13 +826,15 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
       }
     });
 
-    // 一括保存後にサマリーを1回だけ再構築
+    // 一括保存後にキャッシュを1回だけ再構築
     if ((savedCount + updatedCount) > 0) {
       try {
         delete _dataSheetCache[String(year)];
         delete _masterDataCache[String(year)];
         rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
-      } catch (e) { Logger.log('⚠ OCR後のgradeSummaries更新スキップ: ' + e); }
+        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
+        rebuildGradeReportCache(parseInt(year, 10));
+      } catch (e) { Logger.log('⚠ OCR後のキャッシュ更新スキップ: ' + e); }
     }
 
     return {
@@ -898,10 +900,10 @@ function getGradeDataByStudentAndTest(year, studentId, testName) {
  * @param {string} studentId 生徒ID
  * @param {string} testName テスト名
  * @param {Object} scores スコアオブジェクト
- * @param {boolean} skipSummaryUpdate trueのとき gradeSummaries の更新をスキップ（一括インポート時に使用）
+ * @param {boolean} skipCacheUpdate trueのとき gradeSummaries・gradeListCache・gradeReportCache の更新をスキップ（一括インポート時に使用、最後に1回だけ再構築）
  * @return {Object} { success, message, error }
  */
-function submitGradeData(year, studentId, testName, scores, skipSummaryUpdate) {
+function submitGradeData(year, studentId, testName, scores, skipCacheUpdate) {
   try {
     if (!studentId || !testName) {
       return { success: false, error: '生徒IDとテスト名は必須です' };
@@ -961,16 +963,17 @@ function submitGradeData(year, studentId, testName, scores, skipSummaryUpdate) {
       Logger.log('⚠ gradesMeta更新スキップ: ' + metaErr);
     }
 
-    // gradeSummaries を更新（skipSummaryUpdate=true のときはスキップ）
-    if (!skipSummaryUpdate) {
+    // キャッシュ更新（skipCacheUpdate=true のときはスキップ）
+    if (!skipCacheUpdate) {
       try {
-        // メモリキャッシュをクリア（新しい成績を反映するため）
         var dsCacheKey = String(year);
         delete _dataSheetCache[dsCacheKey];
         delete _masterDataCache[dsCacheKey];
         rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
-      } catch (summaryErr) {
-        Logger.log('⚠ gradeSummaries更新スキップ: ' + summaryErr);
+        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
+        rebuildGradeReportCache(parseInt(year, 10));
+      } catch (cacheErr) {
+        Logger.log('⚠ キャッシュ更新スキップ: ' + cacheErr);
       }
     }
 
@@ -1570,6 +1573,189 @@ function rebuildAllGradeSummaries() {
   }
 }
 
+// ----------------------------------------
+// gradeListCache / gradeReportCache — 一覧表・成績表キャッシュ
+// ----------------------------------------
+
+/**
+ * 一覧表キャッシュを再構築する（gradeListCache/{year}_{safeTestName}）
+ * getStudentListWithGrades の結果を1ドキュメントに格納
+ * @param {number} year 学年年度
+ * @param {string} testName テスト名
+ * @return {Object} { success, count }
+ */
+function rebuildGradeListCache(year, testName) {
+  try {
+    var result = getStudentListWithGrades(parseInt(year, 10), String(testName).trim());
+    if (!result.success) return { success: false, error: result.error || 'getStudentListWithGrades失敗' };
+
+    var docId = makeSummaryDocId_(year, testName);
+    firestoreSet_('gradeListCache', docId, {
+      fiscalYear: parseInt(year, 10),
+      testName: String(testName).trim(),
+      students: result.students,
+      updatedAt: new Date().toISOString()
+    });
+    return { success: true, count: result.students.length };
+  } catch (error) {
+    Logger.log('❌ rebuildGradeListCacheエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 成績表キャッシュを再構築する（gradeReportCache/{year}）
+ * 全生徒の全テスト成績・学校平均・偏差値を1ドキュメントに格納
+ * @param {number} year 学年年度
+ * @return {Object} { success, studentCount }
+ */
+function rebuildGradeReportCache(year) {
+  try {
+    var yr = parseInt(year, 10);
+    var masterData = getMasterData(yr);
+    var allGrades = getDataSheetData(yr);
+    var testNames = getTestNamesConfig();
+    var sigmaResult = getGradeAnalysisSigmaConfig();
+    var sigma = sigmaResult.sigma;
+
+    // テストごとの学校平均を一括取得
+    var schoolAvgMap = {};
+    testNames.forEach(function(tn) {
+      var avgResult = getSchoolAverages(yr, tn);
+      if (avgResult.success && avgResult.averages) {
+        schoolAvgMap[tn] = avgResult.averages;
+      }
+    });
+
+    var reports = {};
+
+    masterData.forEach(function(student) {
+      var sid = String(student.studentId);
+
+      // この生徒の全成績を抽出
+      var studentGrades = [];
+      allGrades.forEach(function(row) {
+        if (String(row.studentId) === sid) {
+          studentGrades.push({
+            testName: row.testName,
+            kokugo: row.kokugo, shakai: row.shakai, sugaku: row.sugaku,
+            rika: row.rika, eigo: row.eigo, total: row.total, average: row.average,
+            shogaku1: row.shogaku1, shogaku1_gakka: row.shogaku1_gakka,
+            shogaku2: row.shogaku2, shogaku2_gakka: row.shogaku2_gakka
+          });
+        }
+      });
+
+      if (studentGrades.length === 0) return; // 成績なしの生徒はスキップ
+
+      // テストごとの学校平均を選択（生徒の学校名 or 「平均」にフォールバック）
+      var studentSchool = (student.schoolName || '').trim();
+      var schoolAverages = {};
+      var deviationValues = {};
+      var subjKeys = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+
+      studentGrades.forEach(function(g) {
+        var avgs = schoolAvgMap[g.testName];
+        if (!avgs) return;
+
+        var matched = null;
+        var fallback = null;
+        for (var j = 0; j < avgs.length; j++) {
+          var sn = (avgs[j].schoolName || '').trim();
+          if (studentSchool && sn === studentSchool) { matched = avgs[j]; break; }
+          if (!fallback && sn.indexOf('平均') !== -1) fallback = avgs[j];
+        }
+        var avg = matched || fallback;
+        if (avg) {
+          schoolAverages[g.testName] = avg;
+          var devs = {};
+          subjKeys.forEach(function(subj) {
+            var score = g[subj];
+            var avgVal = avg[subj];
+            var sig = sigma[subj];
+            if (sig && sig > 0 && avgVal !== '' && avgVal != null && !isNaN(Number(avgVal)) &&
+                score !== '' && score != null && !isNaN(Number(score))) {
+              devs[subj] = Math.round((50 + 10 * (Number(score) - Number(avgVal)) / sig) * 10) / 10;
+            } else {
+              devs[subj] = null;
+            }
+          });
+          deviationValues[g.testName] = devs;
+        }
+      });
+
+      reports[sid] = {
+        student: {
+          studentId: sid, name: student.name, furigana: student.furigana,
+          campus: student.campus, grade: student.grade, schoolName: student.schoolName
+        },
+        grades: studentGrades,
+        testNames: testNames,
+        schoolAverages: schoolAverages,
+        deviationValues: deviationValues
+      };
+    });
+
+    firestoreSet_('gradeReportCache', String(yr), {
+      fiscalYear: yr,
+      reports: reports,
+      updatedAt: new Date().toISOString()
+    });
+
+    return { success: true, studentCount: Object.keys(reports).length };
+  } catch (error) {
+    Logger.log('❌ rebuildGradeReportCacheエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 指定年度の全キャッシュを一括再構築する（Admin専用）
+ * gradeSummaries + gradeListCache + gradeReportCache をすべて再構築
+ * @param {number} year 学年年度
+ * @return {Object} { success, summaries, lists, report }
+ */
+function rebuildAllCaches(year) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+
+    var yr = parseInt(year, 10);
+    var testNames = getTestNamesConfig();
+    if (!testNames || testNames.length === 0) return { success: false, error: 'テスト名設定なし' };
+
+    // メモリキャッシュをクリア
+    delete _dataSheetCache[String(yr)];
+    delete _masterDataCache[String(yr)];
+
+    var summaryCount = 0;
+    var listCount = 0;
+
+    testNames.forEach(function(tn) {
+      try {
+        var sr = rebuildGradeSummary(yr, tn);
+        if (sr.success) summaryCount++;
+      } catch (e) { Logger.log('⚠ rebuildAllCaches summary skip: ' + tn + ' ' + e); }
+
+      try {
+        var lr = rebuildGradeListCache(yr, tn);
+        if (lr.success) listCount++;
+      } catch (e) { Logger.log('⚠ rebuildAllCaches list skip: ' + tn + ' ' + e); }
+    });
+
+    var reportResult = rebuildGradeReportCache(yr);
+
+    return {
+      success: true,
+      summaries: summaryCount,
+      lists: listCount,
+      report: reportResult.success ? reportResult.studentCount : 0
+    };
+  } catch (error) {
+    Logger.log('❌ rebuildAllCachesエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
 /**
  * 画像から学校別平均点をAI（Gemini）で読み取り保存する
  * 既存データがある学校・教科はスキップ（補完のみ）
@@ -1762,15 +1948,19 @@ function bulkImportGrades(gradesJson, importYear) {
       }
     }
 
-    // 一括インポート後にサマリーをテスト名ごとに1回だけ再構築
+    // 一括インポート後にキャッシュをテスト名ごとに1回だけ再構築
     if (savedCount > 0) {
       delete _dataSheetCache[String(year)];
       delete _masterDataCache[String(year)];
       Object.keys(importedTestNames).forEach(function(tn) {
         try {
           rebuildGradeSummary(parseInt(year, 10), String(tn).trim());
-        } catch (e) { Logger.log('⚠ bulkImport後のgradeSummaries更新スキップ (' + tn + '): ' + e); }
+          rebuildGradeListCache(parseInt(year, 10), String(tn).trim());
+        } catch (e) { Logger.log('⚠ bulkImport後のキャッシュ更新スキップ (' + tn + '): ' + e); }
       });
+      try {
+        rebuildGradeReportCache(parseInt(year, 10));
+      } catch (e) { Logger.log('⚠ bulkImport後のgradeReportCache更新スキップ: ' + e); }
     }
 
     return {

@@ -163,6 +163,8 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ（会話から抽出した知識）。`category`, `content`, `reason`, `source`, `learnedAt` |
 | `gradesMeta` | `yearsList` | 成績データの年度一覧キャッシュ。`years`(整数配列), `updatedAt`(ISO 8601)。成績保存時に自動更新。全件取得を回避して1ドキュメント読み取りで年度一覧を返す |
 | `gradeSummaries` | `{year}_{safe(testName)}` | テスト別校舎平均キャッシュ。`fiscalYear`, `testName`, `count`, `campusAverages`(校舎コード→平均Map), `gradeBreakdown`(学年別人数Map), `updatedAt`。成績保存時に自動再計算。getCampusAveragesのファストパスとして使用 |
+| `gradeListCache` | `{year}_{safe(testName)}` | 一覧表キャッシュ。`fiscalYear`, `testName`, `students`(全生徒の成績+合格率配列), `updatedAt`。成績保存時に自動再構築。fbGetStudentListWithGradesのファストパス（450読み取り→1読み取り） |
+| `gradeReportCache` | `{year}` | 成績表キャッシュ。`fiscalYear`, `reports`(生徒ID→{student,grades,testNames,schoolAverages,deviationValues}のMap), `updatedAt`。成績保存時に自動再構築。fbGetStudentGradeReportのファストパス（153読み取り→1読み取り） |
 
 **Firestore利用上の注意：**
 - 複合クエリ（AND）はコンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること
