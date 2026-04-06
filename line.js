@@ -544,10 +544,18 @@ function getLineRegisteredUsers() {
     }
 
     // staffs ベースでイテレート（LINE未登録ユーザーも候補に含める）
+    // メールアドレスで重複排除（初回ウィザード複数回実行で重複ドキュメントが存在する場合への対応）
+    var seenEmails = {};
     var users = (allStaffs || [])
       .filter(function(staff) {
         if (!folderId) return true;
         return staff.email && allowedEmails[staff.email.toLowerCase()];
+      })
+      .filter(function(staff) {
+        var emailKey = (staff.email || '').toLowerCase();
+        if (!emailKey || seenEmails[emailKey]) return false;
+        seenEmails[emailKey] = true;
+        return true;
       })
       .map(function(staff) {
         return {

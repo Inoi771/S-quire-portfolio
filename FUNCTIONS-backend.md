@@ -217,6 +217,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getDriveContents(folderId)` — Drive フォルダ探索（Admin のみ）
 - `uploadPDFToFolder(pdfBase64, fileName, targetFolderId)` — PDF アップロード（Admin のみ）
 - `deleteFileFromDrive(fileId)` — ファイル削除（Admin のみ）
+- `removeDuplicateStaffs()` — Firestore staffs コレクション内の重複ドキュメントを検出・削除（Admin のみ。同一メールの古いドキュメントを削除し最新を残す）
 
 ### セクション11: フォルダ・シート自動初期化
 - `initializeAllSheets()` — 全フォルダ・シート初期化

@@ -1883,6 +1883,16 @@
               </div>
             </div>
 
+            <!-- 🧹 重複ユーザー整理 -->
+            <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
+              <h3 style="margin: 0 0 10px 0;">🧹 重複ユーザー整理</h3>
+              <p style="font-size: 12px; color: #666; margin: 0 0 12px 0; line-height: 1.6;">
+                同じメールアドレスのユーザーが複数登録されている場合、古いものを自動で削除します。
+              </p>
+              <button onclick="cleanupDuplicateStaffs()" id="cleanupDuplicateBtn" style="padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">重複を整理する</button>
+              <div id="cleanupMessage" style="margin-top: 8px;"></div>
+            </div>
+
             <!-- 📨 通知振り分け設定 -->
             <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
