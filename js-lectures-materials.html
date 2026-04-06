@@ -7,10 +7,17 @@
     var matLecPricingData = null;  // 講習別料金データのキャッシュ（typeId → {rows:[{type,gradeKey,duration,count,internal,external}]}）
     var matEntriesCache = {};  // プレビュー用エントリキャッシュ: "lectureId_campusCode" → entries[]
     var matGreetingsData_ = null;  // 講習別学年挨拶文キャッシュ { typeId: { gradeKey: "挨拶文" } }
-    var matActiveGradeKey_ = null; // 現在選択中の学年タブキー
+    var matActiveGradeKey_ = null; // 現在選択中のタブID（'chu1' / 'ko1:4set' / 'ko1:per' 等）
 
     // 中3限定講習タイプ（基礎学力テスト・入試直前）
     var MAT_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
+
+    // 高校生ページを生成する講習タイプ（春期・夏期・冬期のみ）
+    var MAT_HS_SEASON_TYPES_ = ['spring', 'summer', 'winter'];
+
+    // 高校生料金ページ選択（チェックボックスと連動）
+    var matHsShow4Set_ = true;      // 4回セットページを含める
+    var matHsShowPerCount_ = true;  // 回数別料金ページを含める
 
     // 学年グループ定義（PDFページ単位・申込欄の isHigh で高校生フォームに切替）
     var MAT_GRADE_GROUPS_ = [
@@ -155,6 +162,52 @@
     }
 
     /**
+     * 学年グループ別のページ定義配列を生成する（updateMatPreview・generateMaterialsPDF で共用）
+     * @param {Array} entries 講習エントリ
+     * @param {string} campusName 校舎名
+     * @param {string} campusCode 校舎コード
+     * @param {string} lecName 講習名
+     * @param {Object|null} typeData 講習別料金データ
+     * @param {boolean} isSpring 春期講習か
+     * @param {string} typeId 講習タイプID
+     * @return {Array} gradePages 配列（tabId / tabLabel / pricingType 等を含む）
+     */
+    function buildGradePages_(entries, campusName, campusCode, lecName, typeData, isSpring, typeId) {
+      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var isHsSeason = MAT_HS_SEASON_TYPES_.indexOf(typeId) !== -1;
+      var targetGroups = isChu3Only
+        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
+        : MAT_GRADE_GROUPS_;
+
+      var pages = [];
+      targetGroups.forEach(function(grp) {
+        var grpEntries = (entries || []).filter(function(e) {
+          var gc = String(e.grade || '').trim();
+          if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
+          return grp.codes.indexOf(gc) !== -1;
+        });
+        if (grpEntries.length === 0) return;
+
+        var base = { gradeGroup: grp, entries: grpEntries, campusName: campusName, campusCode: campusCode, lecName: lecName, typeData: typeData, isSpring: isSpring };
+
+        if (grp.isHigh && isHsSeason) {
+          // 高校生・HS season → 4回セット / 回数別 を別ページとして生成
+          if (matHsShow4Set_) {
+            pages.push(Object.assign({}, base, { tabId: grp.key + ':4set', tabLabel: grp.label + ' 4回セット', pricingType: '4set' }));
+          }
+          if (matHsShowPerCount_) {
+            pages.push(Object.assign({}, base, { tabId: grp.key + ':per', tabLabel: grp.label + ' 回数別', pricingType: 'per' }));
+          }
+        } else if (!grp.isHigh) {
+          // 中学生・小学生（高校生以外は常に含める）
+          pages.push(Object.assign({}, base, { tabId: grp.key, tabLabel: grp.label, pricingType: null }));
+        }
+        // 高校生 かつ HS season でない場合はページを生成しない
+      });
+      return pages;
+    }
+
+    /**
      * 配布物プレビューを更新する（学年タブ描画 + アクティブ学年の1ページ表示）
      */
     function updateMatPreview() {
@@ -166,6 +219,8 @@
       if (!lectureId) {
         inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">講習を選択するとプレビューが表示されます</div>';
         if (tabNav) tabNav.innerHTML = '';
+        var hsOpts = document.getElementById('mat-hs-pricing-opts');
+        if (hsOpts) hsOpts.style.display = 'none';
         resizeMatPreview();
         return;
       }
@@ -181,26 +236,16 @@
       var typeData = (matLecPricingData && matLecPricingData[typeId]) ? matLecPricingData[typeId] : null;
       var isSpring = lecName.indexOf('春') !== -1;
 
-      // 学年グループ別にエントリを仕分けして gradePages を構築
-      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
-      var targetGroups = isChu3Only
-        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
-        : MAT_GRADE_GROUPS_;
-      var gradePages = [];
-      targetGroups.forEach(function(grp) {
-        var grpEntries = (entries || []).filter(function(e) {
-          var gc = String(e.grade || '').trim();
-          if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
-          return grp.codes.indexOf(gc) !== -1;
-        });
-        if (grpEntries.length > 0) {
-          gradePages.push({ gradeGroup: grp, entries: grpEntries, campusName: campusName, campusCode: campusCode, lecName: lecName, typeData: typeData, isSpring: isSpring });
-        }
-      });
+      // 高校生料金チェックボックスの表示切り替え
+      var hsOpts = document.getElementById('mat-hs-pricing-opts');
+      if (hsOpts) hsOpts.style.display = MAT_HS_SEASON_TYPES_.indexOf(typeId) !== -1 ? 'block' : 'none';
 
-      // タブを描画（アクティブキーが存在しない場合は最初の学年にリセット）
-      var activeExists = gradePages.some(function(p) { return p.gradeGroup.key === matActiveGradeKey_; });
-      if (!activeExists && gradePages.length > 0) matActiveGradeKey_ = gradePages[0].gradeGroup.key;
+      // gradePages を構築
+      var gradePages = buildGradePages_(entries, campusName, campusCode, lecName, typeData, isSpring, typeId);
+
+      // タブを描画（アクティブIDが存在しない場合は最初のタブにリセット）
+      var activeExists = gradePages.some(function(p) { return p.tabId === matActiveGradeKey_; });
+      if (!activeExists && gradePages.length > 0) matActiveGradeKey_ = gradePages[0].tabId;
       renderMatGradeTabs_(gradePages);
 
       if (gradePages.length === 0) {
@@ -209,16 +254,16 @@
         return;
       }
 
-      // アクティブ学年の1ページ分を描画
-      var activePage = gradePages.find(function(p) { return p.gradeGroup.key === matActiveGradeKey_; });
+      // アクティブタブの1ページ分を描画
+      var activePage = gradePages.find(function(p) { return p.tabId === matActiveGradeKey_; });
       var greeting = getMatGreeting_(activePage.gradeGroup.key);
-      inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring);
+      inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring, activePage.pricingType);
       resizeMatPreview();
     }
 
     /**
      * 学年タブバーを描画する
-     * @param {Array} gradePages {gradeGroup, entries, ...} の配列
+     * @param {Array} gradePages buildGradePages_ の返値
      */
     function renderMatGradeTabs_(gradePages) {
       var tabNav = document.getElementById('mat-grade-tab-nav');
@@ -226,24 +271,33 @@
       if (gradePages.length === 0) { tabNav.innerHTML = ''; return; }
       var html = '';
       gradePages.forEach(function(p) {
-        var key = p.gradeGroup.key;
-        var isActive = key === matActiveGradeKey_;
+        var isActive = p.tabId === matActiveGradeKey_;
         var style = 'background:none;border:none;padding:6px 12px;font-size:13px;cursor:pointer;'
           + (isActive
             ? 'color:#667eea;font-weight:600;border-bottom:2px solid #667eea;'
             : 'color:#999;font-weight:normal;border-bottom:2px solid transparent;');
-        html += '<button onclick="switchMatGradeTab_(\'' + key + '\')" style="' + style + '">'
-              + escapeHtmlMat_(p.gradeGroup.label) + '</button>';
+        html += '<button onclick="switchMatGradeTab_(\'' + escapeHtmlMat_(p.tabId) + '\')" style="' + style + '">'
+              + escapeHtmlMat_(p.tabLabel) + '</button>';
       });
       tabNav.innerHTML = html;
     }
 
     /**
      * 学年タブを切り替える
-     * @param {string} gradeKey MAT_GRADE_GROUPS_ の key
+     * @param {string} tabId ページの tabId（'chu1' / 'ko1:4set' / 'ko1:per' 等）
      */
-    function switchMatGradeTab_(gradeKey) {
-      matActiveGradeKey_ = gradeKey;
+    function switchMatGradeTab_(tabId) {
+      matActiveGradeKey_ = tabId;
+      updateMatPreview();
+    }
+
+    /**
+     * 高校生料金チェックボックス変更時の処理
+     */
+    function onMatHsPricingChange_() {
+      matHsShow4Set_ = !!(document.getElementById('matHs4SetChk') && document.getElementById('matHs4SetChk').checked);
+      matHsShowPerCount_ = !!(document.getElementById('matHsPerChk') && document.getElementById('matHsPerChk').checked);
+      matActiveGradeKey_ = null; // タブをリセット
       updateMatPreview();
     }
 
@@ -305,16 +359,8 @@
       var isSpring = lecName.indexOf('春') !== -1;
 
       function proceed(entries) {
-        // 学年グループ別に仕分け
-        var gradePages = [];
-        MAT_GRADE_GROUPS_.forEach(function(grp) {
-          var grpEntries = (entries || []).filter(function(e) {
-            var gc = String(e.grade || '').trim();
-            if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
-            return grp.codes.indexOf(gc) !== -1;
-          });
-          if (grpEntries.length > 0) gradePages.push({ gradeGroup: grp, entries: grpEntries });
-        });
+        // buildGradePages_ を使ってページ定義を構築（チェックボックス状態を反映）
+        var gradePages = buildGradePages_(entries, campusName, campusCode, lecName, typeData, isSpring, typeId);
 
         if (gradePages.length === 0) {
           restoreBtn();
@@ -341,7 +387,7 @@
           var pageHtml;
           {
             var greeting = getMatGreeting_(pg.gradeGroup.key);
-            pageHtml = buildMatOnePage_(pg.gradeGroup, pg.entries, campusName, campusCode, lecName, greeting, typeData, isSpring);
+            pageHtml = buildMatOnePage_(pg.gradeGroup, pg.entries, campusName, campusCode, lecName, greeting, typeData, isSpring, pg.pricingType);
           }
 
           var container = document.createElement('div');
@@ -618,17 +664,32 @@
      * @param {boolean} isSpring 春期講習か
      * @return {string} HTML文字列
      */
-    function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring) {
+    function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring, pricingType) {
       // 科目一覧を抽出（MAT_SUBJECT_ORDER_ 順）
       var subjectSet = {};
       (entries || []).forEach(function(e) { if (e.subject) subjectSet[e.subject] = true; });
       var subjects = MAT_SUBJECT_ORDER_.filter(function(s) { return subjectSet[s]; });
       Object.keys(subjectSet).forEach(function(s) { if (MAT_SUBJECT_ORDER_.indexOf(s) === -1) subjects.push(s); });
 
-      // 料金行を学年グループでフィルタ（空の場合は全行を使用）
+      // 料金行フィルタ（pricingType に応じて絞り込む）
       var allRows = (typeData && typeData.rows) ? typeData.rows : [];
-      var gradeRows = allRows.filter(function(r) { return r.gradeKey === gradeGroup.key; });
-      if (gradeRows.length === 0) gradeRows = allRows;
+      var gradeRows;
+      if (pricingType === '4set') {
+        // 4回セット：standard + shozui 行（当該学年）
+        gradeRows = allRows.filter(function(r) {
+          return (r.type === 'standard' || r.type === 'shozui') && r.gradeKey === gradeGroup.key;
+        });
+      } else if (pricingType === 'per') {
+        // 回数別料金：custom 行をラベルの先頭文字列で学年フィルタ
+        var hsLabel = { ko1: '高1', ko2: '高2', ko3: '高3' }[gradeGroup.key] || '';
+        gradeRows = allRows.filter(function(r) {
+          return r.type === 'custom' && r.label && r.label.indexOf(hsLabel) === 0;
+        });
+      } else {
+        // 中学生・小学生：standard 行を gradeKey でフィルタ（なければ全行）
+        gradeRows = allRows.filter(function(r) { return r.gradeKey === gradeGroup.key; });
+        if (gradeRows.length === 0) gradeRows = allRows;
+      }
 
       var html = '<div style="width:794px;min-height:1122px;padding:22px 30px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
 
