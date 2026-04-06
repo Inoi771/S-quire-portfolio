@@ -6,7 +6,6 @@
 
     var matLecPricingData = null;  // 講習別料金データのキャッシュ（typeId → {rows:[{type,gradeKey,duration,count,internal,external}]}）
     var matEntriesCache = {};  // プレビュー用エントリキャッシュ: "lectureId_campusCode" → entries[]
-    var matNormalSectionsCache = null; // 通常授業料金セクションキャッシュ [{id,name,campusScope,campusCodes,headers,rows,notes}]
     var matGreetingsData_ = null;  // 講習別学年挨拶文キャッシュ { typeId: { gradeKey: "挨拶文" } }
 
     // 中3限定講習タイプ（基礎学力テスト・入試直前）
@@ -103,145 +102,6 @@
       switchMatSubTab('mat-tab-entry', null);
     }
 
-    /**
-     * 「通常料金表を追加ページとして含める」チェックボックスの切り替え処理
-     */
-    function toggleNormalPricingSectionList_() {
-      var chk = document.getElementById('matIncludeNormalPricing');
-      var panel = document.getElementById('mat-normal-pricing-sections');
-      if (!panel) return;
-      panel.style.display = chk && chk.checked ? 'block' : 'none';
-      if (chk && chk.checked && matNormalSectionsCache === null) {
-        loadMatNormalSections_();
-      }
-    }
-
-    /**
-     * 通常授業料金セクションをバックエンドから取得してリストを描画する
-     */
-    function loadMatNormalSections_() {
-      var listEl = document.getElementById('mat-normal-pricing-section-list');
-      if (!listEl) return;
-      listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">読み込み中...</div>';
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result && result.success && result.data) {
-            matNormalSectionsCache = result.data;
-            renderMatNormalSectionList_();
-          } else {
-            listEl.innerHTML = '<div style="color:#e57373;font-size:12px;">取得失敗</div>';
-          }
-        })
-        .withFailureHandler(function(err) {
-          matNormalSectionsCache = [];
-          if (listEl) listEl.innerHTML = '<div style="color:#e57373;font-size:12px;">エラー: ' + err + '</div>';
-        })
-        .getNormalClassSectionsForWeb();
-    }
-
-    /**
-     * 通常授業料金セクションのチェックボックスリストを描画する
-     */
-    function renderMatNormalSectionList_() {
-      var listEl = document.getElementById('mat-normal-pricing-section-list');
-      if (!listEl || !matNormalSectionsCache) return;
-      if (matNormalSectionsCache.length === 0) {
-        listEl.innerHTML = '<div style="color:#bbb;font-size:12px;">通常設定にデータがありません</div>';
-        return;
-      }
-      var html = '';
-      matNormalSectionsCache.forEach(function(sec) {
-        var scopeLabel = (sec.campusScope === 'specific')
-          ? ' <span style="font-size:10px;color:#ff8c00;background:#fff3e0;padding:1px 5px;border-radius:6px;">' + escapeHtmlMat_((sec.campusCodes || []).join('・') + 'のみ') + '</span>'
-          : '';
-        html += '<label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0;">'
-              + '<input type="checkbox" class="mat-nc-section-chk" value="' + escapeHtmlMat_(sec.id) + '" checked>'
-              + escapeHtmlMat_(sec.name) + scopeLabel
-              + '</label>';
-      });
-      listEl.innerHTML = html;
-    }
-
-    /**
-     * 通常料金表の追加ページHTMLを生成する
-     * @param {Array} sections 含めるセクション
-     * @param {string} campusCode 校舎コード（scopeフィルタ用）
-     * @return {string} HTML文字列（A4ページ）
-     */
-    function buildNcPricingPage_(sections, campusCode) {
-      // campusScope でフィルタ
-      var filtered = sections.filter(function(sec) {
-        if (sec.campusScope === 'all') return true;
-        return (sec.campusCodes || []).indexOf(String(campusCode)) !== -1;
-      });
-      if (filtered.length === 0) return '';
-
-      var html = '<div style="width:794px;min-height:1122px;padding:22px 30px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
-      html += '<div style="text-align:center;font-size:15pt;font-weight:bold;margin:4px 0 16px;">通常授業料金</div>';
-
-      filtered.forEach(function(sec) {
-        var scopeBadge = (sec.campusScope === 'specific' && sec.campusCodes && sec.campusCodes.length > 0)
-          ? ' <span style="font-size:8pt;color:#ff8c00;">（' + escapeHtmlMat_((sec.campusCodes || []).join('・')) + 'のみ）</span>'
-          : '';
-        html += '<div style="font-weight:bold;font-size:10.5pt;margin:10px 0 5px;">' + escapeHtmlMat_(sec.name) + scopeBadge + '</div>';
-        html += buildNcSectionTable_(sec);
-        if (sec.notes && sec.notes.length > 0) {
-          html += '<div style="font-size:8.5pt;color:#555;margin-top:3px;">';
-          sec.notes.forEach(function(n) { html += escapeHtmlMat_(n) + '<br>'; });
-          html += '</div>';
-        }
-      });
-
-      html += '</div>';
-      return html;
-    }
-
-    /**
-     * 通常設定の1セクションをHTMLテーブルとして描画する
-     * @param {Object} sec セクションデータ
-     * @return {string} HTML文字列
-     */
-    function buildNcSectionTable_(sec) {
-      var headers = sec.headers || [];
-      var rows = sec.rows || [];
-      var html = '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:4px;">';
-      // ヘッダー
-      if (headers.some(function(h) { return h; })) {
-        html += '<thead><tr>';
-        headers.forEach(function(h) {
-          html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + escapeHtmlMat_(h) + '</th>';
-        });
-        html += '</tr></thead>';
-      }
-      // 行（1列目: 連続する空セルをrowspan合成）
-      html += '<tbody>';
-      var rowSpanIdx = 0;
-      var spanCounts = [];
-      var i = 0;
-      while (i < rows.length) {
-        var cnt = 1;
-        while (i + cnt < rows.length && (rows[i + cnt][0] === '' || rows[i + cnt][0] == null)) cnt++;
-        spanCounts.push(cnt);
-        for (var j = 1; j < cnt; j++) spanCounts.push(0);
-        i += cnt;
-      }
-      rows.forEach(function(row, ri) {
-        html += '<tr>';
-        row.forEach(function(cell, ci) {
-          if (ci === 0) {
-            if (spanCounts[ri] === 0) return; // rowspan済みなので出力しない
-            var span = spanCounts[ri] > 1 ? ' rowspan="' + spanCounts[ri] + '"' : '';
-            html += '<td style="border:1px solid #555;padding:4px 6px;font-weight:bold;text-align:center;vertical-align:middle;"' + span + '>' + escapeHtmlMat_(String(cell)) + '</td>';
-          } else {
-            var cls = /\d/.test(String(cell)) ? 'text-align:right;' : 'text-align:left;';
-            html += '<td style="border:1px solid #555;padding:4px 6px;' + cls + '">' + escapeHtmlMat_(String(cell)) + '</td>';
-          }
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-      return html;
-    }
 
     /**
      * 校舎セレクトを buildCampusOptions を使って構築する（配属校舎が先頭）
@@ -320,31 +180,10 @@
       var isSpring = lecName.indexOf('春') !== -1;
 
       var mainHtml = buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring);
-      // 通常料金ページを追加（チェックが入っていてセクションが選択されていれば）
-      var ncPageHtml = '';
-      var ncChk = document.getElementById('matIncludeNormalPricing');
-      if (ncChk && ncChk.checked && matNormalSectionsCache) {
-        var selectedSections = getSelectedNcSections_();
-        if (selectedSections.length > 0) {
-          ncPageHtml = '<div style="height:20px;background:#eee;"></div>' + buildNcPricingPage_(selectedSections, campusCode);
-        }
-      }
-      inner.innerHTML = mainHtml + ncPageHtml;
+      inner.innerHTML = mainHtml;
       resizeMatPreview();
     }
 
-    /**
-     * チェックボックスで選択されているセクションを返す
-     * @return {Array} セクション配列
-     */
-    function getSelectedNcSections_() {
-      if (!matNormalSectionsCache) return [];
-      var checkedIds = [];
-      document.querySelectorAll('.mat-nc-section-chk:checked').forEach(function(chk) {
-        checkedIds.push(chk.value);
-      });
-      return matNormalSectionsCache.filter(function(sec) { return checkedIds.indexOf(sec.id) !== -1; });
-    }
 
     /**
      * 配布物プレビューをコンテナ幅に合わせてスケーリングする（794px基準）
@@ -422,20 +261,7 @@
         }
 
         var canvases = [];
-
-        // 通常料金ページの追加判定
-        var ncChk = document.getElementById('matIncludeNormalPricing');
-        var ncPageHtml = '';
-        if (ncChk && ncChk.checked && matNormalSectionsCache) {
-          var selectedNcSecs = getSelectedNcSections_();
-          if (selectedNcSecs.length > 0) {
-            ncPageHtml = buildNcPricingPage_(selectedNcSecs, campusCode);
-          }
-        }
-
-        // gradePages + 通常料金ページ（あれば）を allPages として処理
-        var allPages = gradePages.map(function(pg) { return { type: 'lecture', pg: pg }; });
-        if (ncPageHtml) allPages.push({ type: 'normal', html: ncPageHtml });
+        var allPages = gradePages;
         var allPageIdx = 0;
 
         function renderNextPage_() {
@@ -446,14 +272,11 @@
             return;
           }
 
-          var current = allPages[allPageIdx];
+          var pg = allPages[allPageIdx];
           allPageIdx++;
 
           var pageHtml;
-          if (current.type === 'normal') {
-            pageHtml = current.html;
-          } else {
-            var pg = current.pg;
+          {
             var greeting = getMatGreeting_(pg.gradeGroup.key);
             pageHtml = buildMatOnePage_(pg.gradeGroup, pg.entries, campusName, campusCode, lecName, greeting, typeData, isSpring);
           }
