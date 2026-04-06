@@ -58,23 +58,6 @@
         .getAllowedUsers();
     }
 
-    function resetAllAccessPermissions() {
-      appConfirm('⚠️ アクセス許可を全リセットしますか？\n\n管理者を含む全員がアプリにアクセスできなくなります。\nリセット後は初回ウィザードから管理者を再登録してください。\n\n（生徒・成績・スケジュールなどのデータは削除されません）').then(function(ok) {
-        if (!ok) return;
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (result.success) {
-              location.reload();
-            } else {
-              showMessage('allowedUsersMessage', '❌ ' + result.error, 'error');
-            }
-          })
-          .withFailureHandler(function(err) {
-            showMessage('allowedUsersMessage', '❌ エラー: ' + err, 'error');
-          })
-          .resetAllAccessPermissions();
-      });
-    }
 
     function removeAllowedUser(email) {
       appConfirm(email + ' のアクセスを削除しますか？\n\n※ GoogleDriveフォルダの共有も解除されます').then(function(ok) {
