@@ -1618,10 +1618,12 @@ function generateAllAnalyses(year, testName, skipExisting) {
     var now = new Date().toISOString();
     var savedCount = 0;
 
-    // Step1: 全体分析（generateGradeAnalysis に委譲。scoreDistribution も含めて保存される）
-    var gradeResult = generateGradeAnalysis(year, testName, skipGradeAnalysis);
-    if (!gradeResult.success) {
-      return { success: false, error: 'テスト全体分析の生成に失敗しました: ' + gradeResult.error };
+    // Step1: 全体分析（skipGradeAnalysis=true のときはスキップして既存データを保持）
+    if (!skipGradeAnalysis) {
+      var gradeResult = generateGradeAnalysis(year, testName);
+      if (!gradeResult.success) {
+        return { success: false, error: 'テスト全体分析の生成に失敗しました: ' + gradeResult.error };
+      }
     }
 
     // Step2: 生徒別分析をバッチ処理（バッチごとに即座保存）
