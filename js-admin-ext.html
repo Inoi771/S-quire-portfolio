@@ -585,39 +585,75 @@
 
       appConfirm(confirmMsg).then(function(ok) {
         if (!ok) return;
-        btnSkip.disabled = true;
-        btnOverwrite.disabled = true;
-        statusEl.innerHTML = '<span style="color:#999;">AIが分析を生成しています。しばらくお待ちください...</span>';
 
-        google.script.run
-          .withSuccessHandler(function(result) {
-            btnSkip.disabled = false;
-            btnOverwrite.disabled = false;
-            if (result.success) {
-              if (result.skipped) {
-                statusEl.innerHTML = '<span style="color:#f57c00;">ℹ️ すべての分析が既に存在します（スキップしました）</span>';
-              } else if (skipExisting) {
-                statusEl.innerHTML = '<span style="color:#2e7d32;">✓ ' + result.studentCount + ' 人分の生徒別分析を新規生成しました（' + (result.skippedCount || 0) + ' 人はスキップ）</span>';
+        var autoRetryCount = 0;
+        var maxAutoRetry = 5;
+        var autoRetryTimer = null;
+        var cancelled = false;
+
+        function cancelAutoRetry() {
+          cancelled = true;
+          if (autoRetryTimer) clearTimeout(autoRetryTimer);
+          btnSkip.disabled = false;
+          btnOverwrite.disabled = false;
+          statusEl.innerHTML = '<span style="color:#999;">キャンセルしました。</span>';
+        }
+        window._cancelAnalysisAutoRetry = cancelAutoRetry;
+
+        function execute() {
+          btnSkip.disabled = true;
+          btnOverwrite.disabled = true;
+          var retryLabel = autoRetryCount > 0 ? '（' + autoRetryCount + '回目の続き）' : '';
+          statusEl.innerHTML = '<span style="color:#999;">AIが分析を生成しています' + retryLabel + '。しばらくお待ちください...</span>';
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              btnSkip.disabled = false;
+              btnOverwrite.disabled = false;
+              if (result.success) {
+                if (result.skipped) {
+                  statusEl.innerHTML = '<span style="color:#2e7d32;">✅ すべての分析が完了しています</span>';
+                } else if (skipExisting) {
+                  statusEl.innerHTML = '<span style="color:#2e7d32;">✅ ' + result.studentCount + ' 人分の生徒別分析を新規生成しました（' + (result.skippedCount || 0) + ' 人はスキップ）</span>';
+                } else {
+                  statusEl.innerHTML = '<span style="color:#2e7d32;">✅ テスト全体分析と ' + result.studentCount + ' 人分の生徒別分析を生成しました。</span>';
+                }
               } else {
-                statusEl.innerHTML = '<span style="color:#2e7d32;">✓ テスト全体分析と ' + result.studentCount + ' 人分の生徒別分析を生成しました。</span>';
+                statusEl.innerHTML = '<span style="color:#e53935;">❌ ' + result.error + '</span>';
               }
-            } else {
-              statusEl.innerHTML = '<span style="color:#e53935;">❌ ' + result.error + '</span>';
-            }
-          })
-          .withFailureHandler(function(err) {
-            btnSkip.disabled = false;
-            btnOverwrite.disabled = false;
-            var isAbort = (err.name === 'AbortError' || String(err).indexOf('AbortError') >= 0);
-            var retryMsg = skipExisting ? '「未分析のみ生成」' : '「全員を上書き生成」';
-            var errMsg = isAbort
-              ? 'バックグラウンドで処理中です。数分後に分析タブを確認し、まだ残っている場合は同じ' + retryMsg + 'を再度押してください。'
-              : '通信エラー: ' + err;
-            var color = isAbort ? '#f57c00' : '#e53935';
-            var icon = isAbort ? '⏳' : '❌';
-            statusEl.innerHTML = '<span style="color:' + color + ';">' + icon + ' ' + errMsg + '</span>';
-          })
-          .generateAllAnalyses(year, testName, skipExisting);
+            })
+            .withFailureHandler(function(err) {
+              var isAbort = (err.name === 'AbortError' || String(err).indexOf('AbortError') >= 0);
+              if (isAbort && !cancelled && autoRetryCount < maxAutoRetry) {
+                autoRetryCount++;
+                var waitSec = 120;
+                var remaining = waitSec;
+                statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で続きを実行します。'
+                  + ' <button onclick="window._cancelAnalysisAutoRetry()" style="margin-left:8px;padding:2px 8px;font-size:12px;cursor:pointer;">中止</button></span>';
+                var countdown = setInterval(function() {
+                  remaining -= 10;
+                  if (remaining <= 0 || cancelled) { clearInterval(countdown); return; }
+                  statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で続きを実行します。'
+                    + ' <button onclick="window._cancelAnalysisAutoRetry()" style="margin-left:8px;padding:2px 8px;font-size:12px;cursor:pointer;">中止</button></span>';
+                }, 10000);
+                autoRetryTimer = setTimeout(function() {
+                  clearInterval(countdown);
+                  if (!cancelled) execute();
+                }, waitSec * 1000);
+              } else {
+                btnSkip.disabled = false;
+                btnOverwrite.disabled = false;
+                if (isAbort) {
+                  statusEl.innerHTML = '<span style="color:#f57c00;">⏳ 処理はバックグラウンドで完了している可能性があります。分析タブを確認してください。</span>';
+                } else {
+                  statusEl.innerHTML = '<span style="color:#e53935;">❌ 通信エラー: ' + err + '</span>';
+                }
+              }
+            })
+            .generateAllAnalyses(year, testName, skipExisting);
+        }
+
+        execute();
       });
     }
 
