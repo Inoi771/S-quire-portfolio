@@ -344,6 +344,8 @@
 - `fbGetStudentGradeReport(year, studentId)` — 成績表用：指定生徒の全テスト成績と学校別平均
 - `fbSubmitGradeData(year, studentId, testName, scores, studentName)` — 成績upsert + gradesMeta年度更新
 - `fbGetGradesYearFolders()` — 年度一覧を取得（gradesMeta/yearsList優先、フォールバック時に自動修復）
+- `fbGetGradeSummary(year, testName)` — gradeSummaries 1件読み取り
+- `fbGetCampusAverages(year, testName)` — 校舎別平均点（gradeSummariesファストパス＋フォールバック）
 - `fbGetSchoolAverages(year, testName)` — 学校別平均点を取得
 - `fbGetGradeAnalysis(year, testName)` — テスト全体AI分析をFirestoreから直接取得（`testAnalysis`コレクション）
 - `fbGetStudentAnalysis(year, studentId, testName)` — 生徒別AI分析をFirestoreから直接取得（`studentAnalysis`コレクション、基礎学力テストのフォールバック対応）

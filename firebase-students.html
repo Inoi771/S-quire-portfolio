@@ -709,6 +709,25 @@ function fbGetSchoolAverages(year, testName) {
 }
 
 /**
+ * gradeSummaries から集計データを取得（Firebase SDK、1ドキュメント読み取り）
+ * @param {number} year 学年年度
+ * @param {string} testName テスト名
+ * @return {Promise<Object|null>} サマリーデータ or null
+ */
+function fbGetGradeSummary(year, testName) {
+  var docId = String(parseInt(year, 10)) + '_' + fbSafeTestName_(testName);
+  return fbDb.collection('gradeSummaries').doc(docId).get()
+    .then(function(docSnap) {
+      if (!docSnap.exists) return null;
+      return docSnap.data();
+    })
+    .catch(function(err) {
+      console.warn('fbGetGradeSummaryエラー:', err);
+      return null;
+    });
+}
+
+/**
  * 塾平均（校舎別）を計算（Firebase SDK）
  * google.script.run.getCampusAverages の代替
  * 全校舎の生徒成績データから校舎ごとの平均点を自動計算する
@@ -717,6 +736,44 @@ function fbGetSchoolAverages(year, testName) {
  * @return {Promise<Object>} { success, campuses }
  */
 function fbGetCampusAverages(year, testName) {
+  var targetTest = String(testName || '').trim();
+  var yearInt = parseInt(year, 10);
+
+  // ファストパス: gradeSummaries から取得（1ドキュメント読み取り）
+  var summaryDocId = String(yearInt) + '_' + fbSafeTestName_(testName);
+  return fbDb.collection('gradeSummaries').doc(summaryDocId).get()
+    .then(function(docSnap) {
+      if (docSnap.exists && docSnap.data().campusAverages) {
+        var data = docSnap.data();
+        var campuses = [];
+        Object.keys(data.campusAverages).forEach(function(code) {
+          var avg = data.campusAverages[code];
+          campuses.push({
+            campusCode: code,
+            campusName: code === 'all' ? '全校舎' : (window._campusConfigCache && window._campusConfigCache[code] || code),
+            count: avg.count || 0,
+            kokugo: avg.kokugo, shakai: avg.shakai, sugaku: avg.sugaku,
+            rika: avg.rika, eigo: avg.eigo, total: avg.total
+          });
+        });
+        campuses.sort(function(a, b) {
+          if (a.campusCode === 'all') return -1;
+          if (b.campusCode === 'all') return 1;
+          return a.campusCode.localeCompare(b.campusCode);
+        });
+        return { success: true, campuses: campuses };
+      }
+      // フォールバック: サマリーなし → フル計算
+      return fbGetCampusAveragesFull_(year, testName);
+    })
+    .catch(function(err) {
+      console.warn('gradeSummariesファストパス失敗、フォールバック:', err);
+      return fbGetCampusAveragesFull_(year, testName);
+    });
+}
+
+/** フォールバック: 全成績から校舎平均を計算 */
+function fbGetCampusAveragesFull_(year, testName) {
   var targetTest = String(testName || '').trim();
   var yearInt = parseInt(year, 10);
 

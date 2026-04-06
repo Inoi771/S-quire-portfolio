@@ -98,7 +98,7 @@
 - `restoreStudent(studentId)` — `@aiCallable` 生徒復元
 - `ocrAndSaveGradeSheet(base64Image, mimeType, year)` — `@aiCallable` 成績画像OCR一括保存
 - `getGradeDataByStudentAndTest(year, studentId, testName)` — `@aiCallable` 既存成績1件取得
-- `submitGradeData(year, studentId, testName, scores)` — `@aiCallable` 成績 upsert + gradesMeta年度更新
+- `submitGradeData(year, studentId, testName, scores, skipSummaryUpdate)` — `@aiCallable` 成績 upsert + gradesMeta年度更新 + gradeSummaries再計算（skipSummaryUpdate=trueで一括時スキップ）
 - `getStudentsWithGradesByTest(year, campusCode, testName)` — `@aiCallable` 指定テスト名の成績がある生徒一覧を校舎でフィルタして返す（成績表タブ用）
 - `getStudentGradeReport(year, studentId)` — `@aiCallable` 成績表用：指定生徒の全テスト成績と学校別平均を取得
 - `bulkImportStudents(studentsJson, importYear)` — 生徒を一括インポート（Admin のみ。ふりがな省略可。JSON文字列 `[{campusCode, gradeCode, sei, mei}]`。importYear 省略時は現在年度。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）
@@ -106,6 +106,11 @@
 - `saveExamResult(studentId, examDataJson)` — `@aiCallable` 中3生徒の受験情報を生徒マスタ列10〜16に保存。`examDataJson`: `{jukoukou1, jukoukou1_gakka, jukoukou1_gokaku, ikusei, jukoukou2, jukoukou2_gakka, jukoukou2_gokaku}`
 - `getStudentExamData(studentId, fiscalYear)` — `@aiCallable` 生徒の受験情報（生徒マスタ列10〜16）と最新テストの第1志望校を取得。戻り値: `{ success, examData: {...}, latestGrade: {shogaku1, shogaku1_gakka} }`
 - `getStudentPlacementData(year)` — `@aiCallable` 進学先一覧取得。指定年度の中3生（学年コード15）全員について第1〜第3回基礎学力テストの合計点・平均・進学先を返す。戻り値: `[{studentId, name, campus, score1, score2, score3, avg, placement, placementSchool}]`
+- `makeSummaryDocId_(year, testName)` — gradeSummaries ドキュメントID生成ヘルパー
+- `getGradeSummary(year, testName)` — gradeSummaries 1件読み取り
+- `rebuildGradeSummary(year, testName)` — gradeSummaries を再計算して保存
+- `rebuildAllGradeSummaries()` — Admin専用。全年度×全テスト名の gradeSummaries を一括再構築
+- `getCampusAverages(year, testName)` — `@aiCallable` 校舎別平均点（gradeSummariesファストパス＋フォールバック）
 ### セクション8-B: AI成績分析・生徒別AI分析（analysis.js）
 - `getAnalysisSheet(year)` — AI分析シート取得/作成ヘルパー
 - `getGradeAnalysis(year, testName)` — `@aiCallable` 保存済みAI分析データの取得（`{ exists, analysis, generatedAt }`）
