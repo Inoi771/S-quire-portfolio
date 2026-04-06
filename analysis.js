@@ -1212,29 +1212,27 @@ function generateAllAnalyses(year, testName, skipExisting) {
 
     var testNameTrimmed = String(testName).trim();
 
-    // skipExisting=true のとき、既存データの事前チェックを行う
+    // 既存の生徒別分析を取得（skipExisting: スキップ判定用 / 上書き: 優先順ソート用）
     var skipGradeAnalysis = false;
     var existingStudentKeys = {};
+    var existingDocs = [];
     var skippedStudentCount = 0;
+    try {
+      existingDocs = firestoreQuery_('studentAnalysis', [
+        fsFilter_('testName', 'EQUAL', String(testName).trim()),
+        fsFilter_('year', 'EQUAL', parseInt(year, 10))
+      ]);
+      existingDocs.forEach(function(doc) {
+        var eskipId = String(doc.studentId || '').trim();
+        if (/^\d+$/.test(eskipId) && eskipId.length < 10) eskipId = eskipId.padStart(10, '0');
+        existingStudentKeys[eskipId + '|' + String(testName).trim()] = true;
+      });
+    } catch (e) {
+      Logger.log('⚠ generateAllAnalyses 既存分析取得スキップ: ' + e);
+    }
     if (skipExisting) {
       var existingGrade = getGradeAnalysis(year, testName);
-      if (existingGrade.exists) {
-        skipGradeAnalysis = true;
-      }
-      // Firestore から既存の生徒別分析キーを取得（testName が一致するドキュメント）
-      try {
-        var existingDocs = firestoreQuery_('studentAnalysis', [
-          fsFilter_('testName', 'EQUAL', String(testName).trim()),
-          fsFilter_('year', 'EQUAL', parseInt(year, 10))
-        ]);
-        existingDocs.forEach(function(doc) {
-          var eskipId = String(doc.studentId || '').trim();
-          if (/^\d+$/.test(eskipId) && eskipId.length < 10) eskipId = eskipId.padStart(10, '0');
-          existingStudentKeys[eskipId + '|' + String(testName).trim()] = true;
-        });
-      } catch (e) {
-        Logger.log('⚠ generateAllAnalyses skipExisting チェックスキップ: ' + e);
-      }
+      if (existingGrade.exists) skipGradeAnalysis = true;
     }
 
     // ==========================================
@@ -1400,6 +1398,25 @@ function generateAllAnalyses(year, testName, skipExisting) {
       if (skipGradeAnalysis && targetStudents.length === 0) {
         return { success: true, studentCount: 0, skippedCount: skippedStudentCount, skipped: true,
                  message: 'すべての分析が既に存在します（スキップしました）', generatedAt: new Date().toISOString() };
+      }
+    } else {
+      // 上書きモード: 未分析・古い分析の生徒を優先処理（タイムアウト時も毎回未処理が先に来る）
+      try {
+        var overwriteTimestamps = {};
+        existingDocs.forEach(function(doc) {
+          var sid = String(doc.studentId || '').trim();
+          if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+          overwriteTimestamps[sid] = doc.generatedAt || '';
+        });
+        targetStudents.sort(function(a, b) {
+          var ta = overwriteTimestamps[String(a.studentId).padStart(10, '0')] || '';
+          var tb = overwriteTimestamps[String(b.studentId).padStart(10, '0')] || '';
+          if (ta < tb) return -1;
+          if (ta > tb) return 1;
+          return 0;
+        });
+      } catch (e) {
+        Logger.log('⚠ 上書きソートスキップ: ' + e);
       }
     }
 
