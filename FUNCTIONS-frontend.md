@@ -338,10 +338,10 @@
 **【Firebase SDK クライアントサイド関数】** (`firebase-students.html`)
 - `fbGetMasterData(year)` — アクティブ生徒一覧を取得
 - `fbGetDeletedStudents(campusCode, gradeCode, selectedYear)` — 削除済み生徒一覧を取得
-- `fbGetStudentListWithGrades(year, testName)` — 生徒マスタと成績データを結合して返す
+- `fbGetStudentListWithGrades(year, testName)` — 生徒マスタと成績データを結合して返す（gradeListCacheファストパス＋フォールバック）
 - `fbGetGradeDataByStudentAndTest(year, studentId, testName)` — 成績データ1件を取得
 - `fbGetStudentsWithGradesByTest(year, campusCode, testName)` — 指定テストの成績がある生徒一覧（校舎フィルタ）
-- `fbGetStudentGradeReport(year, studentId)` — 成績表用：指定生徒の全テスト成績と学校別平均
+- `fbGetStudentGradeReport(year, studentId)` — 成績表用：指定生徒の全テスト成績と学校別平均（gradeReportCacheファストパス＋フォールバック）
 - `fbSubmitGradeData(year, studentId, testName, scores, studentName)` — 成績upsert + gradesMeta年度更新
 - `fbGetGradesYearFolders()` — 年度一覧を取得（gradesMeta/yearsList優先、フォールバック時に自動修復）
 - `fbGetGradeSummary(year, testName)` — gradeSummaries 1件読み取り

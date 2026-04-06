@@ -161,12 +161,33 @@ function fbGetDeletedStudents(campusCode, gradeCode, selectedYear) {
 
 /**
  * 一覧表用：生徒マスタと成績データを結合して返す（Firebase SDK）
- * google.script.run.getStudentListWithGrades の代替
+ * gradeListCache優先（1ドキュメント読み取り）、フォールバックで3クエリ
  * @param {number} year 年度
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, students, error }
  */
 function fbGetStudentListWithGrades(year, testName) {
+  var targetTest = String(testName || '').trim();
+  var yearInt    = parseInt(year, 10);
+
+  // ファストパス: gradeListCache から取得（1ドキュメント読み取り）
+  var cacheDocId = String(yearInt) + '_' + fbSafeTestName_(testName);
+  return fbDb.collection('gradeListCache').doc(cacheDocId).get()
+    .then(function(docSnap) {
+      if (docSnap.exists && docSnap.data().students && docSnap.data().students.length > 0) {
+        return { success: true, students: docSnap.data().students };
+      }
+      // フォールバック: キャッシュなし → 従来の3クエリ
+      return fbGetStudentListWithGradesFull_(year, testName);
+    })
+    .catch(function(err) {
+      console.warn('gradeListCacheファストパス失敗、フォールバック:', err);
+      return fbGetStudentListWithGradesFull_(year, testName);
+    });
+}
+
+/** フォールバック: 3クエリで一覧表データを取得 */
+function fbGetStudentListWithGradesFull_(year, testName) {
   var targetTest = String(testName || '').trim();
   var yearInt    = parseInt(year, 10);
 
@@ -370,8 +391,7 @@ function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
 
 /**
  * 成績表用：指定生徒の全テスト成績と学校別平均を取得する（Firebase SDK）
- * google.script.run.getStudentGradeReport の代替
- * sigma値はデフォルト値を使用（カスタム設定がある場合は getStudentGradeReport(GAS)を使用）
+ * gradeReportCache優先（1ドキュメント読み取り）、フォールバックで従来クエリ
  * @param {number} year 学年年度
  * @param {string} studentId 生徒ID
  * @return {Promise<Object>} { success, student, grades, testNames, schoolAverages, deviationValues, error }
@@ -382,6 +402,36 @@ function fbGetStudentGradeReport(year, studentId) {
   }
 
   var targetId = String(studentId).trim();
+  if (/^\d+$/.test(targetId) && targetId.length < 10) targetId = targetId.padStart(10, '0');
+  var yearInt  = parseInt(year, 10);
+
+  // ファストパス: gradeReportCache から取得（1ドキュメント読み取り）
+  return fbDb.collection('gradeReportCache').doc(String(yearInt)).get()
+    .then(function(docSnap) {
+      if (docSnap.exists && docSnap.data().reports && docSnap.data().reports[targetId]) {
+        var report = docSnap.data().reports[targetId];
+        return {
+          success: true,
+          student: report.student,
+          grades: report.grades,
+          testNames: report.testNames,
+          schoolAverages: report.schoolAverages,
+          deviationValues: report.deviationValues
+        };
+      }
+      // フォールバック: キャッシュなし → 従来クエリ
+      return fbGetStudentGradeReportFull_(year, studentId);
+    })
+    .catch(function(err) {
+      console.warn('gradeReportCacheファストパス失敗、フォールバック:', err);
+      return fbGetStudentGradeReportFull_(year, studentId);
+    });
+}
+
+/** フォールバック: 従来クエリで成績表データを取得 */
+function fbGetStudentGradeReportFull_(year, studentId) {
+  var targetId = String(studentId).trim();
+  if (/^\d+$/.test(targetId) && targetId.length < 10) targetId = targetId.padStart(10, '0');
   var yearInt  = parseInt(year, 10);
   var sigmaDefaults = { kokugo: 15, shakai: 18, sugaku: 23, rika: 20, eigo: 20, total: 100 };
 
