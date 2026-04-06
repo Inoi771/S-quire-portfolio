@@ -7,6 +7,7 @@
     var matLecPricingData = null;  // 講習別料金データのキャッシュ（typeId → {rows:[{type,gradeKey,duration,count,internal,external}]}）
     var matEntriesCache = {};  // プレビュー用エントリキャッシュ: "lectureId_campusCode" → entries[]
     var matGreetingsData_ = null;  // 講習別学年挨拶文キャッシュ { typeId: { gradeKey: "挨拶文" } }
+    var matActiveGradeKey_ = null; // 現在選択中の学年タブキー
 
     // 中3限定講習タイプ（基礎学力テスト・入試直前）
     var MAT_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
@@ -154,15 +155,17 @@
     }
 
     /**
-     * 配布物プレビューを更新する（キャッシュ利用・同期的）
+     * 配布物プレビューを更新する（学年タブ描画 + アクティブ学年の1ページ表示）
      */
     function updateMatPreview() {
       var inner = document.getElementById('mat-preview-inner');
+      var tabNav = document.getElementById('mat-grade-tab-nav');
       if (!inner) return;
 
       var lectureId = currentLectureId;
       if (!lectureId) {
         inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">講習を選択するとプレビューが表示されます</div>';
+        if (tabNav) tabNav.innerHTML = '';
         resizeMatPreview();
         return;
       }
@@ -171,7 +174,6 @@
       var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
       var campusName = (campusData && campusCode && campusData[campusCode])
         ? campusData[campusCode] : (campusCode || '（校舎未選択）');
-      var fy = parseInt((lectureId || '').split('-')[0], 10);
       var lecName = period ? period.name : lectureId;
       var cacheKey = lectureId + '_' + campusCode;
       var entries = (campusCode && matEntriesCache[cacheKey]) ? matEntriesCache[cacheKey] : [];
@@ -179,9 +181,70 @@
       var typeData = (matLecPricingData && matLecPricingData[typeId]) ? matLecPricingData[typeId] : null;
       var isSpring = lecName.indexOf('春') !== -1;
 
-      var mainHtml = buildMaterialsDocHTML(entries, campusName, campusCode, fy, lecName, typeData, isSpring);
-      inner.innerHTML = mainHtml;
+      // 学年グループ別にエントリを仕分けして gradePages を構築
+      var isChu3Only = MAT_CHU3_ONLY_TYPES_.indexOf(typeId) !== -1;
+      var targetGroups = isChu3Only
+        ? MAT_GRADE_GROUPS_.filter(function(g) { return g.key === 'chu3'; })
+        : MAT_GRADE_GROUPS_;
+      var gradePages = [];
+      targetGroups.forEach(function(grp) {
+        var grpEntries = (entries || []).filter(function(e) {
+          var gc = String(e.grade || '').trim();
+          if (/^\d+$/.test(gc) && gc.length < 2) gc = gc.padStart(2, '0');
+          return grp.codes.indexOf(gc) !== -1;
+        });
+        if (grpEntries.length > 0) {
+          gradePages.push({ gradeGroup: grp, entries: grpEntries, campusName: campusName, campusCode: campusCode, lecName: lecName, typeData: typeData, isSpring: isSpring });
+        }
+      });
+
+      // タブを描画（アクティブキーが存在しない場合は最初の学年にリセット）
+      var activeExists = gradePages.some(function(p) { return p.gradeGroup.key === matActiveGradeKey_; });
+      if (!activeExists && gradePages.length > 0) matActiveGradeKey_ = gradePages[0].gradeGroup.key;
+      renderMatGradeTabs_(gradePages);
+
+      if (gradePages.length === 0) {
+        inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#bbb;font-size:14px;">（選択した校舎にデータがありません）</div>';
+        resizeMatPreview();
+        return;
+      }
+
+      // アクティブ学年の1ページ分を描画
+      var activePage = gradePages.find(function(p) { return p.gradeGroup.key === matActiveGradeKey_; });
+      var greeting = getMatGreeting_(activePage.gradeGroup.key);
+      inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring);
       resizeMatPreview();
+    }
+
+    /**
+     * 学年タブバーを描画する
+     * @param {Array} gradePages {gradeGroup, entries, ...} の配列
+     */
+    function renderMatGradeTabs_(gradePages) {
+      var tabNav = document.getElementById('mat-grade-tab-nav');
+      if (!tabNav) return;
+      if (gradePages.length === 0) { tabNav.innerHTML = ''; return; }
+      var html = '';
+      gradePages.forEach(function(p) {
+        var key = p.gradeGroup.key;
+        var isActive = key === matActiveGradeKey_;
+        var style = 'background:none;border:none;padding:6px 12px;font-size:13px;cursor:pointer;'
+          + (isActive
+            ? 'color:#667eea;font-weight:600;border-bottom:2px solid #667eea;'
+            : 'color:#999;font-weight:normal;border-bottom:2px solid transparent;');
+        html += '<button onclick="switchMatGradeTab_(\'' + key + '\')" style="' + style + '">'
+              + escapeHtmlMat_(p.gradeGroup.label) + '</button>';
+      });
+      tabNav.innerHTML = html;
+    }
+
+    /**
+     * 学年タブを切り替える
+     * @param {string} gradeKey MAT_GRADE_GROUPS_ の key
+     */
+    function switchMatGradeTab_(gradeKey) {
+      matActiveGradeKey_ = gradeKey;
+      updateMatPreview();
     }
 
 
@@ -577,7 +640,7 @@
 
       // 2. タイトル
       html += '<div style="text-align:center;font-size:16pt;font-weight:bold;margin:4px 0 10px;letter-spacing:0.05em;">';
-      html += escapeHtmlMat_(lecName) + 'のお知らせ（' + escapeHtmlMat_(gradeGroup.label) + '）';
+      html += escapeHtmlMat_(lecName) + 'のお知らせ';
       html += '</div>';
 
       // 3. 挨拶文
@@ -615,54 +678,71 @@
     }
 
     /**
-     * 講習日程テーブルを生成する（科目×日付をグルーピングして1行に集約）
+     * 講習日程テーブルを生成する（HP掲載用と同じ形式：科目rowspan・fmtDates_・endTime_ 使用）
      * @param {Array} entries エントリ一覧
      * @return {string} HTML文字列
      */
     function buildMatScheduleTable_(entries) {
-      var rowMap = {};
+      if (!entries || entries.length === 0) {
+        return '<p style="color:#888;font-size:9.5pt;margin-bottom:8px;">（日程データがありません）</p>';
+      }
+
+      var cellBase = 'border:1px solid black;padding:3px 6px;font-size:8.5px;vertical-align:middle;';
+      var cellSubj = cellBase + 'width:56px;text-align:center;font-weight:bold;white-space:nowrap;';
+      var cellDate = cellBase + 'word-break:break-word;';
+      var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
+
+      // 科目ごとに (startTime, durationSlots) → dates[] のグループを作成
+      var subjectMap = {};
       (entries || []).forEach(function(e) {
-        var key = (e.subject || '') + '|' + (e.startTime || '') + '|' + (e.durationSlots || 0);
-        if (!rowMap[key]) {
-          rowMap[key] = { subject: e.subject || '', startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+        var subj = e.subject || '';
+        var key = (e.startTime || '') + '|' + (e.durationSlots || 0);
+        if (!subjectMap[subj]) subjectMap[subj] = {};
+        if (!subjectMap[subj][key]) {
+          subjectMap[subj][key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
         }
-        if (e.date) rowMap[key].dates.push(e.date);
+        if (e.date) subjectMap[subj][key].dates.push(e.date);
       });
 
-      var rows = Object.keys(rowMap).map(function(k) { return rowMap[k]; });
-      rows.forEach(function(r) { r.dates.sort(); });
-      rows.sort(function(a, b) {
-        var ai = MAT_SUBJECT_ORDER_.indexOf(a.subject);
-        var bi = MAT_SUBJECT_ORDER_.indexOf(b.subject);
-        if (ai === -1) ai = 999;
-        if (bi === -1) bi = 999;
-        if (ai !== bi) return ai - bi;
-        return a.startTime < b.startTime ? -1 : 1;
+      // 科目を MAT_SUBJECT_ORDER_ 順 + 未登録科目は末尾に追加
+      var subjects = MAT_SUBJECT_ORDER_.filter(function(s) { return subjectMap[s]; });
+      Object.keys(subjectMap).forEach(function(s) {
+        if (MAT_SUBJECT_ORDER_.indexOf(s) === -1) subjects.push(s);
       });
 
-      if (rows.length === 0) {
+      if (subjects.length === 0) {
         return '<p style="color:#888;font-size:9.5pt;margin-bottom:8px;">（日程データがありません）</p>';
       }
 
       var html = '<div style="margin-bottom:8px;">';
       html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:4px;">○講習日時</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">';
-      html += '<tr>';
-      ['科目', '日程', '時間'].forEach(function(h) {
-        html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + h + '</th>';
+      html += '<table style="width:100%;border-collapse:collapse;">';
+      html += '<thead><tr>';
+      html += '<th style="' + cellSubj + 'background:#f0f0f0;">科目</th>';
+      html += '<th style="' + cellDate + 'background:#f0f0f0;text-align:center;font-weight:bold;">日程</th>';
+      html += '<th style="' + cellTime + 'background:#f0f0f0;">時間</th>';
+      html += '</tr></thead><tbody>';
+
+      subjects.forEach(function(subject) {
+        var groups = Object.keys(subjectMap[subject]).map(function(k) { return subjectMap[subject][k]; });
+        groups.sort(function(a, b) { return a.startTime < b.startTime ? -1 : 1; });
+        groups.forEach(function(grp) { grp.dates.sort(); });
+        var rowCount = groups.length;
+        groups.forEach(function(grp, idx) {
+          var et = endTime_(grp.startTime, grp.durationSlots);
+          var timeStr = et ? (grp.startTime + '～' + et) : (grp.startTime || '');
+          var dateStr = fmtDates_(grp.dates);
+          html += '<tr>';
+          if (idx === 0) {
+            html += '<td rowspan="' + rowCount + '" style="' + cellSubj + '">' + escapeHtmlMat_(subject) + '</td>';
+          }
+          html += '<td style="' + cellDate + '">' + escapeHtmlMat_(dateStr) + '</td>';
+          html += '<td style="' + cellTime + '">' + escapeHtmlMat_(timeStr) + '</td>';
+          html += '</tr>';
+        });
       });
-      html += '</tr>';
-      rows.forEach(function(r) {
-        var dateStr = r.dates.map(function(d) { return matFormatDate_(d); }).join('・');
-        var endTime = matCalcEndTime_(r.startTime, r.durationSlots);
-        var timeStr = (r.startTime && endTime) ? (r.startTime + ' 〜 ' + endTime) : (r.startTime || '');
-        html += '<tr>';
-        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;white-space:nowrap;">' + escapeHtmlMat_(r.subject) + '</td>';
-        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;">' + escapeHtmlMat_(dateStr) + '</td>';
-        html += '<td style="border:1px solid #555;padding:4px 6px;text-align:center;white-space:nowrap;">' + escapeHtmlMat_(timeStr) + '</td>';
-        html += '</tr>';
-      });
-      html += '</table></div>';
+
+      html += '</tbody></table></div>';
       return html;
     }
 
