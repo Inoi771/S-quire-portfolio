@@ -2,6 +2,9 @@
 // ===== Firebase 生徒データ クライアントサイド関数 =====
 // firebase-init.html で初期化された fbDb を使用
 
+// クライアントサイドキャッシュ（ページ読み込みごとにリセット）
+var _fbMasterDataCache = {}; // { year: Promise<Array> } — 同一年度の重複読み取りを防ぐ
+
 /**
  * 内部ヘルパー: Firestoreドキュメントから年度に合わせた生徒データを計算して返す
  * @param {Object} doc Firestoreドキュメントデータ
@@ -47,7 +50,10 @@ function fbComputeStudentForYear_(doc, docId, year) {
  * @return {Promise<Array>} 生徒データ配列
  */
 function fbGetMasterData(year) {
-  return fbDb.collection('students')
+  var cacheKey = String(year);
+  if (_fbMasterDataCache[cacheKey]) return _fbMasterDataCache[cacheKey];
+  // Promise をキャッシュすることで、並列呼び出し時も1回だけ読み取りが発生する
+  _fbMasterDataCache[cacheKey] = fbDb.collection('students')
     .where('isDeleted', '==', false)
     .get()
     .then(function(snapshot) {
@@ -58,6 +64,7 @@ function fbGetMasterData(year) {
       });
       return results;
     });
+  return _fbMasterDataCache[cacheKey];
 }
 
 /**
