@@ -609,7 +609,7 @@
             btnSkip.disabled = false;
             btnOverwrite.disabled = false;
             var errMsg = (err.name === 'AbortError' || String(err).indexOf('AbortError') >= 0)
-              ? '処理がタイムアウトしました（GASの6分制限）。一部の生徒は分析済みです。「スキップ」ボタンで再実行すると続きから処理できます。'
+              ? '処理がタイムアウトしました（GASの6分制限）。一部の生徒は分析済みです。「未分析のみ生成」ボタンで再実行すると続きから処理できます。'
               : '通信エラー: ' + err;
             statusEl.innerHTML = '<span style="color:#e53935;">❌ ' + errMsg + '</span>';
           })
