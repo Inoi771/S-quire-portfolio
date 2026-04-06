@@ -994,10 +994,8 @@
         scrollArea.style.overflowY = 'auto';
       }
 
-      // 最初の生徒を表示し、完了後にバックグラウンド先読みを開始
-      loadStudentReport(function() {
-        prefetchReportStudents_(students, 0);
-      });
+      // 最初の生徒を表示
+      loadStudentReport();
     }
 
     /**
@@ -1104,49 +1102,6 @@
       fbGetStudentAnalysis(currentFiscalYear, studentId, selectedTest)
         .then(function(result) { analysisResult = result; tryRender(); })
         .catch(function() { analysisResult = { success: false }; tryRender(); });
-    }
-
-    /**
-     * 残りの生徒データをバックグラウンドで順次先読みしてキャッシュに保存する
-     * 「表示する」直後に最初の生徒の次から実行される
-     * @param {Array} students 生徒リスト
-     * @param {number} doneIdx 処理済みのインデックス（最初の生徒は0）
-     */
-    function prefetchReportStudents_(students, doneIdx) {
-      var nextIdx = doneIdx + 1;
-      if (nextIdx >= students.length) return;
-
-      var studentId    = students[nextIdx].studentId;
-      var selectedTest = (document.getElementById('report-test') || {}).value || '';
-
-      // すでにキャッシュ済みならスキップして次へ
-      if (reportDataCache[studentId]) {
-        prefetchReportStudents_(students, nextIdx);
-        return;
-      }
-
-      var gradeResult    = null;
-      var analysisResult = null;
-      var loaded         = 0;
-
-      function onDone() {
-        loaded++;
-        if (loaded < 2) return;
-        if (gradeResult && gradeResult.success) {
-          var analysis = (analysisResult && analysisResult.success && analysisResult.exists) ? analysisResult.analysis : null;
-          reportDataCache[studentId] = { gradeResult: gradeResult, analysis: analysis };
-        }
-        // 次の生徒を先読み
-        prefetchReportStudents_(students, nextIdx);
-      }
-
-      fbGetStudentGradeReport(currentFiscalYear, studentId)
-        .then(function(r) { gradeResult = r; onDone(); })
-        .catch(function()  { gradeResult = { success: false }; onDone(); });
-
-      fbGetStudentAnalysis(currentFiscalYear, studentId, selectedTest)
-        .then(function(r) { analysisResult = r; onDone(); })
-        .catch(function()  { analysisResult = { success: false }; onDone(); });
     }
 
     /**

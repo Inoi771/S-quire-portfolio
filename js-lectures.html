@@ -744,6 +744,10 @@
       // 自動更新タイマーをリセット・開始（30秒ごとに全校舎を静かに再取得）
       if (lecAutoRefreshTimer) { clearInterval(lecAutoRefreshTimer); }
       lecAutoRefreshTimer = setInterval(function() {
+        // メインの講習タブまたはブラウザタブが非アクティブなら何もしない
+        var lecTab = document.getElementById('lectures');
+        if (!lecTab || !lecTab.classList.contains('active')) return;
+        if (document.hidden) return;
         // 日程作成サブタブが非表示なら何もしない
         var schedEl = document.getElementById('lectures-schedule');
         if (!schedEl || schedEl.style.display === 'none') return;
