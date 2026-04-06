@@ -1112,8 +1112,11 @@ function calculateTotal() {
           renderAnalysisResult(result.analysis, result.generatedAt, testName);
         })
         .withFailureHandler(function(err) {
+          var errMsg = (err.name === 'AbortError' || String(err).indexOf('AbortError') >= 0)
+            ? '処理がタイムアウトしました。管理タブ → AI成績分析 から一括生成してください。'
+            : 'エラー: ' + err;
           document.getElementById('analysis-result-container').innerHTML =
-            '<p style="color:red;padding:20px;font-size:13px;">❌ エラー: ' + err + '</p>';
+            '<p style="color:red;padding:20px;font-size:13px;">❌ ' + errMsg + '</p>';
         })
         .generateGradeAnalysis(year, testName);
     }
