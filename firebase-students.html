@@ -498,16 +498,27 @@ function fbGetStudentGradeReportFull_(year, studentId) {
       if (uniqueTests.indexOf(g.testName) === -1) uniqueTests.push(g.testName);
     });
 
-    var avgPromises = uniqueTests.map(function(tname) {
-      var docId = String(yearInt) + '_' + fbSafeTestName_(tname);
-      return fbDb.collection('schoolAverages').doc(docId).get()
-        .then(function(docSnap) {
-          return { testName: tname, averages: (docSnap.exists && docSnap.data().averages) ? docSnap.data().averages : [] };
-        })
-        .catch(function() { return { testName: tname, averages: [] }; });
-    });
+    var avgPromise = fbDb.collection('schoolAverages')
+      .where('year', '==', yearInt).get()
+      .then(function(querySnap) {
+        var fetched = {};
+        querySnap.forEach(function(docSnap) {
+          var data = docSnap.data();
+          if (data.testName && data.averages) {
+            fetched[data.testName] = data.averages;
+          }
+        });
+        return uniqueTests.map(function(tname) {
+          return { testName: tname, averages: fetched[tname] || [] };
+        });
+      })
+      .catch(function() {
+        return uniqueTests.map(function(tname) {
+          return { testName: tname, averages: [] };
+        });
+      });
 
-    return Promise.all(avgPromises).then(function(avgResults) {
+    return avgPromise.then(function(avgResults) {
       var schoolAverages = {};
       var studentSchool = (student.schoolName || '').trim();
 
