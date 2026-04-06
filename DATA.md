@@ -150,7 +150,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
 | `grades` | `{studentId}_{safe(testName)}` | 成績データ |
-| `schoolAverages` | `{year}_{safe(school)}_{safe(testName)}` | 学校別平均点 |
+| `schoolAverages` | `{year}_{safe(testName)}` | 学校別平均点 |
 | `testAnalysis` | `{year}_{safe(testName)}` | テスト全体AI分析 |
 | `studentAnalysis` | `{studentId}_{safe(testName)}` | 生徒別AI分析 |
 | `distCache` | `{year}_{safe(testName)}_dist` | 成績分析の分布キャッシュ |
