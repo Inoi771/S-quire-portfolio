@@ -617,6 +617,14 @@ function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
     studentName:    String(studentName || '')
   })
   .then(function() {
+    // gradesMeta/yearsList に年度を追加（fire-and-forget）
+    var fy = parseInt(year, 10);
+    fbDb.collection('gradesMeta').doc('yearsList').set({
+      years: firebase.firestore.FieldValue.arrayUnion(fy),
+      updatedAt: new Date().toISOString()
+    }, { merge: true }).catch(function(e) {
+      console.warn('gradesMeta更新スキップ:', e);
+    });
     return { success: true, message: '成績データを保存しました' };
   })
   .catch(function(err) {
@@ -627,28 +635,50 @@ function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
 
 /**
  * 成績データの年度一覧を取得（Firebase SDK）
- * grades コレクションの全ドキュメントから fiscalYear を収集して返す
+ * gradesMeta/yearsList から取得（1ドキュメント読み取り）。未作成時は全件取得+自動修復。
  * @return {Promise<Object>} { success, years, error }
  */
 function fbGetGradesYearFolders() {
-  // 認証チェック（未認証だとFirestoreルールでブロックされる）
   if (!window.fbCurrentUser) {
     return Promise.resolve({ success: false, error: '認証されていません。ページを再読み込みしてください。' });
   }
-  return fbDb.collection('grades').get()
-    .then(function(snapshot) {
-      var yearSet = {};
-      snapshot.forEach(function(docSnap) {
-        var doc = docSnap.data();
-        if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
+
+  var now = new Date();
+  var currentFy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+
+  return fbDb.collection('gradesMeta').doc('yearsList').get()
+    .then(function(docSnap) {
+      if (docSnap.exists) {
+        var data = docSnap.data();
+        if (data.years && data.years.length > 0) {
+          var yearSet = {};
+          data.years.forEach(function(y) { yearSet[String(y)] = true; });
+          yearSet[String(currentFy)] = true;
+          var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
+          years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
+          return { success: true, years: years };
+        }
+      }
+      // フォールバック: メタ未作成時は全件取得 + 自動修復
+      return fbDb.collection('grades').get().then(function(snapshot) {
+        var yearSet2 = {};
+        snapshot.forEach(function(ds) {
+          var doc = ds.data();
+          if (doc.fiscalYear) yearSet2[String(doc.fiscalYear)] = true;
+        });
+        yearSet2[String(currentFy)] = true;
+        var years2 = Object.keys(yearSet2).filter(function(y) { return /^\d{4}$/.test(y); });
+        years2.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
+
+        // 自動修復: メタドキュメントを作成（fire-and-forget）
+        var intYears = years2.map(function(y) { return parseInt(y, 10); });
+        fbDb.collection('gradesMeta').doc('yearsList').set({
+          years: intYears,
+          updatedAt: new Date().toISOString()
+        }).catch(function(e) { console.warn('gradesMeta自動修復スキップ:', e); });
+
+        return { success: true, years: years2 };
       });
-      // 現在の年度は成績データがなくても常に含める
-      var now = new Date();
-      var currentFy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
-      yearSet[String(currentFy)] = true;
-      var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
-      years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-      return { success: true, years: years };
     })
     .catch(function(err) {
       console.error('fbGetGradesYearFoldersエラー:', err);
