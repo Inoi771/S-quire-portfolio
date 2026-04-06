@@ -83,7 +83,7 @@
 
 ### セクション8: 成績管理（生徒・成績データ）
 - `getGradesFolder()` — 成績管理フォルダ取得
-- `getGradesYearFolders()` — `@aiCallable` 年度フォルダ一覧
+- `getGradesYearFolders()` — `@aiCallable` 年度フォルダ一覧（gradesMeta/yearsList優先、フォールバック時に自動修復）
 - `getSettingsFolder()` — 設定フォルダ取得
 - `getCurrentFiscalYear()` — 現在の学年年度（4月始まり）
 - `getStudentNameById(studentId)` — 生徒IDから氏名取得
@@ -98,7 +98,7 @@
 - `restoreStudent(studentId)` — `@aiCallable` 生徒復元
 - `ocrAndSaveGradeSheet(base64Image, mimeType, year)` — `@aiCallable` 成績画像OCR一括保存
 - `getGradeDataByStudentAndTest(year, studentId, testName)` — `@aiCallable` 既存成績1件取得
-- `submitGradeData(year, studentId, testName, scores)` — `@aiCallable` 成績 upsert
+- `submitGradeData(year, studentId, testName, scores)` — `@aiCallable` 成績 upsert + gradesMeta年度更新
 - `getStudentsWithGradesByTest(year, campusCode, testName)` — `@aiCallable` 指定テスト名の成績がある生徒一覧を校舎でフィルタして返す（成績表タブ用）
 - `getStudentGradeReport(year, studentId)` — `@aiCallable` 成績表用：指定生徒の全テスト成績と学校別平均を取得
 - `bulkImportStudents(studentsJson, importYear)` — 生徒を一括インポート（Admin のみ。ふりがな省略可。JSON文字列 `[{campusCode, gradeCode, sei, mei}]`。importYear 省略時は現在年度。戻り値: `{ success, total, savedCount, skippedCount, errors[] }`）

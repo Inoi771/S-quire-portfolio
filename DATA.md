@@ -161,6 +161,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `imageTags` | `{driveFileId}` | チラシ用画像タグ |
 | `operationLogs` | `log_{ms}_{random5}` | 操作ログ |
 | `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ（会話から抽出した知識）。`category`, `content`, `reason`, `source`, `learnedAt` |
+| `gradesMeta` | `yearsList` | 成績データの年度一覧キャッシュ。`years`(整数配列), `updatedAt`(ISO 8601)。成績保存時に自動更新。全件取得を回避して1ドキュメント読み取りで年度一覧を返す |
 
 **Firestore利用上の注意：**
 - 複合クエリ（AND）はコンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること

@@ -13,19 +13,41 @@
  */
 function getGradesYearFolders() {
   try {
-    // Firestore移行済み。grades コレクションから fiscalYear の一覧を返す。
+    var currentFy = getCurrentFiscalYear();
+
+    // gradesMeta/yearsList から年度一覧を取得（1ドキュメント読み取り）
+    var meta = firestoreGet_('gradesMeta', 'yearsList');
+    if (meta && Array.isArray(meta.years) && meta.years.length > 0) {
+      var yearSet = {};
+      meta.years.forEach(function(y) { yearSet[String(y)] = true; });
+      yearSet[String(currentFy)] = true;
+      var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
+      years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
+      return { success: true, years: years };
+    }
+
+    // フォールバック: メタ未作成時は全件取得 + 自動修復
     var docs = firestoreQuery_('grades', []);
-    var yearSet = {};
+    var yearSet2 = {};
     docs.forEach(function(doc) {
-      if (doc.fiscalYear) yearSet[String(doc.fiscalYear)] = true;
+      if (doc.fiscalYear) yearSet2[String(doc.fiscalYear)] = true;
     });
-    // 現在年度は成績データがなくても常に含める（新年度開始直後対応）
-    yearSet[String(getCurrentFiscalYear())] = true;
+    yearSet2[String(currentFy)] = true;
+    var years2 = Object.keys(yearSet2).filter(function(y) { return /^\d{4}$/.test(y); });
+    years2.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
 
-    var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
-    years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
+    // 自動修復: メタドキュメントを作成して次回から1件読み取りで済むようにする
+    try {
+      var intYears = years2.map(function(y) { return parseInt(y, 10); });
+      firestoreSet_('gradesMeta', 'yearsList', {
+        years: intYears,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (metaErr) {
+      Logger.log('⚠ gradesMeta自動修復スキップ: ' + metaErr);
+    }
 
-    return { success: true, years: years };
+    return { success: true, years: years2 };
   } catch (error) {
     Logger.log('❌ getGradesYearFoldersエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -898,6 +920,22 @@ function submitGradeData(year, studentId, testName, scores) {
       recordedAt:     new Date().toISOString(),
       studentName:    studentName
     });
+
+    // gradesMeta/yearsList に年度を追加（未登録時のみ）
+    try {
+      var fy = parseInt(year, 10);
+      var meta = firestoreGet_('gradesMeta', 'yearsList');
+      var existingYears = (meta && Array.isArray(meta.years)) ? meta.years : [];
+      if (existingYears.indexOf(fy) === -1) {
+        existingYears.push(fy);
+        firestoreSet_('gradesMeta', 'yearsList', {
+          years: existingYears,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (metaErr) {
+      Logger.log('⚠ gradesMeta更新スキップ: ' + metaErr);
+    }
 
     Logger.log('✓ submitGradeData: ' + (isNew ? '新規' : '更新') + ' ' + docId);
     return { success: true, message: isNew ? '成績データを新規保存しました' : '成績データを上書き更新しました' };

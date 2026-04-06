@@ -336,5 +336,14 @@
 - `fbSaveLectureScheduleEntries(lectureId, campusCode, entries)` — エントリを一括保存（全置換方式・権限チェック付き）
 
 **【Firebase SDK クライアントサイド関数】** (`firebase-students.html`)
+- `fbGetMasterData(year)` — アクティブ生徒一覧を取得
+- `fbGetDeletedStudents(campusCode, gradeCode, selectedYear)` — 削除済み生徒一覧を取得
+- `fbGetStudentListWithGrades(year, testName)` — 生徒マスタと成績データを結合して返す
+- `fbGetGradeDataByStudentAndTest(year, studentId, testName)` — 成績データ1件を取得
+- `fbGetStudentsWithGradesByTest(year, campusCode, testName)` — 指定テストの成績がある生徒一覧（校舎フィルタ）
+- `fbGetStudentGradeReport(year, studentId)` — 成績表用：指定生徒の全テスト成績と学校別平均
+- `fbSubmitGradeData(year, studentId, testName, scores, studentName)` — 成績upsert + gradesMeta年度更新
+- `fbGetGradesYearFolders()` — 年度一覧を取得（gradesMeta/yearsList優先、フォールバック時に自動修復）
+- `fbGetSchoolAverages(year, testName)` — 学校別平均点を取得
 - `fbGetGradeAnalysis(year, testName)` — テスト全体AI分析をFirestoreから直接取得（`testAnalysis`コレクション）
 - `fbGetStudentAnalysis(year, studentId, testName)` — 生徒別AI分析をFirestoreから直接取得（`studentAnalysis`コレクション、基礎学力テストのフォールバック対応）
