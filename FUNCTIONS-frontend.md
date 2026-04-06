@@ -284,6 +284,11 @@
 - `initStudentAnalysisPanel()` — 生徒別AI分析パネルの年度・テスト名ドロップダウン初期化
 - `generateAllAnalysesAdmin()` — テスト全体分析＋生徒別AI分析を1回のAPIコールで一括生成するボタンハンドラー（確認ダイアログ付き）
 
+**【ユーザー管理】** (`js-admin.html`)
+- `loadAllowedUsers()` — アクセス許可ユーザー一覧を取得して描画
+- `removeAllowedUser(email)` — ユーザーのアクセスを削除（確認ダイアログ付き）
+- `cleanupDuplicateStaffs()` — Firestore staffs の重複ドキュメントを整理（`removeDuplicateStaffs` を呼び出し）
+
 **【通知設定】** (`js-admin.html`)
 - `loadNotificationSettings()` — お問い合わせ転送通知の設定をバックエンドから取得して表示
 - `applyNotificationSettingsUI(result)` — 通知設定の結果をUIに反映（LINE登録状態・ラジオボタン・メールチェックボックス）
