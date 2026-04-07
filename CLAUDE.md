@@ -256,6 +256,7 @@ MyProject/
 - `APP_FOLDER_ID` — **必須**。未設定時は全機能停止
 - `ADMIN_EMAILS` — Admin権限管理
 - `SUPABASE_URL` — Supabase プロジェクトURL（成績データ用）
+- `SUPABASE_ANON_KEY` — Supabase anon（公開）キー（成績データ用）
 - `SUPABASE_SERVICE_KEY` — Supabase service_role キー（成績データ用）
 
 ---
