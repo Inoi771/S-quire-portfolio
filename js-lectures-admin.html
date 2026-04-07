@@ -296,8 +296,10 @@
       var card = btn.closest('.nc-section-card');
       if (!card) return;
       var name = (card.querySelector('.nc-section-name') || {}).value || 'このセクション';
-      if (!confirm('「' + name + '」を削除してよいですか？')) return;
-      card.remove();
+      appConfirm('「' + name + '」を削除してよいですか？').then(function(ok) {
+        if (!ok) return;
+        card.remove();
+      });
     }
 
     /**

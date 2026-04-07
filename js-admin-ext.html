@@ -613,13 +613,17 @@
               if (result.success) {
                 if (result.skipped) {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ すべての分析が完了しています</span>';
+                  showToast('✅ すべての分析が完了しています', 'success');
                 } else if (skipExisting) {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ ' + result.studentCount + ' 人分の生徒別分析を新規生成しました（' + (result.skippedCount || 0) + ' 人はスキップ）</span>';
+                  showToast('✅ AI分析を生成しました（' + result.studentCount + ' 人）', 'success');
                 } else {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ テスト全体分析と ' + result.studentCount + ' 人分の生徒別分析を生成しました。</span>';
+                  showToast('✅ AI分析の生成が完了しました（' + result.studentCount + ' 人）', 'success');
                 }
               } else {
                 statusEl.innerHTML = '<span style="color:#e53935;">❌ ' + result.error + '</span>';
+                showToast('❌ AI分析の生成に失敗しました', 'error');
               }
             })
             .withFailureHandler(function(err) {
@@ -630,6 +634,7 @@
                 var remaining = waitSec;
                 statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で続きを実行します。'
                   + ' <button onclick="window._cancelAnalysisAutoRetry()" style="margin-left:8px;padding:2px 8px;font-size:12px;cursor:pointer;">中止</button></span>';
+                showToast('⏳ AI分析を処理中です。しばらくお待ちください', 'info');
                 var countdown = setInterval(function() {
                   remaining -= 10;
                   if (remaining <= 0 || cancelled) { clearInterval(countdown); return; }
@@ -645,8 +650,10 @@
                 btnOverwrite.disabled = false;
                 if (isAbort) {
                   statusEl.innerHTML = '<span style="color:#f57c00;">⏳ 処理はバックグラウンドで完了している可能性があります。分析タブを確認してください。</span>';
+                  showToast('⏳ 処理完了の可能性あり。分析タブを確認してください', 'info');
                 } else {
                   statusEl.innerHTML = '<span style="color:#e53935;">❌ 通信エラー: ' + err + '</span>';
+                  showToast('❌ 通信エラーが発生しました', 'error');
                 }
               }
             })
