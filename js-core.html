@@ -278,9 +278,11 @@
       el.style.display = 'none';
       el.textContent = msg;
       void el.offsetWidth;
-      el.classList.add(type === 'error' ? 'toast-error' : 'toast-success');
+      var toastClass = type === 'error' ? 'toast-error' : type === 'info' ? 'toast-info' : 'toast-success';
+      el.classList.add(toastClass);
       el.classList.add('toast-show');
       el.style.display = 'block';
+      var duration = type === 'error' ? 4000 : 2500;
       _toastTimer = setTimeout(function() {
         el.classList.remove('toast-show');
         el.classList.add('toast-hide');
@@ -288,7 +290,7 @@
           el.style.display = 'none';
           el.className = 'toast-notification';
         }, 300);
-      }, 2500);
+      }, duration);
     }
 
   // ===== 【2】初期化関数 =====
