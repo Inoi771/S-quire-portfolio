@@ -1029,7 +1029,15 @@ function generateStudentAnalyses(year, testName) {
  * @param {string} apiKey Gemini APIキー
  * @return {Object} { success, analyses: {"生徒ID": commentObject} } または { success: false, error }
  */
-function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTestNames, apiKey) {
+/**
+ * 生徒バッチ分析のGeminiプロンプトを組み立てて UrlFetchApp.fetchAll 用リクエストオブジェクトを返す
+ * @param {Array} batchStudents バッチの生徒データ配列
+ * @param {string} testNameTrimmed テスト名（trim済み）
+ * @param {Array} displayTestNames 表示テスト名リスト
+ * @param {string} apiKey Gemini APIキー
+ * @return {Object} UrlFetchApp.fetchAll 用リクエストオブジェクト
+ */
+function buildStudentBatchRequest_(batchStudents, testNameTrimmed, displayTestNames, apiKey) {
   var dataContext = JSON.stringify({
     testName: testNameTrimmed,
     displayTestNames: displayTestNames,
@@ -1093,14 +1101,22 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
       responseMimeType: 'application/json'
     }
   };
-  var options = {
+  return {
+    url: url,
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
+}
 
-  var response = fetchGeminiWithRetry_(url, options);
+/**
+ * 生徒バッチ分析のHTTPレスポンスを解析して結果オブジェクトを返す
+ * @param {HTTPResponse} response HTTPレスポンス
+ * @param {number} batchSize バッチの生徒数（ログ用）
+ * @return {Object} { success, analyses } または { success: false, error }
+ */
+function parseStudentBatchHttpResponse_(response, batchSize) {
   if (response.getResponseCode() !== 200) {
     return { success: false, error: parseGeminiErrorMessage_(response) };
   }
@@ -1109,7 +1125,7 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
 
   var finishReason = ((result.candidates || [])[0] || {}).finishReason;
   if (finishReason === 'MAX_TOKENS') {
-    Logger.log('⚠ generateStudentAnalysesBatch_: 出力トークン上限 (MAX_TOKENS)');
+    Logger.log('⚠ バッチ分析: 出力トークン上限 (MAX_TOKENS) 人数=' + batchSize);
     return { success: false, error: '出力トークン上限に達しました' };
   }
 
@@ -1117,7 +1133,7 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
   var textPart = parts.filter(function(p) { return !p.thought; }).pop();
   var rawText = textPart ? (textPart.text || '') : '';
   if (rawText.length > 0 && rawText.trim().charAt(rawText.trim().length - 1) !== '}') {
-    Logger.log('⚠ generateStudentAnalysesBatch_: レスポンスが不完全（末尾が } でない）。バッチ人数=' + batchStudents.length + ' rawText長=' + rawText.length);
+    Logger.log('⚠ バッチ分析: レスポンスが不完全。人数=' + batchSize + ' rawText長=' + rawText.length);
     return { success: false, error: '出力が途中で切れました' };
   }
   var cleanedText = rawText.replace(/```+json[\r\n]*/gi, '').replace(/```+[\r\n]*/g, '').trim();
@@ -1128,7 +1144,7 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
   try {
     aiResult = JSON.parse(cleanedText);
   } catch (parseError) {
-    Logger.log('❌ バッチ分析パースエラー: ' + parseError + ' / rawText長=' + rawText.length + ' 末尾50文字: ' + rawText.slice(-50));
+    Logger.log('❌ バッチ分析パースエラー: ' + parseError + ' 末尾50文字: ' + rawText.slice(-50));
     return { success: false, error: 'AIからの分析結果の解析に失敗しました' };
   }
 
@@ -1137,6 +1153,26 @@ function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTe
   }
 
   return { success: true, analyses: aiResult.students };
+}
+
+/**
+ * 生徒バッチ分析を実行する（リトライ付き）
+ * generateAllAnalyses のフォールバックリトライ用
+ * @param {Array} batchStudents バッチの生徒データ配列
+ * @param {string} testNameTrimmed テスト名（trim済み）
+ * @param {Array} displayTestNames 表示テスト名リスト
+ * @param {string} apiKey Gemini APIキー
+ * @return {Object} { success, analyses } または { success: false, error }
+ */
+function generateStudentAnalysesBatch_(batchStudents, testNameTrimmed, displayTestNames, apiKey) {
+  var req = buildStudentBatchRequest_(batchStudents, testNameTrimmed, displayTestNames, apiKey);
+  var response = fetchGeminiWithRetry_(req.url, {
+    method: req.method,
+    contentType: req.contentType,
+    payload: req.payload,
+    muteHttpExceptions: req.muteHttpExceptions
+  });
+  return parseStudentBatchHttpResponse_(response, batchStudents.length);
 }
 
 /**
@@ -1483,143 +1519,15 @@ function generateAllAnalyses(year, testName, skipExisting) {
     });
 
     // ==========================================
-    // Gemini API 呼び出し（1回で両方を同時生成）
+    // API呼び出し（全体分析1コール + 生徒別バッチを UrlFetchApp.fetchAll で並列実行）
+    // 従来の順次処理（10人ずつ×4.5秒待機）から並列実行に変更し処理時間を大幅短縮
+    // 120人: 旧 約5分（12バッチ順次）→ 新 約20〜30秒（6バッチ並列）
     // ==========================================
-    var gradeDataJson = JSON.stringify({
-      testName: testName, year: year, subjectMaxScore: 100, totalMaxScore: 500, hasSchoolAvg: !!schoolAvgForGrade,
-      gradeBreakdown: gradeBreakdown, scoreDistribution: scoreDistribution,
-      currentYear: { jukuAvg: jukuAvg, schoolAvg: schoolAvgForGrade },
-      historicalYears: historicalYears, prevRoundData: prevRoundData, firstRoundData: firstRoundData,
-      nextRoundHistorical: nextRoundHistorical
-    });
-    var studentDataJson = JSON.stringify({
-      testName: testNameTrimmed, displayTestNames: displayTestNames, year: year,
-      subjectMaxScore: 100, totalMaxScore: 500, studentCount: studentsData.length, students: studentsData
-    });
-
-    var prompt = 'あなたは個別指導塾「個別指導スクエア」の成績分析の専門家です。\n'
-      + '以下の【テスト全体分析】と【生徒別分析】を1回のAPIコールで同時に行い、1つのJSONで返してください。\n\n'
-      + '==============================================================\n'
-      + '【テスト全体分析】\n'
-      + '集計データを分析して、塾の講師・スタッフに向けた実用的な日本語コメントを生成してください。\n\n'
-      + '【前提知識（テスト全体）】\n'
-      + '- 教科ごとの満点: 100点（5教科合計 500点満点）\n'
-      + '- jukuAvg: スクエア全校舎の受験者を集計した教科別平均点。countが受験者数\n'
-      + '- schoolAvg: 学校公表の平均点（通知表等の「平均」行）。hasSchoolAvg=falseなら未登録\n'
-      + '- gradeBreakdown: このテストを受験した学年の内訳（例: [{gradeCode:"14",gradeName:"中2",count:8}]）\n'
-      + '- scoreDistribution: 教科別・合計の得点分布。sigma, highThreshold/lowThreshold, highCount/highPct, lowCount/lowPct\n'
-      + '- historicalYears: 過去データ（古い順。存在する年度分すべて）。各エントリは jukuAvg, schoolAvg, distribution を持つ\n'
-      + '  ・distribution: 過去年の得点分布キャッシュ。キー=教科/total, 値={count:受験者数, highPct:上位層%, lowPct:下位層%}\n'
-      + '  ・上位層=μ+σ以上、下位層=μ-σ未満（μ=学校平均、σ=管理者設定値で年度ごとに一貫した基準）\n'
-      + '  ・distributionが空オブジェクト{}の場合はデータなし（スキップして言及しないこと）\n'
-      + '- prevRoundData: 前回テストデータ（第2回→第1回, 第3回→第2回）\n'
-      + '- firstRoundData: 第1回テストデータ（第3回分析時のみ）\n'
-      + '- nextRoundHistorical: 次回テスト（第1回→第2回、第2回→第3回）の過去データ（古い順）。傾向予測に使用\n'
-      + '- 教科値が空文字列（""）の場合はデータなし\n\n';
-
-    if (testNameTrimmed.indexOf('第3回基礎学力テスト') >= 0) {
-      prompt += '⚠ 第3回基礎学力テストは高校入試まであとわずかという時期の最後のテストです。入試まであとわずかという状況を踏まえた総括的なコメントを「progression」に含めてください。\n\n';
-    }
-
-    prompt += '【テスト全体データ】\n' + gradeDataJson + '\n\n'
-      + '【テスト全体分析の出力フォーマット（gradeAnalysis）】\n'
-      + '- overview: 受験者数・塾平均の全体水準・学年内訳・hasSchoolAvg=trueなら学校平均との差（2〜3文）。少人数（10名未満）なら必ず注記\n'
-      + '- subjectAnalysis: 5教科分のオブジェクト配列。各教科に jukuAvg/schoolAvg/diff/comment/trend/roundDifficulty を設定\n'
-      + '  ・comment: 数値を引用して塾平均・学校平均・差・得点分布（上位層/下位層）の傾向を記述\n'
-      + '  ・trend: historicalYearsの前年度と比較し "up"/"down"/"stable"\n'
-      + '  ・roundDifficulty: prevRoundDataがある場合に易化・難化を判定 "easier"/"harder"/"same"/"null"（文字列）\n'
-      + '- historicalTrend: 過去推移コメント（2〜3文）\n'
-      + '  ・historicalYearsがある場合に塾平均の複数年変化を記述\n'
-      + '  ・学校平均データがある年は、その変化から年度ごとのテスト難化・易化傾向にも言及する\n'
-      + '  ・distributionが存在する年が複数ある場合、上位層割合・下位層割合の推移にも言及する（例:「上位層は例年XX%前後だが今年はXX%と増加傾向」）\n'
-      + '  ・データなしまたは特筆すべき変化がないなら空文字列\n'
-      + '- yearOverYearComparison: 前年度比較コメント\n'
-      + '  ・historicalYearsの直近1年と今年度を比較（塾平均・学校平均それぞれ）\n'
-      + '  ・学校平均の変化から今年度テストの難化・易化を教科別・合計点で判定して述べること\n'
-      + '  ・過去複数年のデータと照らし合わせて「例年通り」「例年より難化」「例年より易化」など総括すること\n'
-      + '  ・前年のdistributionがある場合、今年のscoreDistributionと比較し、上位層・下位層割合の変化を教科別・合計で述べること\n'
-      + '    （例:「数学の上位層は昨年XX%→今年XX%と増加。下位層はXX%→XX%と横ばい」）\n'
-      + '  ・データなしなら空文字列\n'
-      + '- roundComparison: 前回テスト比較コメント（3〜5文）\n'
-      + '  ・prevRoundDataがある場合に前回テストとの比較\n'
-      + '  ・学校平均の変化から試験の易化・難化を教科別・合計点で判定して言及すること\n'
-      + '  ・塾平均と学校平均の相対的な変化も述べること\n'
-      + '  ・なければ空文字列\n'
-      + '- progression: 第1〜3回推移総評（3〜4文）\n'
-      + '  ・firstRoundDataがある場合（第3回のみ）第1回〜第3回の各教科・合計点の推移と入試前の総括\n'
-      + '  ・なければ空文字列\n'
-      + '- nextRoundPrediction: 次回テスト難易度予測\n'
-      + '  ・nextRoundHistoricalが空でない場合のみ生成\n'
-      + '  ・historicalYears（今回テストの過去データ）とnextRoundHistorical（次回テストの過去データ）を年度ごとに対比し、教科別・合計点で「今回テスト→次回テストでどう変化する傾向があるか」を分析（2〜4文）\n'
-      + '  ・一貫して難化・易化する傾向がある教科や合計点があれば具体的に挙げること\n'
-      + '  ・データ年数が3年未満の場合は「参考値（データ年数が少ないため精度は低い）」と必ず注記すること\n'
-      + '  ・過去パターンに基づく予測であり実際の試験が異なる可能性があることを断り書きとして添えること\n'
-      + '  ・なければ空文字列\n\n'
-      + '==============================================================\n'
-      + '【生徒別分析】\n'
-      + '各生徒の個別コメントを生成してください。\n\n'
-      + '【前提知識（生徒別）】\n'
-      + '- 教科ごとの満点: 100点（5教科合計 500点満点）\n'
-      + '- deviationValues: 教科別偏差値（学校平均とσから算出。50が平均。nullはデータ不足）\n'
-      + '- passAssessment: 志望校合格判定（probability.gradeがA〜E、percentが確率%）\n'
-      + '- schoolAverages: 生徒の在籍校の推定平均点。必ず「およそ〇点」と表現すること（実際の学校平均と異なる場合があるため）\n'
-      + '- 複数テストがある場合、schoolAveragesの各テスト間の変化から教科ごとの易化・難化を判定できる\n'
-      + '  （今回 - 前回の差で5段階判定: +3点以上="easier" / +1〜3点未満="slightly_easier" / -1〜+1点="same" / -1〜-3点="slightly_harder" / -3点以下="harder"）\n'
-      + '  教科ごとに独立して判定すること（全体傾向や他教科の結果で上書きしない）\n'
-      + '- テストが複数ある場合はdisplayTestNamesの順で推移を分析すること\n'
-      + '- 生徒IDで回答すること（氏名は渡していない）\n\n';
-    if (testNameTrimmed.indexOf('第3回基礎学力テスト') !== -1) {
-      prompt += '⚠ 第3回基礎学力テストは高校入試まであとわずかという時期の最後のテストです。\nあなたは経験豊富な個別指導塾の講師として、以下の点を各フィールドに必ず反映してください：\n・overall: 合計点・偏差値から「このまま入試に臨んで大丈夫か」を率直に伝え、問題がある場合は残りわずかな時間で優先して取り組むべきことを具体的に記載すること\n・subjects: 第1〜3回の得点推移も踏まえ、各教科で入試直前に何の学習に集中すべきかの実践的なアドバイスを含めること。学校平均を下回っている教科は苦手単元の復習・基本問題の確認など具体的な内容にすること\n・trend: 第1〜3回の変化を総括し、入試に向けた最終確認ポイントを含めること\n・targetSchool【重要・後述の共通指示より優先】: 第3回は最後の基礎学力テストであり次は高校入試本番である。A/B/C+判定: 入試本番に向けて弱点を一つずつ確実に潰していけるよう背中を押す前向きなアドバイス。C-/D+/D-/E判定（合格可能性50%未満）: 入試に向けて残り時間で弱点克服に集中することを前向きに伝えつつ、今すぐ担任の先生に相談・私立高校の併願を具体的に検討するよう促すこと\n\n';
-    } else if (testNameTrimmed.indexOf('基礎学力テスト') !== -1) {
-      prompt += '⚠ このテストは基礎学力テスト（第1回または第2回）です。targetSchoolについては後述の共通指示より以下を優先すること。\n・targetSchool - A/B/C+判定: 現在の到達度を前向きに伝え、次回の基礎学力テストでさらに合格可能性を高めるために強化すべき点を具体的に示すこと\n・targetSchool - C-/D+/D-/E判定（合格可能性50%未満）: 合格可能性が厳しいことは率直に伝えた上で、次の基礎学力テストで巻き返せるよう今から集中すべき教科・単元を具体的に示し前向きな意欲を引き出すこと。担任の先生とも情報共有・相談を始め、私立高校の情報収集も今から始めておくよう促すこと\n\n';
-    }
-    prompt += '【生徒データ】\n' + studentDataJson + '\n\n'
-      + '【生徒別分析の出力フォーマット（各生徒）】\n'
-      + '- overall: 全体的な成績水準と傾向（2〜3文）。偏差値・合計点・学校平均合計（「およそ〇点」）に言及しつつ、単なる数値比較にとどまらず「この生徒の成績の特徴は何か（得意教科集中型か均一型か）」「どこを伸ばせるか・何が課題か」を塾講師目線で述べること\n'
-      + '- subjects: 各教科の強み・弱み（1〜2文ずつ）。学校平均（「およそ〇点」）との比較は必ず含めるが、それだけで終わらず、各教科の特性（国語:読解・記述、社会:暗記・地歴公民バランス、数学:計算・文章題・図形、理科:暗記と計算の比率、英語:語彙・文法・読解）を踏まえた具体的な学習アドバイスも添えること。キー: kokugo, shakai, sugaku, rika, eigo\n'
-      + '- subjectDifficulty: 複数テスト時のみ、前テスト比の学校平均変化から難易度変化を返す。キー: kokugo/shakai/sugaku/rika/eigo → 値: "harder"/"easier"/"same"。1テストのみは {}\n'
-      + '- targetSchool: 志望校に対する現在の到達度と具体的アドバイス（2〜3文）。\n'
-      + '  C-/D+/D-/E判定（合格可能性50%未満）: 現状の合格可能性が厳しいことを率直に伝え、今後の学習で取り組むべき点を具体的にアドバイスすること。\n'
-      + '  passAssessmentが空なら「志望校が未設定です」\n'
-      + '- trend: 複数テストがある場合の変化（伸びた・落ちた教科を具体的に記載し、学校平均の推移から各テストの易化・難化にも言及）。1テストのみなら空文字列\n\n'
-      + '==============================================================\n'
-      + '【応答形式】以下のJSON形式のみで返してください：\n'
-      + '{\n'
-      + '  "gradeAnalysis": {\n'
-      + '    "overview": "...",\n'
-      + '    "subjectAnalysis": [\n'
-      + '      {"subject": "国語", "jukuAvg": 数値, "schoolAvg": 数値またはnull, "diff": 数値またはnull, "comment": "...", "trend": "up/down/stable", "roundDifficulty": "easier/harder/same/null"},\n'
-      + '      {"subject": "社会", ...}, {"subject": "数学", ...}, {"subject": "理科", ...}, {"subject": "英語", ...}\n'
-      + '    ],\n'
-      + '    "historicalTrend": "...",\n'
-      + '    "yearOverYearComparison": "...",\n'
-      + '    "roundComparison": "...",\n'
-      + '    "progression": "..."\n'
-      + '  },\n'
-      + '  "studentAnalyses": {\n'
-      + '    "生徒ID": {\n'
-      + '      "overall": "...",\n'
-      + '      "subjects": {"kokugo": "...", "shakai": "...", "sugaku": "...", "rika": "...", "eigo": "..."},\n'
-      + '      "subjectDifficulty": {"kokugo": "harder/easier/same", "shakai": "...", "sugaku": "...", "rika": "...", "eigo": "..."},\n'
-      + '      "targetSchool": "...",\n'
-      + '      "trend": "..."\n'
-      + '    }\n'
-      + '  }\n'
-      + '}\n'
-      + '- 数値を記載する際は小数第1位まで表記すること（例: 53.13→53.1）\n'
-      + '- diffフィールドも小数第1位に四捨五入して入れること\n'
-      + '- 文体は丁寧語で簡潔にまとめること\n';
-
-    // ==========================================
-    // API呼び出し（常にバッチ処理: 全体分析1コール + 生徒別分析Nコール）
-    // バッチサイズを10人に設定し、各バッチ完了後に即座保存することで
-    // GASタイムアウト時も完了済みバッチの結果が確実に保持される。
-    // ==========================================
-    var BATCH_SIZE = 10;
+    var BATCH_SIZE = 20;  // 並列実行のため10→20に拡大（出力トークン上限65536内で安全）
     var now = new Date().toISOString();
     var savedCount = 0;
 
-    // Step1: 全体分析（skipGradeAnalysis=true のときはスキップして既存データを保持）
+    // Step1: テスト全体分析（1回のみ）
     if (!skipGradeAnalysis) {
       var gradeResult = generateGradeAnalysis(year, testName);
       if (!gradeResult.success) {
@@ -1627,21 +1535,32 @@ function generateAllAnalyses(year, testName, skipExisting) {
       }
     }
 
-    // Step2: 生徒別分析をバッチ処理（バッチごとに即座保存）
+    // Step2: 生徒別バッチリクエストを一括構築 → fetchAll で並列実行
+    var batches = [];
+    var batchRequests = [];
     for (var bi = 0; bi < studentsData.length; bi += BATCH_SIZE) {
       var batch = studentsData.slice(bi, Math.min(bi + BATCH_SIZE, studentsData.length));
-      var batchNum = Math.floor(bi / BATCH_SIZE) + 1;
-      var batchResult = generateStudentAnalysesBatch_(batch, testNameTrimmed, displayTestNames, apiKey);
+      batches.push(batch);
+      batchRequests.push(buildStudentBatchRequest_(batch, testNameTrimmed, displayTestNames, apiKey));
+    }
+
+    Logger.log('⚡ 生徒別分析: ' + batches.length + ' バッチを並列実行（' + studentsData.length + '人）');
+    var batchResponses = UrlFetchApp.fetchAll(batchRequests);
+
+    for (var ri = 0; ri < batches.length; ri++) {
+      var batchNum = ri + 1;
+      var batchResult = parseStudentBatchHttpResponse_(batchResponses[ri], batches[ri].length);
       if (!batchResult.success) {
-        Logger.log('⚠ バッチ ' + batchNum + ' 失敗: ' + batchResult.error + '（スキップして続行）');
-      } else {
-        // バッチ完了後に即座保存（タイムアウトしても保存済み分は消えない）
-        savedCount += saveStudentAnalyses_(batch, batchResult.analyses, year, testNameTrimmed, displayTestNames, now);
-        Logger.log('✓ バッチ ' + batchNum + ' 保存完了: ' + savedCount + '人累計');
+        // 失敗バッチはリトライ（レート制限・一時障害対策）
+        Logger.log('⚠ バッチ ' + batchNum + ' 失敗、30秒後にリトライ: ' + batchResult.error);
+        Utilities.sleep(30000);
+        batchResult = generateStudentAnalysesBatch_(batches[ri], testNameTrimmed, displayTestNames, apiKey);
       }
-      // 次のバッチがある場合のみ待機（RPM制限対策）
-      if (bi + BATCH_SIZE < studentsData.length) {
-        Utilities.sleep(4500);
+      if (batchResult.success) {
+        savedCount += saveStudentAnalyses_(batches[ri], batchResult.analyses, year, testNameTrimmed, displayTestNames, now);
+        Logger.log('✓ バッチ ' + batchNum + ' 保存完了: ' + savedCount + '人累計');
+      } else {
+        Logger.log('⚠ バッチ ' + batchNum + ' 最終失敗（スキップ）: ' + batchResult.error);
       }
     }
 
