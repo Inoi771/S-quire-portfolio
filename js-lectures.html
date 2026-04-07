@@ -383,6 +383,7 @@
      * グリッド上の講師名表示を常に最新の表示名で行うために使用
      */
     function loadLecTeacherNameMap() {
+      if (Object.keys(lecTeacherNameMap || {}).length > 0) return; // セッション中はキャッシュを再利用
       google.script.run
         .withSuccessHandler(function(result) {
           if (result && result.success) {
