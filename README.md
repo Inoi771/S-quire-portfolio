@@ -599,6 +599,35 @@ GAS エディタで確認した「ウェブアプリ URL」（`https://script.go
 
 ---
 
+## Firestore コレクション構成
+
+| コレクション | DocId形式 | 用途 |
+|------------|---------|------|
+| `staffs` | `{teacherId}` | スタッフ情報（メール・UID・通知設定等） |
+| `allowedUsers` | `{email}` | セキュリティルール用ホワイトリスト |
+| `config` | `notification_routing` | システム設定（校舎別通知振り分け等） |
+| `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
+| `grades` | `{studentId}_{testName}` | 成績データ |
+| `schoolAverages` | `{year}_{testName}` | 学校別平均点 |
+| `testAnalysis` | `{year}_{testName}` | テスト全体AI分析 |
+| `studentAnalysis` | `{studentId}_{testName}` | 生徒別AI分析 |
+| `distCache` | `{year}_{testName}_dist` | 成績分析の分布キャッシュ |
+| `schedules` | `{year}_admin_{ms}` / `{year}_{school}_{type}_{date}` | 月間スケジュール |
+| `lectureEntries` | `{lectureId}_{campusCode}_{entryId}` | 講習日程 |
+| `lineSchedules` | `sch_{YYYYMM}_{type}` | LINEスケジューラー |
+| `flyerAi` | `{lectureId}_{campusCode}` | AIチラシHTML |
+| `imageTags` | `{driveFileId}` | チラシ用画像タグ |
+| `operationLogs` | `log_{ms}_{random5}` | 操作ログ |
+| `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ |
+| `gradesMeta` | `yearsList` | 成績データの年度一覧キャッシュ |
+| `gradeSummaries` | `{year}_{testName}` | テスト別校舎平均キャッシュ |
+| `gradeListCache` | `{year}_{testName}` | 一覧表キャッシュ |
+| `gradeReportCache` | `{year}` | 成績表キャッシュ |
+
+> 詳細なフィールド構成は `DATA.md` を参照してください。
+
+---
+
 ## 技術情報
 
 | 項目 | 内容 |
