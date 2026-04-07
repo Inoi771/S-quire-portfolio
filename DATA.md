@@ -27,6 +27,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `FIREBASE_CLIENT_EMAIL` | Firebase サービスアカウントメール |
 | `FIREBASE_PRIVATE_KEY` | Firebase サービスアカウント秘密鍵（PEM形式） |
 | `SUPABASE_URL` | Supabase プロジェクトURL（例: `https://xxxxx.supabase.co`）— 成績データ用 |
+| `SUPABASE_ANON_KEY` | Supabase anon（公開）キー — 成績データ用 |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー — 成績データ用 |
 
 > **Firestore に移行済み（PROP_KEYS から削除）:**

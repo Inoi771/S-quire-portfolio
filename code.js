@@ -32,6 +32,7 @@ var PROP_KEYS = {
   FIREBASE_PRIVATE_KEY: 'FIREBASE_PRIVATE_KEY',     // サービスアカウントの秘密鍵（PEM形式・GASエディタから直接入力）
   // Supabase 設定（成績データ用）
   SUPABASE_URL: 'SUPABASE_URL',                     // Supabase プロジェクトURL（例: https://xxxxx.supabase.co）
+  SUPABASE_ANON_KEY: 'SUPABASE_ANON_KEY',           // Supabase anon（公開）キー
   SUPABASE_SERVICE_KEY: 'SUPABASE_SERVICE_KEY'      // Supabase service_role キー
 };
 

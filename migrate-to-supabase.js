@@ -11,60 +11,47 @@
 function migrateGradesToSupabase() {
   Logger.log('=== grades 移行開始 ===');
 
-  // 全年度の成績データを取得
-  var yearsResult = getGradesYearFolders();
-  if (!yearsResult.success) {
-    Logger.log('❌ 年度リスト取得失敗');
-    return { success: false, error: '年度リスト取得失敗' };
-  }
-
   var allData = [];
 
-  // Firestore の grades コレクションから全データを取得
-  // 年度ごとに取得（Supabase移行前のgetDataSheetDataがFirestoreから読むため）
-  yearsResult.years.forEach(function(yearStr) {
-    var yr = parseInt(yearStr, 10);
-    try {
-      // Firestore から直接クエリ（移行元）
-      var docs = firestoreQuery_('grades', [
-        fsFilter_('fiscalYear', 'EQUAL', yr)
-      ]);
+  // Firestore の grades コレクションから全データを一括取得（移行元）
+  try {
+    var docs = firestoreQuery_('grades', []);
+    Logger.log('Firestoreから ' + docs.length + '件の成績データを取得');
 
-      docs.forEach(function(doc) {
-        var sid = String(doc.studentId || '').trim();
-        if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+    docs.forEach(function(doc) {
+      var sid = String(doc.studentId || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      var yr = parseInt(doc.fiscalYear, 10) || 0;
 
-        var testName = String(doc.testName || '').trim();
-        var safe = testName.replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
-        var docId = sid + '_' + safe + '_' + String(yr);
+      var testName = String(doc.testName || '').trim();
+      var safe = testName.replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+      var docId = sid + '_' + safe + '_' + String(yr);
 
-        allData.push({
-          id:             docId,
-          student_id:     sid,
-          test_name:      testName,
-          fiscal_year:    yr,
-          kokugo:         doc.kokugo  || 0,
-          shakai:         doc.shakai  || 0,
-          sugaku:         doc.sugaku  || 0,
-          rika:           doc.rika    || 0,
-          eigo:           doc.eigo    || 0,
-          total:          doc.total   || 0,
-          average:        doc.average || 0,
-          shogaku1:       String(doc.shogaku1       || ''),
-          shogaku1_gakka: String(doc.shogaku1_gakka || ''),
-          shogaku2:       String(doc.shogaku2       || ''),
-          shogaku2_gakka: String(doc.shogaku2_gakka || ''),
-          student_name:   String(doc.studentName    || ''),
-          recorded_at:    doc.recordedAt || new Date().toISOString(),
-          campus:         sid.substring(0, 2)  // 生徒IDの先頭2桁
-        });
+      allData.push({
+        id:             docId,
+        student_id:     sid,
+        test_name:      testName,
+        fiscal_year:    yr,
+        kokugo:         doc.kokugo  || 0,
+        shakai:         doc.shakai  || 0,
+        sugaku:         doc.sugaku  || 0,
+        rika:           doc.rika    || 0,
+        eigo:           doc.eigo    || 0,
+        total:          doc.total   || 0,
+        average:        doc.average || 0,
+        shogaku1:       String(doc.shogaku1       || ''),
+        shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+        shogaku2:       String(doc.shogaku2       || ''),
+        shogaku2_gakka: String(doc.shogaku2_gakka || ''),
+        student_name:   String(doc.studentName    || ''),
+        recorded_at:    doc.recordedAt || new Date().toISOString(),
+        campus:         sid.substring(0, 2)  // 生徒IDの先頭2桁
       });
-
-      Logger.log('  年度 ' + yr + ': ' + docs.length + '件');
-    } catch (e) {
-      Logger.log('⚠ 年度 ' + yr + ' 取得エラー: ' + e);
-    }
-  });
+    });
+  } catch (e) {
+    Logger.log('❌ Firestore grades 取得エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
 
   Logger.log('合計: ' + allData.length + '件');
 

@@ -6,6 +6,7 @@
 //
 // 必要な Script Properties:
 //   SUPABASE_URL         — Supabase プロジェクトURL（例: https://xxxxx.supabase.co）
+//   SUPABASE_ANON_KEY    — anon（公開）キー（Settings > API から取得）
 //   SUPABASE_SERVICE_KEY — service_role キー（Settings > API から取得）
 
 // ========================================
@@ -13,31 +14,35 @@
 // ========================================
 
 /**
- * Supabase設定を取得（キャッシュ付き）
- * @return {{url: string, key: string}}
+ * Supabase設定を取得
+ * @return {{url: string, anonKey: string, serviceKey: string}}
  */
 function getSupabaseConfig_() {
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty('SUPABASE_URL');
-  var key = props.getProperty('SUPABASE_SERVICE_KEY');
-  if (!url || !key) {
+  var anonKey = props.getProperty('SUPABASE_ANON_KEY');
+  var serviceKey = props.getProperty('SUPABASE_SERVICE_KEY');
+  if (!url || !serviceKey) {
     throw new Error(
       'Supabase設定が不完全です。Script Properties に SUPABASE_URL / SUPABASE_SERVICE_KEY を設定してください。'
     );
   }
-  return { url: url.replace(/\/+$/, ''), key: key };
+  // anon キーが未設定の場合は service_role キーをフォールバックとして使用
+  return { url: url.replace(/\/+$/, ''), anonKey: anonKey || serviceKey, serviceKey: serviceKey };
 }
 
 /**
  * 共通リクエストヘッダーを返す
+ * apikey ヘッダーには anon キー、Authorization には service_role キーを使用
+ * （service_role を apikey に使うとSupabaseがブラウザ使用と判定してブロックする）
  * @param {Object} config getSupabaseConfig_() の戻り値
  * @param {Object} [extra] 追加ヘッダー
  * @return {Object} ヘッダーオブジェクト
  */
 function supabaseHeaders_(config, extra) {
   var headers = {
-    'apikey': config.key,
-    'Authorization': 'Bearer ' + config.key,
+    'apikey': config.anonKey,
+    'Authorization': 'Bearer ' + config.serviceKey,
     'Content-Type': 'application/json'
   };
   if (extra) {
