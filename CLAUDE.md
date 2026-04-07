@@ -201,11 +201,13 @@ MyProject/
 ├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
+├── supabase.js          Supabase REST APIクライアント（成績データ用）
 ├── firebase-init.html   Firebase 初期化（<head>内ロード）
 ├── firebase-auth.html   Firebase Auth管理（<head>内ロード）
 ├── firebase-schedule.html Firebase スケジュール・講習クライアント関数
-├── firebase-students.html Firebase 生徒データクライアント関数
+├── firebase-students.html Firebase 生徒データクライアント関数（成績関連はGAS API経由）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
+├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
 └── CLAUDE.md            この設計書
 ```
 
@@ -225,7 +227,8 @@ MyProject/
 | UrlFetchApp | Gemini API呼び出し |
 | Gemini API (gemini-3.1-flash-lite-preview) | スケジュール抽出・OCR・AIアシスタント |
 | Firebase Auth | ユーザー認証（Googleログイン） |
-| Firestore | クライアント直接読み書き＋セキュリティルール |
+| Firestore | クライアント直接読み書き＋セキュリティルール（生徒マスタ・スケジュール等） |
+| Supabase (PostgreSQL) | 成績データ・分析結果の保存（REST API経由、Firestore読み取り上限対策） |
 
 ---
 
@@ -252,6 +255,8 @@ MyProject/
 - `GEMINI_API_KEY` — AI機能全般
 - `APP_FOLDER_ID` — **必須**。未設定時は全機能停止
 - `ADMIN_EMAILS` — Admin権限管理
+- `SUPABASE_URL` — Supabase プロジェクトURL（成績データ用）
+- `SUPABASE_SERVICE_KEY` — Supabase service_role キー（成績データ用）
 
 ---
 
@@ -352,6 +357,7 @@ MyProject/
 - **gas-bridge タイムアウト**: GAS APIコールは90秒でタイムアウト（GASコールドスタートで30秒以上かかることがある）。タイムアウト・通信エラー時はトースト通知を表示
 - **firebase-init.html の制約**: Firestore SDKのプロトタイプ（Query.prototype.get 等）を書き換えてはいけない（enablePersistence との干渉でエラーが発生する）
 - **Firestore読み取り最小化**: Firestoreは読み取り回数を最小化する設計を必ず検討すること。具体的には、集計・一覧用の読み取り専用ドキュメントを活用し、書き込み時に+1回で読み取り時に数百回→1回にする設計を優先する。サブコレクション＋親ドキュメントに集計を持たせる構造が有効
+- **成績データはSupabase**: grades・schoolAverages・testAnalysis・studentAnalysis はすべてSupabase（PostgreSQL）に保存。Firestoreのキャッシュコレクション（gradeSummaries・gradeListCache・gradeReportCache・distCache・gradesMeta）は廃止済み。SQL集計関数（get_campus_averages等）で代替。フロントエンドの成績読み取りはGAS API経由（gas-bridge）で行う
 
 ---
 
