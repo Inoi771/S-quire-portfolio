@@ -1791,3 +1791,66 @@ if (typeof module !== 'undefined') {
     getDefaultDept: getDefaultDept
   };
 }
+
+// ----------------------------------------
+// 生徒マスタ Firestore → Supabase 移行
+// ----------------------------------------
+
+/**
+ * Firestoreの students コレクションを Supabase の students テーブルへ一括移行する（Admin専用）
+ * 事前に Supabase SQL Editor でテーブル作成が必要。
+ * 冪等（何度実行しても安全・既存レコードはupsertで上書き）
+ * @aiCallable
+ * @return {Object} { success, total, result, error }
+ */
+function migrateStudentsToSupabase() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+
+    // Firestoreから全生徒を取得（削除済み含む・フィルタなし全件）
+    var docs = firestoreQuery_('students', []);
+    if (!docs || docs.length === 0) {
+      return { success: false, error: 'Firestoreに生徒データがありません' };
+    }
+
+    // Supabase向けにフィールド変換（camelCase → snake_case）
+    var rows = [];
+    docs.forEach(function(doc) {
+      var sid = String(doc.studentId || doc._id || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      if (!sid || sid.length < 10) return; // 不正IDはスキップ
+
+      var regYear  = parseInt(sid.substring(2, 6), 10);
+      var regGrade = parseInt(sid.substring(6, 8), 10);
+
+      rows.push({
+        id:                sid,
+        student_id:        sid,
+        campus:            String(doc.campus || '').padStart(2, '0'),
+        registration_year:  isNaN(regYear)  ? (parseInt(doc.registrationYear,  10) || 2020) : regYear,
+        registration_grade: isNaN(regGrade) ? (parseInt(doc.registrationGrade, 10) || 7)    : regGrade,
+        sei:               String(doc.sei           || ''),
+        mei:               String(doc.mei           || ''),
+        sei_furigana:      String(doc.seiFurigana   || ''),
+        mei_furigana:      String(doc.meiFurigana   || ''),
+        school_name:       String(doc.schoolName    || ''),
+        is_deleted:        doc.isDeleted ? true : false,
+        created_at:        doc.createdAt || new Date().toISOString(),
+        jukoukou1:         String(doc.jukoukou1        || ''),
+        jukoukou1_gakka:   String(doc.jukoukou1_gakka  || ''),
+        jukoukou1_gokaku:  String(doc.jukoukou1_gokaku || ''),
+        ikusei:            String(doc.ikusei            || ''),
+        jukoukou2:         String(doc.jukoukou2        || ''),
+        jukoukou2_gakka:   String(doc.jukoukou2_gakka  || ''),
+        jukoukou2_gokaku:  String(doc.jukoukou2_gokaku || '')
+      });
+    });
+
+    var result = supabaseBatchUpsert_('students', rows);
+    Logger.log('✓ migrateStudentsToSupabase: ' + rows.length + '件を移行。結果: ' + JSON.stringify(result));
+    return { success: true, total: rows.length, result: result };
+  } catch (error) {
+    Logger.log('❌ migrateStudentsToSupabaseエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}

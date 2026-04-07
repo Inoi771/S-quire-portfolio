@@ -598,10 +598,10 @@ function resetGradeAnalysisSigmaConfig() {
 function countStudentsByCampus_(campusCode) {
   try {
     var targetCode = String(campusCode).padStart(2, '0');
-    var docs = firestoreQuery_('students', [
-      fsFilter_('campusCode', 'EQUAL', targetCode),
-      fsFilter_('isDeleted', 'EQUAL', false)
-    ]);
+    var docs = supabaseSelect_('students',
+      'campus=eq.' + encodeURIComponent(targetCode) + '&is_deleted=eq.false',
+      { select: 'id' }
+    );
     return docs.length;
   } catch (e) {
     Logger.log('⚠ countStudentsByCampus_エラー: ' + e);

@@ -8,7 +8,36 @@
 var _dataSheetCache = {};
 var _masterDataCache = {};
 var _studentListWithGradesCache = {};
-var _masterDataRawDocs = null; // students コレクション生ドキュメントキャッシュ（年度問わず共有）
+var _masterDataRawDocs = null; // students Supabaseドキュメントキャッシュ（年度問わず共有・camelCase変換済み）
+
+/**
+ * Supabase の students テーブル（snake_case）をGAS内部（camelCase）に変換する内部ヘルパー
+ * @param {Object} row Supabaseから返されたレコード
+ * @return {Object} camelCase変換済みの生徒オブジェクト
+ */
+function toStudentCamel_(row) {
+  return {
+    id:                row.id,
+    studentId:         row.student_id || row.id,
+    campus:            String(row.campus || '').padStart(2, '0'),
+    registrationYear:  row.registration_year,
+    registrationGrade: row.registration_grade,
+    sei:               row.sei  || '',
+    mei:               row.mei  || '',
+    seiFurigana:       row.sei_furigana  || '',
+    meiFurigana:       row.mei_furigana  || '',
+    schoolName:        row.school_name   || '',
+    isDeleted:         row.is_deleted,
+    createdAt:         row.created_at    || '',
+    jukoukou1:         row.jukoukou1        || '',
+    jukoukou1_gakka:   row.jukoukou1_gakka  || '',
+    jukoukou1_gokaku:  row.jukoukou1_gokaku || '',
+    ikusei:            row.ikusei            || '',
+    jukoukou2:         row.jukoukou2        || '',
+    jukoukou2_gakka:   row.jukoukou2_gakka  || '',
+    jukoukou2_gokaku:  row.jukoukou2_gokaku || ''
+  };
+}
 
 
 /**
@@ -101,7 +130,8 @@ function getStudentNameById(studentId) {
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
     if (!sid) return '';
 
-    var doc = firestoreGet_('students', sid);
+    var rows = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id,sei,mei' });
+    var doc = rows.length > 0 ? rows[0] : null;
     if (!doc) return '';
     return String(doc.sei || '') + String(doc.mei || '');
   } catch (e) {
@@ -121,18 +151,16 @@ function getMasterData(year) {
     var cacheKey = String(year);
     if (_masterDataCache[cacheKey]) return _masterDataCache[cacheKey];
 
-    // 生ドキュメントを年度問わず共有キャッシュから取得（クエリ内容は年度によらず同じ）
+    // 生ドキュメントを年度問わず共有キャッシュから取得（Supabase・camelCase変換済み）
     if (!_masterDataRawDocs) {
-      _masterDataRawDocs = firestoreQuery_('students', [
-        fsFilter_('isDeleted', 'EQUAL', false)
-      ]);
+      _masterDataRawDocs = supabaseSelect_('students', 'is_deleted=eq.false').map(toStudentCamel_);
     }
     var docs = _masterDataRawDocs;
 
     var results = [];
     docs.forEach(function(doc) {
       try {
-        var studentId = String(doc.studentId || doc._id || '').trim();
+        var studentId = String(doc.studentId || '').trim();
         if (!studentId || studentId.length < 10) return;
 
         // IDから登録年度・登録学年を抽出
@@ -409,29 +437,29 @@ function submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, m
     }
 
     try {
-      // 同じプレフィックスを持つ生徒を Firestore から取得して maxSeq を計算
-      var existing = firestoreQuery_('students', [
-        fsFilter_('studentId', 'GREATER_THAN_OR_EQUAL', prefix + '00'),
-        fsFilter_('studentId', 'LESS_THAN_OR_EQUAL',    prefix + '99')
-      ]);
+      // 同じプレフィックスを持つ生徒を Supabase から取得して maxSeq を計算
+      var existing = supabaseSelect_('students',
+        'student_id=gte.' + encodeURIComponent(prefix + '00') +
+        '&student_id=lte.' + encodeURIComponent(prefix + '99'),
+        { select: 'id,student_id' }
+      );
 
       // 重複チェック（削除済みを除く同一氏名・ふりがな）
-      // 全生徒から同一氏名を検索（プレフィックス絞り込みでは不十分）
-      var allActive = firestoreQuery_('students', [
-        fsFilter_('isDeleted', 'EQUAL', false)
-      ]);
+      var allActive = supabaseSelect_('students', 'is_deleted=eq.false',
+        { select: 'id,student_id,sei,mei,sei_furigana,mei_furigana' }
+      ).map(toStudentCamel_);
       for (var i = 0; i < allActive.length; i++) {
         var s = allActive[i];
         var existName     = String(s.sei || '').trim() + String(s.mei || '').trim();
         var existFurigana = String(s.seiFurigana || '').trim() + String(s.meiFurigana || '').trim();
         if (existName === fullName && existFurigana === fullFurigana) {
-          return { success: false, error: '同じ氏名・ふりがなの生徒がすでに登録されています（ID: ' + (s.studentId || s._id) + '）' };
+          return { success: false, error: '同じ氏名・ふりがなの生徒がすでに登録されています（ID: ' + s.studentId + '）' };
         }
       }
 
       var maxSeq = 0;
       existing.forEach(function(doc) {
-        var id = String(doc.studentId || doc._id || '');
+        var id = String(doc.student_id || doc.id || '');
         if (id.indexOf(prefix) === 0) {
           var seq = parseInt(id.slice(prefix.length), 10);
           if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
@@ -443,18 +471,19 @@ function submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, m
       var registrationGrade = parseInt(grade, 10);
       var now = new Date().toISOString();
 
-      firestoreSet_('students', studentId, {
-        studentId:         studentId,
+      supabaseUpsert_('students', {
+        id:                studentId,
+        student_id:        studentId,
         campus:            campus,
         sei:               sei.trim(),
         mei:               mei.trim() || '',
-        seiFurigana:       seiFurigana.trim(),
-        meiFurigana:       meiFurigana.trim() || '',
-        schoolName:        schoolName.trim() || '',
-        isDeleted:         false,
-        createdAt:         now,
-        registrationYear:  registrationYear,
-        registrationGrade: registrationGrade
+        sei_furigana:      seiFurigana.trim(),
+        mei_furigana:      meiFurigana.trim() || '',
+        school_name:       schoolName.trim() || '',
+        is_deleted:        false,
+        created_at:        now,
+        registration_year:  registrationYear,
+        registration_grade: registrationGrade
       });
 
       Logger.log('✓ submitStudentInfo: 登録完了 ' + studentId);
@@ -485,17 +514,19 @@ function updateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFuri
     var sid = String(studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var doc = firestoreGet_('students', sid);
-    if (!doc) return { success: false, error: '生徒が見つかりません' };
+    // 存在確認
+    var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    doc.campus      = String(campusCode).padStart(2, '0');
-    doc.sei         = sei.trim();
-    doc.mei         = mei.trim() || '';
-    doc.seiFurigana = seiFurigana.trim();
-    doc.meiFurigana = meiFurigana.trim() || '';
-    doc.schoolName  = schoolName.trim() || '';
-
-    firestoreSet_('students', sid, doc);
+    supabaseUpsert_('students', {
+      id:           sid,
+      campus:       String(campusCode).padStart(2, '0'),
+      sei:          sei.trim(),
+      mei:          mei.trim() || '',
+      sei_furigana: seiFurigana.trim(),
+      mei_furigana: meiFurigana.trim() || '',
+      school_name:  schoolName.trim() || ''
+    });
 
     Logger.log('✓ updateStudentInfo: 更新完了 ' + sid);
     return { success: true, message: '生徒情報を更新しました' };
@@ -516,11 +547,10 @@ function deleteStudent(studentId) {
     var sid = String(studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var doc = firestoreGet_('students', sid);
-    if (!doc) return { success: false, error: '生徒が見つかりません' };
+    var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    doc.isDeleted = true;
-    firestoreSet_('students', sid, doc);
+    supabaseUpsert_('students', { id: sid, is_deleted: true });
 
     Logger.log('✓ deleteStudent: 削除完了 ' + sid);
     return { success: true, message: '生徒を削除しました' };
@@ -540,13 +570,11 @@ function deleteStudent(studentId) {
  */
 function getDeletedStudents(campusCode, gradeCode, selectedYear) {
   try {
-    var docs = firestoreQuery_('students', [
-      fsFilter_('isDeleted', 'EQUAL', true)
-    ]);
+    var docs = supabaseSelect_('students', 'is_deleted=eq.true').map(toStudentCamel_);
 
     var students = [];
     docs.forEach(function(doc) {
-      var studentId = String(doc.studentId || doc._id || '').trim();
+      var studentId = String(doc.studentId || '').trim();
       if (!studentId || studentId.length < 10) return;
 
       var regYear  = parseInt(studentId.substring(2, 6), 10);
@@ -600,11 +628,10 @@ function restoreStudent(studentId) {
     var sid = String(studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    var doc = firestoreGet_('students', sid);
-    if (!doc) return { success: false, error: '生徒が見つかりません' };
+    var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    doc.isDeleted = false;
-    firestoreSet_('students', sid, doc);
+    supabaseUpsert_('students', { id: sid, is_deleted: false });
 
     Logger.log('✓ restoreStudent: 復元完了 ' + sid);
     return { success: true, message: '生徒情報を復元しました' };
@@ -1793,18 +1820,19 @@ function saveExamResult(studentId, examDataJson) {
     }
 
     try {
-      var doc = firestoreGet_('students', sid);
-      if (!doc) return { success: false, error: '生徒が見つかりません: ' + sid };
+      var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
+      if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません: ' + sid };
 
-      doc.jukoukou1        = examData.jukoukou1        || '';
-      doc.jukoukou1_gakka  = examData.jukoukou1_gakka  || '';
-      doc.jukoukou1_gokaku = examData.jukoukou1_gokaku || '';
-      doc.ikusei           = examData.ikusei            || '';
-      doc.jukoukou2        = examData.jukoukou2        || '';
-      doc.jukoukou2_gakka  = examData.jukoukou2_gakka  || '';
-      doc.jukoukou2_gokaku = examData.jukoukou2_gokaku || '';
-
-      firestoreSet_('students', sid, doc);
+      supabaseUpsert_('students', {
+        id:                sid,
+        jukoukou1:         examData.jukoukou1        || '',
+        jukoukou1_gakka:   examData.jukoukou1_gakka  || '',
+        jukoukou1_gokaku:  examData.jukoukou1_gokaku || '',
+        ikusei:            examData.ikusei            || '',
+        jukoukou2:         examData.jukoukou2        || '',
+        jukoukou2_gakka:   examData.jukoukou2_gakka  || '',
+        jukoukou2_gokaku:  examData.jukoukou2_gokaku || ''
+      });
       Logger.log('✓ saveExamResult: 保存完了 ' + sid);
       return { success: true, message: '受験情報を保存しました' };
     } finally {
@@ -1828,8 +1856,9 @@ function getStudentExamData(studentId, fiscalYear) {
     var sid = String(studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    // Firestore から受験情報を取得
-    var doc = firestoreGet_('students', sid);
+    // Supabase から受験情報を取得
+    var rows = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid));
+    var doc = rows.length > 0 ? toStudentCamel_(rows[0]) : null;
     var emptyExam = { jukoukou1: '', jukoukou1_gakka: '', jukoukou1_gokaku: '', ikusei: '', jukoukou2: '', jukoukou2_gakka: '', jukoukou2_gokaku: '' };
     var examData = doc ? {
       jukoukou1:        String(doc.jukoukou1        || ''),
@@ -1902,13 +1931,11 @@ function getStudentPlacementData(year) {
       gradeMap[sid][testName] = total;
     });
 
-    // 3. 生徒マスタから受験情報を Firestore で一括取得（中3生のみ）
+    // 3. 生徒マスタから受験情報を Supabase で一括取得（中3生のみ）
     var examMap = {};
-    var allDocs = firestoreQuery_('students', [
-      fsFilter_('isDeleted', 'EQUAL', false)
-    ]);
+    var allDocs = supabaseSelect_('students', 'is_deleted=eq.false').map(toStudentCamel_);
     allDocs.forEach(function(doc) {
-      var mSid = String(doc.studentId || doc._id || '').trim();
+      var mSid = String(doc.studentId || '').trim();
       if (!mSid) return;
       if (doc.jukoukou1 || doc.jukoukou1_gokaku || doc.jukoukou2) {
         examMap[mSid] = {
