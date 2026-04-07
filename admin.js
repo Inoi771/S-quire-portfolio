@@ -1448,6 +1448,12 @@ function scheduledInitializeSheets() {
       runFirestoreBackup();
     } catch(e) { Logger.log('⚠ Firestoreバックアップ: ' + e); }
 
+    // Supabase停止防止（7日間アクセスなしで停止されるため毎日軽量クエリを実行）
+    try {
+      supabaseRpc_('get_grades_years');
+      Logger.log('✓ Supabase keepalive OK');
+    } catch(e) { Logger.log('⚠ Supabase keepalive: ' + e); }
+
     recordInitializationLog('成功', '定時初期化処理（scheduledInitializeSheets）');
     
     return {
