@@ -26,6 +26,8 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `fir-quire`） |
 | `FIREBASE_CLIENT_EMAIL` | Firebase サービスアカウントメール |
 | `FIREBASE_PRIVATE_KEY` | Firebase サービスアカウント秘密鍵（PEM形式） |
+| `SUPABASE_URL` | Supabase プロジェクトURL（例: `https://xxxxx.supabase.co`）— 成績データ用 |
+| `SUPABASE_SERVICE_KEY` | Supabase service_role キー — 成績データ用 |
 
 > **Firestore に移行済み（PROP_KEYS から削除）:**
 > `TEACHER_ID_MAP` → `staffs` コレクション / `LINE_USER_MAPPING` → `staffs.lineUserId` / `NOTIFICATION_METHODS` → `staffs.notificationMethod` / `NOTIFICATION_EMAILS` → `staffs.notificationEmail` / `LINE_SCHEDULER_NOTIF_PREFS` → `staffs.schedulerNotifPrefs` / `CAMPUS_NOTIFICATION_ROUTING` → `config/notification_routing`
@@ -149,11 +151,11 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `allowedUsers` | `{email}`（小文字メールアドレス） | Firestoreセキュリティルール用ホワイトリスト。登録されたメールのユーザーのみFirestoreデータにアクセス可。フィールド: `email`(string), `addedAt`(ISO 8601文字列)。自動登録: `getAppStartupData()`, `addUserAccess()`, `linkUserById()`, `addEmailToTeacher()`。自動削除: `removeUserAccess()`, `removeEmailFromTeacher()`。GASサーバー側（サービスアカウント）からのみ書き込み可。クライアントSDKからは書き込み不可（`allow write: if false`） |
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
-| `grades` | `{studentId}_{safe(testName)}` | 成績データ |
-| `schoolAverages` | `{year}_{safe(testName)}` | 学校別平均点 |
-| `testAnalysis` | `{year}_{safe(testName)}` | テスト全体AI分析 |
-| `studentAnalysis` | `{studentId}_{safe(testName)}` | 生徒別AI分析 |
-| `distCache` | `{year}_{safe(testName)}_dist` | 成績分析の分布キャッシュ |
+| ~~`grades`~~ | — | **Supabaseに移行済み** |
+| ~~`schoolAverages`~~ | — | **Supabaseに移行済み** |
+| ~~`testAnalysis`~~ | — | **Supabaseに移行済み** |
+| ~~`studentAnalysis`~~ | — | **Supabaseに移行済み** |
+| ~~`distCache`~~ | — | **廃止（SQL集計で代替）** |
 | `schedules` | `{year}_admin_{ms}` / `{year}_{school}_{type}_{date}` | 月間スケジュール |
 | `lectureEntries` | `{lectureId}_{campusCode}_{entryId}` | 講習日程 |
 | `lineSchedules` | `sch_{YYYYMM}_{type}` | LINEスケジューラー |
@@ -161,10 +163,35 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `imageTags` | `{driveFileId}` | チラシ用画像タグ |
 | `operationLogs` | `log_{ms}_{random5}` | 操作ログ |
 | `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ（会話から抽出した知識）。`category`, `content`, `reason`, `source`, `learnedAt` |
-| `gradesMeta` | `yearsList` | 成績データの年度一覧キャッシュ。`years`(整数配列), `updatedAt`(ISO 8601)。成績保存時に自動更新。全件取得を回避して1ドキュメント読み取りで年度一覧を返す |
-| `gradeSummaries` | `{year}_{safe(testName)}` | テスト別校舎平均キャッシュ。`fiscalYear`, `testName`, `count`, `campusAverages`(校舎コード→平均Map), `gradeBreakdown`(学年別人数Map), `updatedAt`。成績保存時に自動再計算。getCampusAveragesのファストパスとして使用 |
-| `gradeListCache` | `{year}_{safe(testName)}` | 一覧表キャッシュ。`fiscalYear`, `testName`, `students`(全生徒の成績+合格率配列), `updatedAt`。成績保存時に自動再構築。fbGetStudentListWithGradesのファストパス（450読み取り→1読み取り） |
-| `gradeReportCache` | `{year}` | 成績表キャッシュ。`fiscalYear`, `reports`(生徒ID→{student,grades,testNames,schoolAverages,deviationValues}のMap), `updatedAt`。成績保存時に自動再構築。fbGetStudentGradeReportのファストパス（153読み取り→1読み取り） |
+| ~~`gradesMeta`~~ | — | **廃止（Supabase SQL集計で代替: `get_grades_years()`）** |
+| ~~`gradeSummaries`~~ | — | **廃止（Supabase SQL集計で代替: `get_campus_averages()`）** |
+| ~~`gradeListCache`~~ | — | **廃止（フロントがGAS API経由で取得）** |
+| ~~`gradeReportCache`~~ | — | **廃止（フロントがGAS API経由で取得）** |
+
+---
+
+## Supabase（PostgreSQL）テーブル構成
+
+Firestore Spark無料プランの読み取り上限対策として、成績関連データをSupabaseに移行。
+
+| テーブル | 主キー | 用途 |
+|---------|--------|------|
+| `grades` | `id` (`{studentId}_{safeTestName}_{fiscalYear}`) | 成績データ。`student_id`, `test_name`, `fiscal_year`, 5教科+合計+平均, 志望校, `campus`, `student_name`, `recorded_at` |
+| `school_averages` | `id` (`{year}_{safeTestName}`) | 学校別平均点。`year`, `test_name`, `averages`(JSONB: `[{schoolName, kokugo, shakai, ...}]`), `updated_at` |
+| `test_analysis` | `id` (`{year}_{safeTestName}`) | テスト全体AI分析。`year`, `test_name`, `analysis_json`(JSONB), `generated_at` |
+| `student_analysis` | `id` (`{studentId}_{safeTestName}_{year}`) | 生徒別AI分析。`student_id`, `test_name`, `year`, `analysis_json`(JSONB), `generated_at` |
+
+### SQL関数（RPC）
+
+| 関数名 | 代替対象 | 用途 |
+|--------|---------|------|
+| `get_campus_averages(p_year, p_test)` | gradeSummaries | 校舎別5教科平均（campus カラムで GROUP BY） |
+| `get_grades_years()` | gradesMeta | `SELECT DISTINCT fiscal_year` で年度リスト |
+| `get_grade_breakdown(p_year, p_test)` | gradeSummaries.gradeBreakdown | 学年コード別人数 |
+| `get_distribution(p_year, p_test)` | distCache | 教科別10点刻み＋合計50点刻みヒストグラム |
+| `get_deviation_stats(p_year, p_test)` | gradeReportCache | 偏差値計算用の平均・標準偏差 |
+
+---
 
 **Firestore利用上の注意：**
 - 複合クエリ（AND）はコンポジットインデックスが必要なため、フィルターは1条件にしてクライアント側で追加フィルタリングすること

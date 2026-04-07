@@ -69,15 +69,16 @@ function makeTestAnalysisDocId_(year, testName) {
 function getGradeAnalysis(year, testName) {
   try {
     var docId = makeTestAnalysisDocId_(year, testName);
-    var doc = firestoreGet_('testAnalysis', docId);
-    if (!doc || !doc.analysisJson) {
+    var docs = supabaseSelect_('test_analysis', 'id=eq.' + encodeURIComponent(docId));
+    if (!docs || docs.length === 0 || !docs[0].analysis_json) {
       return { success: true, exists: false, analysis: null, generatedAt: '' };
     }
-    var analysis = safeJsonParse_(doc.analysisJson, null);
+    var raw = docs[0].analysis_json;
+    var analysis = (typeof raw === 'string') ? safeJsonParse_(raw, null) : raw;
     if (!analysis) {
       return { success: true, exists: false, analysis: null, generatedAt: '' };
     }
-    return { success: true, exists: true, analysis: analysis, generatedAt: doc.generatedAt || '' };
+    return { success: true, exists: true, analysis: analysis, generatedAt: docs[0].generated_at || '' };
   } catch (error) {
     Logger.log('❌ getGradeAnalysisエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -152,18 +153,8 @@ function getOrBuildDistCache_(year, testName, sigmaConfig, forceRecalc) {
   var targetTest = String(testName).trim();
   var distDocId = makeDistCacheDocId_(year, testName);
 
-  // --- キャッシュ読み込み（forceRecalc=false のとき） ---
-  if (!forceRecalc) {
-    try {
-      var cacheDoc = firestoreGet_('distCache', distDocId);
-      if (cacheDoc && cacheDoc.distributionJson) {
-        var cached = safeJsonParse_(cacheDoc.distributionJson, null);
-        if (cached) return cached;
-      }
-    } catch (e) {
-      Logger.log('⚠ getOrBuildDistCache_ キャッシュ読み込みスキップ: ' + e);
-    }
-  }
+  // Supabase移行後: 毎回 getStudentListWithGrades 経由で計算（SQL集計でFirestoreキャッシュ不要）
+  // forceRecalc パラメータは後方互換のため残すが、常に再計算する
 
   // --- キャッシュなし or 強制再計算 → 生スコアから計算 ---
   var distribution = {};
@@ -218,19 +209,7 @@ function getOrBuildDistCache_(year, testName, sigmaConfig, forceRecalc) {
     return {};
   }
 
-  // --- Firestore にキャッシュ保存 ---
-  if (Object.keys(distribution).length > 0) {
-    try {
-      firestoreSet_('distCache', distDocId, {
-        year:             parseInt(year, 10),
-        testName:         targetTest,
-        distributionJson: JSON.stringify(distribution),
-        updatedAt:        new Date().toISOString()
-      });
-    } catch (e) {
-      Logger.log('⚠ getOrBuildDistCache_ キャッシュ保存スキップ: ' + e);
-    }
-  }
+  // Supabase移行後: Firestoreキャッシュ保存は不要（毎回計算で十分高速）
 
   return distribution;
 }
@@ -588,14 +567,15 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
     // scoreDistribution を analysis に付加して保存（フロントで上位層・下位層の視覚表示に使用）
     analysis.scoreDistribution = scoreDistribution;
 
-    // --- 6. Firestoreに保存 (upsert) ---
+    // --- 6. Supabase に保存 (upsert) ---
     var now = new Date().toISOString();
     var analysisDocId = makeTestAnalysisDocId_(year, testName);
-    firestoreSet_('testAnalysis', analysisDocId, {
-      year:         parseInt(year, 10),
-      testName:     String(testName),
-      analysisJson: JSON.stringify(analysis),
-      generatedAt:  now
+    supabaseUpsert_('test_analysis', {
+      id:            analysisDocId,
+      year:          parseInt(year, 10),
+      test_name:     String(testName),
+      analysis_json: analysis,
+      generated_at:  now
     });
 
     return { success: true, analysis: analysis, generatedAt: now };
@@ -687,12 +667,13 @@ function getStudentAnalysis(year, studentId, testName) {
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
     var targetTest = String(testName).trim();
 
-    // 完全一致でまず取得
+    // 完全一致でまず取得（Supabase）
     var docId = makeStudentAnalysisDocId_(sid, targetTest, year);
-    var doc = firestoreGet_('studentAnalysis', docId);
-    if (doc && doc.analysisJson) {
-      var analysisData = safeJsonParse_(doc.analysisJson, null);
-      if (analysisData) return { success: true, exists: true, analysis: analysisData, generatedAt: doc.generatedAt || '' };
+    var docs = supabaseSelect_('student_analysis', 'id=eq.' + encodeURIComponent(docId));
+    if (docs && docs.length > 0 && docs[0].analysis_json) {
+      var raw = docs[0].analysis_json;
+      var analysisData = (typeof raw === 'string') ? safeJsonParse_(raw, null) : raw;
+      if (analysisData) return { success: true, exists: true, analysis: analysisData, generatedAt: docs[0].generated_at || '' };
     }
 
     // 基礎学力テストの特例：完全一致がない場合、N回以上のデータにフォールバック
@@ -703,10 +684,11 @@ function getStudentAnalysis(year, studentId, testName) {
       for (var r = 3; r > targetNum; r--) {
         var fallbackTest = '第' + r + '回基礎学力テスト';
         var fallbackDocId = makeStudentAnalysisDocId_(sid, fallbackTest, year);
-        var fallbackDoc = firestoreGet_('studentAnalysis', fallbackDocId);
-        if (fallbackDoc && fallbackDoc.analysisJson) {
-          var fbData = safeJsonParse_(fallbackDoc.analysisJson, null);
-          if (fbData) return { success: true, exists: true, analysis: fbData, generatedAt: fallbackDoc.generatedAt || '' };
+        var fbDocs = supabaseSelect_('student_analysis', 'id=eq.' + encodeURIComponent(fallbackDocId));
+        if (fbDocs && fbDocs.length > 0 && fbDocs[0].analysis_json) {
+          var fbRaw = fbDocs[0].analysis_json;
+          var fbData = (typeof fbRaw === 'string') ? safeJsonParse_(fbRaw, null) : fbRaw;
+          if (fbData) return { success: true, exists: true, analysis: fbData, generatedAt: fbDocs[0].generated_at || '' };
         }
       }
     }
@@ -1019,16 +1001,17 @@ function generateStudentAnalyses(year, testName) {
       };
 
       var docId = makeStudentAnalysisDocId_(sd.id, testNameTrimmed, year);
-      writes.push({ collection: 'studentAnalysis', docId: docId, data: {
-        studentId:    String(sd.id),
-        testName:     testNameTrimmed,
-        year:         parseInt(year, 10),
-        analysisJson: JSON.stringify(analysisData),
-        generatedAt:  now
-      }});
+      writes.push({
+        id:            docId,
+        student_id:    String(sd.id),
+        test_name:     testNameTrimmed,
+        year:          parseInt(year, 10),
+        analysis_json: analysisData,
+        generated_at:  now
+      });
     });
 
-    if (writes.length > 0) firestoreBatchWrite_(writes);
+    if (writes.length > 0) supabaseBatchUpsert_('student_analysis', writes);
 
     return { success: true, count: savedCount, message: savedCount + '人の生徒分析を生成しました' };
   } catch (error) {
@@ -1181,17 +1164,18 @@ function saveStudentAnalyses_(studentsData, aiStudentAnalyses, year, testNameTri
       displayTestNames: displayTestNames
     };
     var docId = makeStudentAnalysisDocId_(sd.id, testNameTrimmed, year);
-    writes.push({ collection: 'studentAnalysis', docId: docId, data: {
-      studentId:    String(sd.id),
-      testName:     testNameTrimmed,
-      year:         parseInt(year, 10),
-      analysisJson: JSON.stringify(analysisData),
-      generatedAt:  now
-    }});
+    writes.push({
+      id:            docId,
+      student_id:    String(sd.id),
+      test_name:     testNameTrimmed,
+      year:          parseInt(year, 10),
+      analysis_json: analysisData,
+      generated_at:  now
+    });
     savedCount++;
   });
 
-  if (writes.length > 0) firestoreBatchWrite_(writes);
+  if (writes.length > 0) supabaseBatchUpsert_('student_analysis', writes);
   return savedCount;
 }
 
@@ -1218,12 +1202,12 @@ function generateAllAnalyses(year, testName, skipExisting) {
     var existingDocs = [];
     var skippedStudentCount = 0;
     try {
-      existingDocs = firestoreQuery_('studentAnalysis', [
-        fsFilter_('testName', 'EQUAL', String(testName).trim()),
-        fsFilter_('year', 'EQUAL', parseInt(year, 10))
-      ]);
+      existingDocs = supabaseSelect_('student_analysis',
+        'test_name=eq.' + encodeURIComponent(String(testName).trim()) +
+        '&year=eq.' + parseInt(year, 10)
+      );
       existingDocs.forEach(function(doc) {
-        var eskipId = String(doc.studentId || '').trim();
+        var eskipId = String(doc.student_id || '').trim();
         if (/^\d+$/.test(eskipId) && eskipId.length < 10) eskipId = eskipId.padStart(10, '0');
         existingStudentKeys[eskipId + '|' + String(testName).trim()] = true;
       });

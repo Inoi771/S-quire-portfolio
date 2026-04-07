@@ -21,39 +21,17 @@ function getGradesYearFolders() {
   try {
     var currentFy = getCurrentFiscalYear();
 
-    // gradesMeta/yearsList から年度一覧を取得（1ドキュメント読み取り）
-    var meta = firestoreGet_('gradesMeta', 'yearsList');
-    if (meta && Array.isArray(meta.years) && meta.years.length > 0) {
-      var yearSet = {};
-      meta.years.forEach(function(y) { yearSet[String(y)] = true; });
-      yearSet[String(currentFy)] = true;
-      var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
-      years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-      return { success: true, years: years };
+    // Supabase RPC で年度一覧を取得（SELECT DISTINCT fiscal_year）
+    var dbYears = supabaseRpc_('get_grades_years');
+    var yearSet = {};
+    if (Array.isArray(dbYears)) {
+      dbYears.forEach(function(y) { yearSet[String(y)] = true; });
     }
+    yearSet[String(currentFy)] = true;
+    var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
+    years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
 
-    // フォールバック: メタ未作成時は全件取得 + 自動修復
-    var docs = firestoreQuery_('grades', []);
-    var yearSet2 = {};
-    docs.forEach(function(doc) {
-      if (doc.fiscalYear) yearSet2[String(doc.fiscalYear)] = true;
-    });
-    yearSet2[String(currentFy)] = true;
-    var years2 = Object.keys(yearSet2).filter(function(y) { return /^\d{4}$/.test(y); });
-    years2.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-
-    // 自動修復: メタドキュメントを作成して次回から1件読み取りで済むようにする
-    try {
-      var intYears = years2.map(function(y) { return parseInt(y, 10); });
-      firestoreSet_('gradesMeta', 'yearsList', {
-        years: intYears,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (metaErr) {
-      Logger.log('⚠ gradesMeta自動修復スキップ: ' + metaErr);
-    }
-
-    return { success: true, years: years2 };
+    return { success: true, years: years };
   } catch (error) {
     Logger.log('❌ getGradesYearFoldersエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -221,16 +199,15 @@ function getDataSheetData(year) {
     var cacheKey = String(year);
     if (_dataSheetCache[cacheKey]) return _dataSheetCache[cacheKey];
 
-    var docs = firestoreQuery_('grades', [
-      fsFilter_('fiscalYear', 'EQUAL', parseInt(year, 10))
-    ]);
+    // Supabase からの取得（PostgreSQL snake_case → camelCase マッピング）
+    var docs = supabaseSelect_('grades', 'fiscal_year=eq.' + parseInt(year, 10));
 
     var results = docs.map(function(doc) {
-      var sid = String(doc.studentId || '').trim();
+      var sid = String(doc.student_id || '').trim();
       if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
       return {
         studentId:      sid,
-        testName:       String(doc.testName    || '').trim(),
+        testName:       String(doc.test_name    || '').trim(),
         kokugo:         doc.kokugo  !== null && doc.kokugo  !== undefined ? doc.kokugo  : '',
         shakai:         doc.shakai  !== null && doc.shakai  !== undefined ? doc.shakai  : '',
         sugaku:         doc.sugaku  !== null && doc.sugaku  !== undefined ? doc.sugaku  : '',
@@ -242,8 +219,8 @@ function getDataSheetData(year) {
         shogaku1_gakka: String(doc.shogaku1_gakka || ''),
         shogaku2:       String(doc.shogaku2       || ''),
         shogaku2_gakka: String(doc.shogaku2_gakka || ''),
-        recordedDate:   doc.recordedAt || new Date().toISOString(),
-        studentName:    String(doc.studentName    || '')
+        recordedDate:   doc.recorded_at || new Date().toISOString(),
+        studentName:    String(doc.student_name    || '')
       };
     });
 
@@ -286,20 +263,20 @@ function getStudentListWithGrades(year, testName) {
     });
 
 
-    // Firestore studentAnalysis から合格可能性（%）を一括ロード
+    // Supabase studentAnalysis から合格可能性（%）を一括ロード
     // {studentId|testName: {schoolName: percent}} の形式でマップ化
     var analysisPassMap = {};
     try {
-      var aDocs = firestoreQuery_('studentAnalysis', [
-        fsFilter_('testName', 'EQUAL', targetTest),
-        fsFilter_('year', 'EQUAL', parseInt(year, 10))
-      ]);
+      var aDocs = supabaseSelect_('student_analysis',
+        'test_name=eq.' + encodeURIComponent(targetTest) +
+        '&year=eq.' + parseInt(year, 10)
+      );
       aDocs.forEach(function(doc) {
-        var sid = String(doc.studentId || '').trim();
+        var sid = String(doc.student_id || '').trim();
         if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-        var tname = String(doc.testName || '').trim();
+        var tname = String(doc.test_name || '').trim();
         if (!sid || !tname) return;
-        var data = safeJsonParse_(doc.analysisJson, null);
+        var data = (typeof doc.analysis_json === 'string') ? safeJsonParse_(doc.analysis_json, null) : doc.analysis_json;
         if (!data || !Array.isArray(data.passAssessment)) return;
         var m = {};
         data.passAssessment.forEach(function(pa) {
@@ -877,7 +854,8 @@ function getGradeDataByStudentAndTest(year, studentId, testName) {
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
     var docId = makeGradeDocId_(sid, testName, year);
-    var doc = firestoreGet_('grades', docId);
+    var docs = supabaseSelect_('grades', 'id=eq.' + encodeURIComponent(docId));
+    var doc = (docs && docs.length > 0) ? docs[0] : null;
 
     if (!doc) return { success: true, found: false };
 
@@ -935,13 +913,29 @@ function submitGradeData(year, studentId, testName, scores, skipCacheUpdate) {
 
     var studentName = scores.studentName || getStudentNameById(sid);
 
-    var docId = makeGradeDocId_(sid, testName, year);
-    var isNew = !firestoreGet_('grades', docId);
+    // 生徒の校舎コードを取得（Supabase の campus カラム用）
+    var campus = '';
+    try {
+      var masterData = getMasterData(parseInt(year, 10));
+      for (var mi = 0; mi < masterData.length; mi++) {
+        if (String(masterData[mi].studentId) === sid) {
+          campus = masterData[mi].campus || '';
+          break;
+        }
+      }
+    } catch (campusErr) {
+      // フォールバック: 生徒IDの先頭2桁
+      campus = sid.substring(0, 2);
+    }
 
-    firestoreSet_('grades', docId, {
-      studentId:      sid,
-      testName:       String(testName).trim(),
-      fiscalYear:     parseInt(year, 10),
+    var docId = makeGradeDocId_(sid, testName, year);
+
+    // Supabase に UPSERT（既存チェック不要 — ON CONFLICT で自動処理）
+    supabaseUpsert_('grades', {
+      id:             docId,
+      student_id:     sid,
+      test_name:      String(testName).trim(),
+      fiscal_year:    parseInt(year, 10),
       kokugo:         kokugo,
       shakai:         shakai,
       sugaku:         sugaku,
@@ -953,42 +947,20 @@ function submitGradeData(year, studentId, testName, scores, skipCacheUpdate) {
       shogaku1_gakka: scores.shogaku1_gakka || '',
       shogaku2:       scores.shogaku2       || '',
       shogaku2_gakka: scores.shogaku2_gakka || '',
-      recordedAt:     new Date().toISOString(),
-      studentName:    studentName
+      recorded_at:    new Date().toISOString(),
+      student_name:   studentName,
+      campus:         campus
     });
 
-    // gradesMeta/yearsList に年度を追加（未登録時のみ）
-    try {
-      var fy = parseInt(year, 10);
-      var meta = firestoreGet_('gradesMeta', 'yearsList');
-      var existingYears = (meta && Array.isArray(meta.years)) ? meta.years : [];
-      if (existingYears.indexOf(fy) === -1) {
-        existingYears.push(fy);
-        firestoreSet_('gradesMeta', 'yearsList', {
-          years: existingYears,
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (metaErr) {
-      Logger.log('⚠ gradesMeta更新スキップ: ' + metaErr);
-    }
-
-    // キャッシュ更新（skipCacheUpdate=true のときはスキップ）
+    // メモリキャッシュクリア
     if (!skipCacheUpdate) {
-      try {
-        var dsCacheKey = String(year);
-        delete _dataSheetCache[dsCacheKey];
-        delete _masterDataCache[dsCacheKey];
-        rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
-        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
-        rebuildGradeReportCache(parseInt(year, 10));
-      } catch (cacheErr) {
-        Logger.log('⚠ キャッシュ更新スキップ: ' + cacheErr);
-      }
+      var dsCacheKey = String(year);
+      delete _dataSheetCache[dsCacheKey];
+      delete _masterDataCache[dsCacheKey];
     }
 
-    Logger.log('✓ submitGradeData: ' + (isNew ? '新規' : '更新') + ' ' + docId);
-    return { success: true, message: isNew ? '成績データを新規保存しました' : '成績データを上書き更新しました' };
+    Logger.log('✓ submitGradeData: ' + docId);
+    return { success: true, message: '成績データを保存しました' };
   } catch (error) {
     Logger.log('❌ submitGradeDataエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -1223,9 +1195,11 @@ function getSchoolListForAverages(year) {
 function getSchoolAverages(year, testName) {
   try {
     var docId = makeSchoolAveDocId_(year, testName);
-    var doc = firestoreGet_('schoolAverages', docId);
-    if (!doc || !doc.averages) return { success: true, averages: [] };
-    return { success: true, averages: doc.averages };
+    var docs = supabaseSelect_('school_averages', 'id=eq.' + encodeURIComponent(docId));
+    if (!docs || docs.length === 0 || !docs[0].averages) return { success: true, averages: [] };
+    // JSONB は自動パース済み
+    var averages = (typeof docs[0].averages === 'string') ? JSON.parse(docs[0].averages) : docs[0].averages;
+    return { success: true, averages: averages };
   } catch (error) {
     Logger.log('❌ getSchoolAveragesエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -1248,9 +1222,11 @@ function saveSchoolAverages(year, testName, dataArray, skipExisting) {
     var savedCount = 0;
     var updatedCount = 0;
 
-    // 既存ドキュメントを取得して既存 averages マップを構築
-    var existingDoc = firestoreGet_('schoolAverages', docId);
-    var existingAverages = (existingDoc && existingDoc.averages) ? existingDoc.averages : [];
+    // 既存レコードを取得して既存 averages マップを構築
+    var existingRows = supabaseSelect_('school_averages', 'id=eq.' + encodeURIComponent(docId));
+    var existingDoc = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+    var rawAvg = existingDoc ? existingDoc.averages : null;
+    var existingAverages = rawAvg ? ((typeof rawAvg === 'string') ? JSON.parse(rawAvg) : rawAvg) : [];
     var existingMap = {};
     existingAverages.forEach(function(a) {
       existingMap[String(a.schoolName || '')] = a;
@@ -1298,11 +1274,12 @@ function saveSchoolAverages(year, testName, dataArray, skipExisting) {
     });
 
     var finalAverages = Object.keys(existingMap).map(function(name) { return existingMap[name]; });
-    firestoreSet_('schoolAverages', docId, {
-      year:      parseInt(year, 10),
-      testName:  String(testName),
-      updatedAt: now,
-      averages:  finalAverages
+    supabaseUpsert_('school_averages', {
+      id:         docId,
+      year:       parseInt(year, 10),
+      test_name:  String(testName),
+      updated_at: now,
+      averages:   finalAverages
     });
 
     return { success: true, savedCount: savedCount, updatedCount: updatedCount };
@@ -1386,74 +1363,35 @@ function parseAndSaveAveragesFromText(text, year, testName, skipExisting) {
  */
 function getCampusAverages(year, testName) {
   try {
-    // ファストパス: gradeSummaries から取得（1ドキュメント読み取り）
-    try {
-      var summary = firestoreGet_('gradeSummaries', makeSummaryDocId_(year, testName));
-      if (summary && summary.campusAverages) {
-        var campusMap = getCampusConfig();
-        var campuses = [];
-        Object.keys(summary.campusAverages).forEach(function(code) {
-          var avg = summary.campusAverages[code];
-          campuses.push({
-            campusCode: code,
-            campusName: code === 'all' ? '全校舎' : (campusMap[code] || code),
-            count: avg.count || 0,
-            kokugo: avg.kokugo, shakai: avg.shakai, sugaku: avg.sugaku,
-            rika: avg.rika, eigo: avg.eigo, total: avg.total
-          });
-        });
-        campuses.sort(function(a, b) {
-          if (a.campusCode === 'all') return -1;
-          if (b.campusCode === 'all') return 1;
-          return a.campusCode.localeCompare(b.campusCode);
-        });
-        return { success: true, campuses: campuses };
-      }
-    } catch (e) {
-      // サマリーなし → フォールバック
-    }
-
-    // フォールバック: 全成績から計算
-    var result = getStudentListWithGrades(year, testName);
-    if (!result.success) return result;
-
-    var students = result.students.filter(function(s) { return s.hasGrade; });
-
-    var campusMap = getCampusConfig(); // {code: name} の辞書形式
-
-    var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
-
-    function calcAvg(arr, subj) {
-      var vals = arr.map(function(s) { return s[subj]; })
-        .filter(function(v) { return v !== null && v !== undefined && v !== '' && !isNaN(Number(v)); });
-      if (vals.length === 0) return '';
-      return Math.round(vals.reduce(function(a, b) { return a + Number(b); }, 0) / vals.length * 10) / 10;
-    }
-
-    var campuses = [];
-
-    // 全校舎合計
-    var allAvg = { campusCode: 'all', campusName: '全校舎', count: students.length };
-    subjects.forEach(function(s) { allAvg[s] = calcAvg(students, s); });
-    var allTotals = subjects.map(function(s) { return allAvg[s]; }).filter(function(v) { return v !== '' && v !== null && v !== undefined; });
-    allAvg.total = allTotals.length === 5 ? Math.round(allTotals.reduce(function(a, b) { return a + b; }, 0) * 10) / 10 : '';
-    campuses.push(allAvg);
-
-    // 校舎ごと
-    var groups = {};
-    students.forEach(function(s) {
-      var code = String(s.campus || 'unknown');
-      if (!groups[code]) groups[code] = [];
-      groups[code].push(s);
+    // Supabase RPC で校舎別平均を直接取得（SQL集計）
+    var rpcResult = supabaseRpc_('get_campus_averages', {
+      p_year: parseInt(year, 10),
+      p_test: String(testName).trim()
     });
 
-    Object.keys(groups).sort().forEach(function(code) {
-      var arr = groups[code];
-      var avg = { campusCode: code, campusName: campusMap[code] || code, count: arr.length };
-      subjects.forEach(function(s) { avg[s] = calcAvg(arr, s); });
-      var totals = subjects.map(function(s) { return avg[s]; }).filter(function(v) { return v !== '' && v !== null && v !== undefined; });
-      avg.total = totals.length === 5 ? Math.round(totals.reduce(function(a, b) { return a + b; }, 0) * 10) / 10 : '';
-      campuses.push(avg);
+    var campusMap = getCampusConfig(); // {code: name} の辞書形式
+    var campusArr = Array.isArray(rpcResult) ? rpcResult : [];
+
+    // campusCode → campusName を付与
+    var campuses = campusArr.map(function(c) {
+      return {
+        campusCode: c.campusCode || c.campus_code || '',
+        campusName: (c.campusCode || c.campus_code) === 'all' ? '全校舎' : (campusMap[c.campusCode || c.campus_code] || c.campusCode || c.campus_code || ''),
+        count:  c.count  || c.cnt || 0,
+        kokugo: c.kokugo != null ? c.kokugo : '',
+        shakai: c.shakai != null ? c.shakai : '',
+        sugaku: c.sugaku != null ? c.sugaku : '',
+        rika:   c.rika   != null ? c.rika   : '',
+        eigo:   c.eigo   != null ? c.eigo   : '',
+        total:  c.total  != null ? c.total  : ''
+      };
+    });
+
+    // "all" を先頭にソート
+    campuses.sort(function(a, b) {
+      if (a.campusCode === 'all') return -1;
+      if (b.campusCode === 'all') return 1;
+      return a.campusCode.localeCompare(b.campusCode);
     });
 
     return { success: true, campuses: campuses };
@@ -1479,33 +1417,16 @@ function makeSummaryDocId_(year, testName) {
 }
 
 /**
- * gradeSummaries から集計データを取得する（1ドキュメント読み取り）
+ * gradeSummaries から集計データを取得する
+ * Supabase移行後は RPC で直接集計するため、互換用ラッパー
  * @param {number} year 学年年度
  * @param {string} testName テスト名
  * @return {Object|null} サマリーデータ or null
  */
 function getGradeSummary(year, testName) {
   try {
-    return firestoreGet_('gradeSummaries', makeSummaryDocId_(year, testName));
-  } catch (e) {
-    Logger.log('⚠ getGradeSummaryエラー: ' + e);
-    return null;
-  }
-}
-
-/**
- * 指定年度・テスト名の gradeSummaries を再計算して保存する（Admin専用）
- * @param {number} year 学年年度
- * @param {string} testName テスト名
- * @return {Object} { success, summary }
- */
-function rebuildGradeSummary(year, testName) {
-  try {
     var campusResult = getCampusAverages(parseInt(year, 10), String(testName).trim());
-    if (!campusResult.success) {
-      return { success: false, error: campusResult.error || 'getCampusAverages失敗' };
-    }
-
+    if (!campusResult.success) return null;
     var campusAvgMap = {};
     var totalCount = 0;
     campusResult.campuses.forEach(function(c) {
@@ -1515,72 +1436,43 @@ function rebuildGradeSummary(year, testName) {
       };
       if (c.campusCode === 'all') totalCount = c.count;
     });
-
-    // 学年別内訳を計算
-    var gradeBreakdown = {};
-    var listResult = getStudentListWithGrades(parseInt(year, 10), String(testName).trim());
-    if (listResult.success) {
-      listResult.students.filter(function(s) { return s.hasGrade; }).forEach(function(s) {
-        var gc = String(s.grade || '');
-        if (gc) gradeBreakdown[gc] = (gradeBreakdown[gc] || 0) + 1;
-      });
-    }
-
-    var summaryData = {
+    var gradeBreakdown = supabaseRpc_('get_grade_breakdown', {
+      p_year: parseInt(year, 10), p_test: String(testName).trim()
+    }) || {};
+    return {
       fiscalYear: parseInt(year, 10),
       testName: String(testName).trim(),
       count: totalCount,
       campusAverages: campusAvgMap,
-      gradeBreakdown: gradeBreakdown,
-      updatedAt: new Date().toISOString()
+      gradeBreakdown: gradeBreakdown
     };
-
-    firestoreSet_('gradeSummaries', makeSummaryDocId_(year, testName), summaryData);
-    return { success: true, summary: summaryData };
-  } catch (error) {
-    Logger.log('❌ rebuildGradeSummaryエラー: ' + error);
-    return { success: false, error: error.toString() };
+  } catch (e) {
+    Logger.log('⚠ getGradeSummaryエラー: ' + e);
+    return null;
   }
 }
 
 /**
+ * gradeSummaries 再構築（Supabase移行後は不要 — SQL集計で代替）
+ * 後方互換のためno-opとして残す
+ * @param {number} year 学年年度
+ * @param {string} testName テスト名
+ * @return {Object} { success }
+ */
+function rebuildGradeSummary(year, testName) {
+  // Supabase移行後は SQL 集計で自動計算されるため再構築不要
+  return { success: true, summary: getGradeSummary(year, testName) };
+}
+
+/**
  * 全年度・全テスト名の gradeSummaries を一括再構築する（Admin専用）
- * 初回デプロイ後や手動でのデータ修正後に実行
+ * Supabase移行後は SQL 集計で自動計算されるため実質 no-op
  * @return {Object} { success, rebuilt, errors }
  */
 function rebuildAllGradeSummaries() {
-  try {
-    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-
-    var yearsResult = getGradesYearFolders();
-    if (!yearsResult.success) return { success: false, error: 'year一覧取得失敗' };
-
-    var testNames = getTestNamesConfig();
-    if (!testNames || testNames.length === 0) return { success: false, error: 'テスト名設定なし' };
-
-    var rebuilt = 0;
-    var errors = [];
-
-    yearsResult.years.forEach(function(yearStr) {
-      var yr = parseInt(yearStr, 10);
-      testNames.forEach(function(tn) {
-        try {
-          // キャッシュをクリアして最新データで再構築
-          delete _dataSheetCache[String(yr)];
-          delete _masterDataCache[String(yr)];
-          var result = rebuildGradeSummary(yr, tn);
-          if (result.success) rebuilt++;
-        } catch (e) {
-          errors.push(yr + '/' + tn + ': ' + e);
-        }
-      });
-    });
-
-    return { success: true, rebuilt: rebuilt, errors: errors };
-  } catch (error) {
-    Logger.log('❌ rebuildAllGradeSummariesエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
+  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+  // Supabase 移行後は SQL 集計で自動計算されるため再構築不要
+  return { success: true, rebuilt: 0, errors: [] };
 }
 
 // ----------------------------------------
@@ -1588,135 +1480,24 @@ function rebuildAllGradeSummaries() {
 // ----------------------------------------
 
 /**
- * 一覧表キャッシュを再構築する（gradeListCache/{year}_{safeTestName}）
- * getStudentListWithGrades の結果を1ドキュメントに格納
+ * 一覧表キャッシュ再構築（Supabase移行後は不要 — フロントがGAS API経由で取得）
+ * 後方互換のためno-opとして残す
  * @param {number} year 学年年度
  * @param {string} testName テスト名
- * @return {Object} { success, count }
+ * @return {Object} { success }
  */
 function rebuildGradeListCache(year, testName) {
-  try {
-    var result = getStudentListWithGrades(parseInt(year, 10), String(testName).trim());
-    if (!result.success) return { success: false, error: result.error || 'getStudentListWithGrades失敗' };
-
-    var docId = makeSummaryDocId_(year, testName);
-    firestoreSet_('gradeListCache', docId, {
-      fiscalYear: parseInt(year, 10),
-      testName: String(testName).trim(),
-      students: result.students,
-      updatedAt: new Date().toISOString()
-    });
-    return { success: true, count: result.students.length };
-  } catch (error) {
-    Logger.log('❌ rebuildGradeListCacheエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
+  return { success: true, count: 0 };
 }
 
 /**
- * 成績表キャッシュを再構築する（gradeReportCache/{year}）
- * 全生徒の全テスト成績・学校平均・偏差値を1ドキュメントに格納
+ * 成績表キャッシュ再構築（Supabase移行後は不要 — フロントがGAS API経由で取得）
+ * 後方互換のためno-opとして残す
  * @param {number} year 学年年度
- * @return {Object} { success, studentCount }
+ * @return {Object} { success }
  */
 function rebuildGradeReportCache(year) {
-  try {
-    var yr = parseInt(year, 10);
-    var masterData = getMasterData(yr);
-    var allGrades = getDataSheetData(yr);
-    var testNames = getTestNamesConfig();
-    var sigmaResult = getGradeAnalysisSigmaConfig();
-    var sigma = sigmaResult.sigma;
-
-    // テストごとの学校平均を一括取得
-    var schoolAvgMap = {};
-    testNames.forEach(function(tn) {
-      var avgResult = getSchoolAverages(yr, tn);
-      if (avgResult.success && avgResult.averages) {
-        schoolAvgMap[tn] = avgResult.averages;
-      }
-    });
-
-    var reports = {};
-
-    masterData.forEach(function(student) {
-      var sid = String(student.studentId);
-
-      // この生徒の全成績を抽出
-      var studentGrades = [];
-      allGrades.forEach(function(row) {
-        if (String(row.studentId) === sid) {
-          studentGrades.push({
-            testName: row.testName,
-            kokugo: row.kokugo, shakai: row.shakai, sugaku: row.sugaku,
-            rika: row.rika, eigo: row.eigo, total: row.total, average: row.average,
-            shogaku1: row.shogaku1, shogaku1_gakka: row.shogaku1_gakka,
-            shogaku2: row.shogaku2, shogaku2_gakka: row.shogaku2_gakka
-          });
-        }
-      });
-
-      if (studentGrades.length === 0) return; // 成績なしの生徒はスキップ
-
-      // テストごとの学校平均を選択（生徒の学校名 or 「平均」にフォールバック）
-      var studentSchool = (student.schoolName || '').trim();
-      var schoolAverages = {};
-      var deviationValues = {};
-      var subjKeys = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
-
-      studentGrades.forEach(function(g) {
-        var avgs = schoolAvgMap[g.testName];
-        if (!avgs) return;
-
-        var matched = null;
-        var fallback = null;
-        for (var j = 0; j < avgs.length; j++) {
-          var sn = (avgs[j].schoolName || '').trim();
-          if (studentSchool && sn === studentSchool) { matched = avgs[j]; break; }
-          if (!fallback && sn.indexOf('平均') !== -1) fallback = avgs[j];
-        }
-        var avg = matched || fallback;
-        if (avg) {
-          schoolAverages[g.testName] = avg;
-          var devs = {};
-          subjKeys.forEach(function(subj) {
-            var score = g[subj];
-            var avgVal = avg[subj];
-            var sig = sigma[subj];
-            if (sig && sig > 0 && avgVal !== '' && avgVal != null && !isNaN(Number(avgVal)) &&
-                score !== '' && score != null && !isNaN(Number(score))) {
-              devs[subj] = Math.round((50 + 10 * (Number(score) - Number(avgVal)) / sig) * 10) / 10;
-            } else {
-              devs[subj] = null;
-            }
-          });
-          deviationValues[g.testName] = devs;
-        }
-      });
-
-      reports[sid] = {
-        student: {
-          studentId: sid, name: student.name, furigana: student.furigana,
-          campus: student.campus, grade: student.grade, schoolName: student.schoolName
-        },
-        grades: studentGrades,
-        testNames: testNames,
-        schoolAverages: schoolAverages,
-        deviationValues: deviationValues
-      };
-    });
-
-    firestoreSet_('gradeReportCache', String(yr), {
-      fiscalYear: yr,
-      reports: reports,
-      updatedAt: new Date().toISOString()
-    });
-
-    return { success: true, studentCount: Object.keys(reports).length };
-  } catch (error) {
-    Logger.log('❌ rebuildGradeReportCacheエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
+  return { success: true, studentCount: 0 };
 }
 
 /**

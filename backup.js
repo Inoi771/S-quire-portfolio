@@ -128,16 +128,17 @@ function backupGrades_(ss) {
   var sheet = prepareBackupSheet_(ss, '成績データ', headers);
   if (!sheet) return 0;
 
-  var docs = firestoreQuery_('grades', []);
+  // Supabase から全成績データを取得
+  var docs = supabaseSelect_('grades', null, { order: 'fiscal_year.desc,student_id.asc' });
   if (!docs || docs.length === 0) return 0;
 
   var rows = docs.map(function(doc) {
-    var sid = String(doc.studentId || '').trim();
+    var sid = String(doc.student_id || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
     return [
       sid,
-      String(doc.testName    || ''),
-      String(doc.fiscalYear  || ''),
+      String(doc.test_name    || ''),
+      String(doc.fiscal_year  || ''),
       doc.kokugo  !== null && doc.kokugo  !== undefined ? doc.kokugo  : '',
       doc.shakai  !== null && doc.shakai  !== undefined ? doc.shakai  : '',
       doc.sugaku  !== null && doc.sugaku  !== undefined ? doc.sugaku  : '',
@@ -149,8 +150,8 @@ function backupGrades_(ss) {
       String(doc.shogaku1_gakka || ''),
       String(doc.shogaku2       || ''),
       String(doc.shogaku2_gakka || ''),
-      String(doc.recordedAt     || ''),
-      String(doc.studentName    || '')
+      String(doc.recorded_at     || ''),
+      String(doc.student_name    || '')
     ];
   });
 

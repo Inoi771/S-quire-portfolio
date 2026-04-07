@@ -616,7 +616,10 @@ function countStudentsByCampus_(campusCode) {
  */
 function countGradesByTestName_(testName) {
   try {
-    var docs = firestoreQuery_('grades', [fsFilter_('testName', 'EQUAL', testName)]);
+    var docs = supabaseSelect_('grades',
+      'test_name=eq.' + encodeURIComponent(testName),
+      { select: 'id' }
+    );
     return docs.length;
   } catch (e) {
     Logger.log('⚠ countGradesByTestName_エラー: ' + e);
@@ -625,19 +628,24 @@ function countGradesByTestName_(testName) {
 }
 
 /**
- * 指定志望校名を使用している成績データ件数を全年度から返す（列10・列11を検索）
+ * 指定志望校名を使用している成績データ件数を全年度から返す（shogaku1・shogaku2を検索）
  * @param {string} schoolName 志望校名
  * @return {number} 件数（エラー時は0）
  */
 function countGradesBySchool_(schoolName) {
   try {
     // 第1志望校・第2志望校の両方を検索してユニーク件数を返す
-    var docs1 = firestoreQuery_('grades', [fsFilter_('school1', 'EQUAL', schoolName)]);
-    var docs2 = firestoreQuery_('grades', [fsFilter_('school2', 'EQUAL', schoolName)]);
-    // 重複を排除（同じドキュメントが両方に含まれる場合）
+    var docs1 = supabaseSelect_('grades',
+      'shogaku1=eq.' + encodeURIComponent(schoolName),
+      { select: 'id' }
+    );
+    var docs2 = supabaseSelect_('grades',
+      'shogaku2=eq.' + encodeURIComponent(schoolName),
+      { select: 'id' }
+    );
     var seen = {};
-    docs1.forEach(function(d) { seen[d._id] = true; });
-    docs2.forEach(function(d) { seen[d._id] = true; });
+    docs1.forEach(function(d) { seen[d.id] = true; });
+    docs2.forEach(function(d) { seen[d.id] = true; });
     return Object.keys(seen).length;
   } catch (e) {
     Logger.log('⚠ countGradesBySchool_エラー: ' + e);

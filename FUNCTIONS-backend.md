@@ -421,6 +421,34 @@ var rawText = textPart ? (textPart.text || '') : '';
 
 ---
 
+## supabase.js（Supabase REST APIクライアント）
+
+成績データの読み書きに使用。GASから`UrlFetchApp`でSupabase PostgREST APIを呼び出す。
+
+| 関数名 | 説明 |
+|--------|------|
+| `getSupabaseConfig_()` | Script PropertiesからURL・キーを取得 |
+| `supabaseHeaders_(config, extra)` | 共通リクエストヘッダーを生成 |
+| `supabaseSelect_(table, query, options)` | SELECT（PostgRESTフィルター） |
+| `supabaseUpsert_(table, data, onConflict)` | UPSERT（ON CONFLICT マージ） |
+| `supabaseDelete_(table, query)` | DELETE |
+| `supabaseRpc_(functionName, params)` | RPC（PostgreSQL関数呼び出し） |
+| `supabaseBatchUpsert_(table, dataArray, onConflict)` | 大量データ一括UPSERT（500件チャンク） |
+
+## migrate-to-supabase.js（データ移行スクリプト）
+
+Firestore → Supabase の一括データ移行。一度だけ実行。
+
+| 関数名 | 説明 |
+|--------|------|
+| `migrateGradesToSupabase()` | grades コレクション移行 |
+| `migrateSchoolAveragesToSupabase()` | schoolAverages コレクション移行 |
+| `migrateTestAnalysisToSupabase()` | testAnalysis コレクション移行 |
+| `migrateStudentAnalysisToSupabase()` | studentAnalysis コレクション移行 |
+| `migrateAllToSupabase()` | 全コレクション一括移行（メインエントリポイント） |
+
+---
+
 ## gas-bridge.html（Firebase Hosting 用シム）
 
 Firebase Hosting 環境で `google.script.run` を `fetch()` に変換する。
