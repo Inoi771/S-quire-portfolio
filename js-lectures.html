@@ -742,50 +742,7 @@
       // 全校舎エントリを取得（重複チェック用）
       fetchAllCampusEntries();
 
-      // 自動更新タイマーをリセット・開始（30秒ごとに全校舎を静かに再取得）
-      if (lecAutoRefreshTimer) { clearInterval(lecAutoRefreshTimer); }
-      lecAutoRefreshTimer = setInterval(function() {
-        // メインの講習タブまたはブラウザタブが非アクティブなら何もしない
-        var lecTab = document.getElementById('lectures');
-        if (!lecTab || !lecTab.classList.contains('active')) return;
-        if (document.hidden) return;
-        // 日程作成サブタブが非表示なら何もしない
-        var schedEl = document.getElementById('lectures-schedule');
-        if (!schedEl || schedEl.style.display === 'none') return;
-        // 現在表示中の校舎を取得してサイレント更新
-        silentRefreshLecEntries(currentLectureCampus);
-        // 全校舎キャッシュも更新（他ユーザーの変更を検出）
-        fetchAllCampusEntries();
-      }, 180000);
-    }
-
-    /**
-     * バックグラウンドで講習エントリを静かに再取得・再描画する（自動更新用）
-     * ステータスメッセージを表示しない。未保存の変更がある校舎はスキップする。
-     * @param {string} campusCode 対象校舎コード
-     */
-    function silentRefreshLecEntries(campusCode) {
-      if (!currentLectureId || !campusCode) return;
-      // 未保存の変更がある場合はスキップ（ユーザーの作業を上書きしない）
-      if (dirtyCampuses[campusCode]) return;
-
-      fbGetLectureScheduleEntries(currentLectureId, campusCode)
-        .then(function(result) {
-          // コールバック時点でまだ変更がなく、同じ校舎を表示中の場合のみ更新
-          if (dirtyCampuses[campusCode]) return;
-          var newEntries = Array.isArray(result) ? result : [];
-          var old = JSON.stringify(lectureEntries[campusCode] || []);
-          var updated = JSON.stringify(newEntries);
-          if (old === updated) return; // 変更なしなら描画不要
-          lectureEntries[campusCode] = newEntries;
-          if (campusCode === currentLectureCampus) {
-            renderLecEntries(campusCode);
-          }
-        })
-        .catch(function(err) {
-          // サイレント更新なのでエラーも表示しない
-          console.error('[AutoRefresh] getLectureScheduleEntries エラー:', err);
-        });
+      // 自動更新なし（保存後のみ再取得）
     }
 
     /**
