@@ -45,24 +45,18 @@ function fbComputeStudentForYear_(doc, docId, year) {
 }
 
 /**
- * アクティブ生徒一覧を取得（Firebase SDK）
+ * アクティブ生徒一覧を取得（GAS API経由・Supabaseから取得）
  * @param {number} year 対象年度
  * @return {Promise<Array>} 生徒データ配列
  */
 function fbGetMasterData(year) {
   var cacheKey = String(year);
   if (_fbMasterDataCache[cacheKey]) return _fbMasterDataCache[cacheKey];
-  // Promise をキャッシュすることで、並列呼び出し時も1回だけ読み取りが発生する
-  _fbMasterDataCache[cacheKey] = fbDb.collection('students')
-    .where('isDeleted', '==', false)
-    .get()
-    .then(function(snapshot) {
-      var results = [];
-      snapshot.forEach(function(docSnap) {
-        var student = fbComputeStudentForYear_(docSnap.data(), docSnap.id, year);
-        if (student) results.push(student);
-      });
-      return results;
+  // Promise をキャッシュすることで、並列呼び出し時も1回だけAPIコールが発生する
+  _fbMasterDataCache[cacheKey] = gasApiPromise_('getMasterData', [parseInt(year, 10)])
+    .catch(function(err) {
+      console.error('fbGetMasterDataエラー:', err);
+      return [];
     });
   return _fbMasterDataCache[cacheKey];
 }
@@ -111,55 +105,14 @@ function fbGetStudentsForDropdown(campusCode, gradeCode, selectedYear) {
 }
 
 /**
- * 削除済み生徒を取得（Firebase SDK）
- * google.script.run.getDeletedStudents の代替
+ * 削除済み生徒を取得（GAS API経由・Supabaseから取得）
  * @param {string} campusCode 校舎コード（空=全校舎）
  * @param {string|null} gradeCode 学年コード
  * @param {number|null} selectedYear 年度
  * @return {Promise<Object>} { success, students, error }
  */
 function fbGetDeletedStudents(campusCode, gradeCode, selectedYear) {
-  return fbDb.collection('students')
-    .where('isDeleted', '==', true)
-    .get()
-    .then(function(snapshot) {
-      var students = [];
-      snapshot.forEach(function(docSnap) {
-        var doc = docSnap.data();
-        var studentId = String(doc.studentId || docSnap.id || '').trim();
-        if (!studentId || studentId.length < 10) return;
-
-        var regYear  = parseInt(studentId.substring(2, 6), 10);
-        var regGrade = parseInt(studentId.substring(6, 8), 10);
-        var rowCampus = String(doc.campus || '').padStart(2, '0');
-
-        if (campusCode && rowCampus !== String(campusCode).padStart(2, '0')) return;
-        if (selectedYear && regYear !== parseInt(selectedYear, 10)) return;
-
-        if (gradeCode && selectedYear) {
-          var calcGrade = regGrade + (parseInt(selectedYear, 10) - regYear);
-          if (String(calcGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
-        } else if (gradeCode && !selectedYear) {
-          if (String(regGrade).padStart(2, '0') !== String(gradeCode).padStart(2, '0')) return;
-        }
-
-        students.push({
-          studentId:         studentId,
-          campus:            rowCampus,
-          name:              String(doc.sei || '') + String(doc.mei || ''),
-          furigana:          String(doc.seiFurigana || '') + String(doc.meiFurigana || ''),
-          schoolName:        String(doc.schoolName || ''),
-          registrationYear:  regYear,
-          registrationGrade: regGrade
-        });
-      });
-
-      students.sort(function(a, b) {
-        return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
-      });
-
-      return { success: true, students: students };
-    })
+  return gasApiPromise_('getDeletedStudents', [campusCode, gradeCode, selectedYear])
     .catch(function(err) {
       console.error('fbGetDeletedStudentsエラー:', err);
       return { success: false, error: err.message || String(err), students: [] };
@@ -286,24 +239,12 @@ function fbGetStudentGradeReport(year, studentId) {
  * @return {Promise<Object>} { success, message, error }
  */
 function fbUpdateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-
-  return fbDb.collection('students').doc(sid).update({
-    campus:      String(campusCode || '').padStart(2, '0'),
-    sei:         String(sei         || '').trim(),
-    mei:         String(mei         || '').trim(),
-    seiFurigana: String(seiFurigana || '').trim(),
-    meiFurigana: String(meiFurigana || '').trim(),
-    schoolName:  String(schoolName  || '').trim()
-  })
-  .then(function() {
-    return { success: true, message: '生徒情報を更新しました' };
-  })
-  .catch(function(err) {
-    console.error('fbUpdateStudentInfoエラー:', err);
-    return { success: false, error: err.message || String(err) };
-  });
+  return gasApiPromise_('updateStudentInfo',
+    [studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName])
+    .catch(function(err) {
+      console.error('fbUpdateStudentInfoエラー:', err);
+      return { success: false, error: err.message || String(err) };
+    });
 }
 
 /**
@@ -313,11 +254,7 @@ function fbUpdateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFu
  * @return {Promise<Object>} { success, message, error }
  */
 function fbDeleteStudent(studentId) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-
-  return fbDb.collection('students').doc(sid).update({ isDeleted: true })
-    .then(function() { return { success: true, message: '生徒を削除しました' }; })
+  return gasApiPromise_('deleteStudent', [studentId])
     .catch(function(err) {
       console.error('fbDeleteStudentエラー:', err);
       return { success: false, error: err.message || String(err) };
@@ -331,11 +268,7 @@ function fbDeleteStudent(studentId) {
  * @return {Promise<Object>} { success, message, error }
  */
 function fbRestoreStudent(studentId) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-
-  return fbDb.collection('students').doc(sid).update({ isDeleted: false })
-    .then(function() { return { success: true, message: '生徒情報を復元しました' }; })
+  return gasApiPromise_('restoreStudent', [studentId])
     .catch(function(err) {
       console.error('fbRestoreStudentエラー:', err);
       return { success: false, error: err.message || String(err) };

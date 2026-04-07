@@ -151,7 +151,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `staffs` | `{teacherId}` | スタッフ情報。`emails` 配列（複数メール対応）・`firebaseUids` 配列（複数UID対応）・`notificationEmail`（通知先） |
 | `allowedUsers` | `{email}`（小文字メールアドレス） | Firestoreセキュリティルール用ホワイトリスト。登録されたメールのユーザーのみFirestoreデータにアクセス可。フィールド: `email`(string), `addedAt`(ISO 8601文字列)。自動登録: `getAppStartupData()`, `addUserAccess()`, `linkUserById()`, `addEmailToTeacher()`。自動削除: `removeUserAccess()`, `removeEmailFromTeacher()`。GASサーバー側（サービスアカウント）からのみ書き込み可。クライアントSDKからは書き込み不可（`allow write: if false`） |
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け: `{"campusCode": ["teacherId1"]}`） |
-| `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |
+| ~~`students`~~ | — | **Supabaseに移行済み**（Firestoreのコレクションはバックアップとして残存・読み書き不使用） |
 | ~~`grades`~~ | — | **Supabaseに移行済み** |
 | ~~`schoolAverages`~~ | — | **Supabaseに移行済み** |
 | ~~`testAnalysis`~~ | — | **Supabaseに移行済み** |
@@ -173,10 +173,11 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 ## Supabase（PostgreSQL）テーブル構成
 
-Firestore Spark無料プランの読み取り上限対策として、成績関連データをSupabaseに移行。
+Firestore Spark無料プランの読み取り上限対策として、成績関連データおよび生徒マスタをSupabaseに移行。
 
 | テーブル | 主キー | 用途 |
 |---------|--------|------|
+| `students` | `id` (`{campus2}{year4}{grade2}{seq2}`) | 生徒マスタ。`student_id`, `campus`, `registration_year`, `registration_grade`, `sei`, `mei`, `sei_furigana`, `mei_furigana`, `school_name`, `is_deleted`, `created_at`, 受験情報7フィールド |
 | `grades` | `id` (`{studentId}_{safeTestName}_{fiscalYear}`) | 成績データ。`student_id`, `test_name`, `fiscal_year`, 5教科+合計+平均, 志望校, `campus`, `student_name`, `recorded_at` |
 | `school_averages` | `id` (`{year}_{safeTestName}`) | 学校別平均点。`year`, `test_name`, `averages`(JSONB: `[{schoolName, kokugo, shakai, ...}]`), `updated_at` |
 | `test_analysis` | `id` (`{year}_{safeTestName}`) | テスト全体AI分析。`year`, `test_name`, `analysis_json`(JSONB), `generated_at` |

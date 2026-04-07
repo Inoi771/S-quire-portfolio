@@ -76,15 +76,16 @@ function backupStudents_(ss) {
   var sheet = prepareBackupSheet_(ss, '生徒一覧', headers);
   if (!sheet) return 0;
 
-  var docs = firestoreQuery_('students', []);
-  if (!docs || docs.length === 0) return 0;
+  var rawDocs = supabaseSelect_('students', '');
+  if (!rawDocs || rawDocs.length === 0) return 0;
+  var docs = rawDocs.map(toStudentCamel_);
 
   var rows = docs.map(function(doc) {
-    var sid = String(doc.studentId || doc._id || '').trim();
+    var sid = String(doc.studentId || '').trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
     return [
       sid,
-      String(doc.campus       || doc.campusCode || '').padStart(2, '0'),
+      String(doc.campus       || '').padStart(2, '0'),
       String(doc.sei          || ''),
       String(doc.mei          || ''),
       String(doc.seiFurigana  || ''),
