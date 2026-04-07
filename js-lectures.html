@@ -1754,35 +1754,6 @@
         });
     }
 
-    /**
-     * 現在の校舎のエントリをバックエンドに保存する
-     */
-    function saveLecEntries() {
-      if (!currentLectureId || !currentLectureCampus) return;
-      var btn = document.getElementById('lec-save-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
-
-      var entries = lectureEntries[currentLectureCampus] || [];
-      fbSaveLectureScheduleEntries(currentLectureId, currentLectureCampus, entries)
-        .then(function(result) {
-          if (btn) btn.disabled = false;
-          if (result && result.success) {
-            pendingChanges = false;
-            updateSaveButtonLabel();
-            showLecStatusMsg('✓ 保存しました', '#22c55e');
-            // 保存後に全校舎キャッシュを更新（他校舎との重複チェックを最新化）
-            fetchAllCampusEntries();
-          } else {
-            showLecStatusMsg('❌ ' + (result ? result.error : '保存失敗'), '#e57373');
-          }
-        })
-        .catch(function(err) {
-          if (btn) btn.disabled = false;
-          console.error('fbSaveLectureScheduleEntries エラー:', err);
-          showLecStatusMsg('❌ 保存失敗: ' + err, '#e57373');
-        });
-    }
-
     // ===== 重複チェック機能 =====
 
     /**
