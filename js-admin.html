@@ -211,7 +211,7 @@
         inquiryRow.style.display = result.isEligible ? '' : 'none';
         if (result.isEligible) {
           // 通知方法ラジオボタンを設定
-          var method = result.method || 'line';
+          var method = (result.method && result.method !== 'none') ? result.method : 'line';
           var radio = document.querySelector('input[name="notificationMethod"][value="' + method + '"]');
           if (radio) radio.checked = true;
           // Gmail通知先メールチェックボックスを設定

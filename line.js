@@ -261,6 +261,8 @@ function getNotificationSettings() {
     // staffs から通知方法・LINE User ID を取得
     var staff = getStaffByTeacherId_(teacherId);
     var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'line';
+    // お問い合わせ通知は受け取り必須（既存の'none'設定はデフォルトに戻す）
+    if (method === 'none') method = 'line';
 
     var lineUserId = staff ? (staff.lineUserId || '') : '';
     var lineRegistered = !!lineUserId;
@@ -305,13 +307,13 @@ function getNotificationSettings() {
 /**
  * 現在ログイン中のユーザーの通知方法を更新
  * @aiCallable
- * @param {string} method "gmail" / "line" / "both" / "none"
+ * @param {string} method "gmail" / "line" / "both"
  * @param {string} [notificationEmail] Gmail通知先メールアドレス（省略可）
  * @return {Object} { success, message, error }
  */
 function updateNotificationSettings(method, notificationEmail) {
   try {
-    var validMethods = ['gmail', 'line', 'both', 'none'];
+    var validMethods = ['gmail', 'line', 'both'];
     if (validMethods.indexOf(method) === -1) {
       return { success: false, error: '無効な通知方法です: ' + method };
     }
@@ -353,7 +355,7 @@ function updateNotificationSettings(method, notificationEmail) {
       }
     }
 
-    var methodLabel = { gmail: 'Gmailのみ', line: 'LINEのみ', both: 'Gmail + LINE 両方', none: '通知しない' };
+    var methodLabel = { gmail: 'Gmailのみ', line: 'LINEのみ', both: 'Gmail + LINE 両方' };
     return { success: true, message: '通知方法を「' + (methodLabel[method] || method) + '」に変更しました' };
 
   } catch (error) {
