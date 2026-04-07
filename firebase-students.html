@@ -167,118 +167,34 @@ function fbGetDeletedStudents(campusCode, gradeCode, selectedYear) {
 }
 
 /**
- * 一覧表用：生徒マスタと成績データを結合して返す（Firebase SDK）
- * gradeListCache優先（1ドキュメント読み取り）、フォールバックで3クエリ
+ * GAS API関数をPromiseでラップするヘルパー
+ * google.script.run（gas-bridge経由）を Promise に変換
+ * @param {string} funcName GAS関数名
+ * @param {Array} args 引数配列
+ * @return {Promise<*>} GAS関数の戻り値
+ */
+function gasApiPromise_(funcName, args) {
+  return new Promise(function(resolve, reject) {
+    var runner = google.script.run
+      .withSuccessHandler(function(result) { resolve(result); })
+      .withFailureHandler(function(err) { reject(err); });
+    runner[funcName].apply(runner, args || []);
+  });
+}
+
+/**
+ * 一覧表用：生徒マスタと成績データを結合して返す
+ * GAS API経由でSupabaseから取得
  * @param {number} year 年度
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, students, error }
  */
 function fbGetStudentListWithGrades(year, testName) {
-  var targetTest = String(testName || '').trim();
-  var yearInt    = parseInt(year, 10);
-
-  // ファストパス: gradeListCache から取得（1ドキュメント読み取り）
-  var cacheDocId = String(yearInt) + '_' + fbSafeTestName_(testName);
-  return fbDb.collection('gradeListCache').doc(cacheDocId).get()
-    .then(function(docSnap) {
-      if (docSnap.exists && docSnap.data().students && docSnap.data().students.length > 0) {
-        return { success: true, students: docSnap.data().students };
-      }
-      // フォールバック: キャッシュなし → 従来の3クエリ
-      return fbGetStudentListWithGradesFull_(year, testName);
-    })
+  return gasApiPromise_('getStudentListWithGrades', [parseInt(year, 10), String(testName || '').trim()])
     .catch(function(err) {
-      console.warn('gradeListCacheファストパス失敗、フォールバック:', err);
-      return fbGetStudentListWithGradesFull_(year, testName);
+      console.error('fbGetStudentListWithGradesエラー:', err);
+      return { success: false, error: err.message || String(err), students: [] };
     });
-}
-
-/** フォールバック: 3クエリで一覧表データを取得 */
-function fbGetStudentListWithGradesFull_(year, testName) {
-  var targetTest = String(testName || '').trim();
-  var yearInt    = parseInt(year, 10);
-
-  return Promise.all([
-    fbGetMasterData(year),
-    fbDb.collection('grades')
-      .where('fiscalYear', '==', yearInt)
-      .where('testName', '==', targetTest)
-      .get(),
-    fbDb.collection('studentAnalysis')
-      .where('testName', '==', targetTest)
-      .where('year', '==', yearInt)
-      .get()
-  ]).then(function(results) {
-    var masterData   = results[0];
-    var gradesSnap   = results[1];
-    var analysisSnap = results[2];
-
-    // 成績データのマップ作成（studentId → 成績ドキュメント）
-    var gradeMap = {};
-    gradesSnap.forEach(function(docSnap) {
-      var doc = docSnap.data();
-      var sid = String(doc.studentId || '').trim();
-      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-      if (sid && !gradeMap[sid]) gradeMap[sid] = doc;
-    });
-
-    // AI分析データのマップ作成（studentId|testName → {schoolName: percent}）
-    var analysisPassMap = {};
-    analysisSnap.forEach(function(docSnap) {
-      var doc = docSnap.data();
-      var sid = String(doc.studentId || '').trim();
-      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-      var tname = String(doc.testName || '').trim();
-      if (!sid || !tname) return;
-      var data = null;
-      try {
-        data = typeof doc.analysisJson === 'string' ? JSON.parse(doc.analysisJson) : doc.analysisJson;
-      } catch (e) {}
-      if (!data || !Array.isArray(data.passAssessment)) return;
-      var m = {};
-      data.passAssessment.forEach(function(pa) {
-        if (pa.schoolName && pa.probability && pa.probability.percent != null) {
-          m[pa.schoolName] = pa.probability.percent;
-        }
-      });
-      analysisPassMap[sid + '|' + tname] = m;
-    });
-
-    var students = masterData.map(function(student) {
-      var g = gradeMap[String(student.studentId)] || null;
-      var aKey = String(student.studentId) + '|' + targetTest;
-      var aEntry = analysisPassMap[aKey] || {};
-      return {
-        studentId:      student.studentId,
-        name:           student.name,
-        furigana:       student.furigana,
-        seiFurigana:    student.seiFurigana,
-        meiFurigana:    student.meiFurigana,
-        campus:         student.campus,
-        grade:          student.grade,
-        schoolName:     student.schoolName,
-        kokugo:         g ? (g.kokugo  != null ? g.kokugo  : '') : '',
-        shakai:         g ? (g.shakai  != null ? g.shakai  : '') : '',
-        sugaku:         g ? (g.sugaku  != null ? g.sugaku  : '') : '',
-        rika:           g ? (g.rika    != null ? g.rika    : '') : '',
-        eigo:           g ? (g.eigo    != null ? g.eigo    : '') : '',
-        total:          g ? (g.total   != null ? g.total   : '') : '',
-        average:        g ? (g.average != null ? g.average : '') : '',
-        shogaku1:       g ? (g.shogaku1       || '') : '',
-        shogaku1_gakka: g ? (g.shogaku1_gakka || '') : '',
-        shogaku2:       g ? (g.shogaku2       || '') : '',
-        shogaku2_gakka: g ? (g.shogaku2_gakka || '') : '',
-        hasGrade:       g !== null,
-        passPercent1:   (g && g.shogaku1 && aEntry[g.shogaku1] != null) ? aEntry[g.shogaku1] : null,
-        passPercent2:   (g && g.shogaku2 && aEntry[g.shogaku2] != null) ? aEntry[g.shogaku2] : null
-      };
-    });
-
-    return { success: true, students: students };
-  }).catch(function(err) {
-    console.error('fbGetStudentListWithGradesエラー:', err);
-    return { success: false, error: err.message || String(err), students: [] };
-  });
 }
 
 /**
@@ -313,31 +229,7 @@ function fbCalcDeviation_(score, average, sigma) {
  * @return {Promise<Object>} { success, found, data, error }
  */
 function fbGetGradeDataByStudentAndTest(year, studentId, testName) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-  var docId = sid + '_' + fbSafeTestName_(testName) + '_' + String(year);
-
-  return fbDb.collection('grades').doc(docId).get()
-    .then(function(docSnap) {
-      if (!docSnap.exists) return { success: true, found: false };
-      var doc = docSnap.data();
-      return {
-        success: true,
-        found: true,
-        data: {
-          kokugo:         doc.kokugo  != null ? doc.kokugo  : '',
-          shakai:         doc.shakai  != null ? doc.shakai  : '',
-          sugaku:         doc.sugaku  != null ? doc.sugaku  : '',
-          rika:           doc.rika    != null ? doc.rika    : '',
-          eigo:           doc.eigo    != null ? doc.eigo    : '',
-          gokei:          doc.total   != null ? doc.total   : '',
-          shogaku1:       String(doc.shogaku1       || ''),
-          shogaku1_gakka: String(doc.shogaku1_gakka || ''),
-          shogaku2:       String(doc.shogaku2       || ''),
-          shogaku2_gakka: String(doc.shogaku2_gakka || '')
-        }
-      };
-    })
+  return gasApiPromise_('getGradeDataByStudentAndTest', [parseInt(year, 10), studentId, testName])
     .catch(function(err) {
       console.error('fbGetGradeDataByStudentAndTestエラー:', err);
       return { success: false, error: err.message || String(err) };
@@ -353,52 +245,19 @@ function fbGetGradeDataByStudentAndTest(year, studentId, testName) {
  * @return {Promise<Object>} { success, students, error }
  */
 function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
-  var targetTest  = String(testName || '').trim();
-  var yearInt     = parseInt(year, 10);
-
-  if (!targetTest || !campusCode) {
+  if (!testName || !campusCode) {
     return Promise.resolve({ success: true, students: [] });
   }
-
-  return Promise.all([
-    fbGetMasterData(year),
-    fbDb.collection('grades')
-      .where('fiscalYear', '==', yearInt)
-      .where('testName',   '==', targetTest)
-      .get()
-  ]).then(function(results) {
-    var masterData = results[0];
-    var gradesSnap = results[1];
-
-    // 成績があるstudentIdのセット
-    var studentIdSet = {};
-    gradesSnap.forEach(function(docSnap) {
-      var sid = String(docSnap.data().studentId || '').trim();
-      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-      if (sid) studentIdSet[sid] = true;
+  return gasApiPromise_('getStudentsWithGradesByTest', [parseInt(year, 10), campusCode, testName])
+    .catch(function(err) {
+      console.error('fbGetStudentsWithGradesByTestエラー:', err);
+      return { success: false, error: err.message || String(err), students: [] };
     });
-
-    var targetCampus = String(campusCode).padStart(2, '0');
-    var students = masterData.filter(function(s) {
-      return s.campus === targetCampus && studentIdSet[s.studentId];
-    }).map(function(s) {
-      return { studentId: s.studentId, name: s.name, furigana: s.furigana, schoolName: s.schoolName };
-    });
-
-    students.sort(function(a, b) {
-      return (a.furigana || '').localeCompare(b.furigana || '', 'ja');
-    });
-
-    return { success: true, students: students };
-  }).catch(function(err) {
-    console.error('fbGetStudentsWithGradesByTestエラー:', err);
-    return { success: false, error: err.message || String(err), students: [] };
-  });
 }
 
 /**
- * 成績表用：指定生徒の全テスト成績と学校別平均を取得する（Firebase SDK）
- * gradeReportCache優先（1ドキュメント読み取り）、フォールバックで従来クエリ
+ * 成績表用：指定生徒の全テスト成績と学校別平均を取得する
+ * GAS API経由でSupabaseから取得（rebuildGradeReportCache相当の結果を返す）
  * @param {number} year 学年年度
  * @param {string} studentId 生徒ID
  * @return {Promise<Object>} { success, student, grades, testNames, schoolAverages, deviationValues, error }
@@ -407,168 +266,11 @@ function fbGetStudentGradeReport(year, studentId) {
   if (!studentId) {
     return Promise.resolve({ success: false, error: '生徒IDが指定されていません' });
   }
-
-  var targetId = String(studentId).trim();
-  if (/^\d+$/.test(targetId) && targetId.length < 10) targetId = targetId.padStart(10, '0');
-  var yearInt  = parseInt(year, 10);
-
-  // ファストパス: gradeReportCache から取得（1ドキュメント読み取り）
-  return fbDb.collection('gradeReportCache').doc(String(yearInt)).get()
-    .then(function(docSnap) {
-      if (docSnap.exists && docSnap.data().reports && docSnap.data().reports[targetId]) {
-        var report = docSnap.data().reports[targetId];
-        return {
-          success: true,
-          student: report.student,
-          grades: report.grades,
-          testNames: report.testNames,
-          schoolAverages: report.schoolAverages,
-          deviationValues: report.deviationValues
-        };
-      }
-      // フォールバック: キャッシュなし → 従来クエリ
-      return fbGetStudentGradeReportFull_(year, studentId);
-    })
+  return gasApiPromise_('getStudentGradeReport', [parseInt(year, 10), studentId])
     .catch(function(err) {
-      console.warn('gradeReportCacheファストパス失敗、フォールバック:', err);
-      return fbGetStudentGradeReportFull_(year, studentId);
+      console.error('fbGetStudentGradeReportエラー:', err);
+      return { success: false, error: err.message || String(err) };
     });
-}
-
-/** フォールバック: 従来クエリで成績表データを取得 */
-function fbGetStudentGradeReportFull_(year, studentId) {
-  var targetId = String(studentId).trim();
-  if (/^\d+$/.test(targetId) && targetId.length < 10) targetId = targetId.padStart(10, '0');
-  var yearInt  = parseInt(year, 10);
-  var sigmaDefaults = { kokugo: 15, shakai: 18, sugaku: 23, rika: 20, eigo: 20, total: 100 };
-
-  return Promise.all([
-    fbGetMasterData(year),
-    fbDb.collection('grades')
-      .where('studentId',  '==', targetId)
-      .where('fiscalYear', '==', yearInt)
-      .get()
-  ]).then(function(results) {
-    var masterData = results[0];
-    var gradesSnap = results[1];
-
-    // 生徒情報を検索
-    var student = null;
-    for (var i = 0; i < masterData.length; i++) {
-      if (masterData[i].studentId === targetId) { student = masterData[i]; break; }
-    }
-    if (!student) {
-      return { success: false, error: '生徒が見つかりません（ID: ' + studentId + '）' };
-    }
-
-    // 成績データを収集
-    var studentGrades = [];
-    gradesSnap.forEach(function(docSnap) {
-      var doc = docSnap.data();
-      studentGrades.push({
-        testName:       String(doc.testName || ''),
-        kokugo:         doc.kokugo  != null ? doc.kokugo  : '',
-        shakai:         doc.shakai  != null ? doc.shakai  : '',
-        sugaku:         doc.sugaku  != null ? doc.sugaku  : '',
-        rika:           doc.rika    != null ? doc.rika    : '',
-        eigo:           doc.eigo    != null ? doc.eigo    : '',
-        total:          doc.total   != null ? doc.total   : '',
-        average:        doc.average != null ? doc.average : '',
-        shogaku1:       String(doc.shogaku1       || ''),
-        shogaku1_gakka: String(doc.shogaku1_gakka || ''),
-        shogaku2:       String(doc.shogaku2       || ''),
-        shogaku2_gakka: String(doc.shogaku2_gakka || '')
-      });
-    });
-
-    // テスト名設定順にソート（testNamesData グローバルを使用）
-    var configTestNames = (typeof testNamesData !== 'undefined' && testNamesData.length > 0)
-      ? testNamesData : [];
-    var testOrder = {};
-    configTestNames.forEach(function(name, idx) { testOrder[name] = idx; });
-    studentGrades.sort(function(a, b) {
-      var orderA = testOrder[a.testName] !== undefined ? testOrder[a.testName] : 9999;
-      var orderB = testOrder[b.testName] !== undefined ? testOrder[b.testName] : 9999;
-      return orderA - orderB;
-    });
-
-    // 各テストの学校別平均を並列取得
-    var uniqueTests = [];
-    studentGrades.forEach(function(g) {
-      if (uniqueTests.indexOf(g.testName) === -1) uniqueTests.push(g.testName);
-    });
-
-    var avgPromise = fbDb.collection('schoolAverages')
-      .where('year', '==', yearInt).get()
-      .then(function(querySnap) {
-        var fetched = {};
-        querySnap.forEach(function(docSnap) {
-          var data = docSnap.data();
-          if (data.testName && data.averages) {
-            fetched[data.testName] = data.averages;
-          }
-        });
-        return uniqueTests.map(function(tname) {
-          return { testName: tname, averages: fetched[tname] || [] };
-        });
-      })
-      .catch(function() {
-        return uniqueTests.map(function(tname) {
-          return { testName: tname, averages: [] };
-        });
-      });
-
-    return avgPromise.then(function(avgResults) {
-      var schoolAverages = {};
-      var studentSchool = (student.schoolName || '').trim();
-
-      avgResults.forEach(function(ar) {
-        var fallback = null;
-        for (var j = 0; j < ar.averages.length; j++) {
-          var sn = (ar.averages[j].schoolName || '').trim();
-          if (studentSchool && sn === studentSchool) {
-            schoolAverages[ar.testName] = ar.averages[j];
-            fallback = null;
-            break;
-          }
-          if (!fallback && sn.indexOf('平均') !== -1) fallback = ar.averages[j];
-        }
-        if (fallback && !schoolAverages[ar.testName]) schoolAverages[ar.testName] = fallback;
-      });
-
-      // 偏差値を計算
-      var deviationValues = {};
-      var subjKeys = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
-      studentGrades.forEach(function(g) {
-        var avg = schoolAverages[g.testName];
-        if (!avg) return;
-        var devs = {};
-        subjKeys.forEach(function(subj) {
-          devs[subj] = fbCalcDeviation_(g[subj], avg[subj], sigmaDefaults[subj]);
-        });
-        deviationValues[g.testName] = devs;
-      });
-
-      return {
-        success: true,
-        student: {
-          studentId:  student.studentId,
-          name:       student.name,
-          furigana:   student.furigana,
-          campus:     student.campus,
-          grade:      student.grade,
-          schoolName: student.schoolName
-        },
-        grades:          studentGrades,
-        testNames:       configTestNames,
-        schoolAverages:  schoolAverages,
-        deviationValues: deviationValues
-      };
-    });
-  }).catch(function(err) {
-    console.error('fbGetStudentGradeReportエラー:', err);
-    return { success: false, error: err.message || String(err) };
-  });
 }
 
 /**
@@ -651,54 +353,16 @@ function fbRestoreStudent(studentId) {
  * @return {Promise<Object>} { success, message, error }
  */
 function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-
-  var kokugo = parseInt(scores.kokugo, 10); if (isNaN(kokugo)) kokugo = 0;
-  var shakai = parseInt(scores.shakai, 10); if (isNaN(shakai)) shakai = 0;
-  var sugaku = parseInt(scores.sugaku, 10); if (isNaN(sugaku)) sugaku = 0;
-  var rika   = parseInt(scores.rika,   10); if (isNaN(rika))   rika   = 0;
-  var eigo   = parseInt(scores.eigo,   10); if (isNaN(eigo))   eigo   = 0;
-  var calcTotal = kokugo + shakai + sugaku + rika + eigo;
-  var gokei = parseInt(scores.gokei, 10);
-  var total   = (!isNaN(gokei) && gokei > 0) ? gokei : calcTotal;
-  var average = total > 0 ? parseFloat((total / 5).toFixed(1)) : 0;
-
-  var docId = sid + '_' + fbSafeTestName_(testName) + '_' + String(year);
-
-  return fbDb.collection('grades').doc(docId).set({
-    studentId:      sid,
-    testName:       String(testName).trim(),
-    fiscalYear:     parseInt(year, 10),
-    kokugo:         kokugo,
-    shakai:         shakai,
-    sugaku:         sugaku,
-    rika:           rika,
-    eigo:           eigo,
-    total:          total,
-    average:        average,
-    shogaku1:       scores.shogaku1       || '',
-    shogaku1_gakka: scores.shogaku1_gakka || '',
-    shogaku2:       scores.shogaku2       || '',
-    shogaku2_gakka: scores.shogaku2_gakka || '',
-    recordedAt:     new Date().toISOString(),
-    studentName:    String(studentName || '')
-  })
-  .then(function() {
-    // gradesMeta/yearsList に年度を追加（fire-and-forget）
-    var fy = parseInt(year, 10);
-    fbDb.collection('gradesMeta').doc('yearsList').set({
-      years: firebase.firestore.FieldValue.arrayUnion(fy),
-      updatedAt: new Date().toISOString()
-    }, { merge: true }).catch(function(e) {
-      console.warn('gradesMeta更新スキップ:', e);
+  // スコアにstudentNameを追加してGAS側で処理
+  var scoresWithName = {};
+  var keys = Object.keys(scores);
+  for (var i = 0; i < keys.length; i++) scoresWithName[keys[i]] = scores[keys[i]];
+  scoresWithName.studentName = studentName || '';
+  return gasApiPromise_('submitGradeData', [parseInt(year, 10), studentId, testName, scoresWithName])
+    .catch(function(err) {
+      console.error('fbSubmitGradeDataエラー:', err);
+      return { success: false, error: err.message || String(err) };
     });
-    return { success: true, message: '成績データを保存しました' };
-  })
-  .catch(function(err) {
-    console.error('fbSubmitGradeDataエラー:', err);
-    return { success: false, error: err.message || String(err) };
-  });
 }
 
 /**
@@ -710,44 +374,7 @@ function fbGetGradesYearFolders() {
   if (!window.fbCurrentUser) {
     return Promise.resolve({ success: false, error: '認証されていません。ページを再読み込みしてください。' });
   }
-
-  var now = new Date();
-  var currentFy = (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
-
-  return fbDb.collection('gradesMeta').doc('yearsList').get()
-    .then(function(docSnap) {
-      if (docSnap.exists) {
-        var data = docSnap.data();
-        if (data.years && data.years.length > 0) {
-          var yearSet = {};
-          data.years.forEach(function(y) { yearSet[String(y)] = true; });
-          yearSet[String(currentFy)] = true;
-          var years = Object.keys(yearSet).filter(function(y) { return /^\d{4}$/.test(y); });
-          years.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-          return { success: true, years: years };
-        }
-      }
-      // フォールバック: メタ未作成時は全件取得 + 自動修復
-      return fbDb.collection('grades').get().then(function(snapshot) {
-        var yearSet2 = {};
-        snapshot.forEach(function(ds) {
-          var doc = ds.data();
-          if (doc.fiscalYear) yearSet2[String(doc.fiscalYear)] = true;
-        });
-        yearSet2[String(currentFy)] = true;
-        var years2 = Object.keys(yearSet2).filter(function(y) { return /^\d{4}$/.test(y); });
-        years2.sort(function(a, b) { return parseInt(b, 10) - parseInt(a, 10); });
-
-        // 自動修復: メタドキュメントを作成（fire-and-forget）
-        var intYears = years2.map(function(y) { return parseInt(y, 10); });
-        fbDb.collection('gradesMeta').doc('yearsList').set({
-          years: intYears,
-          updatedAt: new Date().toISOString()
-        }).catch(function(e) { console.warn('gradesMeta自動修復スキップ:', e); });
-
-        return { success: true, years: years2 };
-      });
-    })
+  return gasApiPromise_('getGradesYearFolders', [])
     .catch(function(err) {
       console.error('fbGetGradesYearFoldersエラー:', err);
       return { success: false, error: err.message || String(err) };
@@ -762,14 +389,7 @@ function fbGetGradesYearFolders() {
  * @return {Promise<Object>} { success, averages }
  */
 function fbGetSchoolAverages(year, testName) {
-  var docId = String(parseInt(year, 10)) + '_' + fbSafeTestName_(testName);
-  return fbDb.collection('schoolAverages').doc(docId).get()
-    .then(function(docSnap) {
-      if (!docSnap.exists || !docSnap.data().averages) {
-        return { success: true, averages: [] };
-      }
-      return { success: true, averages: docSnap.data().averages };
-    })
+  return gasApiPromise_('getSchoolAverages', [parseInt(year, 10), testName])
     .catch(function(err) {
       console.error('fbGetSchoolAveragesエラー:', err);
       return { success: false, error: err.message || String(err) };
@@ -783,12 +403,7 @@ function fbGetSchoolAverages(year, testName) {
  * @return {Promise<Object|null>} サマリーデータ or null
  */
 function fbGetGradeSummary(year, testName) {
-  var docId = String(parseInt(year, 10)) + '_' + fbSafeTestName_(testName);
-  return fbDb.collection('gradeSummaries').doc(docId).get()
-    .then(function(docSnap) {
-      if (!docSnap.exists) return null;
-      return docSnap.data();
-    })
+  return gasApiPromise_('getGradeSummary', [parseInt(year, 10), String(testName).trim()])
     .catch(function(err) {
       console.warn('fbGetGradeSummaryエラー:', err);
       return null;
@@ -804,121 +419,11 @@ function fbGetGradeSummary(year, testName) {
  * @return {Promise<Object>} { success, campuses }
  */
 function fbGetCampusAverages(year, testName) {
-  var targetTest = String(testName || '').trim();
-  var yearInt = parseInt(year, 10);
-
-  // ファストパス: gradeSummaries から取得（1ドキュメント読み取り）
-  var summaryDocId = String(yearInt) + '_' + fbSafeTestName_(testName);
-  return fbDb.collection('gradeSummaries').doc(summaryDocId).get()
-    .then(function(docSnap) {
-      if (docSnap.exists && docSnap.data().campusAverages) {
-        var data = docSnap.data();
-        var campuses = [];
-        Object.keys(data.campusAverages).forEach(function(code) {
-          var avg = data.campusAverages[code];
-          campuses.push({
-            campusCode: code,
-            campusName: code === 'all' ? '全校舎' : (window._campusConfigCache && window._campusConfigCache[code] || code),
-            count: avg.count || 0,
-            kokugo: avg.kokugo, shakai: avg.shakai, sugaku: avg.sugaku,
-            rika: avg.rika, eigo: avg.eigo, total: avg.total
-          });
-        });
-        campuses.sort(function(a, b) {
-          if (a.campusCode === 'all') return -1;
-          if (b.campusCode === 'all') return 1;
-          return a.campusCode.localeCompare(b.campusCode);
-        });
-        return { success: true, campuses: campuses };
-      }
-      // フォールバック: サマリーなし → フル計算
-      return fbGetCampusAveragesFull_(year, testName);
-    })
+  return gasApiPromise_('getCampusAverages', [parseInt(year, 10), String(testName || '').trim()])
     .catch(function(err) {
-      console.warn('gradeSummariesファストパス失敗、フォールバック:', err);
-      return fbGetCampusAveragesFull_(year, testName);
+      console.error('fbGetCampusAveragesエラー:', err);
+      return { success: false, error: err.message || String(err) };
     });
-}
-
-/** フォールバック: 全成績から校舎平均を計算 */
-function fbGetCampusAveragesFull_(year, testName) {
-  var targetTest = String(testName || '').trim();
-  var yearInt = parseInt(year, 10);
-
-  return Promise.all([
-    fbGetMasterData(year),
-    fbDb.collection('grades')
-      .where('fiscalYear', '==', yearInt)
-      .where('testName', '==', targetTest)
-      .get()
-  ]).then(function(results) {
-    var masterData = results[0];
-    var gradesSnap = results[1];
-
-    // 成績をstudentIdでマップ化
-    var gradeMap = {};
-    gradesSnap.forEach(function(docSnap) {
-      var doc = docSnap.data();
-      var sid = String(doc.studentId || '').trim();
-      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-      if (sid && !gradeMap[sid]) gradeMap[sid] = doc;
-    });
-
-    // 生徒マスタと成績を結合（成績ありのみ）
-    var students = [];
-    masterData.forEach(function(s) {
-      var g = gradeMap[s.studentId];
-      if (!g) return;
-      students.push({
-        campus: s.campus,
-        kokugo: g.kokugo != null ? g.kokugo : '',
-        shakai: g.shakai != null ? g.shakai : '',
-        sugaku: g.sugaku != null ? g.sugaku : '',
-        rika:   g.rika   != null ? g.rika   : '',
-        eigo:   g.eigo   != null ? g.eigo   : ''
-      });
-    });
-
-    var subjects = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo'];
-
-    function calcAvg(arr, subj) {
-      var vals = arr.map(function(s) { return s[subj]; })
-        .filter(function(v) { return v !== null && v !== undefined && v !== '' && !isNaN(Number(v)); });
-      if (vals.length === 0) return '';
-      return Math.round(vals.reduce(function(a, b) { return a + Number(b); }, 0) / vals.length * 10) / 10;
-    }
-
-    var campuses = [];
-
-    // 全校舎合計
-    var allAvg = { campusCode: 'all', campusName: '全校舎', count: students.length };
-    subjects.forEach(function(s) { allAvg[s] = calcAvg(students, s); });
-    var allTotals = subjects.map(function(s) { return allAvg[s]; }).filter(function(v) { return v !== '' && v !== null && v !== undefined; });
-    allAvg.total = allTotals.length === 5 ? Math.round(allTotals.reduce(function(a, b) { return a + b; }, 0) * 10) / 10 : '';
-    campuses.push(allAvg);
-
-    // 校舎ごと
-    var groups = {};
-    students.forEach(function(s) {
-      var code = String(s.campus || 'unknown');
-      if (!groups[code]) groups[code] = [];
-      groups[code].push(s);
-    });
-
-    Object.keys(groups).sort().forEach(function(code) {
-      var arr = groups[code];
-      var avg = { campusCode: code, campusName: campusData[code] || code, count: arr.length };
-      subjects.forEach(function(s) { avg[s] = calcAvg(arr, s); });
-      var totals = subjects.map(function(s) { return avg[s]; }).filter(function(v) { return v !== '' && v !== null && v !== undefined; });
-      avg.total = totals.length === 5 ? Math.round(totals.reduce(function(a, b) { return a + b; }, 0) * 10) / 10 : '';
-      campuses.push(avg);
-    });
-
-    return { success: true, campuses: campuses };
-  }).catch(function(err) {
-    console.error('fbGetCampusAveragesエラー:', err);
-    return { success: false, error: err.message || String(err) };
-  });
 }
 
 /**
@@ -929,26 +434,7 @@ function fbGetCampusAveragesFull_(year, testName) {
  * @return {Promise<Object>} { success, exists, analysis, generatedAt }
  */
 function fbGetGradeAnalysis(year, testName) {
-  var safe = fbSafeTestName_(testName);
-  var docId = String(parseInt(year, 10)) + '_' + safe;
-  return fbDb.collection('testAnalysis').doc(docId).get()
-    .then(function(docSnap) {
-      if (!docSnap.exists) {
-        return { success: true, exists: false, analysis: null, generatedAt: '' };
-      }
-      var doc = docSnap.data();
-      if (!doc.analysisJson) {
-        return { success: true, exists: false, analysis: null, generatedAt: '' };
-      }
-      try {
-        var analysis = JSON.parse(doc.analysisJson);
-        if (!analysis) return { success: true, exists: false, analysis: null, generatedAt: '' };
-        return { success: true, exists: true, analysis: analysis, generatedAt: doc.generatedAt || '' };
-      } catch (e) {
-        console.error('fbGetGradeAnalysis JSONパースエラー:', e);
-        return { success: true, exists: false, analysis: null, generatedAt: '' };
-      }
-    })
+  return gasApiPromise_('getGradeAnalysis', [parseInt(year, 10), testName])
     .catch(function(err) {
       console.error('fbGetGradeAnalysisエラー:', err);
       return { success: false, error: err.message || String(err) };
@@ -964,59 +450,7 @@ function fbGetGradeAnalysis(year, testName) {
  * @return {Promise<Object>} { success, exists, analysis, generatedAt }
  */
 function fbGetStudentAnalysis(year, studentId, testName) {
-  var sid = String(studentId || '').trim();
-  if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
-  var safe = fbSafeTestName_(testName);
-  var docId = sid + '_' + safe + '_' + String(parseInt(year, 10));
-
-  return fbDb.collection('studentAnalysis').doc(docId).get()
-    .then(function(docSnap) {
-      if (docSnap.exists && docSnap.data().analysisJson) {
-        try {
-          var analysis = JSON.parse(docSnap.data().analysisJson);
-          if (analysis) {
-            return { success: true, exists: true, analysis: analysis, generatedAt: docSnap.data().generatedAt || '' };
-          }
-        } catch (e) { /* fall through */ }
-      }
-
-      // 基礎学力テストの特例：完全一致がない場合、N回以上のデータにフォールバック
-      var targetTest = String(testName).trim();
-      var basicMatch = targetTest.match(/^第(\d+)回基礎学力テスト$/);
-      if (!basicMatch) {
-        return { success: true, exists: false };
-      }
-
-      var targetNum = parseInt(basicMatch[1], 10);
-      var promises = [];
-      for (var r = 3; r > targetNum; r--) {
-        var fallbackTest = '第' + r + '回基礎学力テスト';
-        var fbSafe = fbSafeTestName_(fallbackTest);
-        var fbDocId = sid + '_' + fbSafe + '_' + String(parseInt(year, 10));
-        promises.push({ round: r, docId: fbDocId });
-      }
-
-      if (promises.length === 0) return { success: true, exists: false };
-
-      // 高い回数から順に試みる
-      return promises.reduce(function(chain, item) {
-        return chain.then(function(found) {
-          if (found) return found;
-          return fbDb.collection('studentAnalysis').doc(item.docId).get()
-            .then(function(snap) {
-              if (snap.exists && snap.data().analysisJson) {
-                try {
-                  var a = JSON.parse(snap.data().analysisJson);
-                  if (a) return { success: true, exists: true, analysis: a, generatedAt: snap.data().generatedAt || '' };
-                } catch (e) { /* continue */ }
-              }
-              return null;
-            });
-        });
-      }, Promise.resolve(null)).then(function(result) {
-        return result || { success: true, exists: false };
-      });
-    })
+  return gasApiPromise_('getStudentAnalysis', [parseInt(year, 10), studentId, testName])
     .catch(function(err) {
       console.error('fbGetStudentAnalysisエラー:', err);
       return { success: false, error: err.message || String(err) };

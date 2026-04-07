@@ -1,7 +1,7 @@
 // ========================================
 // 【S-quire - Google Apps Script】
 // 個別指導スクエア向けダッシュボード バックエンド
-// 更新: 2026-04-01
+// 更新: 2026-04-07
 // バージョン: 1.0.3
 // 最終更新: 2026年3月31日
 // ========================================
@@ -29,7 +29,10 @@ var PROP_KEYS = {
   // Firebase / Firestore 設定
   FIREBASE_PROJECT_ID: 'FIREBASE_PROJECT_ID',       // Firebase プロジェクトID（例: fir-quire）
   FIREBASE_CLIENT_EMAIL: 'FIREBASE_CLIENT_EMAIL',   // サービスアカウントのメールアドレス
-  FIREBASE_PRIVATE_KEY: 'FIREBASE_PRIVATE_KEY'      // サービスアカウントの秘密鍵（PEM形式・GASエディタから直接入力）
+  FIREBASE_PRIVATE_KEY: 'FIREBASE_PRIVATE_KEY',     // サービスアカウントの秘密鍵（PEM形式・GASエディタから直接入力）
+  // Supabase 設定（成績データ用）
+  SUPABASE_URL: 'SUPABASE_URL',                     // Supabase プロジェクトURL（例: https://xxxxx.supabase.co）
+  SUPABASE_SERVICE_KEY: 'SUPABASE_SERVICE_KEY'      // Supabase service_role キー
 };
 
 /**
