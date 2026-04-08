@@ -898,18 +898,19 @@ function requestAIAssistant(userMessage, chatHistory) {
           delete aiResponse.learned_knowledge;
         }
 
-        // フィードバック: 情報不足・機能リクエストをFirestoreに保存
+        // フィードバック: 情報不足・機能リクエストをSupabaseに保存
         if (aiResponse.feedback && aiResponse.feedback.type && aiResponse.feedback.summary) {
           try {
             var fb = aiResponse.feedback;
             var fbDocId = 'fb_' + new Date().getTime();
-            firestoreSet_('aiFeedback', fbDocId, {
+            supabaseUpsert_('ai_feedback', {
+              id: fbDocId,
               type: fb.type,
               summary: fb.summary,
-              userQuery: userMessage || '',
+              user_query: userMessage || '',
               resolved: false,
-              createdAt: new Date().toISOString()
-            });
+              created_at: new Date().toISOString()
+            }, 'id');
           } catch (fbErr) {
             Logger.log('⚠ フィードバック保存エラー: ' + fbErr);
           }
@@ -1138,9 +1139,9 @@ function getAiKnowledgeBaseForPrompt_() {
     Logger.log('⚠ 手動KB取得スキップ: ' + e);
   }
 
-  // Firestore自動学習エントリを取得（全件有効）
+  // Supabase自動学習エントリを取得（全件有効）
   try {
-    var autoEntries = firestoreQuery_('aiLearnedKnowledge', []);
+    var autoEntries = supabaseSelect_('ai_learned_knowledge');
     if (autoEntries && autoEntries.length > 0) {
       autoEntries.forEach(function(e) {
         allEntries.push({ category: e.category || 'その他', content: e.content });
@@ -1178,7 +1179,7 @@ function getAiKnowledgeBaseForPrompt_() {
 // ----------------------------------------
 
 /**
- * 会話から抽出された知識をFirestoreに自動保存する内部ヘルパー
+ * 会話から抽出された知識をSupabaseに自動保存する内部ヘルパー
  * 重複チェック・上限チェック付き
  * @param {Object} data { category, content, reason }
  */
@@ -1187,7 +1188,7 @@ function saveAutoLearnedKnowledge_(data) {
 
   // 上限チェック（30件を超えたら新規学習を一時停止）
   try {
-    var existing = firestoreQuery_('aiLearnedKnowledge', []);
+    var existing = supabaseSelect_('ai_learned_knowledge', null, { select: 'id' });
     if (existing && existing.length >= 30) {
       Logger.log('⚠ 自動学習上限（30件）に達しているため保存スキップ');
       return;
@@ -1203,15 +1204,14 @@ function saveAutoLearnedKnowledge_(data) {
   }
 
   var docId = 'lk_' + Date.now();
-  var doc = {
+  supabaseUpsert_('ai_learned_knowledge', {
+    id: docId,
     category: data.category || 'その他',
     content: data.content,
     reason: data.reason || '',
     source: 'conversation',
-    learnedAt: new Date().toISOString()
-  };
-
-  firestoreSet_('aiLearnedKnowledge', docId, doc);
+    learned_at: new Date().toISOString()
+  }, 'id');
   Logger.log('✅ 自動学習保存: ' + docId + ' / ' + data.content.substring(0, 50));
 }
 
@@ -1243,9 +1243,9 @@ function isDuplicateKnowledge_(newContent) {
     Logger.log('⚠ 手動KB重複チェックスキップ: ' + e);
   }
 
-  // Firestoreの自動学習エントリをチェック
+  // Supabaseの自動学習エントリをチェック
   try {
-    var autoEntries = firestoreQuery_('aiLearnedKnowledge', []);
+    var autoEntries = supabaseSelect_('ai_learned_knowledge', null, { select: 'content' });
     if (autoEntries && autoEntries.length > 0) {
       for (var j = 0; j < autoEntries.length; j++) {
         if (jaccardSimilarity_(newTokens, tokenizeForSimilarity_(autoEntries[j].content)) > 0.6) {
@@ -1254,7 +1254,7 @@ function isDuplicateKnowledge_(newContent) {
       }
     }
   } catch (e) {
-    Logger.log('⚠ Firestore重複チェックスキップ: ' + e);
+    Logger.log('⚠ Supabase重複チェックスキップ: ' + e);
   }
 
   return false;
@@ -1310,10 +1310,14 @@ function getAutoLearnedKnowledge() {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    var entries = firestoreQuery_('aiLearnedKnowledge', []);
-    // 新しい順にソート
-    entries.sort(function(a, b) {
-      return (b.learnedAt || '').localeCompare(a.learnedAt || '');
+    var rows = supabaseSelect_('ai_learned_knowledge', null, { order: 'learned_at.desc' });
+    // フロントエンド互換のためキャメルケースに変換
+    var entries = rows.map(function(r) {
+      return {
+        _id: r.id, category: r.category, content: r.content,
+        reason: r.reason, source: r.source,
+        learnedAt: r.learned_at, updatedAt: r.updated_at
+      };
     });
     return { success: true, entries: entries };
   } catch (error) {
@@ -1338,15 +1342,17 @@ function editAutoLearnedKnowledge(docId, entryJson) {
       return { success: false, error: 'カテゴリと内容は必須です' };
     }
 
-    // 既存ドキュメントを取得して更新フィールドだけ上書き
-    var existing = firestoreGet_('aiLearnedKnowledge', docId);
-    if (!existing) {
+    // 既存レコードを確認
+    var rows = supabaseSelect_('ai_learned_knowledge', 'id=eq.' + docId);
+    if (!rows || rows.length === 0) {
       return { success: false, error: '指定されたエントリが見つかりません' };
     }
-    existing.category = entry.category;
-    existing.content = entry.content;
-    existing.updatedAt = new Date().toISOString();
-    firestoreSet_('aiLearnedKnowledge', docId, existing);
+    supabaseUpsert_('ai_learned_knowledge', {
+      id: docId,
+      category: entry.category,
+      content: entry.content,
+      updated_at: new Date().toISOString()
+    }, 'id');
     return { success: true, message: '更新しました' };
   } catch (error) {
     Logger.log('❌ editAutoLearnedKnowledgeエラー: ' + error);
@@ -1364,7 +1370,7 @@ function deleteAutoLearnedKnowledge(docId) {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    firestoreDelete_('aiLearnedKnowledge', docId);
+    supabaseDelete_('ai_learned_knowledge', 'id=eq.' + docId);
     return { success: true, message: '削除しました' };
   } catch (error) {
     Logger.log('❌ deleteAutoLearnedKnowledgeエラー: ' + error);
@@ -1385,9 +1391,14 @@ function getAiFeedback() {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    var entries = firestoreQuery_('aiFeedback', []);
-    entries.sort(function(a, b) {
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    var rows = supabaseSelect_('ai_feedback', null, { order: 'created_at.desc' });
+    // フロントエンド互換のためキャメルケースに変換
+    var entries = rows.map(function(r) {
+      return {
+        _id: r.id, type: r.type, summary: r.summary,
+        userQuery: r.user_query, resolved: r.resolved,
+        createdAt: r.created_at, resolvedAt: r.resolved_at
+      };
     });
     return { success: true, entries: entries };
   } catch (error) {
@@ -1406,11 +1417,13 @@ function resolveAiFeedback(docId) {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    var existing = firestoreGet_('aiFeedback', docId);
-    if (!existing) return { success: false, error: 'エントリが見つかりません' };
-    existing.resolved = true;
-    existing.resolvedAt = new Date().toISOString();
-    firestoreSet_('aiFeedback', docId, existing);
+    var rows = supabaseSelect_('ai_feedback', 'id=eq.' + docId);
+    if (!rows || rows.length === 0) return { success: false, error: 'エントリが見つかりません' };
+    supabaseUpsert_('ai_feedback', {
+      id: docId,
+      resolved: true,
+      resolved_at: new Date().toISOString()
+    }, 'id');
     return { success: true, message: '解決済みにしました' };
   } catch (error) {
     Logger.log('❌ resolveAiFeedbackエラー: ' + error);
@@ -1428,7 +1441,7 @@ function deleteAiFeedback(docId) {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    firestoreDelete_('aiFeedback', docId);
+    supabaseDelete_('ai_feedback', 'id=eq.' + docId);
     return { success: true, message: 'フィードバックを削除しました' };
   } catch (error) {
     Logger.log('❌ deleteAiFeedbackエラー: ' + error);

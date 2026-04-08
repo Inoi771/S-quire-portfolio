@@ -194,3 +194,70 @@ function migrateAllToSupabase() {
 
   return results;
 }
+
+// ========================================
+// AIアシスタントデータ移行（Firestore → Supabase）
+// ========================================
+// 実行方法: GASエディタで migrateAiDataToSupabase() を手動実行
+// ※ 冪等（再実行しても既存データを上書き）
+
+/**
+ * Firestore の aiLearnedKnowledge / aiFeedback を Supabase に移行する
+ * @return {Object} { knowledge: {success, total}, feedback: {success, total} }
+ */
+function migrateAiDataToSupabase() {
+  Logger.log('=== AIデータ移行開始 ===');
+  var results = { knowledge: { success: true, total: 0 }, feedback: { success: true, total: 0 } };
+
+  // aiLearnedKnowledge → ai_learned_knowledge
+  try {
+    var knowledgeDocs = firestoreQuery_('aiLearnedKnowledge', []);
+    Logger.log('aiLearnedKnowledge: ' + knowledgeDocs.length + '件');
+    if (knowledgeDocs.length > 0) {
+      var knowledgeRows = knowledgeDocs.map(function(doc) {
+        return {
+          id: doc._id,
+          category: doc.category || '',
+          content: doc.content || '',
+          reason: doc.reason || '',
+          source: doc.source || 'conversation',
+          learned_at: doc.learnedAt || new Date().toISOString(),
+          updated_at: doc.updatedAt || null
+        };
+      });
+      supabaseBatchUpsert_('ai_learned_knowledge', knowledgeRows, 'id');
+      results.knowledge.total = knowledgeRows.length;
+    }
+  } catch (e) {
+    Logger.log('❌ aiLearnedKnowledge移行エラー: ' + e);
+    results.knowledge.success = false;
+  }
+
+  // aiFeedback → ai_feedback
+  try {
+    var feedbackDocs = firestoreQuery_('aiFeedback', []);
+    Logger.log('aiFeedback: ' + feedbackDocs.length + '件');
+    if (feedbackDocs.length > 0) {
+      var feedbackRows = feedbackDocs.map(function(doc) {
+        return {
+          id: doc._id,
+          type: doc.type || '',
+          summary: doc.summary || '',
+          user_query: doc.userQuery || '',
+          resolved: doc.resolved || false,
+          created_at: doc.createdAt || new Date().toISOString(),
+          resolved_at: doc.resolvedAt || null
+        };
+      });
+      supabaseBatchUpsert_('ai_feedback', feedbackRows, 'id');
+      results.feedback.total = feedbackRows.length;
+    }
+  } catch (e) {
+    Logger.log('❌ aiFeedback移行エラー: ' + e);
+    results.feedback.success = false;
+  }
+
+  Logger.log('=== AIデータ移行完了 ===');
+  Logger.log(JSON.stringify(results, null, 2));
+  return results;
+}

@@ -618,11 +618,11 @@ GAS エディタで確認した「ウェブアプリ URL」（`https://script.go
 | `flyerAi` | `{lectureId}_{campusCode}` | AIチラシHTML |
 | `imageTags` | `{driveFileId}` | チラシ用画像タグ |
 | `operationLogs` | `log_{ms}_{random5}` | 操作ログ |
-| `aiLearnedKnowledge` | `lk_{ms}` | AI自動学習ナレッジ |
-| `gradesMeta` | `yearsList` | 成績データの年度一覧キャッシュ |
-| `gradeSummaries` | `{year}_{testName}` | テスト別校舎平均キャッシュ |
-| `gradeListCache` | `{year}_{testName}` | 一覧表キャッシュ |
-| `gradeReportCache` | `{year}` | 成績表キャッシュ |
+| ~~`aiLearnedKnowledge`~~ | — | **Supabaseに移行済み** |
+| ~~`gradesMeta`~~ | — | **廃止（Supabase SQL集計で代替）** |
+| ~~`gradeSummaries`~~ | — | **廃止（Supabase SQL集計で代替）** |
+| ~~`gradeListCache`~~ | — | **廃止（GAS API経由で取得）** |
+| ~~`gradeReportCache`~~ | — | **廃止（GAS API経由で取得）** |
 
 > 詳細なフィールド構成は `DATA.md` を参照してください。
 
