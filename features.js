@@ -59,6 +59,33 @@ function classifyMessageIntent_(message, chatHistory) {
 }
 
 /**
+ * チャットメッセージからテスト分析用の年度を検出
+ * @param {string} message ユーザーメッセージ
+ * @param {number} currentYear 現在の学年年度
+ * @return {number} 対象年度
+ */
+function detectAnalysisYear_(message, currentYear) {
+  if (/去年|昨年度|昨年/.test(message)) return currentYear - 1;
+  if (/来年|来年度/.test(message)) return currentYear + 1;
+  var m = message.match(/(\d{4})年/);
+  if (m) return parseInt(m[1], 10);
+  return currentYear;
+}
+
+/**
+ * チャットメッセージからテスト名を検出（テスト名一覧との部分一致）
+ * @param {string} message ユーザーメッセージ
+ * @param {string[]} testNames 登録済みテスト名一覧
+ * @return {string|null} マッチしたテスト名、なければnull
+ */
+function detectAnalysisTestName_(message, testNames) {
+  for (var i = 0; i < testNames.length; i++) {
+    if (message.indexOf(testNames[i]) >= 0) return testNames[i];
+  }
+  return null;
+}
+
+/**
  * systemInstruction 用の静的プロンプトを組み立てる
  * @param {string} aiAssistantName AIアシスタント名
  * @param {string} aiPersonality 喋り方コード
@@ -116,6 +143,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n[Shared Rules]\n'
     + '- YearRule: unmentioned→CY, 去年/昨年度→' + (currentAcademicYear - 1) + ', 一昨年→' + (currentAcademicYear - 2) + ', explicit→that year. NEVER confuse calendar year with academic year.\n'
     + '- TestNameRule: MUST exist in [Test Names List]. If unknown/unmentioned, return type:"other" asking which test (show full list).\n'
+    + '- AnalysisDataRule: If context contains a 【テスト分析データ:...】section, summarize and explain the analysis directly in your response as type:"other" (DO NOT return show_grade_analysis action). Use clear, plain Japanese for non-expert teachers.\n'
     + '- MessageRule: "message" field must contain actual resolved values (year, testName, student name). NEVER use placeholders like ○○.\n'
     + '- ConfirmRule: Set needsConfirmation:true, show all details. Only re-send with confirmed:true (no needsConfirmation) after user says "はい".\n'
     + '\n■ config_change — Settings change:\n'
@@ -523,6 +551,35 @@ function requestAIAssistant(userMessage, chatHistory) {
       }
     }
 
+    // 条件付き: テスト分析データ（成績・分析関連のメッセージで、テスト名が特定できた場合のみ）
+    var gradeAnalysisContext = '';
+    if (intents.grades && /分析|平均点|平均|教えて|説明|コメント|どう|結果/.test(resolvedUserMessage)) {
+      try {
+        var wantedYear = detectAnalysisYear_(resolvedUserMessage, currentAcademicYear);
+        var allTestNames = getTestNamesConfig() || [];
+        var wantedTestName = detectAnalysisTestName_(resolvedUserMessage, allTestNames);
+        if (wantedTestName) {
+          var analysisResult = getGradeAnalysis(wantedYear, wantedTestName);
+          if (analysisResult.success && analysisResult.exists) {
+            var aData = analysisResult.analysis;
+            gradeAnalysisContext = '\n\n【テスト分析データ: ' + wantedTestName + '(' + wantedYear + '年度)】\n';
+            gradeAnalysisContext += '概要: ' + (aData.overview || '') + '\n';
+            if (aData.subjectAnalysis && aData.subjectAnalysis.length) {
+              gradeAnalysisContext += '教科別:\n';
+              aData.subjectAnalysis.forEach(function(s) {
+                gradeAnalysisContext += '  ' + s.subject + ': 塾平均' + s.jukuAvg + '点, 学校平均' + s.schoolAvg + '点(差' + s.diff + '点) / ' + s.comment + '\n';
+              });
+            }
+            if (aData.historicalTrend)    gradeAnalysisContext += '年度推移: ' + aData.historicalTrend + '\n';
+            if (aData.roundComparison)    gradeAnalysisContext += '前回比較: ' + aData.roundComparison + '\n';
+            if (aData.nextRoundPrediction) gradeAnalysisContext += '次回予測: ' + aData.nextRoundPrediction + '\n';
+          }
+        }
+      } catch (e) {
+        Logger.log('⚠ テスト分析コンテキスト取得スキップ: ' + e);
+      }
+    }
+
     // 条件付き: 校舎別生徒数サマリー（成績・生徒関連時のみ）
     var studentSummaryContext = '';
     if (intents.grades || intents.students) {
@@ -819,7 +876,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       + 'Academic year: ' + currentAcademicYear + ' (April ' + currentAcademicYear + ' – March ' + (currentAcademicYear + 1) + ')\n'
       + userInfo + '\n'
       + adminContext + '\n'
-      + kbContext + campusListContext + pricingContext + testNamesContext
+      + kbContext + campusListContext + pricingContext + testNamesContext + gradeAnalysisContext
       + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
       + studentGradeYearContext + operationsContext + lectureEntriesContext
       + '\n\n[User Message]\n' + resolvedUserMessage;
