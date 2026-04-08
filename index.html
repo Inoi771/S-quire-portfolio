@@ -1978,6 +1978,7 @@
             <div style="display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0;">
               <button id="kbTabManual" onclick="switchKbTab('manual')" style="padding: 10px 20px; background: none; border: none; border-bottom: 2px solid var(--theme-color, #43e97b); margin-bottom: -2px; cursor: pointer; font-size: 14px; font-weight: bold; color: var(--theme-color, #43e97b);">手動登録 <span id="kbManualCount" style="font-size: 12px; color: #888;"></span></button>
               <button id="kbTabAuto" onclick="switchKbTab('auto')" style="padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; font-size: 14px; font-weight: bold; color: #888;">自動学習 <span id="kbAutoCount" style="font-size: 12px; background: #e74c3c; color: white; border-radius: 10px; padding: 1px 7px; display: none;">0</span></button>
+              <button id="kbTabFeedback" onclick="switchKbTab('feedback')" style="padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; font-size: 14px; font-weight: bold; color: #888;">フィードバック <span id="kbFeedbackCount" style="font-size: 12px; background: #e74c3c; color: white; border-radius: 10px; padding: 1px 7px; display: none;">0</span></button>
             </div>
 
             <!-- ===== 手動登録セクション ===== -->
@@ -2066,6 +2067,17 @@
 
               <!-- 自動学習エントリ一覧 -->
               <div id="kbAutoEntriesList"></div>
+            </div>
+
+            <!-- ===== フィードバックセクション ===== -->
+            <div id="kbSectionFeedback" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <p style="font-size: 13px; color: #666; margin: 0; line-height: 1.6;">
+                  AIが答えられなかった質問・存在しない機能へのリクエストが自動で記録されます。ナレッジベースの充実や機能改善のヒントにご活用ください。
+                </p>
+                <span id="kbFeedbackStats" style="font-size: 12px; color: #888;"></span>
+              </div>
+              <div id="kbFeedbackEntriesList"></div>
             </div>
 
           </div>

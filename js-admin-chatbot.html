@@ -235,24 +235,33 @@ function switchKbTab(tab) {
   kbCurrentTab_ = tab;
   var manualSection = document.getElementById('kbSectionManual');
   var autoSection = document.getElementById('kbSectionAuto');
+  var feedbackSection = document.getElementById('kbSectionFeedback');
   var manualBtn = document.getElementById('kbTabManual');
   var autoBtn = document.getElementById('kbTabAuto');
+  var feedbackBtn = document.getElementById('kbTabFeedback');
+
+  // 全セクション非表示・全ボタン非アクティブ
+  manualSection.style.display = 'none';
+  autoSection.style.display = 'none';
+  feedbackSection.style.display = 'none';
+  [manualBtn, autoBtn, feedbackBtn].forEach(function(btn) {
+    if (btn) { btn.style.borderBottomColor = 'transparent'; btn.style.color = '#888'; }
+  });
 
   if (tab === 'manual') {
     manualSection.style.display = '';
-    autoSection.style.display = 'none';
     manualBtn.style.borderBottomColor = 'var(--theme-color, #43e97b)';
     manualBtn.style.color = 'var(--theme-color, #43e97b)';
-    autoBtn.style.borderBottomColor = 'transparent';
-    autoBtn.style.color = '#888';
-  } else {
-    manualSection.style.display = 'none';
+  } else if (tab === 'auto') {
     autoSection.style.display = '';
-    manualBtn.style.borderBottomColor = 'transparent';
-    manualBtn.style.color = '#888';
     autoBtn.style.borderBottomColor = 'var(--theme-color, #43e97b)';
     autoBtn.style.color = 'var(--theme-color, #43e97b)';
     initAutoLearnedAdmin();
+  } else if (tab === 'feedback') {
+    feedbackSection.style.display = '';
+    feedbackBtn.style.borderBottomColor = 'var(--theme-color, #43e97b)';
+    feedbackBtn.style.color = 'var(--theme-color, #43e97b)';
+    initFeedbackAdmin();
   }
 }
 
@@ -482,6 +491,146 @@ function deleteAutoLearned(docId) {
         appAlert('エラーが発生しました: ' + err);
       })
       .deleteAutoLearnedKnowledge(docId);
+  });
+}
+
+// ===== 【フィードバック管理】 =====
+
+var kbFeedbackEntries_ = [];
+
+/**
+ * フィードバック一覧の読み込み
+ */
+function initFeedbackAdmin() {
+  var list = document.getElementById('kbFeedbackEntriesList');
+  if (list) list.innerHTML = '<p style="color:#888; text-align:center;">読み込み中...</p>';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        kbFeedbackEntries_ = result.entries || [];
+        renderFeedbackEntries(kbFeedbackEntries_);
+      } else {
+        list.innerHTML = '<p style="color:red;">読み込みに失敗しました: ' + (result ? result.error : '不明') + '</p>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('getAiFeedback error:', err);
+      list.innerHTML = '<p style="color:red;">エラー: ' + err + '</p>';
+    })
+    .getAiFeedback();
+}
+
+/**
+ * フィードバック一覧を描画
+ * @param {Array} entries エントリ配列
+ */
+function renderFeedbackEntries(entries) {
+  var list = document.getElementById('kbFeedbackEntriesList');
+  var stats = document.getElementById('kbFeedbackStats');
+  var countBadge = document.getElementById('kbFeedbackCount');
+
+  var unresolved = entries.filter(function(e) { return !e.resolved; });
+
+  if (countBadge) {
+    if (unresolved.length > 0) {
+      countBadge.textContent = unresolved.length + '件';
+      countBadge.style.display = '';
+    } else {
+      countBadge.style.display = 'none';
+    }
+  }
+
+  if (!entries || entries.length === 0) {
+    list.innerHTML = '<p style="color:#888; text-align:center; padding: 20px 0;">まだフィードバックはありません。</p>';
+    if (stats) stats.textContent = '0件';
+    return;
+  }
+
+  if (stats) {
+    stats.textContent = '全' + entries.length + '件（未対応: ' + unresolved.length + '件）';
+    stats.style.color = unresolved.length > 0 ? '#e74c3c' : '#888';
+  }
+
+  var typeLabels = { missing_info: '情報不足', missing_feature: '機能リクエスト' };
+  var typeColors = { missing_info: '#f39c12', missing_feature: '#667eea' };
+
+  var html = '';
+  entries.forEach(function(entry) {
+    var docId = entry._id || entry.id || '';
+    var date = entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    var typeLabel = typeLabels[entry.type] || entry.type;
+    var typeColor = typeColors[entry.type] || '#888';
+    var resolvedStyle = entry.resolved ? 'opacity: 0.5;' : '';
+
+    html += '<div style="padding: 12px 14px; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 10px; ' + resolvedStyle + '">';
+    html += '<div style="display: flex; align-items: flex-start; gap: 10px;">';
+    html += '<div style="flex: 1;">';
+    html += '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">';
+    html += '<span style="font-size: 11px; font-weight: bold; background: ' + typeColor + '; color: white; padding: 2px 8px; border-radius: 10px;">' + escapeHtmlKb_(typeLabel) + '</span>';
+    if (entry.resolved) html += '<span style="font-size: 11px; color: #27ae60; font-weight: bold;">✓ 解決済み</span>';
+    if (date) html += '<span style="font-size: 11px; color: #aaa;">' + date + '</span>';
+    html += '</div>';
+    html += '<div style="font-size: 14px; font-weight: bold; margin-bottom: 4px;">' + escapeHtmlKb_(entry.summary) + '</div>';
+    if (entry.userQuery) {
+      html += '<div style="font-size: 12px; color: #666; background: #f8f8f8; padding: 4px 8px; border-radius: 4px; margin-top: 4px;">💬 ' + escapeHtmlKb_(entry.userQuery) + '</div>';
+    }
+    html += '</div>';
+    html += '<div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">';
+    if (!entry.resolved) {
+      html += '<button onclick="resolveFeedback(\'' + docId + '\')" style="padding: 4px 10px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">解決済み</button>';
+    }
+    html += '<button onclick="deleteFeedback(\'' + docId + '\')" style="padding: 4px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">削除</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+  });
+
+  list.innerHTML = html;
+}
+
+/**
+ * フィードバックを解決済みにする
+ * @param {string} docId ドキュメントID
+ */
+function resolveFeedback(docId) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        showToast(result.message, 'success');
+        initFeedbackAdmin();
+      } else {
+        appAlert('更新に失敗しました: ' + (result ? result.error : '不明'));
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('resolveAiFeedback error:', err);
+      appAlert('エラーが発生しました: ' + err);
+    })
+    .resolveAiFeedback(docId);
+}
+
+/**
+ * フィードバックを削除する（確認ダイアログ付き）
+ * @param {string} docId ドキュメントID
+ */
+function deleteFeedback(docId) {
+  appConfirm('このフィードバックを削除しますか？').then(function(ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          showToast(result.message, 'success');
+          initFeedbackAdmin();
+        } else {
+          appAlert('削除に失敗しました: ' + (result ? result.error : '不明'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.error('deleteAiFeedback error:', err);
+        appAlert('エラーが発生しました: ' + err);
+      })
+      .deleteAiFeedback(docId);
   });
 }
 </script>

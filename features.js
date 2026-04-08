@@ -102,6 +102,9 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + 'When a user corrects you, teaches operational facts, shares procedures, or provides scheduling/policy info:\n'
     + 'Include optional "learned_knowledge":{"category":"category","content":"1-2 sentence fact in Japanese","reason":"why useful"}\n'
     + 'Rules: Only factual juku info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾（スクエア関係）, 中学校関係, 高校関係, その他\n'
+    + '\n[User Feedback Logging]\n'
+    + 'When you respond with "その件については管理者にご確認ください" (info not in knowledge base): include optional "feedback":{"type":"missing_info","summary":"何の情報が不足していたか1文で"}\n'
+    + 'When you respond with "現在その機能はございません" (feature does not exist): include optional "feedback":{"type":"missing_feature","summary":"どんな機能が求められたか1文で"}\n'
     + '\n[Conversation Continuation Rules]\n'
     + 'If the previous AI response was an app_action, and the user says "去年のにして", "○○校だけにして", etc. — reuse the same action and change ONLY the specified value.\n'
     + 'Year expressions (current academic year = ' + currentAcademicYear + '): 去年/昨年度→' + (currentAcademicYear - 1) + ', 今年/今年度→' + currentAcademicYear + ', 来年/来年度→' + (currentAcademicYear + 1) + '\n'
@@ -895,6 +898,24 @@ function requestAIAssistant(userMessage, chatHistory) {
           delete aiResponse.learned_knowledge;
         }
 
+        // フィードバック: 情報不足・機能リクエストをFirestoreに保存
+        if (aiResponse.feedback && aiResponse.feedback.type && aiResponse.feedback.summary) {
+          try {
+            var fb = aiResponse.feedback;
+            var fbDocId = 'fb_' + new Date().getTime();
+            firestoreSet_('aiFeedback', fbDocId, {
+              type: fb.type,
+              summary: fb.summary,
+              userQuery: userMessage || '',
+              resolved: false,
+              createdAt: new Date().toISOString()
+            });
+          } catch (fbErr) {
+            Logger.log('⚠ フィードバック保存エラー: ' + fbErr);
+          }
+          delete aiResponse.feedback;
+        }
+
         return aiResponse;
       } catch (parseError) {
         Logger.log('❌ パースエラー: ' + parseError + ' / rawText: ' + rawText.substring(0, 200));
@@ -1347,6 +1368,70 @@ function deleteAutoLearnedKnowledge(docId) {
     return { success: true, message: '削除しました' };
   } catch (error) {
     Logger.log('❌ deleteAutoLearnedKnowledgeエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ----------------------------------------
+// AIフィードバック管理
+// ----------------------------------------
+
+/**
+ * フィードバック一覧を取得する（Admin のみ）
+ * @return {Object} { success, entries }
+ */
+function getAiFeedback() {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    var entries = firestoreQuery_('aiFeedback', []);
+    entries.sort(function(a, b) {
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+    return { success: true, entries: entries };
+  } catch (error) {
+    Logger.log('❌ getAiFeedbackエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * フィードバックを解決済みにする（Admin のみ）
+ * @param {string} docId ドキュメントID
+ * @return {Object} { success, message }
+ */
+function resolveAiFeedback(docId) {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    var existing = firestoreGet_('aiFeedback', docId);
+    if (!existing) return { success: false, error: 'エントリが見つかりません' };
+    existing.resolved = true;
+    existing.resolvedAt = new Date().toISOString();
+    firestoreSet_('aiFeedback', docId, existing);
+    return { success: true, message: '解決済みにしました' };
+  } catch (error) {
+    Logger.log('❌ resolveAiFeedbackエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * フィードバックを削除する（Admin のみ）
+ * @param {string} docId ドキュメントID
+ * @return {Object} { success, message }
+ */
+function deleteAiFeedback(docId) {
+  if (!isAdmin()) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    firestoreDelete_('aiFeedback', docId);
+    return { success: true, message: 'フィードバックを削除しました' };
+  } catch (error) {
+    Logger.log('❌ deleteAiFeedbackエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }
