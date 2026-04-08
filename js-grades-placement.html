@@ -85,19 +85,38 @@ function loadGradesPlacement() {
     return;
   }
 
-  msgEl.innerHTML       = '<p style="color:#999; font-size:13px;">読み込み中...</p>';
-  containerEl.innerHTML = '';
-  placementTableData    = [];
   placementSortCol      = null;
   placementSortAsc      = true;
 
+  // キャッシュがあれば即座に表示
+  var cacheKey = 's-quire-g-place-' + year;
+  var cacheApplied = false;
+  try {
+    var cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      placementTableData = JSON.parse(cached);
+      cacheApplied = true;
+      buildPlacementCampusTabs();
+    }
+  } catch (e) { /* キャッシュ破損時は無視 */ }
+
+  if (!cacheApplied) {
+    msgEl.innerHTML       = '<p style="color:#999; font-size:13px;">読み込み中...</p>';
+    containerEl.innerHTML = '';
+    placementTableData    = [];
+  }
+
+  // 裏で最新データを取得
   google.script.run
     .withSuccessHandler(function(data) {
       placementTableData = data || [];
+      try { localStorage.setItem(cacheKey, JSON.stringify(placementTableData)); } catch (e) {}
       buildPlacementCampusTabs();
     })
     .withFailureHandler(function(err) {
-      msgEl.innerHTML = '<p style="color:#e53935; font-size:13px;">読み込みエラー: ' + err + '</p>';
+      if (!cacheApplied) {
+        msgEl.innerHTML = '<p style="color:#e53935; font-size:13px;">読み込みエラー: ' + err + '</p>';
+      }
     })
     .getStudentPlacementData(year);
 }
