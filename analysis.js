@@ -1255,6 +1255,25 @@ function generateAllAnalyses(year, testName, skipExisting) {
       if (existingGrade.exists) skipGradeAnalysis = true;
     }
 
+    // 上書き生成モード: 生成前に既存データを削除してクリーンな状態にする
+    // （削除後はDB内の分析がすべて今回の新規生成分になるため、完了件数が明確になる）
+    if (!skipExisting) {
+      try {
+        supabaseDelete_('student_analysis',
+          'test_name=eq.' + encodeURIComponent(testNameTrimmed) +
+          '&year=eq.' + parseInt(year, 10)
+        );
+        supabaseDelete_('test_analysis',
+          'id=eq.' + encodeURIComponent(makeTestAnalysisDocId_(year, testNameTrimmed))
+        );
+        existingStudentKeys = {};
+        existingDocs = [];
+        Logger.log('✓ 上書き生成: 既存データ削除完了');
+      } catch (e) {
+        Logger.log('⚠ 既存データ削除スキップ（生成は続行）: ' + e);
+      }
+    }
+
     // ==========================================
     // テスト全体分析データの収集（generateGradeAnalysis と同等）
     // ==========================================
