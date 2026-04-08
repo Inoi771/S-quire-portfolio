@@ -179,21 +179,26 @@ function backupLectureEntries_(ss) {
   var docs = firestoreQuery_('lectureEntries', []);
   if (!docs || docs.length === 0) return 0;
 
-  var rows = docs.map(function(doc) {
-    return [
-      String(doc.entryId      || doc._id  || ''),
-      String(doc.lectureId    || ''),
-      String(doc.campusCode   || '').padStart(2, '0'),
-      String(doc.date         || ''),
-      String(doc.startTime    || ''),
-      doc.durationSlots !== null && doc.durationSlots !== undefined ? doc.durationSlots : '',
-      String(doc.subject      || ''),
-      String(doc.grade        || ''),
-      String(doc.teacherName  || ''),
-      String(doc.teacherEmail || ''),
-      String(doc.classLabel   || ''),
-      String(doc.teacherId    || '')
-    ];
+  // 新構造: 各ドキュメントの entries 配列をフラット化
+  var rows = [];
+  docs.forEach(function(doc) {
+    var campusEntries = doc.entries || [];
+    campusEntries.forEach(function(e) {
+      rows.push([
+        String(e.entryId      || ''),
+        String(doc.lectureId  || ''),
+        String(doc.campusCode || '').padStart(2, '0'),
+        String(e.date         || ''),
+        String(e.startTime    || ''),
+        e.durationSlots !== null && e.durationSlots !== undefined ? e.durationSlots : '',
+        String(e.subject      || ''),
+        String(e.grade        || ''),
+        String(e.teacherName  || ''),
+        String(e.teacherEmail || ''),
+        String(e.classLabel   || ''),
+        String(e.teacherId    || '')
+      ]);
+    });
   });
 
   if (rows.length > 0) {

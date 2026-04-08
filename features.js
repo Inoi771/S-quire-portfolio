@@ -2321,24 +2321,23 @@ function normalizeLecTime_(val) {
 function getLectureScheduleEntries(lectureId, campusCode) {
   try {
     var normalizedCampus = String(campusCode || '').padStart(2, '0');
-    var docs = firestoreQuery_('lectureEntries', [
-      fsFilter_('lectureId',  'EQUAL', String(lectureId)),
-      fsFilter_('campusCode', 'EQUAL', normalizedCampus)
-    ]);
-    return docs.map(function(doc) {
+    var docId = String(lectureId) + '_' + normalizedCampus;
+    var doc = firestoreGet_('lectureEntries', docId);
+    if (!doc) return [];
+    return (doc.entries || []).map(function(e) {
       return {
-        id:            doc.entryId || doc._id || '',
-        lectureId:     doc.lectureId     || '',
-        campusCode:    doc.campusCode    || '',
-        date:          doc.date          || '',
-        startTime:     doc.startTime     || '',
-        durationSlots: Number(doc.durationSlots) || 9,
-        subject:       doc.subject       || '',
-        grade:         doc.grade         || '',
-        teacherName:   doc.teacherName   || '',
-        teacherEmail:  doc.teacherEmail  || '',
-        classLabel:    doc.classLabel    || null,
-        teacherId:     doc.teacherId     || ''
+        id:            e.entryId        || '',
+        lectureId:     String(lectureId),
+        campusCode:    normalizedCampus,
+        date:          e.date          || '',
+        startTime:     e.startTime     || '',
+        durationSlots: Number(e.durationSlots) || 9,
+        subject:       e.subject       || '',
+        grade:         e.grade         || '',
+        teacherName:   e.teacherName   || '',
+        teacherEmail:  e.teacherEmail  || '',
+        classLabel:    e.classLabel    || null,
+        teacherId:     e.teacherId     || ''
       };
     });
   } catch (error) {
@@ -2362,24 +2361,23 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
     try {
       var entries = safeJsonParse_(entriesJson, []);
       var normalizedCampus = String(campusCode || '').padStart(2, '0');
+      var docId = String(lectureId) + '_' + normalizedCampus;
 
-      // 既存エントリを Firestore から取得（権限チェックに使用）
-      var existingDocs = firestoreQuery_('lectureEntries', [
-        fsFilter_('lectureId',  'EQUAL', String(lectureId)),
-        fsFilter_('campusCode', 'EQUAL', normalizedCampus)
-      ]);
+      // 既存ドキュメントを取得（権限チェックに使用）
+      var existingDoc = firestoreGet_('lectureEntries', docId);
+      var existingEntries = existingDoc ? (existingDoc.entries || []) : [];
 
       // 権限チェック: Admin以外は他人のエントリを改ざんできない（講師IDのみで判定）
       if (!isAdmin()) {
         var myTid = getOrCreateTeacherId();
         var existingOtherEntries = {};
-        existingDocs.forEach(function(doc) {
-          var tid = doc.teacherId || '';
+        existingEntries.forEach(function(e) {
+          var tid = e.teacherId || '';
           if (tid && tid !== myTid) {
-            existingOtherEntries[doc.entryId || doc._id] = {
-              date: String(doc.date || ''), startTime: String(doc.startTime || ''),
-              durationSlots: String(Number(doc.durationSlots) || 9),
-              subject: String(doc.subject || ''), grade: String(doc.grade || ''), teacherId: tid
+            existingOtherEntries[e.entryId || ''] = {
+              date: String(e.date || ''), startTime: String(e.startTime || ''),
+              durationSlots: String(Number(e.durationSlots) || 9),
+              subject: String(e.subject || ''), grade: String(e.grade || ''), teacherId: tid
             };
           }
         });
@@ -2408,20 +2406,12 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
         }
       }
 
-      // 全置換: 古いドキュメントを削除 + 新しいエントリを書き込み（バッチ）
-      var writes = [];
-      existingDocs.forEach(function(doc) {
-        writes.push({ collection: 'lectureEntries', docId: doc._id, delete: true });
-      });
-
+      // エントリIDを確定して保存データを構築
       var savedEntries = [];
-      entries.forEach(function(e) {
+      var newEntries = entries.map(function(e) {
         var entryId = e.id || ('ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000));
-        var docId = String(lectureId) + '_' + normalizedCampus + '_' + entryId;
-        var data = {
+        var eData = {
           entryId:       entryId,
-          lectureId:     String(lectureId),
-          campusCode:    normalizedCampus,
           date:          String(e.date      || ''),
           startTime:     String(e.startTime || ''),
           durationSlots: Number(e.durationSlots) || 9,
@@ -2432,16 +2422,22 @@ function saveLectureScheduleEntries(lectureId, campusCode, entriesJson) {
           classLabel:    e.classLabel || null,
           teacherId:     String(e.teacherId || '')
         };
-        writes.push({ collection: 'lectureEntries', docId: docId, data: data });
         savedEntries.push({
           id: entryId, lectureId: String(lectureId), campusCode: normalizedCampus,
-          date: data.date, startTime: data.startTime, durationSlots: data.durationSlots,
-          subject: data.subject, grade: data.grade, teacherName: data.teacherName,
-          teacherEmail: data.teacherEmail, classLabel: data.classLabel, teacherId: data.teacherId
+          date: eData.date, startTime: eData.startTime, durationSlots: eData.durationSlots,
+          subject: eData.subject, grade: eData.grade, teacherName: eData.teacherName,
+          teacherEmail: eData.teacherEmail, classLabel: eData.classLabel, teacherId: eData.teacherId
         });
+        return eData;
       });
 
-      if (writes.length > 0) firestoreBatchWrite_(writes);
+      // 1ドキュメントに entries 配列として保存
+      firestoreSet_('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    newEntries,
+        updatedAt:  new Date().toISOString()
+      });
 
       Logger.log('✓ saveLectureScheduleEntries: ' + entries.length + '件保存 (' + lectureId + '/' + normalizedCampus + ')');
       return { success: true, message: entries.length + '件を保存しました', entries: savedEntries };
