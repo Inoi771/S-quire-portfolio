@@ -101,7 +101,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n[Knowledge Learning — Self-Improvement]\n'
     + 'When a user corrects you, teaches operational facts, shares procedures, or provides scheduling/policy info:\n'
     + 'Include optional "learned_knowledge":{"category":"category","content":"1-2 sentence fact in Japanese","reason":"why useful"}\n'
-    + 'Rules: Only factual juku info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾のルール, 行事・イベント, 授業について, 運営, その他\n'
+    + 'Rules: Only factual juku info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾（スクエア関係）, 中学校関係, 高校関係, 塾での授業関係, その他\n'
     + '\n[Conversation Continuation Rules]\n'
     + 'If the previous AI response was an app_action, and the user says "去年のにして", "○○校だけにして", etc. — reuse the same action and change ONLY the specified value.\n'
     + 'Year expressions (current academic year = ' + currentAcademicYear + '): 去年/昨年度→' + (currentAcademicYear - 1) + ', 今年/今年度→' + currentAcademicYear + ', 来年/来年度→' + (currentAcademicYear + 1) + '\n'
