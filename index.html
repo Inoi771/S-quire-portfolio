@@ -97,6 +97,15 @@
   <?!= include('gas-bridge') ?>
   <?!= include('firebase-students') ?>
   <?!= include('firebase-schedule') ?>
+
+  <!-- ===== Service Worker 登録 ===== -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js');
+      });
+    }
+  </script>
 </head>
 <body>
   <!-- ===== スプラッシュ画面（読み込み完了後にフェードアウト） ===== -->
