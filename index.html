@@ -98,14 +98,11 @@
   <?!= include('firebase-students') ?>
   <?!= include('firebase-schedule') ?>
 
-  <!-- ===== Service Worker（一時無効化中 — 既存の登録を解除してキャッシュを削除） ===== -->
+  <!-- ===== Service Worker 登録 ===== -->
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function (regs) {
-        regs.forEach(function (r) { r.unregister(); });
-      });
-      caches.keys().then(function (names) {
-        names.forEach(function (name) { caches.delete(name); });
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js');
       });
     }
   </script>
