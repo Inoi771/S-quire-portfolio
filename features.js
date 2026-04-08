@@ -25,6 +25,138 @@ function getPersonalityInstruction(personality) {
 }
 
 /**
+ * メッセージの意図を正規表現ベースで分類する（条件付きコンテキスト読み込み用）
+ * 直前のAI応答も考慮してフォローアップに対応する
+ * @param {string} message ユーザーメッセージ
+ * @param {Array} chatHistory 会話履歴配列
+ * @return {Object} { grades, pricing, lectures, operations, students, settings, schedule, navigation }
+ */
+function classifyMessageIntent_(message, chatHistory) {
+  var detected = {
+    grades:     /成績|テスト|点数|偏差値|分析|一覧|レポート|成績入力|登録.*点|生徒ID/.test(message),
+    pricing:    /料金|月謝|費用|授業料|値段|いくら|支払|金額/.test(message),
+    lectures:   /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前/.test(message),
+    operations: /休校|開校|テスト日|入試日|ミーティング|報告書|引落|イベント/.test(message),
+    students:   /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
+    settings:   /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
+    schedule:   /予定|カレンダー|スケジュール|来月|先月|今月|\d+月.*予定/.test(message),
+    navigation: /見せて|開いて|表示して|タブ|画面/.test(message)
+  };
+  // 直前のAI応答から文脈を引き継ぐ（フォローアップ対応）
+  if (chatHistory && chatHistory.length > 0) {
+    var lastAi = null;
+    for (var i = chatHistory.length - 1; i >= 0; i--) {
+      if (chatHistory[i].role === 'ai') { lastAi = chatHistory[i]; break; }
+    }
+    if (lastAi && lastAi.text) {
+      if (/成績|テスト|分析/.test(lastAi.text)) detected.grades = true;
+      if (/講習|授業/.test(lastAi.text)) detected.lectures = true;
+      if (/料金|月謝/.test(lastAi.text)) detected.pricing = true;
+      if (/予定|カレンダー/.test(lastAi.text)) detected.schedule = true;
+    }
+  }
+  return detected;
+}
+
+/**
+ * systemInstruction 用の静的プロンプトを組み立てる
+ * @param {string} aiAssistantName AIアシスタント名
+ * @param {string} aiPersonality 喋り方コード
+ * @param {string} userDisplayName ユーザー表示名
+ * @param {number} currentAcademicYear 現在の学年年度
+ * @return {string} systemInstruction テキスト
+ */
+function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName, currentAcademicYear) {
+  return 'You are the AI assistant "' + (aiAssistantName || 'イノイマン') + '" for S-quire, a dashboard app for "個別指導スクエア" (a private tutoring school / juku).\n'
+    + '\n[About This App]\n'
+    + '- Name: S-quire\n'
+    + '- Facility: 個別指導スクエア (private tutoring school / juku)\n'
+    + '- Purpose: Dashboard for tutors/staff to manage student grades, monthly schedules, and school operations\n'
+    + '\n[Rules]\n'
+    + '- LANGUAGE: Always respond in Japanese. ' + getPersonalityInstruction(aiPersonality) + '\n'
+    + '- ADDRESS: When addressing the user, call them "' + (userDisplayName ? userDisplayName + '先生' : '先生') + '". Omit if unnecessary.\n'
+    + '- Keep responses concise. Maintain accuracy in explanations of features and logic; only adapt the speaking style above.\n'
+    + '- For casual conversation, chitchat, life advice, general questions (weather, recipes, etc.), respond warmly and freely.\n'
+    + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
+    + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
+    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry.\n'
+    + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
+    + '\n[S-quire Features]\n'
+    + '■ Schedule Tab (予定): Monthly calendar, AI auto-extraction from PDF/CSV/Sheets, fixed events, closed day/basic test management\n'
+    + '■ Grades Tab (成績管理): Student CRUD, test score entry (国語,社会,数学,理科,英語), OCR import, grade list/analysis/report views, master settings\n'
+    + '■ Settings Tab (設定): Theme color, AI name/style, profile (display name, subjects), preferred campus, account transfer\n'
+    + '■ Admin Tab (管理, admin only): Script properties, Drive operations, user management, logs, initialization\n'
+    + '■ Documents Tab (資料): Annual calendar PDF, pricing table PDF\n'
+    + '■ Lectures Tab (講習管理): Lecture schedule creation, internal handouts, external flyers, image generation\n'
+    + '\n[Configurable Settings]\n'
+    + '- themeColor: hex color (e.g. #43e97b)\n'
+    + '- aiAssistantName: any string (current: ' + (aiAssistantName || 'イノイマン') + ')\n'
+    + '- aiPersonality: polite/friendly/energetic/cool/kansai/hakata/tohoku/nagoya/awa (current: ' + (aiPersonality || 'polite') + ')\n'
+    + '- displayName: user\'s display name\n'
+    + '\n[Navigable Screens (use these IDs for navigate_tab action)]\n'
+    + 'schedule, grades>grades-score, grades>grades-list, grades>grades-analysis, grades>grades-report, grades>grades-input, grades>grades-placement, lectures>lectures-schedule, lectures>lectures-materials, lectures>lectures-flyer, universities>univ-calendar, universities>univ-pricing, settings\n'
+    + '\n[Student Name Redaction]\n'
+    + '- [生徒ID:XXXXXXXXXX]: One specific student. Do NOT show the raw ID to the user.\n'
+    + '- [個人名:田中]: Surname-only with multiple matches. Ask: "田中さんが複数います。フルネームか学年・校舎を教えてください"\n'
+    + '\n[Knowledge Learning — Self-Improvement]\n'
+    + 'When a user corrects you, teaches operational facts, shares procedures, or provides scheduling/policy info:\n'
+    + 'Include optional "learned_knowledge":{"category":"category","content":"1-2 sentence fact in Japanese","reason":"why useful"}\n'
+    + 'Rules: Only factual juku info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾のルール, 行事・イベント, 授業について, 運営, その他\n'
+    + '\n[Conversation Continuation Rules]\n'
+    + 'If the previous AI response was an app_action, and the user says "去年のにして", "○○校だけにして", etc. — reuse the same action and change ONLY the specified value.\n'
+    + 'Year expressions (current academic year = ' + currentAcademicYear + '): 去年/昨年度→' + (currentAcademicYear - 1) + ', 今年/今年度→' + currentAcademicYear + ', 来年/来年度→' + (currentAcademicYear + 1) + '\n'
+    + 'Carry over required fields from chat history. Do NOT re-ask for established fields.\n'
+    + 'If the previous AI ended with a question/proposal and the user responds affirmatively ("はい", "お願いします"), execute that proposal.\n'
+    + '\n[Response Format]\n'
+    + 'Return ONLY one of the following JSON formats. All text fields MUST be in Japanese.\n'
+    + 'Abbreviations: R=required, CY=' + currentAcademicYear + ' (current academic year)\n'
+    + '\n[Shared Rules]\n'
+    + '- YearRule: unmentioned→CY, 去年/昨年度→' + (currentAcademicYear - 1) + ', 一昨年→' + (currentAcademicYear - 2) + ', explicit→that year. NEVER confuse calendar year with academic year.\n'
+    + '- TestNameRule: MUST exist in [Test Names List]. If unknown/unmentioned, return type:"other" asking which test (show full list).\n'
+    + '- MessageRule: "message" field must contain actual resolved values (year, testName, student name). NEVER use placeholders like ○○.\n'
+    + '- ConfirmRule: Set needsConfirmation:true, show all details. Only re-send with confirmed:true (no needsConfirmation) after user says "はい".\n'
+    + '\n■ config_change — Settings change:\n'
+    + '{"success":true,"type":"config_change","recommendedSettings":{"key":"value"},"explanation":"Japanese explanation"}\n'
+    + '\n■ qa_help — Feature/usage question:\n'
+    + '{"success":true,"type":"qa_help","answer":"Japanese answer","relatedTopic":"topic"}\n'
+    + '\n■ navigate_schedule — Schedule view ("来月の予定" etc.): year(YearRule), month(calc from today)\n'
+    + '{"success":true,"type":"app_action","action":"navigate_schedule","year":YYYY,"month":MM,"message":"msg"}\n'
+    + '\n■ navigate_tab — Screen navigation ("料金表を見せて" etc.):\n'
+    + '{"success":true,"type":"app_action","action":"navigate_tab","tab":"tabId","subTab":"optional subTabId","message":"msg"}\n'
+    + '\n■ show_grade_analysis: year(R,YearRule), testName(R,TestNameRule) → MessageRule\n'
+    + '{"success":true,"type":"app_action","action":"show_grade_analysis","year":YYYY,"testName":"name","message":"msg"}\n'
+    + '\n■ navigate_lectures: year(R,YearRule), lectureId(R,must be in Lecture Periods List) → MessageRule\n'
+    + '  Optional: campusCode (auto-set from user prefs if 1 campus; ask if 2+)\n'
+    + '{"success":true,"type":"app_action","action":"navigate_lectures","lectureId":"id","campusCode":"optional","message":"msg"}\n'
+    + '\n■ show_student_report: year(R,YearRule+auto from grade data check), studentId(R), testName(R,TestNameRule) → MessageRule\n'
+    + '  Use numeric part of [生徒ID:XXXX]. If student has data in only 1 year, auto-set that year.\n'
+    + '{"success":true,"type":"app_action","action":"show_student_report","year":YYYY,"studentId":"id","testName":"name","message":"msg"}\n'
+    + '\n■ show_grades_list: year(R,YearRule), testName(R,TestNameRule), campusCode(optional) → MessageRule\n'
+    + '{"success":true,"type":"app_action","action":"show_grades_list","year":YYYY,"campusCode":"","testName":"name","message":"msg"}\n'
+    + '\n■ submit_grade — Grade submission: studentId(R), testName(R), scores(R:{kokugo,shakai,sugaku,rika,eigo}) → ConfirmRule\n'
+    + '{"success":true,"type":"app_action","action":"submit_grade","needsConfirmation":true,"year":CY,"studentId":"id","testName":"name","scores":{"kokugo":0,"shakai":0,"sugaku":0,"rika":0,"eigo":0},"message":"以下の内容で成績を登録します：\\n生徒: ○○さん\\nテスト: ○○\\n国語:○ 社会:○ 数学:○ 理科:○ 英語:○\\nよろしいですか？"}\n'
+    + '\n■ submit_student — Student registration: campusCode(R), gradeCode(R), sei(R), seiFurigana(R) → ConfirmRule\n'
+    + '  Optional: mei, meiFurigana, schoolName\n'
+    + '{"success":true,"type":"app_action","action":"submit_student","needsConfirmation":true,"year":CY,"campusCode":"2-digit","gradeCode":"2-digit","sei":"surname","mei":"","seiFurigana":"furigana","meiFurigana":"","schoolName":"","message":"confirmation msg"}\n'
+    + '\n■ add_schedule — Schedule entry: schoolName(R), eventName(R), dateStr(R,MM/DD) → ConfirmRule\n'
+    + '{"success":true,"type":"app_action","action":"add_schedule","needsConfirmation":true,"schoolName":"name","eventName":"event","dateStr":"MM/DD","details":"optional","message":"confirmation msg"}\n'
+    + '\n■ create_lecture_entry — Lecture creation: lectureId(R), campusCode(R), date(R,YYYY-MM-DD), startTime(R,HH:MM), subject(R), grade(R,code 07-18) → ConfirmRule\n'
+    + '  Optional: durationSlots (10-min units; use grade settings if available, default 9=90min), classLabel (A/B/C)\n'
+    + '  [Smart Defaults] If current lecture entries have lectureId+campusCode → use them. 1 preferred campus → auto-set. 2+ → ask. 1 subject → auto-set. 2+ → ask. Grade → ALWAYS ask.\n'
+    + '  [Weekly] If "毎週" mentioned, set weekly:true. Creates for same day/time each week, skipping closed days.\n'
+    + '{"success":true,"type":"app_action","action":"create_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","date":"YYYY-MM-DD","startTime":"HH:MM","durationSlots":9,"subject":"name","grade":"2-digit","classLabel":"optional","weekly":false,"message":"confirmation msg"}\n'
+    + '\n■ edit_lecture_entry: lectureId(R), campusCode(R), entryId(R, from current entries) → ConfirmRule\n'
+    + '  Include ONLY changed fields in "changes". User can ONLY edit own entries.\n'
+    + '{"success":true,"type":"app_action","action":"edit_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","entryId":"id","changes":{"field":"value"},"message":"confirmation msg"}\n'
+    + '\n■ delete_lecture_entry: lectureId(R), campusCode(R), entryId(R) → ConfirmRule\n'
+    + '  User can ONLY delete own entries.\n'
+    + '{"success":true,"type":"app_action","action":"delete_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","entryId":"id","message":"confirmation msg"}\n'
+    + '\n■ Confirmation response (user said "はい"): Re-send same action with confirmed:true, WITHOUT needsConfirmation.\n'
+    + '\n■ Missing information: {"success":true,"type":"other","response":"Japanese question about missing field"}\n'
+    + '\n■ All other (chitchat, general): {"success":true,"type":"other","response":"Japanese response"}';
+}
+
+/**
  * テキスト内の [生徒ID:...] / [個人名:...] トークンの外側だけ文字列置換するヘルパー
  * Phase 2（苗字マッチング）で置換済みトークン内を誤って再置換しないために使用する
  * @param {string} text 対象テキスト
@@ -235,22 +367,19 @@ function requestAIAssistant(userMessage, chatHistory) {
 
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + GEMINI_API_KEY;
 
-    // ユーザープロフィールを取得（表示名・担当教科・AIアシスタント名・喋り方）
-    var userDisplayName = '';
-    var userSubjects = '';
-    var aiAssistantName = 'イノイマン';
-    var aiPersonality = 'polite';
+    // ユーザープロフィールを1回だけ取得（旧: 3回呼んでいた）
+    var profile = null;
     try {
-      var profile = getUserProfile();
-      if (profile && profile.success) {
-        userDisplayName = profile.displayName || '';
-        userSubjects = (profile.subjects && profile.subjects.length > 0) ? profile.subjects.join('、') : '';
-        aiAssistantName = profile.aiAssistantName || 'イノイマン';
-        aiPersonality = profile.aiPersonality || 'polite';
-      }
+      profile = getUserProfile();
     } catch (e) {
       Logger.log('⚠ プロフィール取得スキップ: ' + e);
     }
+    var userDisplayName = (profile && profile.success && profile.displayName) || '';
+    var userSubjects = (profile && profile.success && profile.subjects && profile.subjects.length > 0) ? profile.subjects.join('、') : '';
+    var userSubjectsList = (profile && profile.success && profile.subjects) || [];
+    var userPreferredCampusList = (profile && profile.success && profile.preferredCampuses) || [];
+    var aiAssistantName = (profile && profile.success && profile.aiAssistantName) || 'イノイマン';
+    var aiPersonality = (profile && profile.success && profile.aiPersonality) || 'polite';
 
     // 生徒マスタを取得して氏名→ID変換の準備（個人情報保護）
     var studentMaster = [];
@@ -260,8 +389,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 生徒マスタ取得スキップ（氏名解決なし）: ' + e);
     }
 
-    // 校舎設定を取得（苗字マッチングの文脈解析用）
-    // getCampusConfig() はオブジェクト形式 {"01":"鳴門校",...} を返すため、配列形式に変換する
+    // 校舎設定を取得
     var campusConfig = [];
     try {
       var campusObj = getCampusConfig() || {};
@@ -269,174 +397,61 @@ function requestAIAssistant(userMessage, chatHistory) {
         return { code: code, name: campusObj[code] };
       });
     } catch (e) {
-      Logger.log('⚠ 校舎設定取得スキップ（文脈解析なし）: ' + e);
+      Logger.log('⚠ 校舎設定取得スキップ: ' + e);
     }
 
-    // 現在のメッセージ内の生徒氏名をIDに置き換え（苗字のみ入力にも対応）
+    // メッセージ内の生徒氏名をIDに置き換え
     var resolvedUserMessage = resolveStudentNamesInMessage_(userMessage, studentMaster, campusConfig);
-    if (resolvedUserMessage !== userMessage) {
-    }
 
-    // 会話履歴を文字列に変換（ユーザー発言の氏名も同様に置き換え）
-    var historyContext = '';
+    // 意図分類（条件付きコンテキスト読み込み用）
+    var intents = classifyMessageIntent_(resolvedUserMessage, chatHistory);
+
+    var currentAcademicYear = getCurrentFiscalYear();
+
+    // === systemInstruction の構築（静的な指示） ===
+    var systemPrompt = buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName, currentAcademicYear);
+
+    // === マルチターン会話履歴の構築 ===
+    var contents = [];
     if (chatHistory && chatHistory.length > 0) {
-      historyContext = '\n\n[Recent Chat History (use as context)]\n';
       chatHistory.slice(-10).forEach(function(item) {
         var itemText = item.role === 'user'
           ? resolveStudentNamesInMessage_(item.text, studentMaster, campusConfig)
           : item.text;
-        historyContext += (item.role === 'user' ? 'User: ' : 'AI: ') + itemText + '\n';
+        contents.push({
+          role: item.role === 'user' ? 'user' : 'model',
+          parts: [{ text: itemText }]
+        });
       });
-      historyContext += '\n[Conversation Continuation Rules]\n'
-        + 'If the previous AI response was an app_action, and the user says something like "去年のにして", "2024年度にして", "○○校だけにして", "テストを変えて" — reuse the same action type and change ONLY the specified value.\n'
-        + 'Year expressions (current academic year = ' + getCurrentFiscalYear() + '):\n'
-        + '- 去年/昨年/去年度/昨年度 → ' + (getCurrentFiscalYear() - 1) + '\n'
-        + '- 今年/今年度 → ' + getCurrentFiscalYear() + '\n'
-        + '- 来年/来年度 → ' + (getCurrentFiscalYear() + 1) + '\n'
-        + 'Carry over other required fields (testName, etc.) from chat history. Do NOT re-ask for fields already established in conversation.\n'
-        + 'If the previous AI response ended with a question/proposal (e.g. "〇〇しますか？", "ご希望ですか？"), '
-        + 'and the user responds affirmatively ("はい", "お願いします", "見せて", "開いて"), '
-        + 'interpret it as an instruction to execute that proposal.\n'
-        + '(Example: AI: "料金表の確認をご希望ですか？" → User: "お願いします" → execute navigate_tab to pricing)\n';
     }
 
-    // ユーザー情報・プロフィール未設定への対応
+    // === ユーザー情報の構築 ===
     var userInfo = '\n[User Info]';
     var profileReminder = '';
-    var userSubjectsList = [];
-    var userPreferredCampusList = [];
     if (userDisplayName) {
-      userInfo += '\n- Display name: ' + userDisplayName + ' (address as "' + userDisplayName + '先生")';
+      userInfo += '\n- Display name: ' + userDisplayName;
     } else {
       userInfo += '\n- Display name: not set';
-      profileReminder += 'Display name is not set. Add a note at the end: "設定タブのプロフィールから表示名を設定いただけます". ';
+      profileReminder += '表示名未設定。回答末尾に「設定タブのプロフィールから表示名を設定いただけます」と追記。';
     }
     if (userSubjects) {
       userInfo += '\n- Subjects: ' + userSubjects;
-      try {
-        var profForSubjects = getUserProfile();
-        if (profForSubjects && profForSubjects.subjects) userSubjectsList = profForSubjects.subjects;
-      } catch (e) {}
     } else {
       userInfo += '\n- Subjects: not set';
-      profileReminder += 'Subjects not set. Add a note: "設定タブのプロフィールから担当教科も設定いただけます". ';
+      profileReminder += '担当教科未設定。「設定タブのプロフィールから担当教科も設定いただけます」と追記。';
     }
-    // 配属校舎情報
-    try {
-      var profForCampus = getUserProfile();
-      var prefCampuses = (profForCampus && profForCampus.preferredCampuses) || [];
-      if (prefCampuses.length > 0) {
-        var campusMap = {};
-        campusConfig.forEach(function(c) { campusMap[c.code] = c.name; });
-        var campusLabels = prefCampuses.map(function(code) {
-          return (campusMap[code] || code) + ' (' + code + ')';
-        });
-        userInfo += '\n- Preferred campuses: ' + campusLabels.join(', ');
-        userPreferredCampusList = prefCampuses;
-      } else {
-        userInfo += '\n- Preferred campuses: not set';
-      }
-    } catch (e) {}
-    if (profileReminder) {
-      userInfo += '\n\n[Profile Incomplete Handling]\n' + profileReminder;
-    }
-
-    // ナレッジベースデータを取得してプロンプトに含める
-    var kbContext = '';
-    try {
-      kbContext = getAiKnowledgeBaseForPrompt_();
-    } catch (e) {
-      Logger.log('⚠ ナレッジベース取得スキップ: ' + e);
-    }
-
-    // 料金表データを取得してプロンプトに含める
-    var pricingContext = '';
-    try {
-      var pricingJson = getScriptProperty(CONFIG_PROP_KEYS.PRICING_CONFIG);
-      if (pricingJson) {
-        var pricingData = JSON.parse(pricingJson);
-        pricingContext = '\n\n【料金表データ（' + pricingData.title + '）】\n';
-        pricingData.sections.forEach(function(section) {
-          pricingContext += '\n■ ' + section.name + '\n';
-          pricingContext += '| ' + section.headers.join(' | ') + ' |\n';
-          section.rows.forEach(function(row) {
-            pricingContext += '| ' + row.join(' | ') + ' |\n';
-          });
-          if (section.notes && section.notes.length > 0) {
-            section.notes.forEach(function(n) { pricingContext += n + '\n'; });
-          }
-        });
-        if (pricingData.footerNotes && pricingData.footerNotes.length > 0) {
-          pricingContext += '\n【注記】\n';
-          pricingData.footerNotes.forEach(function(n) { pricingContext += n + '\n'; });
-        }
-      }
-    } catch (e) {
-      Logger.log('⚠ 料金表データ取得スキップ: ' + e);
-    }
-
-    // 校舎コード一覧をプロンプトに含める（app_action返却時にGeminiが正しいコードを使えるようにする）
-    var campusListContext = '';
-    if (campusConfig.length > 0) {
-      campusListContext = '\n\n【校舎コード一覧（app_action返却時に使用）】\n';
-      campusConfig.forEach(function(c) {
-        campusListContext += c.code + ': ' + c.name + '\n';
+    if (userPreferredCampusList.length > 0) {
+      var campusMap = {};
+      campusConfig.forEach(function(c) { campusMap[c.code] = c.name; });
+      var campusLabels = userPreferredCampusList.map(function(code) {
+        return (campusMap[code] || code) + ' (' + code + ')';
       });
+      userInfo += '\n- Preferred campuses: ' + campusLabels.join(', ');
+    } else {
+      userInfo += '\n- Preferred campuses: not set';
     }
-
-    // テスト名一覧をプロンプトに含める
-    var testNamesContext = '';
-    try {
-      var testNames = getTestNamesConfig() || [];
-      if (testNames.length > 0) {
-        testNamesContext = '\n\n【テスト名一覧（成績関連のaction返却時に使用）】\n' + testNames.join('、');
-      }
-    } catch (e) {
-      Logger.log('⚠ テスト名取得スキップ: ' + e);
-    }
-
-    // 校舎別・学年別 生徒数サマリー（個人情報なし）
-    var studentSummaryContext = '';
-    try {
-      if (studentMaster.length > 0) {
-        var countMap = {};
-        studentMaster.forEach(function(s) {
-          var key = (s.campusCode || '??') + '_' + (s.gradeCode || '??');
-          countMap[key] = (countMap[key] || 0) + 1;
-        });
-        var gradeLabels = {'07':'小1','08':'小2','09':'小3','10':'小4','11':'小5','12':'小6','13':'中1','14':'中2','15':'中3','16':'高1','17':'高2','18':'高3'};
-        var campusMap = {};
-        campusConfig.forEach(function(c) { campusMap[c.code] = c.name; });
-        studentSummaryContext = '\n\n【校舎別生徒数（氏名は含まない）】\n';
-        var campusCodes = Object.keys(campusMap).sort();
-        campusCodes.forEach(function(cc) {
-          var parts = [];
-          Object.keys(gradeLabels).forEach(function(gc) {
-            var cnt = countMap[cc + '_' + gc];
-            if (cnt) parts.push(gradeLabels[gc] + '=' + cnt + '人');
-          });
-          if (parts.length > 0) {
-            studentSummaryContext += campusMap[cc] + '（' + cc + '）: ' + parts.join(', ') + '\n';
-          }
-        });
-        studentSummaryContext += '合計: ' + studentMaster.length + '人';
-      }
-    } catch (e) {
-      Logger.log('⚠ 生徒数サマリー生成スキップ: ' + e);
-    }
-
-    // 講習期間一覧
-    var lecturePeriodsContext = '';
-    try {
-      var lecPeriods = getLecturePeriods() || [];
-      if (lecPeriods.length > 0) {
-        lecturePeriodsContext = '\n\n【講習期間一覧（navigate_lecturesのlectureId指定に使用）】\n';
-        lecPeriods.forEach(function(lp) {
-          lecturePeriodsContext += lp.id + ': ' + lp.name + '（' + (lp.startDate || '未設定') + ' 〜 ' + (lp.endDate || '未設定') + '）\n';
-        });
-      }
-    } catch (e) {
-      Logger.log('⚠ 講習期間取得スキップ: ' + e);
+    if (profileReminder) {
+      userInfo += '\n[Profile Incomplete] ' + profileReminder;
     }
 
     // 管理者フラグ
@@ -444,16 +459,122 @@ function requestAIAssistant(userMessage, chatHistory) {
     try { isUserAdmin = isAdmin(); } catch (e) {}
     var adminContext = isUserAdmin
       ? '\nこのユーザーは管理者です。管理タブの機能も案内可能です。'
-      : '\nこのユーザーは管理者ではありません。管理タブの機能について聞かれた場合は「管理者にお問い合わせください」と案内してください。管理者しかできない操作（ユーザー管理、マスター設定の変更など）は案内しないでください。';
+      : '\nこのユーザーは管理者ではありません。管理タブの機能について聞かれた場合は「管理者にお問い合わせください」と案内。';
 
-    // 学年コード一覧
-    var gradeCodesContext = '\n\n【学年コード一覧（生徒登録時のgradeCode指定に使用）】\n小1=07, 小2=08, 小3=09, 小4=10, 小5=11, 小6=12, 中1=13, 中2=14, 中3=15, 高1=16, 高2=17, 高3=18';
+    // === 条件付きコンテキストの取得 ===
+    // 常に取得: ナレッジベース・校舎リスト
+    var kbContext = '';
+    try {
+      kbContext = getAiKnowledgeBaseForPrompt_();
+    } catch (e) {
+      Logger.log('⚠ ナレッジベース取得スキップ: ' + e);
+    }
 
-    // 現在の学年年度（聞き返し不要の場合のデフォルト年度としてプロンプトに埋め込む）
-    var currentAcademicYear = getCurrentFiscalYear();
+    // 校舎コード一覧（常に取得: app_action で必要）
+    var campusListContext = '';
+    if (campusConfig.length > 0) {
+      campusListContext = '\n\n【校舎コード一覧】\n';
+      campusConfig.forEach(function(c) {
+        campusListContext += c.code + ': ' + c.name + '\n';
+      });
+    }
 
-    // 生徒IDが含まれる場合、各生徒の成績がある年度を事前に確認してGeminiに渡す
-    // → Geminiが「この生徒は2025年度のみ」と分かれば自動でyearを設定できる
+    // 条件付き: 料金表データ（料金関連の質問時のみ）
+    var pricingContext = '';
+    if (intents.pricing) {
+      try {
+        var pricingJson = getScriptProperty(CONFIG_PROP_KEYS.PRICING_CONFIG);
+        if (pricingJson) {
+          var pricingData = JSON.parse(pricingJson);
+          pricingContext = '\n\n【料金表データ（' + pricingData.title + '）】\n';
+          pricingData.sections.forEach(function(section) {
+            pricingContext += '\n■ ' + section.name + '\n';
+            pricingContext += '| ' + section.headers.join(' | ') + ' |\n';
+            section.rows.forEach(function(row) {
+              pricingContext += '| ' + row.join(' | ') + ' |\n';
+            });
+            if (section.notes && section.notes.length > 0) {
+              section.notes.forEach(function(n) { pricingContext += n + '\n'; });
+            }
+          });
+          if (pricingData.footerNotes && pricingData.footerNotes.length > 0) {
+            pricingContext += '\n【注記】\n';
+            pricingData.footerNotes.forEach(function(n) { pricingContext += n + '\n'; });
+          }
+        }
+      } catch (e) {
+        Logger.log('⚠ 料金表データ取得スキップ: ' + e);
+      }
+    }
+
+    // 条件付き: テスト名一覧（成績関連時のみ）
+    var testNamesContext = '';
+    if (intents.grades) {
+      try {
+        var testNames = getTestNamesConfig() || [];
+        if (testNames.length > 0) {
+          testNamesContext = '\n\n【テスト名一覧】\n' + testNames.join('、');
+        }
+      } catch (e) {
+        Logger.log('⚠ テスト名取得スキップ: ' + e);
+      }
+    }
+
+    // 条件付き: 校舎別生徒数サマリー（成績・生徒関連時のみ）
+    var studentSummaryContext = '';
+    if (intents.grades || intents.students) {
+      try {
+        if (studentMaster.length > 0) {
+          var countMap = {};
+          studentMaster.forEach(function(s) {
+            var key = (s.campusCode || '??') + '_' + (s.gradeCode || '??');
+            countMap[key] = (countMap[key] || 0) + 1;
+          });
+          var gradeLabels = {'07':'小1','08':'小2','09':'小3','10':'小4','11':'小5','12':'小6','13':'中1','14':'中2','15':'中3','16':'高1','17':'高2','18':'高3'};
+          var cMapForSummary = {};
+          campusConfig.forEach(function(c) { cMapForSummary[c.code] = c.name; });
+          studentSummaryContext = '\n\n【校舎別生徒数】\n';
+          var campusCodes = Object.keys(cMapForSummary).sort();
+          campusCodes.forEach(function(cc) {
+            var parts = [];
+            Object.keys(gradeLabels).forEach(function(gc) {
+              var cnt = countMap[cc + '_' + gc];
+              if (cnt) parts.push(gradeLabels[gc] + '=' + cnt + '人');
+            });
+            if (parts.length > 0) {
+              studentSummaryContext += cMapForSummary[cc] + '（' + cc + '）: ' + parts.join(', ') + '\n';
+            }
+          });
+          studentSummaryContext += '合計: ' + studentMaster.length + '人';
+        }
+      } catch (e) {
+        Logger.log('⚠ 生徒数サマリー生成スキップ: ' + e);
+      }
+    }
+
+    // 条件付き: 講習期間一覧（講習・ナビ関連時のみ）
+    var lecturePeriodsContext = '';
+    if (intents.lectures || intents.navigation) {
+      try {
+        var lecPeriods = getLecturePeriods() || [];
+        if (lecPeriods.length > 0) {
+          lecturePeriodsContext = '\n\n【講習期間一覧】\n';
+          lecPeriods.forEach(function(lp) {
+            lecturePeriodsContext += lp.id + ': ' + lp.name + '（' + (lp.startDate || '未設定') + ' 〜 ' + (lp.endDate || '未設定') + '）\n';
+          });
+        }
+      } catch (e) {
+        Logger.log('⚠ 講習期間取得スキップ: ' + e);
+      }
+    }
+
+    // 条件付き: 学年コード一覧（成績・生徒関連時のみ）
+    var gradeCodesContext = '';
+    if (intents.grades || intents.students) {
+      gradeCodesContext = '\n\n【学年コード一覧】\n小1=07, 小2=08, 小3=09, 小4=10, 小5=11, 小6=12, 中1=13, 中2=14, 中3=15, 高1=16, 高2=17, 高3=18';
+    }
+
+    // 条件付き（既存ロジック維持）: 生徒IDが含まれる場合のみ成績年度を確認
     var studentGradeYearContext = '';
     try {
       var idTokens = resolvedUserMessage.match(/\[生徒ID:(\d+)\]/g);
@@ -485,15 +606,15 @@ function requestAIAssistant(userMessage, chatHistory) {
             yearLines.push(token + ': 複数年度に成績あり（' + yearsWithData.join('・') + '年度）→ 年度が会話から特定できなければ聞き返すこと');
           }
         });
-        studentGradeYearContext = '\n\n【生徒の成績データ確認結果（show_student_reportのyear設定に必ず使用）】\n' + yearLines.join('\n');
+        studentGradeYearContext = '\n\n【生徒の成績データ確認結果】\n' + yearLines.join('\n');
       }
     } catch (e) {
       Logger.log('⚠ 生徒成績年度確認スキップ: ' + e);
     }
 
-    // 塾の運営情報をプロンプトに含める（質問があった場合に使用）
+    // 条件付き: 塾の運営情報（運営・予定関連時のみ）
     var operationsContext = '';
-    try {
+    if (intents.operations || intents.schedule) try {
       var opParts = [];
       var fy = getCurrentFiscalYear();
 
@@ -599,11 +720,10 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 運営情報コンテキスト生成スキップ: ' + e);
     }
 
-    // 講習エントリのコンテキスト（講習関連のメッセージの場合のみ取得）
+    // 条件付き（既存ロジック維持）: 講習エントリコンテキスト
     var lectureEntriesContext = '';
     try {
-      var lecKeywords = /講習|エントリ|授業.*追加|授業.*削除|授業.*変更|コマ.*追加|コマ.*削除|コマ.*変更|日程.*追加|日程.*削除|日程.*変更|時間割/;
-      if (lecKeywords.test(resolvedUserMessage)) {
+      if (intents.lectures) {
         var lecCampuses = userPreferredCampusList.length > 0 ? userPreferredCampusList : [];
 
         // 現在の講習期間を特定
@@ -689,223 +809,26 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 講習エントリコンテキスト取得スキップ: ' + e);
     }
 
-    // 意図判定と回答生成を1回のAPI呼び出しで完結させる
-    var prompt = `You are the AI assistant "${aiAssistantName || 'イノイマン'}" for S-quire, a dashboard app for "個別指導スクエア" (a private tutoring school / juku).
+    // === 最終ユーザーターンの組み立て（動的コンテキスト + ユーザーメッセージ） ===
+    var now = new Date();
+    var userTurn = '[Current Date & Academic Year]\n'
+      + 'Today: ' + now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate() + '\n'
+      + 'Academic year: ' + currentAcademicYear + ' (April ' + currentAcademicYear + ' – March ' + (currentAcademicYear + 1) + ')\n'
+      + userInfo + '\n'
+      + adminContext + '\n'
+      + kbContext + campusListContext + pricingContext + testNamesContext
+      + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
+      + studentGradeYearContext + operationsContext + lectureEntriesContext
+      + '\n\n[User Message]\n' + resolvedUserMessage;
 
-[About This App]
-- Name: S-quire
-- Facility: 個別指導スクエア (private tutoring school / juku)
-- Purpose: Dashboard for tutors/staff to manage student grades, monthly schedules, and school operations
-- Users: Tutors and staff of the juku${userInfo}
+    // 最終ユーザーターンを contents 配列に追加
+    contents.push({ role: 'user', parts: [{ text: userTurn }] });
 
-[Current Date & Academic Year]
-- Today: ${new Date().getFullYear()}-${new Date().getMonth()+1}-${new Date().getDate()}
-- Current academic year (fiscal year): ${currentAcademicYear} (April ${currentAcademicYear} – March ${currentAcademicYear + 1})
-- Always use these values as the baseline for year calculations:
-  - "今年度" (this year) → ${currentAcademicYear}
-  - "去年" / "昨年度" / "去年度" (last year) → ${currentAcademicYear - 1}
-  - "一昨年" (two years ago) → ${currentAcademicYear - 2}
-- NEVER confuse calendar year (${new Date().getFullYear()}) with academic year (${currentAcademicYear}).
-
-[Rules]
-- LANGUAGE: Always respond in Japanese. ${getPersonalityInstruction(aiPersonality)}
-- ADDRESS: When addressing the user, call them "${userDisplayName ? userDisplayName + '先生' : '先生'}". Omit if unnecessary.
-- Keep responses concise. Maintain accuracy in explanations of features and logic; only adapt the speaking style above.
-- For casual conversation, chitchat, life advice, general questions (weather, recipes, etc.), respond warmly and freely. Build a good relationship with the user.
-- For questions about pricing/tuition/fees: answer directly from [Pricing Data] without navigating. Same for closed days, test schedules, and operations info if data is included in this prompt.
-- [CRITICAL] If the user requests a feature that does NOT exist in this app (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists or attempt a non-existent action. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください". Only features listed in [S-quire Features] and [Navigable Screens] exist.
-- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry. NEVER generate any other action name.
-- [Required Fields Rule] Each app_action has required and optional fields. If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.
-
-[S-quire Features]
-
-■ Schedule Tab (予定)
-- Monthly calendar view of school/juku events
-- AI (Gemini) auto-extraction from PDF/CSV/Google Sheets
-- Auto-display of juku internal fixed events (report deadlines, meetings, etc.)
-- Closed day / basic academic test schedule management
-
-■ Grades Tab (成績管理)
-- Student CRUD (soft delete, recoverable)
-- Test score entry/edit for 5 subjects: 国語, 社会, 数学, 理科, 英語
-- OCR bulk import from grade images
-- Grade list, analysis graphs, per-student report views
-- Master settings for test names, campuses, grade levels
-
-■ Settings Tab (設定)
-- Theme color, AI assistant name, speaking style customization
-- Profile (display name, subjects)
-- Preferred campus selection
-- Account transfer for Google account changes
-
-■ Admin Tab (管理, admin only)
-- Script properties (API keys, folder IDs) management
-- Google Drive file operations
-- User management, operation logs
-- Manual initialization, auto-import
-
-■ Documents Tab (資料)
-- Annual calendar display/PDF export (HP version, room manager version)
-- Pricing table display/PDF export (admin can edit)
-${kbContext}${pricingContext}${campusListContext}${testNamesContext}${studentSummaryContext}${lecturePeriodsContext}${gradeCodesContext}${studentGradeYearContext}${operationsContext}${lectureEntriesContext}${adminContext}
-
-[Configurable Settings (reference only when user requests a settings change)]
-- themeColor: hex color (e.g. #43e97b, #ff6b6b, #4facfe)
-- aiAssistantName: any string (current: ${aiAssistantName})
-- aiPersonality: polite/friendly/energetic/cool/kansai/hakata/tohoku/nagoya/awa (current: ${aiPersonality})
-- displayName: user's display name
-
-[Navigable Screens (use these IDs for navigate_tab action)]
-schedule: 予定 (monthly calendar)
-grades > grades-score: 成績入力
-grades > grades-list: 一覧表
-grades > grades-analysis: 分析
-grades > grades-report: 成績表
-grades > grades-input: 情報入力
-lectures > lectures-schedule: 講習日程作成
-lectures > lectures-materials: 内部配布物
-lectures > lectures-flyer: 外部チラシ
-universities > univ-calendar: 年間カレンダー
-universities > univ-pricing: 料金表
-settings: 設定
-${historyContext || ''}
-[Student Name Redaction]
-Student names in user messages are redacted for privacy:
-- [生徒ID:XXXXXXXXXX]: Refers to one specific student. Do NOT show the raw ID to the user.
-- [個人名:田中]: Surname-only input with multiple matches. Ask the user: "田中さんが複数います。フルネームか学年・校舎を教えてください"
-
-[User Message]
-${resolvedUserMessage}
-
-[Knowledge Learning — Self-Improvement]
-You can learn new facts about this juku from conversations. When a user:
-1. Corrects you ("違う、実際は〜", "それは間違い、正しくは〜")
-2. Teaches operational facts ("うちの塾は〜", "ルールとして〜", "〜のことなんだけど")
-3. Shares procedures ("〜の場合は〜する", "〜のやり方は〜")
-4. Provides scheduling/policy info ("夏期講習は〜から", "テスト前は〜")
-
-Include an optional field "learned_knowledge" in your JSON response:
-"learned_knowledge":{"category":"category name","content":"the fact in concise 1-2 sentences","reason":"why this is useful to remember"}
-
-Rules:
-- Only extract FACTUAL information about the juku, its rules, or operations
-- Do NOT extract personal opinions, temporary states, or conversation filler
-- Do NOT extract information already present in 【塾のナレッジベース】
-- Keep content concise (1-2 sentences max, in Japanese)
-- Use appropriate categories: 塾のルール, 行事・イベント, 授業について, 運営, その他
-- If nothing is learnable, omit the field entirely (do not include null or empty)
-- This field can be added to ANY response type (config_change, qa_help, app_action, other)
-
-[Response Format]
-Classify the user's intent and return ONLY one of the following JSON formats. All "message", "answer", "response", and "explanation" fields MUST be in Japanese.
-
-■ Settings change request:
-{"success":true,"type":"config_change","recommendedSettings":{"key":"value"},"explanation":"Japanese explanation of the change"}
-
-■ App usage / feature question:
-{"success":true,"type":"qa_help","answer":"Japanese answer","relatedTopic":"related topic"}
-
-■ Schedule view request ("来月の予定", "4月の予定", etc.):
-{"success":true,"type":"app_action","action":"navigate_schedule","year":YYYY,"month":MM,"message":"Japanese message"}
-Note: Calculate "来月"/"先月" from today's date. Omit year/month if unspecified.
-
-■ Screen navigation ("料金表を見せて", "設定画面を開いて", etc.):
-{"success":true,"type":"app_action","action":"navigate_tab","tab":"tabId","subTab":"subTabId (optional)","message":"Japanese message"}
-Use IDs from [Navigable Screens] only.
-
-■ Grade analysis view ("分析を見せて", "テスト全体の分析", etc.):
-- If testName is unknown/unmentioned: MUST return type:"other" asking "どのテストの分析ですか？". NEVER return this action without testName.
-- testName MUST exist in [Test Names List]. If not found, return type:"other" to ask.
-- Year resolution: unmentioned/今年度→${currentAcademicYear}, 去年/昨年度→${currentAcademicYear - 1}, 一昨年→${currentAcademicYear - 2}, explicit→that year
-- message MUST contain the actual resolved year and testName. NEVER use placeholders like ○○.
-Valid: {"success":true,"type":"app_action","action":"show_grade_analysis","year":2025,"testName":"中間テスト","message":"2025年度中間テストの分析を表示します"}
-Unknown testName: {"success":true,"type":"other","response":"どのテストの分析ですか？テスト名一覧：○○、△△、□□"}
-
-■ Lecture management view ("春期講習の日程", "夏期講習を見せて", etc.):
-- Required: year, lectureId. If unknown, return type:"other" to ask. NEVER use empty string or guess.
-- Optional: campusCode (auto-set from user prefs; include only if user specifies)
-- Year resolution: same rules as above
-- lectureId MUST come from [Lecture Periods List]. If lecture name not in list, return type:"other": "その講習は登録されていません"
-{"success":true,"type":"app_action","action":"navigate_lectures","lectureId":"ID from list","campusCode":"2-digit code or empty","message":"Japanese message"}
-
-■ Individual student grade inquiry (message contains [生徒ID:XXXX]):
-- Student names are already converted to IDs. Use the numeric part of [生徒ID:XXXX] as studentId. If student cannot be identified, return type:"other" to ask.
-- If testName is unknown/unmentioned: MUST return type:"other" asking "どのテストの成績ですか？". NEVER return this action.
-- testName MUST exist in [Test Names List].
-- Year resolution: if [Student Grade Data Check] states "○○年度のみ" → auto-set that year (no need to ask). If multiple years exist and year is ambiguous → ask. Otherwise: same rules as above.
-- message MUST contain actual student name, year, and testName. NEVER use placeholders.
-Valid: {"success":true,"type":"app_action","action":"show_student_report","year":2025,"studentId":"0120251301","testName":"中間テスト","message":"田中さんの2025年度中間テストの成績表を表示します"}
-Unknown testName: {"success":true,"type":"other","response":"どのテストの成績を見ますか？テスト名一覧：○○、△△、□□"}
-
-■ Multi-student grade list (by campus/test):
-- If testName is unknown/unmentioned: MUST return type:"other" asking "どのテストの一覧ですか？". NEVER return this action.
-- testName MUST exist in [Test Names List].
-- Year resolution: same rules as above
-- campusCode is optional. If unmentioned, use empty string (all campuses).
-- message MUST contain actual year, testName, campus name. NEVER use placeholders.
-Valid: {"success":true,"type":"app_action","action":"show_grades_list","year":2025,"campusCode":"","testName":"中間テスト","message":"2025年度中間テストの成績一覧を表示します"}
-Unknown testName: {"success":true,"type":"other","response":"どのテストの一覧ですか？テスト名一覧：○○、△△、□□"}
-
-■ Grade submission ("○○さんの成績を入力して", "点数を登録", etc.):
-- MUST confirm before execution (needsConfirmation:true). Show details and get user approval.
-- Required: studentId, testName, scores for each subject. If unknown, ask.
-{"success":true,"type":"app_action","action":"submit_grade","needsConfirmation":true,"year":${currentAcademicYear},"studentId":"numeric ID only","testName":"test name","scores":{"kokugo":0,"shakai":0,"sugaku":0,"rika":0,"eigo":0},"message":"以下の内容で成績を登録します：\\n生徒: ○○さん\\nテスト: ○○\\n国語:○ 社会:○ 数学:○ 理科:○ 英語:○\\nよろしいですか？"}
-Only re-send with confirmed:true after user says "はい".
-
-■ Student registration ("新しい生徒を追加して", "○○さんを登録して", etc.):
-- MUST confirm before execution.
-- Required: campusCode, gradeCode, sei (surname), seiFurigana. If unknown, ask. (mei, meiFurigana, schoolName are optional)
-{"success":true,"type":"app_action","action":"submit_student","needsConfirmation":true,"year":${currentAcademicYear},"campusCode":"2-digit","gradeCode":"2-digit","sei":"surname","mei":"optional","seiFurigana":"surname furigana","meiFurigana":"optional","schoolName":"optional","message":"以下の内容で生徒を登録します：\\n校舎: ○○\\n学年: ○○\\n氏名: ○○ ○○\\nよろしいですか？"}
-
-■ Schedule entry addition ("○○の予定を追加して", etc.):
-- MUST confirm before execution.
-- Required: schoolName, eventName, dateStr (MM/DD). If unknown, ask.
-{"success":true,"type":"app_action","action":"add_schedule","needsConfirmation":true,"schoolName":"school name","eventName":"event name","dateStr":"MM/DD","details":"optional","message":"以下の予定を追加します：\\n学校: ○○\\n予定: ○○\\n日付: ○月○日\\nよろしいですか？"}
-
-■ Lecture entry creation ("授業を追加して", "コマを入れて", etc.):
-- MUST confirm before execution (needsConfirmation:true).
-- Required: lectureId, campusCode, date (YYYY-MM-DD), startTime (HH:MM), subject, grade (code 07-18)
-- Optional: durationSlots (10-min units; get from grade settings in [Current Lecture Entries] if available, otherwise default 9=90min), classLabel (A/B/C)
-- [Smart Default Rules] — auto-set WITHOUT asking when unambiguous (always include in confirmation message):
-  - If [Current Lecture Entries] has lectureId and campusCode → use them
-  - If user has exactly 1 preferred campus → auto-set campusCode
-  - If user has 2+ preferred campuses → ask "どの校舎ですか？"
-  - If user has exactly 1 subject → auto-set subject
-  - If user has 2+ subjects and subject not mentioned → ask "どの教科ですか？"
-  - If grade not mentioned → ALWAYS ask "どの学年ですか？" (NEVER guess)
-- Use subject names as-is: 国語, 数学, 英語, 理科, 社会, etc.
-- [Weekly Bulk Creation] If user says "毎週" or "毎週○曜日", set weekly:true. Creates entries for the same day/time each week, skipping closed days, for the number of sessions defined in grade settings.
-{"success":true,"type":"app_action","action":"create_lecture_entry","needsConfirmation":true,"lectureId":"lecture ID","campusCode":"2-digit","date":"YYYY-MM-DD","startTime":"HH:MM","durationSlots":9,"subject":"subject name","grade":"2-digit grade code","classLabel":"optional","weekly":false,"message":"Japanese confirmation message"}
-Weekly example: {"success":true,"type":"app_action","action":"create_lecture_entry","needsConfirmation":true,"lectureId":"2026-summer","campusCode":"01","date":"2026-07-30","startTime":"14:00","durationSlots":8,"subject":"数学","grade":"13","weekly":true,"message":"以下の講習授業を毎週作成します：\\n開始日: 7月30日（水）14:00〜\\n教科: 数学\\n学年: 中1\\n回数: 学年別設定に基づく（休校日除く）\\nよろしいですか？"}
-
-■ Lecture entry edit ("授業を○時に変えて", "教科を変更して", etc.):
-- MUST confirm before execution.
-- Required: lectureId, campusCode, entryId (from [Current Lecture Entries])
-- Include ONLY changed fields in "changes": date, startTime, durationSlots, subject, grade, classLabel
-- Identify the target entry from [Current Lecture Entries] based on user's description. Use its ID as entryId.
-- If multiple entries match → ask "どの授業ですか？"
-- [IMPORTANT] User can ONLY edit their own entries (teacher name matches user's display name). For other teachers' entries, respond: "他の講師のエントリは編集できません"
-{"success":true,"type":"app_action","action":"edit_lecture_entry","needsConfirmation":true,"lectureId":"lecture ID","campusCode":"2-digit","entryId":"target entry ID","changes":{"field":"new value"},"message":"Japanese confirmation message"}
-
-■ Lecture entry deletion ("授業を消して", "コマを削除して", etc.):
-- MUST confirm before execution.
-- Required: lectureId, campusCode, entryId (from [Current Lecture Entries])
-- Identify the target entry from [Current Lecture Entries]. If multiple match → ask "どの授業ですか？"
-- [IMPORTANT] User can ONLY delete their own entries. For others: "他の講師のエントリは削除できません"
-{"success":true,"type":"app_action","action":"delete_lecture_entry","needsConfirmation":true,"lectureId":"lecture ID","campusCode":"2-digit","entryId":"target entry ID","message":"Japanese confirmation message"}
-
-■ Confirmation response (user said "はい" after a needsConfirmation:true response):
-Re-send the same action with confirmed:true. Do NOT include needsConfirmation.
-Example: {"success":true,"type":"app_action","action":"submit_grade","confirmed":true,"year":...,"studentId":"...","testName":"...","scores":{...},"message":"成績を登録しました"}
-
-■ Missing information (ask one question at a time):
-{"success":true,"type":"other","response":"Japanese question about the missing field"}
-
-■ All other queries, chitchat, general conversation:
-{"success":true,"type":"other","response":"Japanese response"}`;
+    // === ペイロード組み立て（systemInstruction + マルチターン contents） ===
 
     var payload = {
-      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: contents,
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 1500,
