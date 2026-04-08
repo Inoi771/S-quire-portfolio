@@ -1757,6 +1757,33 @@
     // ===== 重複チェック機能 =====
 
     /**
+     * 全校舎・全講師を対象とした重複チェックを手動実行する（ボタン押下時）
+     */
+    function runFullDuplicateCheck() {
+      if (!currentLectureId) return;
+      var btn    = document.getElementById('lec-full-check-btn');
+      var status = document.getElementById('lec-full-check-status');
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = 'チェック中...';
+
+      fbGetAllLectureEntries(currentLectureId)
+        .then(function(entries) {
+          allCampusEntriesCache = entries || [];
+          checkAndDisplayDuplicates();
+          var dupPanel = document.getElementById('lec-duplicate-panel');
+          var hasdup = dupPanel && dupPanel.style.display !== 'none';
+          if (status) status.textContent = hasdup ? '重複あり' : '重複なし ✓';
+        })
+        .catch(function(err) {
+          console.error('runFullDuplicateCheck エラー:', err);
+          if (status) status.textContent = '取得エラー';
+        })
+        .finally(function() {
+          if (btn) btn.disabled = false;
+        });
+    }
+
+    /**
      * 重複チェック用に講習エントリを取得してキャッシュし、checkAndDisplayDuplicates を呼ぶ
      * 所属校舎（preferredCampuses）が設定されている場合はその校舎のみ取得（Firestore読み込み削減）
      * 未設定（管理者等）の場合は全校舎取得
