@@ -86,6 +86,49 @@ function detectAnalysisTestName_(message, testNames) {
 }
 
 /**
+ * 保存済み分析がない場合のその場集計コンテキストを構築
+ * getCampusAverages / getSchoolAverages を使って校舎別平均・学校平均を取得し、
+ * Gemini が解釈・説明できる形式の文字列を返す
+ * @param {number} year 年度
+ * @param {string} testName テスト名
+ * @return {string} コンテキスト文字列
+ */
+function buildLiveAnalysisContext_(year, testName) {
+  var ctx = '\n\n【テスト集計データ（その場取得）: ' + testName + '(' + year + '年度)】\n';
+  ctx += '※詳細分析は未生成のため、以下の集計値から分析・説明してください。\n';
+
+  // 校舎別平均（RPC: get_campus_averages）
+  try {
+    var campusAvgResult = getCampusAverages(year, testName);
+    if (campusAvgResult.success && campusAvgResult.campuses && campusAvgResult.campuses.length > 0) {
+      ctx += '\n校舎別平均点（受験者数含む）:\n';
+      campusAvgResult.campuses.forEach(function(c) {
+        var name = c.campusName || c.campusCode;
+        ctx += '  ' + name + ': 国語' + c.kokugo + ', 社会' + c.shakai
+          + ', 数学' + c.sugaku + ', 理科' + c.rika + ', 英語' + c.eigo
+          + ', 合計' + c.total + '点（' + c.count + '人）\n';
+      });
+    }
+  } catch (e) {
+    Logger.log('⚠ 校舎別平均取得スキップ: ' + e);
+  }
+
+  // 学校平均
+  try {
+    var schoolAvgResult = getSchoolAverages(year, testName);
+    if (schoolAvgResult.success && schoolAvgResult.averages && schoolAvgResult.averages.length > 0) {
+      var sa = schoolAvgResult.averages[0];
+      ctx += '\n学校平均: 国語' + sa.kokugo + ', 社会' + sa.shakai
+        + ', 数学' + sa.sugaku + ', 理科' + sa.rika + ', 英語' + sa.eigo + '\n';
+    }
+  } catch (e) {
+    Logger.log('⚠ 学校平均取得スキップ: ' + e);
+  }
+
+  return ctx;
+}
+
+/**
  * systemInstruction 用の静的プロンプトを組み立てる
  * @param {string} aiAssistantName AIアシスタント名
  * @param {string} aiPersonality 喋り方コード
@@ -143,7 +186,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n[Shared Rules]\n'
     + '- YearRule: unmentioned→CY, 去年/昨年度→' + (currentAcademicYear - 1) + ', 一昨年→' + (currentAcademicYear - 2) + ', explicit→that year. NEVER confuse calendar year with academic year.\n'
     + '- TestNameRule: MUST exist in [Test Names List]. If unknown/unmentioned, return type:"other" asking which test (show full list).\n'
-    + '- AnalysisDataRule: If context contains a 【テスト分析データ:...】section, summarize and explain the analysis directly in your response as type:"other" (DO NOT return show_grade_analysis action). Use clear, plain Japanese for non-expert teachers.\n'
+    + '- AnalysisDataRule: If context contains 【テスト分析データ:...】or 【テスト集計データ（その場取得）:...】section, analyze and explain the data directly in your response as type:"other" (DO NOT return show_grade_analysis action). For 【テスト集計データ】, compare campus averages, highlight differences vs school average, and point out which campus/subject stands out. Use clear, plain Japanese for non-expert teachers.\n'
     + '- MessageRule: "message" field must contain actual resolved values (year, testName, student name). NEVER use placeholders like ○○.\n'
     + '- ConfirmRule: Set needsConfirmation:true, show all details. Only re-send with confirmed:true (no needsConfirmation) after user says "はい".\n'
     + '\n■ config_change — Settings change:\n'
@@ -553,7 +596,7 @@ function requestAIAssistant(userMessage, chatHistory) {
 
     // 条件付き: テスト分析データ（成績・分析関連のメッセージで、テスト名が特定できた場合のみ）
     var gradeAnalysisContext = '';
-    if (intents.grades && /分析|平均点|平均|教えて|説明|コメント|どう|結果/.test(resolvedUserMessage)) {
+    if (intents.grades && /分析|平均点|平均|教えて|説明|コメント|どう|結果|比較/.test(resolvedUserMessage)) {
       try {
         var wantedYear = detectAnalysisYear_(resolvedUserMessage, currentAcademicYear);
         var allTestNames = getTestNamesConfig() || [];
@@ -561,6 +604,7 @@ function requestAIAssistant(userMessage, chatHistory) {
         if (wantedTestName) {
           var analysisResult = getGradeAnalysis(wantedYear, wantedTestName);
           if (analysisResult.success && analysisResult.exists) {
+            // 保存済み分析あり → 分析テキストをコンテキストに追加
             var aData = analysisResult.analysis;
             gradeAnalysisContext = '\n\n【テスト分析データ: ' + wantedTestName + '(' + wantedYear + '年度)】\n';
             gradeAnalysisContext += '概要: ' + (aData.overview || '') + '\n';
@@ -573,6 +617,9 @@ function requestAIAssistant(userMessage, chatHistory) {
             if (aData.historicalTrend)    gradeAnalysisContext += '年度推移: ' + aData.historicalTrend + '\n';
             if (aData.roundComparison)    gradeAnalysisContext += '前回比較: ' + aData.roundComparison + '\n';
             if (aData.nextRoundPrediction) gradeAnalysisContext += '次回予測: ' + aData.nextRoundPrediction + '\n';
+          } else {
+            // 保存済み分析なし → その場でRPCデータを取得してコンテキストに追加
+            gradeAnalysisContext = buildLiveAnalysisContext_(wantedYear, wantedTestName);
           }
         }
       } catch (e) {
