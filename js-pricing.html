@@ -15,20 +15,40 @@
         renderPricingTable(pricingData);
         return;
       }
-      output.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">読み込み中...</p>';
+
+      // キャッシュがあれば即座に表示
+      try {
+        var cached = localStorage.getItem('s-quire-pricing');
+        if (cached) {
+          var parsed = JSON.parse(cached);
+          pricingData = parsed.data;
+          currentPricingTab = (pricingData.tabs && pricingData.tabs[0]) || null;
+          renderPricingTable(pricingData);
+        }
+      } catch (e) { /* キャッシュ破損時は無視 */ }
+
+      // キャッシュがない場合のみローディング表示
+      if (!pricingData) {
+        output.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">読み込み中...</p>';
+      }
+
+      // 裏で最新データを取得
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success) {
+            result.data._campusMap = result.campusMap || {};
+            try { localStorage.setItem('s-quire-pricing', JSON.stringify({ data: result.data })); } catch (e) {}
             pricingData = result.data;
-            pricingData._campusMap = result.campusMap || {};
             currentPricingTab = (pricingData.tabs && pricingData.tabs[0]) || null;
             renderPricingTable(pricingData);
-          } else {
+          } else if (!pricingData) {
             output.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">読み込みに失敗しました: ' + (result.error || '') + '</p>';
           }
         })
         .withFailureHandler(function(err) {
-          output.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">エラー: ' + err + '</p>';
+          if (!pricingData) {
+            output.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">エラー: ' + err + '</p>';
+          }
         })
         .getPricingConfigForWeb();
     }

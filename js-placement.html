@@ -21,14 +21,34 @@ function loadStaffPlacement() {
   // 既にデータを持っていれば再読み込み不要
   if (placementLoaded) return;
 
-  root.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">読み込み中...</p>';
+  // キャッシュがあれば即座に表示
+  try {
+    var cached = localStorage.getItem('s-quire-placement');
+    if (cached) {
+      var parsed = JSON.parse(cached);
+      placementCampusConfig = parsed.campusConfig || {};
+      placementData = parsed.data;
+      placementIsAdmin = (typeof isAdmin !== 'undefined') ? isAdmin : false;
+      placementLoaded = true;
+      renderPlacement(root);
+    }
+  } catch (e) { /* キャッシュ破損時は無視 */ }
 
+  // キャッシュがない場合のみローディング表示
+  if (!placementLoaded) {
+    root.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">読み込み中...</p>';
+  }
+
+  // 裏で最新データを取得
   google.script.run
     .withSuccessHandler(function(result) {
       if (!result || !result.success) {
-        root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">読み込みに失敗しました: ' + (result && result.error ? result.error : '不明なエラー') + '</p>';
+        if (!placementLoaded) {
+          root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">読み込みに失敗しました: ' + (result && result.error ? result.error : '不明なエラー') + '</p>';
+        }
         return;
       }
+      try { localStorage.setItem('s-quire-placement', JSON.stringify({ data: result.data, campusConfig: result.campusConfig })); } catch (e) {}
       placementCampusConfig = result.campusConfig || {};
       placementData = result.data;
       placementIsAdmin = (typeof isAdmin !== 'undefined') ? isAdmin : false;
@@ -36,7 +56,9 @@ function loadStaffPlacement() {
       renderPlacement(root);
     })
     .withFailureHandler(function(err) {
-      root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">エラー: ' + err + '</p>';
+      if (!placementLoaded) {
+        root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">エラー: ' + err + '</p>';
+      }
     })
     .getStaffPlacementForWeb();
 }
