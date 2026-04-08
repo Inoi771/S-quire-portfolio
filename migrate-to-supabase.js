@@ -261,3 +261,57 @@ function migrateAiDataToSupabase() {
   Logger.log(JSON.stringify(results, null, 2));
   return results;
 }
+
+// ========================================
+// staffs 移行（Firestore → Supabase）
+// ========================================
+// 実行方法: GASエディタで migrateStaffsToSupabase() を手動実行
+// ※ 冪等（再実行しても既存データを上書き）
+
+/**
+ * Firestore の staffs コレクション全件を Supabase の staffs テーブルに移行する
+ * @return {Object} { success, total, errors }
+ */
+function migrateStaffsToSupabase() {
+  Logger.log('=== staffs 移行開始 ===');
+  try {
+    var docs = firestoreQuery_('staffs', [], 500);
+    Logger.log('Firestoreから ' + docs.length + '件のスタッフデータを取得');
+
+    if (docs.length === 0) {
+      return { success: true, total: 0, errors: [] };
+    }
+
+    var rows = docs.map(function(doc) {
+      return {
+        id: doc.teacherId || doc._id,
+        email: doc.email || '',
+        emails: Array.isArray(doc.emails) ? doc.emails : (doc.email ? [doc.email] : []),
+        firebase_uid: doc.firebaseUid || null,
+        firebase_uids: Array.isArray(doc.firebaseUids) ? doc.firebaseUids : (doc.firebaseUid ? [doc.firebaseUid] : []),
+        name: doc.name || '',
+        display_name: doc.displayName || '',
+        subjects: Array.isArray(doc.subjects) ? doc.subjects : [],
+        preferred_campuses: Array.isArray(doc.preferredCampuses) ? doc.preferredCampuses : [],
+        ai_assistant_name: doc.aiAssistantName || '',
+        ai_personality: doc.aiPersonality || '',
+        theme_color: doc.themeColor || '',
+        notification_method: doc.notificationMethod || 'gmail',
+        notification_email: doc.notificationEmail || '',
+        notification_emails: Array.isArray(doc.notificationEmails) ? doc.notificationEmails : [],
+        scheduler_notif_emails: Array.isArray(doc.schedulerNotifEmails) ? doc.schedulerNotifEmails : [],
+        scheduler_notif_prefs: doc.schedulerNotifPrefs || {},
+        line_user_id: doc.lineUserId || null,
+        added_at: doc.addedAt || new Date().toISOString(),
+        updated_at: doc.updatedAt || null
+      };
+    });
+
+    var result = supabaseBatchUpsert_('staffs', rows, 'id');
+    Logger.log('=== staffs 移行完了: ' + rows.length + '件 ===');
+    return result;
+  } catch (e) {
+    Logger.log('❌ staffs移行エラー: ' + e);
+    return { success: false, total: 0, errors: [e.toString()] };
+  }
+}

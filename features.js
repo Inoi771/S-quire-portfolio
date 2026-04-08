@@ -954,7 +954,7 @@ function applyConfigChange_(settings) {
     if (staff) {
       staff.name = settings.displayName;
       staff.updatedAt = new Date().toISOString();
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
     }
   }
 }
@@ -2723,11 +2723,10 @@ function deleteLectureEntryAI_(lectureId, campusCode, entryId) {
  */
 function getTeacherNamesMap() {
   try {
-    var allStaffs = firestoreQuery_('staffs', [], 500);
+    var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name' });
     var map = {};
-    (allStaffs || []).forEach(function(staff) {
-      var tid = staff.teacherId || staff._id;
-      map[tid] = { email: staff.email || '', name: staff.displayName || staff.name || '' };
+    (allRows || []).forEach(function(row) {
+      map[row.id] = { email: row.email || '', name: row.display_name || row.name || '' };
     });
     return { success: true, map: map };
   } catch (error) {

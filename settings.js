@@ -26,10 +26,10 @@ function getSafeUserKey_() {
 }
 
 // ========================================
-// Firestore staffs コレクション連携
+// Supabase staffs テーブル連携
 // ========================================
-// スタッフ情報は Firestore staffs/{teacherId} に集約。
-// getUserProperty / setUserProperty はスタッフ系キーを自動的に Firestore へ振り分ける。
+// スタッフ情報は Supabase staffs テーブルに集約。
+// getUserProperty / setUserProperty はスタッフ系キーを自動的に Supabase へ振り分ける。
 
 /** スタッフドキュメントキャッシュ（同一GAS実行内でのみ有効） */
 var _currentStaff_ = null;
@@ -61,8 +61,69 @@ function setFirebaseUidContext_(uid) {
 }
 
 /**
- * Firebase UID またはメールアドレスで staffs コレクションからスタッフを照合する
- * 照合順序: firebaseUids 配列 → firebaseUid スカラー → emails 配列 → email スカラー
+ * Supabase staffs 行 → camelCase オブジェクトに変換
+ * @param {Object} row Supabase行（snake_case）
+ * @return {Object} camelCaseオブジェクト
+ */
+function staffFromSupabase_(row) {
+  if (!row) return null;
+  return {
+    _id: row.id,
+    teacherId: row.id,
+    email: row.email || '',
+    emails: row.emails || [],
+    firebaseUid: row.firebase_uid || null,
+    firebaseUids: row.firebase_uids || [],
+    name: row.name || '',
+    displayName: row.display_name || '',
+    subjects: row.subjects || [],
+    preferredCampuses: row.preferred_campuses || [],
+    aiAssistantName: row.ai_assistant_name || '',
+    aiPersonality: row.ai_personality || '',
+    themeColor: row.theme_color || '',
+    notificationMethod: row.notification_method || 'gmail',
+    notificationEmail: row.notification_email || '',
+    notificationEmails: row.notification_emails || [],
+    schedulerNotifEmails: row.scheduler_notif_emails || [],
+    schedulerNotifPrefs: row.scheduler_notif_prefs || {},
+    lineUserId: row.line_user_id || null,
+    addedAt: row.added_at || '',
+    updatedAt: row.updated_at || ''
+  };
+}
+
+/**
+ * camelCase スタッフオブジェクト → Supabase staffs 行に変換
+ * @param {Object} staff camelCaseオブジェクト
+ * @return {Object} Supabase行（snake_case）
+ */
+function staffToSupabase_(staff) {
+  var row = { id: staff.teacherId || staff._id };
+  if (staff.email !== undefined) row.email = staff.email;
+  if (staff.emails !== undefined) row.emails = staff.emails;
+  if (staff.firebaseUid !== undefined) row.firebase_uid = staff.firebaseUid;
+  if (staff.firebaseUids !== undefined) row.firebase_uids = staff.firebaseUids;
+  if (staff.name !== undefined) row.name = staff.name;
+  if (staff.displayName !== undefined) row.display_name = staff.displayName;
+  if (staff.subjects !== undefined) row.subjects = staff.subjects;
+  if (staff.preferredCampuses !== undefined) row.preferred_campuses = staff.preferredCampuses;
+  if (staff.aiAssistantName !== undefined) row.ai_assistant_name = staff.aiAssistantName;
+  if (staff.aiPersonality !== undefined) row.ai_personality = staff.aiPersonality;
+  if (staff.themeColor !== undefined) row.theme_color = staff.themeColor;
+  if (staff.notificationMethod !== undefined) row.notification_method = staff.notificationMethod;
+  if (staff.notificationEmail !== undefined) row.notification_email = staff.notificationEmail;
+  if (staff.notificationEmails !== undefined) row.notification_emails = staff.notificationEmails;
+  if (staff.schedulerNotifEmails !== undefined) row.scheduler_notif_emails = staff.schedulerNotifEmails;
+  if (staff.schedulerNotifPrefs !== undefined) row.scheduler_notif_prefs = staff.schedulerNotifPrefs;
+  if (staff.lineUserId !== undefined) row.line_user_id = staff.lineUserId;
+  if (staff.addedAt !== undefined) row.added_at = staff.addedAt;
+  if (staff.updatedAt !== undefined) row.updated_at = staff.updatedAt;
+  return row;
+}
+
+/**
+ * Firebase UID またはメールアドレスで Supabase staffs テーブルからスタッフを照合する
+ * RPC関数 find_staff_by_auth を使い1回のクエリで検索
  * マッチ後、現在の UID/メールが配列に未登録なら自動追加（レガシー自動マイグレーション）
  * @param {string} firebaseUid Firebase UID（省略可）
  * @param {string} email メールアドレス（省略可）
@@ -74,59 +135,43 @@ function resolveStaffByUid_(firebaseUid, email) {
   var staff = null;
   var emailLower = email ? email.toLowerCase() : '';
 
-  // 1. firebaseUids 配列で検索（最速パス）
-  if (!staff && firebaseUid) {
-    var byUids = firestoreQuery_('staffs', [fsFilter_('firebaseUids', 'ARRAY_CONTAINS', firebaseUid)], 1);
-    if (byUids && byUids.length > 0) staff = byUids[0];
+  // Supabase RPC で一括検索（UID + メール、4パターンを1クエリで実行）
+  try {
+    var rows = supabaseRpc_('find_staff_by_auth', {
+      p_uid: firebaseUid || null,
+      p_email: emailLower || null
+    });
+    if (rows && rows.length > 0) {
+      staff = staffFromSupabase_(rows[0]);
+    }
+  } catch (e) {
+    Logger.log('⚠ resolveStaffByUid_ RPC エラー: ' + e);
   }
 
-  // 2. レガシー: firebaseUid スカラーで検索
-  if (!staff && firebaseUid) {
-    var byUid = firestoreQuery_('staffs', [fsFilter_('firebaseUid', 'EQUAL', firebaseUid)], 1);
-    if (byUid && byUid.length > 0) staff = byUid[0];
-  }
-
-  // 3. emails 配列で検索
-  if (!staff && emailLower) {
-    var byEmails = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', emailLower)], 1);
-    if (byEmails && byEmails.length > 0) staff = byEmails[0];
-  }
-
-  // 4. レガシー: email スカラーで検索
-  if (!staff && emailLower) {
-    var byEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', emailLower)], 1);
-    if (byEmail && byEmail.length > 0) staff = byEmail[0];
-  }
-
-  // 5. マッチ後: 配列フィールドの自動マイグレーション＆現在の UID/メール追加
+  // マッチ後: 配列フィールドの自動マイグレーション＆現在の UID/メール追加
   if (staff) {
     var updated = false;
-    // emails 配列がなければ作成
     if (!Array.isArray(staff.emails)) {
       staff.emails = staff.email ? [staff.email] : [];
       updated = true;
     }
-    // firebaseUids 配列がなければ作成
     if (!Array.isArray(staff.firebaseUids)) {
       staff.firebaseUids = staff.firebaseUid ? [staff.firebaseUid] : [];
       updated = true;
     }
-    // 現在のメールが配列に未登録なら追加
     if (emailLower && staff.emails.indexOf(emailLower) === -1) {
       staff.emails.push(emailLower);
       updated = true;
     }
-    // 現在の UID が配列に未登録なら追加
     if (firebaseUid && staff.firebaseUids.indexOf(firebaseUid) === -1) {
       staff.firebaseUids.push(firebaseUid);
       updated = true;
     }
-    // スカラーフィールドを最新値で更新（後方互換）
     if (emailLower && staff.email !== emailLower) { staff.email = emailLower; updated = true; }
     if (firebaseUid && staff.firebaseUid !== firebaseUid) { staff.firebaseUid = firebaseUid; updated = true; }
 
     if (updated) {
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
       Logger.log('✓ resolveStaffByUid_: 配列更新 teacherId=' + (staff.teacherId || staff._id));
     }
     _currentStaff_ = staff;
@@ -145,17 +190,11 @@ function getCurrentStaff_() {
 }
 
 /**
- * スタッフドキュメントを Firestore に書き込む内部ヘルパー
- * _id フィールド（firestoreQuery_ が付加するメタ情報）は除外して書き込む
- * @param {Object} staff スタッフドキュメント
+ * スタッフドキュメントを Supabase に書き込む内部ヘルパー
+ * @param {Object} staff スタッフドキュメント（camelCase）
  */
-function writeStaffToFirestore_(staff) {
-  var docId = staff.teacherId || staff._id;
-  var writeData = {};
-  Object.keys(staff).forEach(function(k) {
-    if (k !== '_id') writeData[k] = staff[k];
-  });
-  firestoreSet_('staffs', docId, writeData);
+function writeStaffToSupabase_(staff) {
+  supabaseUpsert_('staffs', staffToSupabase_(staff), 'id');
 }
 
 /**
@@ -295,7 +334,7 @@ function setUserProperty(key, value) {
         try { writeVal = JSON.parse(value); } catch(e) { writeVal = []; }
       }
       staff[firestoreField] = writeVal;
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
       // 古い _UP_ スクリプトプロパティを削除（移行クリーンアップ）
       try {
         var sp = PropertiesService.getScriptProperties();
@@ -560,7 +599,7 @@ function updateUserProfile(profileData) {
     }
     staff.updatedAt = new Date().toISOString();
 
-    writeStaffToFirestore_(staff);
+    writeStaffToSupabase_(staff);
 
     return {
       success: true,
@@ -588,7 +627,7 @@ function resetUserThemeColor() {
     var staff = getCurrentStaff_();
     if (staff) {
       staff.themeColor = '';
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
     }
     var effectiveColor = getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b';
     return { success: true, themeColor: effectiveColor };
