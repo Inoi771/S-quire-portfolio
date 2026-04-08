@@ -1757,18 +1757,38 @@
     // ===== 重複チェック機能 =====
 
     /**
-     * 全校舎の講習エントリを取得してキャッシュし、重複チェックを実行する
+     * 重複チェック用に講習エントリを取得してキャッシュし、checkAndDisplayDuplicates を呼ぶ
+     * 所属校舎（preferredCampuses）が設定されている場合はその校舎のみ取得（Firestore読み込み削減）
+     * 未設定（管理者等）の場合は全校舎取得
      */
     function fetchAllCampusEntries() {
       if (!currentLectureId) return;
-      fbGetAllLectureEntries(currentLectureId)
-        .then(function(entries) {
-          allCampusEntriesCache = entries || [];
+
+      var campusesToFetch = (typeof preferredCampuses !== 'undefined' && preferredCampuses.length > 0)
+        ? preferredCampuses : null;
+
+      if (!campusesToFetch) {
+        // 所属校舎未設定（管理者等）→ 全校舎取得
+        fbGetAllLectureEntries(currentLectureId)
+          .then(function(entries) {
+            allCampusEntriesCache = entries || [];
+            checkAndDisplayDuplicates();
+          })
+          .catch(function(err) { console.error('fetchAllCampusEntries エラー:', err); });
+        return;
+      }
+
+      // 所属校舎のみ取得（各校舎1ドキュメント = preferredCampuses.length 回の読み込み）
+      Promise.all(campusesToFetch.map(function(cc) {
+        return fbGetLectureScheduleEntries(currentLectureId, cc);
+      }))
+        .then(function(results) {
+          var all = [];
+          results.forEach(function(r) { all = all.concat(r || []); });
+          allCampusEntriesCache = all;
           checkAndDisplayDuplicates();
         })
-        .catch(function(err) {
-          console.error('fetchAllCampusEntries エラー:', err);
-        });
+        .catch(function(err) { console.error('fetchAllCampusEntries エラー:', err); });
     }
 
     /**
