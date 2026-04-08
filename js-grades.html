@@ -42,7 +42,7 @@
       }
 
       // 年度一覧の取得結果を画面に反映する共通処理
-      function applyYears(result) {
+      function applyYears(result, saveCache) {
         select.innerHTML = '';
         if (result.success && result.years && result.years.length > 0) {
           // 現在年度がリストになければ先頭に追加（安全ネット）
@@ -61,25 +61,35 @@
           select.value = fyStr;
           currentFiscalYear = fy;
           status.textContent = result.years.length + '件の年度データを取得';
+          if (saveCache) {
+            try { localStorage.setItem('s-quire-grades-years', JSON.stringify(result)); } catch (e) {}
+          }
           loadDropdownData();
           return true;
         }
         return false;
       }
 
-      // GASバックエンド経由で取得（メイン。サービスアカウントで動作するためFirestoreルールの影響を受けない）
+      // キャッシュがあれば即座に反映
+      try {
+        var cached = localStorage.getItem('s-quire-grades-years');
+        if (cached) applyYears(JSON.parse(cached), false);
+      } catch (e) { /* キャッシュ破損時は無視 */ }
+
+      // 裏で最新データを取得
       google.script.run
         .withSuccessHandler(function(result) {
-          if (!applyYears(result)) {
-            applyFallback(result.error || null);
+          if (!applyYears(result, true)) {
+            if (!gradesYearsLoaded) applyFallback(result.error || null);
           }
         })
         .withFailureHandler(function(err) {
+          if (gradesYearsLoaded) return; // キャッシュで表示済みなら無視
           // GASも失敗した場合、Firebase SDKを試す
           console.log('GASバックエンド失敗、Firebase SDKにフォールバック:', err);
           try {
             fbGetGradesYearFolders().then(function(result) {
-              if (!applyYears(result)) {
+              if (!applyYears(result, true)) {
                 applyFallback(result.error || null);
               }
             }).catch(function(fbErr) {
@@ -106,94 +116,107 @@
     }
 
 function loadDropdownData(onComplete) {
+  // ドロップダウンデータをUIに反映する共通処理
+  function applyDropdownResult(result, saveCache) {
+    if (!result.success) return false;
+
+    // campusData / gradeData を更新
+    campusData = {};
+    result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
+    gradeData = {};
+    result.grades.forEach(function(g) { gradeData[g.code] = g.name; });
+    testNamesData = result.testNames || [];
+
+    // 校舎ドロップダウン（情報入力・成績入力の両方）配属校舎が先頭に来る
+    var campusOptions = buildCampusOptions(result.campuses);
+    document.getElementById('input-campus').innerHTML = campusOptions;
+    document.getElementById('score-campus').innerHTML = campusOptions;
+    // プロフィール欄の校舎チェックボックスを更新（設定タブが開いていれば即時反映）
+    renderPreferredCampusCheckboxes();
+
+    // 学年ドロップダウン（情報入力）― 学年表示切替の設定によらず全学年を表示
+    var gradeOptions = '<option value="">選択してください</option>';
+    result.allGrades.forEach(function(g) {
+      gradeOptions += '<option value="' + g.code + '">' + g.name + '</option>';
+    });
+    document.getElementById('input-grade').innerHTML = gradeOptions;
+
+    // 学年ドロップダウン（成績入力）― 校舎選択後に有効化するため初期は無効＋別options
+    var scoreGradeOpts = '<option value="">校舎を先に選択してください</option>';
+    result.grades.forEach(function(g) {
+      scoreGradeOpts += '<option value="' + g.code + '">' + g.name + '</option>';
+    });
+    document.getElementById('score-grade').innerHTML = scoreGradeOpts;
+    document.getElementById('score-grade').disabled = true;
+
+    // テスト名ドロップダウン（成績入力）
+    var testOptions = '<option value="">選択してください</option>';
+    result.testNames.forEach(function(t) {
+      testOptions += '<option value="' + t + '">' + t + '</option>';
+    });
+    document.getElementById('score-test').innerHTML = testOptions;
+
+    // テスト名ドロップダウン（一覧表タブ）— score-test のコピーではなく直接設定
+    var listTestSel = document.getElementById('list-test-select');
+    if (listTestSel) {
+      var savedListVal = listTestSel.value;
+      listTestSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+      result.testNames.forEach(function(t) {
+        listTestSel.innerHTML += '<option value="' + t + '">' + t + '</option>';
+      });
+      if (savedListVal) listTestSel.value = savedListVal;
+    }
+
+    // テスト名ドロップダウン（平均点タブ）— score-test のコピーではなく直接設定
+    var avgTestSel = document.getElementById('avg-test-select');
+    if (avgTestSel) {
+      var savedAvgVal = avgTestSel.value;
+      avgTestSel.innerHTML = '<option value="">テストを選択してください</option>';
+      avgTestNames = [];
+      result.testNames.forEach(function(t) {
+        var opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        avgTestSel.appendChild(opt);
+        avgTestNames.push(t);
+      });
+      if (savedAvgVal) avgTestSel.value = savedAvgVal;
+      avgInitialized = true;
+    }
+
+    // 志望校ドロップダウン（成績入力）
+    schoolsData = result.schools || [];
+    var schoolOptions = '<option value="">選択してください</option>';
+    schoolsData.forEach(function(s) {
+      schoolOptions += '<option value="' + s.name + '">' + s.name + '</option>';
+    });
+    schoolOptions += '<option value="__other__">その他（直接入力）</option>';
+    document.getElementById('score-shogaku1-select').innerHTML = schoolOptions;
+    document.getElementById('score-shogaku2-select').innerHTML = schoolOptions;
+
+    // 一覧表タブの校舎チェックボックスを更新する
+    if (typeof initGradesList === 'function') {
+      var box = document.getElementById('list-campus-checkboxes');
+      if (box) initGradesList();
+    }
+
+    if (saveCache) {
+      try { localStorage.setItem('s-quire-grades-dropdown', JSON.stringify(result)); } catch (e) {}
+    }
+    return true;
+  }
+
+  // キャッシュがあれば即座に反映
+  var cacheApplied = false;
+  try {
+    var cached = localStorage.getItem('s-quire-grades-dropdown');
+    if (cached) cacheApplied = applyDropdownResult(JSON.parse(cached), false);
+  } catch (e) { /* キャッシュ破損時は無視 */ }
+
+  // 裏で最新データを取得
   google.script.run
     .withSuccessHandler(function(result) {
-      if (!result.success) {
-        if (typeof onComplete === 'function') onComplete();
-        return;
-      }
-
-      // campusData / gradeData を更新
-      campusData = {};
-      result.campuses.forEach(function(c) { campusData[c.code] = c.name; });
-      gradeData = {};
-      result.grades.forEach(function(g) { gradeData[g.code] = g.name; });
-      testNamesData = result.testNames || [];
-
-      // 校舎ドロップダウン（情報入力・成績入力の両方）配属校舎が先頭に来る
-      var campusOptions = buildCampusOptions(result.campuses);
-      document.getElementById('input-campus').innerHTML = campusOptions;
-      document.getElementById('score-campus').innerHTML = campusOptions;
-      // プロフィール欄の校舎チェックボックスを更新（設定タブが開いていれば即時反映）
-      renderPreferredCampusCheckboxes();
-
-      // 学年ドロップダウン（情報入力）― 学年表示切替の設定によらず全学年を表示
-      var gradeOptions = '<option value="">選択してください</option>';
-      result.allGrades.forEach(function(g) {
-        gradeOptions += '<option value="' + g.code + '">' + g.name + '</option>';
-      });
-      document.getElementById('input-grade').innerHTML = gradeOptions;
-
-      // 学年ドロップダウン（成績入力）― 校舎選択後に有効化するため初期は無効＋別options
-      var scoreGradeOpts = '<option value="">校舎を先に選択してください</option>';
-      result.grades.forEach(function(g) {
-        scoreGradeOpts += '<option value="' + g.code + '">' + g.name + '</option>';
-      });
-      document.getElementById('score-grade').innerHTML = scoreGradeOpts;
-      document.getElementById('score-grade').disabled = true;
-
-      // テスト名ドロップダウン（成績入力）
-      var testOptions = '<option value="">選択してください</option>';
-      result.testNames.forEach(function(t) {
-        testOptions += '<option value="' + t + '">' + t + '</option>';
-      });
-      document.getElementById('score-test').innerHTML = testOptions;
-
-      // テスト名ドロップダウン（一覧表タブ）— score-test のコピーではなく直接設定
-      var listTestSel = document.getElementById('list-test-select');
-      if (listTestSel) {
-        var savedListVal = listTestSel.value;
-        listTestSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
-        result.testNames.forEach(function(t) {
-          listTestSel.innerHTML += '<option value="' + t + '">' + t + '</option>';
-        });
-        if (savedListVal) listTestSel.value = savedListVal;
-      }
-
-      // テスト名ドロップダウン（平均点タブ）— score-test のコピーではなく直接設定
-      var avgTestSel = document.getElementById('avg-test-select');
-      if (avgTestSel) {
-        var savedAvgVal = avgTestSel.value;
-        avgTestSel.innerHTML = '<option value="">テストを選択してください</option>';
-        avgTestNames = [];
-        result.testNames.forEach(function(t) {
-          var opt = document.createElement('option');
-          opt.value = t;
-          opt.textContent = t;
-          avgTestSel.appendChild(opt);
-          avgTestNames.push(t);
-        });
-        if (savedAvgVal) avgTestSel.value = savedAvgVal;
-        avgInitialized = true;
-      }
-
-      // 志望校ドロップダウン（成績入力）
-      schoolsData = result.schools || [];
-      var schoolOptions = '<option value="">選択してください</option>';
-      schoolsData.forEach(function(s) {
-        schoolOptions += '<option value="' + s.name + '">' + s.name + '</option>';
-      });
-      schoolOptions += '<option value="__other__">その他（直接入力）</option>';
-      document.getElementById('score-shogaku1-select').innerHTML = schoolOptions;
-      document.getElementById('score-shogaku2-select').innerHTML = schoolOptions;
-
-      // 一覧表タブの校舎チェックボックスを更新する
-      if (typeof initGradesList === 'function') {
-        var box = document.getElementById('list-campus-checkboxes');
-        if (box) initGradesList();
-      }
-
-      // コールバックがあれば実行（事前読み込みで campusData が揃った後に呼ぶ処理用）
+      applyDropdownResult(result, true);
       if (typeof onComplete === 'function') onComplete();
     })
     .withFailureHandler(function(err) {

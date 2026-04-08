@@ -71,15 +71,29 @@
       yearSel.innerHTML = '<option value="">読み込み中...</option>';
       yearSel.disabled = true;
 
+      // キャッシュがあれば即座に反映
+      try {
+        var cached = localStorage.getItem('s-quire-lecture-periods');
+        if (cached) {
+          lecturePeriods = JSON.parse(cached);
+          lectureTabInitialized = true;
+          buildLectureYearSelect();
+        }
+      } catch (e) { /* キャッシュ破損時は無視 */ }
+
+      // 裏で最新データを取得
       google.script.run
         .withSuccessHandler(function(result) {
           lecturePeriods = Array.isArray(result) ? result : [];
+          try { localStorage.setItem('s-quire-lecture-periods', JSON.stringify(lecturePeriods)); } catch (e) {}
           lectureTabInitialized = true;
           buildLectureYearSelect();
         })
         .withFailureHandler(function(err) {
           console.error('getLecturePeriods エラー:', err);
-          yearSel.innerHTML = '<option value="">取得失敗</option>';
+          if (!lectureTabInitialized) {
+            yearSel.innerHTML = '<option value="">取得失敗</option>';
+          }
         })
         .getLecturePeriods();
     }
