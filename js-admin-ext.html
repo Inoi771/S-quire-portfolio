@@ -601,9 +601,14 @@
         window._cancelAnalysisAutoRetry = cancelAutoRetry;
 
         function execute() {
+          // 上書き生成（skipExisting=false）のリトライ時は未分析のみ生成へ自動切り替え
+          // （初回で既存データを削除済みのため、リトライは残りの補完のみでよい）
+          var effectiveSkipExisting = (!skipExisting && autoRetryCount > 0) ? true : skipExisting;
           btnSkip.disabled = true;
           btnOverwrite.disabled = true;
-          var retryLabel = autoRetryCount > 0 ? '（' + autoRetryCount + '回目の続き）' : '';
+          var retryLabel = autoRetryCount > 0
+            ? (!skipExisting ? '（未分析の続きを補完中）' : '（' + autoRetryCount + '回目の続き）')
+            : '';
           statusEl.innerHTML = '<span style="color:#999;">AIが分析を生成しています' + retryLabel + '。しばらくお待ちください...</span>';
 
           google.script.run
@@ -614,7 +619,7 @@
                 if (result.skipped) {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ すべての分析が完了しています</span>';
                   showToast('✅ すべての分析が完了しています', 'success');
-                } else if (skipExisting) {
+                } else if (effectiveSkipExisting) {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ ' + result.studentCount + ' 人分の生徒別分析を新規生成しました（' + (result.skippedCount || 0) + ' 人はスキップ）</span>';
                   showToast('✅ AI分析を生成しました（' + result.studentCount + ' 人）', 'success');
                 } else {
@@ -632,13 +637,14 @@
                 autoRetryCount++;
                 var waitSec = 120;
                 var remaining = waitSec;
-                statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で続きを実行します。'
+                var nextModeLabel = !skipExisting ? '（未分析の続きを補完）' : '';
+                statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で' + nextModeLabel + '続きを実行します。'
                   + ' <button onclick="window._cancelAnalysisAutoRetry()" style="margin-left:8px;padding:2px 8px;font-size:12px;cursor:pointer;">中止</button></span>';
                 showToast('⏳ AI分析を処理中です。しばらくお待ちください', 'info');
                 var countdown = setInterval(function() {
                   remaining -= 10;
                   if (remaining <= 0 || cancelled) { clearInterval(countdown); return; }
-                  statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で続きを実行します。'
+                  statusEl.innerHTML = '<span style="color:#f57c00;">⏳ バックグラウンドで処理中です。' + remaining + '秒後に自動で' + nextModeLabel + '続きを実行します。'
                     + ' <button onclick="window._cancelAnalysisAutoRetry()" style="margin-left:8px;padding:2px 8px;font-size:12px;cursor:pointer;">中止</button></span>';
                 }, 10000);
                 autoRetryTimer = setTimeout(function() {
@@ -657,7 +663,7 @@
                 }
               }
             })
-            .generateAllAnalyses(year, testName, skipExisting);
+            .generateAllAnalyses(year, testName, effectiveSkipExisting);
         }
 
         execute();
