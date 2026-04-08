@@ -1944,3 +1944,44 @@ function migrateLectureEntriesToCampusDocs() {
     return { success: false, error: error.toString() };
   }
 }
+
+// ===== 【講師配置表】=====
+
+/**
+ * 講師配置データを取得する（フロントエンド向け）
+ * @param {number} fiscalYear - 年度（省略時は現在年度）
+ */
+function getStaffPlacementForWeb(fiscalYear) {
+  try {
+    var year = fiscalYear || getCurrentFiscalYear_();
+    var key = 'STAFF_PLACEMENT_' + year;
+    var json = getScriptProperty(key);
+    var campusConfig = getCampusConfig() || {};
+    if (!json) {
+      return { success: true, data: null, year: year, campusConfig: campusConfig };
+    }
+    return { success: true, data: JSON.parse(json), year: year, campusConfig: campusConfig };
+  } catch (e) {
+    Logger.log('❌ getStaffPlacementForWeb エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 講師配置データを保存する（管理者のみ）
+ * @param {number} fiscalYear - 年度
+ * @param {string} dataJson - JSON文字列
+ */
+function saveStaffPlacementForWeb(fiscalYear, dataJson) {
+  try {
+    var email = getFirebaseEmailContext_();
+    if (!isAdmin_(email)) return { success: false, error: '管理者のみ編集できます' };
+    var year = fiscalYear || getCurrentFiscalYear_();
+    setScriptProperty('STAFF_PLACEMENT_' + year, dataJson);
+    Logger.log('✓ saveStaffPlacementForWeb: ' + year + '年度の配置データを保存');
+    return { success: true };
+  } catch (e) {
+    Logger.log('❌ saveStaffPlacementForWeb エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}

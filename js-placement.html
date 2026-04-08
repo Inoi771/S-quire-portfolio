@@ -1,0 +1,656 @@
+<script>
+// ===== 講師配置表 =====
+// フロントエンドロジック（表示・編集・PDF出力）
+
+var placementData = null;         // 現在表示中のデータ
+var placementCampusConfig = {};   // 校舎コード→名前マッピング
+var placementCurrentYear = null;  // 表示中の年度
+var placementViewMode = 'campus'; // 'campus' or 'teacher'
+var placementIsAdmin = false;     // 管理者かどうか
+
+var PLACEMENT_DAYS = ['月', '火', '水', '木', '金', '土'];
+
+/**
+ * 講師配置データを読み込む
+ * @param {number} [year] - 年度（省略時は現在年度）
+ */
+function loadStaffPlacement(year) {
+  var root = document.getElementById('placement-root');
+  if (!root) return;
+
+  root.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">読み込み中...</p>';
+
+  var args = year ? [year] : [];
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">読み込みに失敗しました: ' + (result && result.error ? result.error : '不明なエラー') + '</p>';
+        return;
+      }
+      placementCurrentYear = result.year;
+      placementCampusConfig = result.campusConfig || {};
+      placementData = result.data;
+      placementIsAdmin = (typeof isAdmin !== 'undefined') ? isAdmin : false;
+      renderPlacement(root);
+    })
+    .withFailureHandler(function(err) {
+      root.innerHTML = '<p style="text-align:center;color:#e53935;padding:40px;">エラー: ' + err + '</p>';
+    })
+    .getStaffPlacementForWeb.apply(null, args);
+}
+
+/**
+ * 配置表のメインビューを描画する
+ */
+function renderPlacement(root) {
+  var year = placementCurrentYear;
+  var data = placementData;
+
+  var html = '<div class="placement-header-bar">';
+  html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+  html += '<span style="font-weight:bold;font-size:15px;">👨‍🏫 講師配置表（' + year + '年度）</span>';
+  if (placementIsAdmin) {
+    html += '<button class="placement-action-btn" onclick="openPlacementEdit()" style="background:#667eea;">✏️ 編集</button>';
+  }
+  html += '</div>';
+  html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;">';
+  html += '<div class="placement-view-tabs">';
+  html += '<button class="placement-view-tab' + (placementViewMode === 'campus' ? ' active' : '') + '" onclick="switchPlacementView(\'campus\')">🏫 校舎別</button>';
+  html += '<button class="placement-view-tab' + (placementViewMode === 'teacher' ? ' active' : '') + '" onclick="switchPlacementView(\'teacher\')">👤 講師別</button>';
+  html += '</div>';
+  html += '<button class="placement-action-btn" onclick="printPlacementPDF()" style="background:#43a047;">🖨️ PDF印刷</button>';
+  html += '</div>';
+  html += '</div>';
+
+  if (!data) {
+    html += '<div style="background:#fff9e6;border:1px solid #ffc107;border-radius:8px;padding:20px;margin:12px 0;text-align:center;">';
+    html += '<p style="color:#f57c00;font-weight:bold;margin:0 0 8px;">データが未登録です</p>';
+    if (placementIsAdmin) {
+      html += '<p style="color:#666;font-size:13px;margin:0 0 12px;">「編集」ボタンから ' + year + '年度の配置データを登録してください。</p>';
+      html += '<button class="placement-action-btn" onclick="openPlacementEdit()" style="background:#667eea;">✏️ データを登録する</button>';
+    } else {
+      html += '<p style="color:#666;font-size:13px;margin:0;">管理者にデータの登録を依頼してください。</p>';
+    }
+    html += '</div>';
+    root.innerHTML = html;
+    return;
+  }
+
+  html += '<div id="placement-view-container">';
+  html += placementViewMode === 'campus' ? buildCampusViewHtml(data) : buildTeacherViewHtml(data);
+  html += '</div>';
+
+  root.innerHTML = html;
+}
+
+/**
+ * 表示モードを切り替える
+ */
+function switchPlacementView(mode) {
+  placementViewMode = mode;
+  var container = document.getElementById('placement-view-container');
+  if (container && placementData) {
+    container.innerHTML = mode === 'campus' ? buildCampusViewHtml(placementData) : buildTeacherViewHtml(placementData);
+  }
+  // タブボタンのactive状態を更新
+  document.querySelectorAll('.placement-view-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.textContent.indexOf(mode === 'campus' ? '校舎別' : '講師別') >= 0);
+  });
+}
+
+/**
+ * 校舎別ビューのHTMLを生成する
+ */
+function buildCampusViewHtml(data) {
+  var campuses = data.campuses || {};
+  var teachers = data.teachers || [];
+  var supervisors = data.supervisors || {};
+
+  var html = '';
+  var campusCodes = Object.keys(campuses).sort();
+
+  if (campusCodes.length === 0) {
+    return '<p style="color:#999;text-align:center;padding:20px;">校舎データがありません</p>';
+  }
+
+  campusCodes.forEach(function(code) {
+    var campus = campuses[code];
+    var sup = supervisors[code] || {};
+
+    // その曜日にこの校舎に出勤する講師を計算
+    var dayTeachers = {};
+    PLACEMENT_DAYS.forEach(function(day) {
+      dayTeachers[day] = teachers.filter(function(t) { return t[day] === code; }).map(function(t) { return t.name; });
+    });
+
+    html += '<div class="placement-campus-card">';
+    html += '<div class="placement-campus-header">';
+    html += '<span style="font-size:15px;font-weight:bold;">' + escHtml(campus.name || code) + '</span>';
+    if (campus.tel) {
+      var sameTelFax = campus.tel === campus.fax;
+      if (sameTelFax) {
+        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL&amp;FAX: ' + escHtml(campus.tel) + '</span>';
+      } else {
+        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL: ' + escHtml(campus.tel) + '</span>';
+        if (campus.fax) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">FAX: ' + escHtml(campus.fax) + '</span>';
+      }
+    }
+    html += '</div>';
+
+    // 曜日テーブル
+    html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+    html += '<table class="placement-day-table">';
+    html += '<thead><tr><th style="min-width:44px;background:#f5f5f5;color:#555;">　</th>';
+    PLACEMENT_DAYS.forEach(function(day) { html += '<th>' + day + '</th>'; });
+    html += '</tr></thead>';
+    html += '<tbody>';
+
+    // 責任者行
+    html += '<tr>';
+    html += '<td class="placement-row-label">責任者</td>';
+    PLACEMENT_DAYS.forEach(function(day) {
+      var s = sup[day] || '';
+      html += '<td class="placement-day-cell">';
+      if (s) html += '<span class="placement-supervisor">' + escHtml(s) + '</span>';
+      html += '</td>';
+    });
+    html += '</tr>';
+
+    // 勤務講師行（最大行数を計算）
+    var maxRows = 0;
+    PLACEMENT_DAYS.forEach(function(day) { if (dayTeachers[day].length > maxRows) maxRows = dayTeachers[day].length; });
+
+    for (var i = 0; i < maxRows; i++) {
+      html += '<tr>';
+      html += '<td class="placement-row-label">' + (i === 0 ? '勤務' : '') + '</td>';
+      PLACEMENT_DAYS.forEach(function(day) {
+        var name = (dayTeachers[day][i] || '');
+        html += '<td class="placement-day-cell" style="font-size:11px;">' + escHtml(name) + '</td>';
+      });
+      html += '</tr>';
+    }
+
+    if (maxRows === 0) {
+      html += '<tr><td class="placement-row-label">勤務</td>';
+      PLACEMENT_DAYS.forEach(function() { html += '<td class="placement-day-cell"></td>'; });
+      html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+    html += '</div>'; // campus-card
+  });
+
+  return html;
+}
+
+/**
+ * 講師別ビューのHTMLを生成する（横スクロールテーブル）
+ */
+function buildTeacherViewHtml(data) {
+  var campuses = data.campuses || {};
+  var teachers = data.teachers || [];
+
+  if (teachers.length === 0) {
+    return '<p style="color:#999;text-align:center;padding:20px;">講師データがありません</p>';
+  }
+
+  // 科目順でグループ化
+  var SUBJECT_ORDER = ['英語', '数学', '国語', '理科', '社会', 'その他'];
+  var groups = {};
+  teachers.forEach(function(t) {
+    var subj = t.subject || 'その他';
+    if (!groups[subj]) groups[subj] = [];
+    groups[subj].push(t);
+  });
+
+  var html = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+  html += '<table class="placement-teacher-table">';
+  html += '<thead><tr>';
+  html += '<th style="min-width:36px;background:#e8eaf6;">科目</th>';
+  html += '<th style="min-width:56px;background:#e8eaf6;">講師</th>';
+  PLACEMENT_DAYS.forEach(function(day) {
+    html += '<th style="background:#e8eaf6;">' + day + '</th>';
+  });
+  html += '</tr></thead>';
+  html += '<tbody>';
+
+  var orderedSubjects = SUBJECT_ORDER.filter(function(s) { return groups[s]; });
+  Object.keys(groups).forEach(function(s) { if (SUBJECT_ORDER.indexOf(s) < 0) orderedSubjects.push(s); });
+
+  orderedSubjects.forEach(function(subj) {
+    var list = groups[subj];
+    list.forEach(function(teacher, idx) {
+      html += '<tr>';
+      if (idx === 0) {
+        html += '<td class="name-cell" rowspan="' + list.length + '" style="background:#fafafa;font-size:11px;color:#555;writing-mode:vertical-lr;text-align:center;padding:4px 2px;">' + escHtml(subj) + '</td>';
+      }
+      html += '<td class="name-cell">' + escHtml(teacher.name || '') + '</td>';
+      PLACEMENT_DAYS.forEach(function(day) {
+        var code = teacher[day] || '';
+        var campus = campuses[code];
+        var abbr = campus ? (campus.abbr || campus.name.charAt(0)) : code;
+        html += '<td style="text-align:center;">' + escHtml(abbr) + '</td>';
+      });
+      html += '</tr>';
+    });
+  });
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
+// ===== 編集モーダル =====
+
+var _placementEditData = null; // 編集中のデータのコピー
+
+/**
+ * 編集モーダルを開く
+ */
+function openPlacementEdit() {
+  // 現在のデータをディープコピー（または空データ作成）
+  if (placementData) {
+    _placementEditData = JSON.parse(JSON.stringify(placementData));
+  } else {
+    _placementEditData = {
+      year: placementCurrentYear,
+      campuses: {},
+      teachers: [],
+      supervisors: {}
+    };
+    // 既存校舎設定から初期化
+    Object.keys(placementCampusConfig).forEach(function(code) {
+      _placementEditData.campuses[code] = { name: placementCampusConfig[code], abbr: '', tel: '', fax: '' };
+      _placementEditData.supervisors[code] = { '月': '', '火': '', '水': '', '木': '', '金': '', '土': '' };
+    });
+  }
+
+  var modal = document.getElementById('placement-edit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'placement-edit-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;overflow-y:auto;padding:16px;box-sizing:border-box;';
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'block';
+  renderPlacementEditModal(modal);
+}
+
+/**
+ * 編集モーダルの内容を描画する
+ */
+function renderPlacementEditModal(modal) {
+  var d = _placementEditData;
+  var campusCodes = Object.keys(d.campuses).sort();
+
+  var html = '<div style="background:#fff;border-radius:10px;max-width:700px;margin:0 auto;padding:20px;box-sizing:border-box;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+  html += '<h2 style="margin:0;font-size:17px;">✏️ 講師配置表を編集（' + d.year + '年度）</h2>';
+  html += '<button onclick="closePlacementEdit()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#666;">✕</button>';
+  html += '</div>';
+
+  // 年度変更
+  html += '<div style="margin-bottom:16px;padding:12px;background:#f5f5f5;border-radius:8px;">';
+  html += '<label style="font-size:13px;color:#555;">年度：</label>';
+  var currentYear = new Date().getFullYear();
+  html += '<select id="pe-year" onchange="onPlacementYearChange(this.value)" style="font-size:14px;padding:4px 8px;border-radius:4px;border:1px solid #ddd;">';
+  for (var y = currentYear - 1; y <= currentYear + 2; y++) {
+    html += '<option value="' + y + '"' + (y === d.year ? ' selected' : '') + '>' + y + '年度</option>';
+  }
+  html += '</select>';
+  html += '</div>';
+
+  // セクション1: 校舎情報
+  html += buildEditAccordion('pe-sec-campus', '🏫 校舎情報（TEL/FAX/略称）', buildEditCampusSection(d, campusCodes));
+  // セクション2: 講師配置
+  html += buildEditAccordion('pe-sec-teacher', '👤 講師の曜日別配属', buildEditTeacherSection(d, campusCodes));
+  // セクション3: 責任者
+  html += buildEditAccordion('pe-sec-super', '⭕ 曜日別責任者', buildEditSupervisorSection(d, campusCodes));
+
+  html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">';
+  html += '<button onclick="closePlacementEdit()" style="padding:10px 20px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;">キャンセル</button>';
+  html += '<button onclick="savePlacementData()" style="padding:10px 24px;background:#43a047;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;">💾 保存</button>';
+  html += '</div>';
+  html += '</div>';
+
+  modal.innerHTML = html;
+}
+
+function buildEditAccordion(id, title, content) {
+  return '<div style="border:1px solid #e0e0e0;border-radius:8px;margin-bottom:12px;overflow:hidden;">'
+    + '<button onclick="toggleEditAccordion(\'' + id + '\')" style="width:100%;text-align:left;padding:12px 14px;background:#f9f9f9;border:none;cursor:pointer;font-size:14px;font-weight:bold;display:flex;justify-content:space-between;align-items:center;">'
+    + escHtml(title) + '<span id="' + id + '-arrow">▼</span></button>'
+    + '<div id="' + id + '-body" style="padding:12px 14px;">' + content + '</div>'
+    + '</div>';
+}
+
+function toggleEditAccordion(id) {
+  var body = document.getElementById(id + '-body');
+  var arrow = document.getElementById(id + '-arrow');
+  if (!body) return;
+  var isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+function buildEditCampusSection(d, campusCodes) {
+  if (campusCodes.length === 0) {
+    return '<p style="color:#999;font-size:13px;">校舎マスタが未設定です。管理タブ > 設定 から校舎を登録してください。</p>';
+  }
+  var html = '<div style="overflow-x:auto;">';
+  html += '<table style="border-collapse:collapse;width:100%;font-size:13px;">';
+  html += '<tr style="background:#f0f0f0;"><th style="padding:6px 8px;text-align:left;">校舎</th><th style="padding:6px 8px;">略称</th><th style="padding:6px 8px;">TEL</th><th style="padding:6px 8px;">FAX</th></tr>';
+  campusCodes.forEach(function(code) {
+    var c = d.campuses[code] || {};
+    html += '<tr>';
+    html += '<td style="padding:6px 8px;font-weight:bold;">' + escHtml(c.name || code) + '</td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.abbr || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'abbr\',this.value)" style="width:40px;padding:4px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px;" placeholder="藍"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:120px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="693-0225"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:120px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="693-0225"></td>';
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+
+function buildEditTeacherSection(d, campusCodes) {
+  var campusOptions = '<option value="">—</option>';
+  campusCodes.forEach(function(code) {
+    var c = d.campuses[code] || {};
+    campusOptions += '<option value="' + code + '">' + escHtml(c.name || code) + '</option>';
+  });
+
+  var html = '';
+  // 講師追加ボタン
+  html += '<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;">';
+  html += '<input type="text" id="pe-new-teacher-name" placeholder="講師名" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  html += '<select id="pe-new-teacher-subject" style="padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  ['英語','数学','国語','理科','社会','その他'].forEach(function(s) { html += '<option>' + s + '</option>'; });
+  html += '</select>';
+  html += '<button onclick="addPlacementTeacher()" style="padding:6px 12px;background:#667eea;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">追加</button>';
+  html += '</div>';
+
+  if (d.teachers.length === 0) {
+    html += '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">講師を追加してください</p>';
+    return html;
+  }
+
+  html += '<div style="overflow-x:auto;">';
+  html += '<table style="border-collapse:collapse;font-size:12px;width:100%;">';
+  html += '<tr style="background:#f0f0f0;"><th style="padding:5px 6px;">科目</th><th style="padding:5px 6px;min-width:60px;">名前</th>';
+  PLACEMENT_DAYS.forEach(function(day) { html += '<th style="padding:5px 6px;">' + day + '</th>'; });
+  html += '<th style="padding:5px 6px;"></th></tr>';
+
+  d.teachers.forEach(function(teacher, idx) {
+    html += '<tr style="border-bottom:1px solid #f0f0f0;">';
+    html += '<td style="padding:3px 4px;"><select onchange="updatePlacementTeacher(' + idx + ',\'subject\',this.value)" style="padding:3px;border:1px solid #ddd;border-radius:3px;font-size:11px;">';
+    ['英語','数学','国語','理科','社会','その他'].forEach(function(s) {
+      html += '<option' + (teacher.subject === s ? ' selected' : '') + '>' + s + '</option>';
+    });
+    html += '</select></td>';
+    html += '<td style="padding:3px 4px;"><input type="text" value="' + escHtml(teacher.name || '') + '" onchange="updatePlacementTeacher(' + idx + ',\'name\',this.value)" style="width:60px;padding:3px;border:1px solid #ddd;border-radius:3px;font-size:12px;"></td>';
+    PLACEMENT_DAYS.forEach(function(day) {
+      html += '<td style="padding:3px 2px;"><select onchange="updatePlacementTeacher(' + idx + ',\'' + day + '\',this.value)" style="padding:3px;border:1px solid #ddd;border-radius:3px;font-size:11px;max-width:70px;">' + campusOptions.replace('value="' + teacher[day] + '"', 'value="' + teacher[day] + '" selected') + '</select></td>';
+    });
+    html += '<td style="padding:3px;"><button onclick="removePlacementTeacher(' + idx + ')" style="background:#e53935;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px;padding:2px 5px;">✕</button></td>';
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+
+function buildEditSupervisorSection(d, campusCodes) {
+  if (campusCodes.length === 0) return '<p style="color:#999;font-size:13px;">校舎データがありません</p>';
+
+  var html = '<div style="overflow-x:auto;">';
+  html += '<table style="border-collapse:collapse;font-size:13px;width:100%;">';
+  html += '<tr style="background:#f0f0f0;"><th style="padding:6px 8px;text-align:left;">校舎</th>';
+  PLACEMENT_DAYS.forEach(function(day) { html += '<th style="padding:6px 8px;">' + day + '</th>'; });
+  html += '</tr>';
+
+  campusCodes.forEach(function(code) {
+    var c = d.campuses[code] || {};
+    var sup = d.supervisors[code] || {};
+    html += '<tr style="border-bottom:1px solid #f0f0f0;">';
+    html += '<td style="padding:5px 8px;font-weight:bold;font-size:12px;">' + escHtml(c.name || code) + '</td>';
+    PLACEMENT_DAYS.forEach(function(day) {
+      html += '<td style="padding:3px;"><input type="text" value="' + escHtml(sup[day] || '') + '" onchange="updatePlacementSupervisor(\'' + code + '\',\'' + day + '\',this.value)" style="width:54px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center;" placeholder="名前"></td>';
+    });
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+
+// 編集データ更新ヘルパー
+function updatePlacementCampus(code, field, value) {
+  if (!_placementEditData.campuses[code]) _placementEditData.campuses[code] = {};
+  _placementEditData.campuses[code][field] = value;
+}
+
+function updatePlacementTeacher(idx, field, value) {
+  if (_placementEditData.teachers[idx]) _placementEditData.teachers[idx][field] = value;
+}
+
+function updatePlacementSupervisor(code, day, value) {
+  if (!_placementEditData.supervisors[code]) _placementEditData.supervisors[code] = {};
+  _placementEditData.supervisors[code][day] = value;
+}
+
+function addPlacementTeacher() {
+  var nameEl = document.getElementById('pe-new-teacher-name');
+  var subjEl = document.getElementById('pe-new-teacher-subject');
+  if (!nameEl || !nameEl.value.trim()) { showToast('講師名を入力してください', 'error'); return; }
+  var t = { name: nameEl.value.trim(), subject: subjEl ? subjEl.value : '英語' };
+  PLACEMENT_DAYS.forEach(function(day) { t[day] = ''; });
+  _placementEditData.teachers.push(t);
+  nameEl.value = '';
+  // 再描画（講師タブのみ）
+  var body = document.getElementById('pe-sec-teacher-body');
+  if (body) {
+    var campusCodes = Object.keys(_placementEditData.campuses).sort();
+    body.innerHTML = buildEditTeacherSection(_placementEditData, campusCodes);
+  }
+}
+
+function removePlacementTeacher(idx) {
+  _placementEditData.teachers.splice(idx, 1);
+  var body = document.getElementById('pe-sec-teacher-body');
+  if (body) {
+    var campusCodes = Object.keys(_placementEditData.campuses).sort();
+    body.innerHTML = buildEditTeacherSection(_placementEditData, campusCodes);
+  }
+}
+
+function onPlacementYearChange(year) {
+  _placementEditData.year = parseInt(year, 10);
+}
+
+function closePlacementEdit() {
+  var modal = document.getElementById('placement-edit-modal');
+  if (modal) modal.style.display = 'none';
+  _placementEditData = null;
+}
+
+/**
+ * 配置データを保存する
+ */
+function savePlacementData() {
+  if (!_placementEditData) return;
+  var btn = document.querySelector('#placement-edit-modal button[onclick="savePlacementData()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+
+  var year = _placementEditData.year;
+  var dataJson = JSON.stringify(_placementEditData);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 保存'; }
+      if (result && result.success) {
+        showToast('✓ 保存しました', 'success');
+        closePlacementEdit();
+        loadStaffPlacement(year);
+      } else {
+        showToast('保存に失敗しました: ' + (result && result.error ? result.error : '不明'), 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 保存'; }
+      showToast('エラー: ' + err, 'error');
+    })
+    .saveStaffPlacementForWeb(year, dataJson);
+}
+
+// ===== PDF印刷 =====
+
+/**
+ * 印刷用の新ウィンドウを開いて印刷ダイアログを起動する
+ */
+function printPlacementPDF() {
+  if (!placementData) { showToast('データがありません', 'error'); return; }
+  var html = buildPlacementPrintHtml(placementData, placementCurrentYear);
+  var win = window.open('', '_blank');
+  if (!win) { showToast('ポップアップがブロックされました。許可してから再試行してください。', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+  // ページ読み込み後に印刷ダイアログを開く
+  win.onload = function() {
+    setTimeout(function() { win.print(); }, 300);
+  };
+}
+
+/**
+ * 横向きA4の印刷用HTMLを生成する
+ */
+function buildPlacementPrintHtml(data, year) {
+  var campuses = data.campuses || {};
+  var teachers = data.teachers || [];
+  var supervisors = data.supervisors || {};
+  var campusCodes = Object.keys(campuses).sort();
+
+  // --- 左テーブル: 科目グループ | 講師名 | 月〜土（校舎略称）---
+  var SUBJECT_ORDER = ['英語', '数学', '国語', '理科', '社会', 'その他'];
+  var groups = {};
+  teachers.forEach(function(t) {
+    var subj = t.subject || 'その他';
+    if (!groups[subj]) groups[subj] = [];
+    groups[subj].push(t);
+  });
+  var orderedSubjects = SUBJECT_ORDER.filter(function(s) { return groups[s]; });
+  Object.keys(groups).forEach(function(s) { if (SUBJECT_ORDER.indexOf(s) < 0) orderedSubjects.push(s); });
+
+  var leftRows = '';
+  orderedSubjects.forEach(function(subj) {
+    var list = groups[subj];
+    list.forEach(function(teacher, idx) {
+      leftRows += '<tr>';
+      if (idx === 0) {
+        leftRows += '<td rowspan="' + list.length + '" class="subj-cell">' + escHtml(subj) + '</td>';
+      }
+      leftRows += '<td class="name-cell">' + escHtml(teacher.name || '') + '</td>';
+      PLACEMENT_DAYS.forEach(function(day) {
+        var code = teacher[day] || '';
+        var campus = campuses[code];
+        var abbr = campus ? (campus.abbr || campus.name.charAt(0)) : code;
+        leftRows += '<td class="day-cell">' + escHtml(abbr) + '</td>';
+      });
+      leftRows += '</tr>';
+    });
+  });
+
+  // --- 右テーブル: 校舎×曜日 ---
+  var rightRows = '';
+  campusCodes.forEach(function(code) {
+    var campus = campuses[code];
+    var sup = supervisors[code] || {};
+
+    // その曜日にこの校舎に勤務する講師リスト
+    var dayTeachers = {};
+    PLACEMENT_DAYS.forEach(function(day) {
+      dayTeachers[day] = teachers.filter(function(t) { return t[day] === code; }).map(function(t) { return t.name; });
+    });
+
+    var campusInfo = escHtml(campus.name || code);
+    if (campus.tel) {
+      if (campus.tel === campus.fax) {
+        campusInfo += '<br><small>TEL&amp;FAX<br>' + escHtml(campus.tel) + '</small>';
+      } else {
+        campusInfo += '<br><small>TEL ' + escHtml(campus.tel || '');
+        if (campus.fax) campusInfo += '<br>FAX ' + escHtml(campus.fax);
+        campusInfo += '</small>';
+      }
+    }
+
+    // 各曜日セルのコンテンツ
+    var dayCells = PLACEMENT_DAYS.map(function(day) {
+      var cell = '';
+      var s = sup[day] || '';
+      if (s) cell += '<div class="supervisor-circle">' + escHtml(s) + '</div>';
+      var others = dayTeachers[day].filter(function(n) { return n !== s; });
+      others.forEach(function(n) { cell += '<div class="day-staff">' + escHtml(n) + '</div>'; });
+      return '<td class="right-day-cell">' + cell + '</td>';
+    }).join('');
+
+    rightRows += '<tr><td class="campus-cell">' + campusInfo + '</td>' + dayCells + '</tr>';
+  });
+
+  return '<!DOCTYPE html><html><head><meta charset="utf-8">'
+    + '<title>' + year + '年度 講師配置表</title>'
+    + '<style>'
+    + '* { margin: 0; padding: 0; box-sizing: border-box; }'
+    + '@page { size: A4 landscape; margin: 8mm; }'
+    + 'body { font-family: "Meiryo", "Yu Gothic", sans-serif; font-size: 10pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }'
+    + 'h1 { text-align: center; font-size: 16pt; letter-spacing: 4px; margin-bottom: 8px; }'
+    + '.tables-wrap { display: flex; gap: 10px; align-items: flex-start; }'
+    + 'table { border-collapse: collapse; }'
+    + 'th, td { border: 1px solid #333; padding: 2px 4px; }'
+    + 'th { background: #f0f0f0; text-align: center; }'
+    /* 左テーブル */
+    + '.left-table { flex: 0 0 auto; }'
+    + '.left-table .subj-cell { writing-mode: vertical-lr; text-align: center; font-size: 8pt; padding: 2px; background: #fafafa; }'
+    + '.left-table .name-cell { text-align: left; min-width: 36px; font-size: 9pt; padding: 2px 4px; }'
+    + '.left-table .day-cell { text-align: center; min-width: 20px; font-size: 9pt; }'
+    /* 右テーブル */
+    + '.right-table { flex: 1 1 auto; }'
+    + '.right-table .campus-cell { min-width: 64px; font-size: 8pt; vertical-align: top; text-align: center; line-height: 1.4; }'
+    + '.right-table .right-day-cell { min-width: 52px; vertical-align: top; text-align: center; font-size: 8pt; }'
+    + '.supervisor-circle { display: inline-block; border: 1.5px solid #000; border-radius: 50%; padding: 1px 5px; font-size: 8pt; margin-bottom: 2px; }'
+    + '.day-staff { font-size: 7.5pt; color: #333; }'
+    + 'small { font-size: 7pt; }'
+    /* フッター */
+    + '.print-footer { margin-top: 8px; display: flex; align-items: center; gap: 20px; font-size: 9pt; }'
+    + '.legend-circle { display: inline-block; border: 1px solid #000; border-radius: 50%; width: 20px; height: 14px; vertical-align: middle; margin-right: 4px; }'
+    + '</style>'
+    + '</head><body>'
+    + '<h1>' + year + '年度&nbsp;&nbsp;&nbsp;講師配置表及び曜日別責任者</h1>'
+    + '<div class="tables-wrap">'
+
+    /* 左テーブル */
+    + '<table class="left-table">'
+    + '<thead><tr><th></th><th></th>'
+    + PLACEMENT_DAYS.map(function(d) { return '<th>' + d + '</th>'; }).join('')
+    + '</tr></thead>'
+    + '<tbody>' + leftRows + '</tbody>'
+    + '</table>'
+
+    /* 右テーブル */
+    + '<table class="right-table">'
+    + '<thead><tr><th></th>'
+    + PLACEMENT_DAYS.map(function(d) { return '<th>' + d + '</th>'; }).join('')
+    + '</tr></thead>'
+    + '<tbody>' + rightRows + '</tbody>'
+    + '</table>'
+
+    + '</div>'
+    + '<div class="print-footer">'
+    + '<span><span class="legend-circle"></span> 各曜日の責任者</span>'
+    + '</div>'
+    + '</body></html>';
+}
+
+// ===== ユーティリティ =====
+
+function escHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>

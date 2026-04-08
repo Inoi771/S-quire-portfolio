@@ -354,3 +354,20 @@
 - `fbGetSchoolAverages(year, testName)` — 学校別平均点を取得
 - `fbGetGradeAnalysis(year, testName)` — テスト全体AI分析をFirestoreから直接取得（`testAnalysis`コレクション）
 - `fbGetStudentAnalysis(year, studentId, testName)` — 生徒別AI分析をFirestoreから直接取得（`studentAnalysis`コレクション、基礎学力テストのフォールバック対応）
+
+---
+
+## js-placement.html（講師配置表）
+
+| 関数 | 説明 |
+|------|------|
+| `loadStaffPlacement(year?)` | 配置データをGASから取得して表示。年度省略時は現在年度 |
+| `renderPlacement(root)` | ヘッダー・ビュー切り替えタブ・配置ビューを描画 |
+| `switchPlacementView(mode)` | `'campus'`（校舎別）または `'teacher'`（講師別）に切り替え |
+| `buildCampusViewHtml(data)` | 校舎別カードビューのHTML生成（責任者+勤務講師） |
+| `buildTeacherViewHtml(data)` | 講師別横スクロールテーブルのHTML生成（科目グループ×曜日×校舎略称） |
+| `openPlacementEdit()` | 編集モーダルを開く（管理者のみ） |
+| `renderPlacementEditModal(modal)` | 編集モーダル描画（校舎情報・講師配置・責任者の3アコーディオン） |
+| `savePlacementData()` | 編集内容をGASへ保存 |
+| `printPlacementPDF()` | 新ウィンドウで印刷用HTMLを開き、印刷ダイアログを起動 |
+| `buildPlacementPrintHtml(data, year)` | 横向きA4の印刷用HTML生成（左：講師×曜日表、右：校舎×曜日表） |

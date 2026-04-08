@@ -454,6 +454,17 @@ Firestore → Supabase の一括データ移行。一度だけ実行。
 
 ---
 
+## admin.js — 講師配置表（S12付近）
+
+| 関数 | 説明 |
+|------|------|
+| `getStaffPlacementForWeb(fiscalYear)` | 指定年度の講師配置データをScript Propertiesから取得。校舎マスタ（campusConfig）も同時に返す。年度省略時は現在年度 |
+| `saveStaffPlacementForWeb(fiscalYear, dataJson)` | 指定年度の講師配置データをScript Propertiesに保存。管理者のみ |
+
+保存キー: `STAFF_PLACEMENT_{year}`（例: `STAFF_PLACEMENT_2025`）
+
+---
+
 ## gas-bridge.html（Firebase Hosting 用シム）
 
 Firebase Hosting 環境で `google.script.run` を `fetch()` に変換する。

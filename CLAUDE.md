@@ -199,6 +199,7 @@ MyProject/
 ├── js-admin-lec-deadline.html JS: 講習日程締切管理（約200行）
 ├── js-ai-actions.html   JS: AIアシスタント アクション実行（約350行）
 ├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
+├── js-placement.html    JS: 講師配置表・曜日別配置・PDF出力（約380行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
 ├── supabase.js          Supabase REST APIクライアント（成績データ用）
@@ -340,7 +341,7 @@ MyProject/
 |-----------|--------|------|
 | `univ-calendar` | 📅 カレンダー | 実装済み |
 | `univ-pricing` | 💰 料金表 | 実装済み |
-| `univ-placement` | 👨‍🏫 講師配置 | スタブ |
+| `univ-placement` | 👨‍🏫 講師配置 | 実装済み |
 | `univ-minutes` | 📝 議事録 | スタブ |
 
 ---
@@ -379,7 +380,7 @@ MyProject/
 |------|------|
 | 講習管理 > エントリのリサイズ・ドラッグ移動 | 将来実装 |
 | 講習管理 > 配布物 他種PDFボタン | 将来追加予定 |
-| 資料 > 講師配置・議事録 | スタブ |
+| 資料 > 議事録 | スタブ |
 | 分析 > テスト間推移折れ線グラフ | 将来実装 |
 
 ---
