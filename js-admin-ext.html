@@ -2313,4 +2313,27 @@
       document.getElementById('aiWidgetOverlay').addEventListener('click', closeAIWidget);
     });
 
+    // ----------------------------------------
+    // lectureEntries 旧→新構造 移行
+    // ----------------------------------------
+    function runMigrateLectureEntries() {
+      var resultEl = document.getElementById('migrate-lecture-result');
+      resultEl.textContent = '実行中...';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            resultEl.style.color = '#27ae60';
+            resultEl.textContent = '完了: 新ドキュメント' + res.converted + '件作成、旧ドキュメント' + res.deleted + '件削除、スキップ' + res.skipped + '件';
+          } else {
+            resultEl.style.color = '#e74c3c';
+            resultEl.textContent = 'エラー: ' + (res ? res.error : '不明なエラー');
+          }
+        })
+        .withFailureHandler(function(err) {
+          resultEl.style.color = '#e74c3c';
+          resultEl.textContent = 'エラー: ' + (err.message || String(err));
+        })
+        .migrateLectureEntriesToCampusDocs();
+    }
+
 </script>

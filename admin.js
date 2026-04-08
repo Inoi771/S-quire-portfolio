@@ -1854,3 +1854,93 @@ function migrateStudentsToSupabase() {
     return { success: false, error: error.toString() };
   }
 }
+
+// ----------------------------------------
+// lectureEntries 旧構造→新構造 移行
+// ----------------------------------------
+
+/**
+ * lectureEntries コレクションを旧構造（1コマ=1ドキュメント）から
+ * 新構造（1校舎=1ドキュメント、entries配列）に移行する一回限りの移行スクリプト
+ * GASエディタまたは管理タブから手動実行すること
+ * @return {Object} { success, converted, skipped, deleted, error }
+ */
+function migrateLectureEntriesToCampusDocs() {
+  try {
+    var allDocs = firestoreQuery_('lectureEntries', []);
+    if (!allDocs || allDocs.length === 0) {
+      Logger.log('migrateLectureEntriesToCampusDocs: ドキュメントなし、移行不要');
+      return { success: true, converted: 0, skipped: 0, deleted: 0 };
+    }
+
+    // 旧形式（entryId フィールドが root に存在）と新形式（entries 配列）を分類
+    var oldDocs = [];
+    var skipped = 0;
+    allDocs.forEach(function(doc) {
+      if (Array.isArray(doc.entries)) {
+        // 新形式ドキュメント → スキップ
+        skipped++;
+      } else if (doc.entryId || doc.date) {
+        // 旧形式ドキュメント → 移行対象
+        oldDocs.push(doc);
+      } else {
+        skipped++;
+      }
+    });
+
+    if (oldDocs.length === 0) {
+      Logger.log('migrateLectureEntriesToCampusDocs: 旧形式ドキュメントなし、移行不要');
+      return { success: true, converted: 0, skipped: skipped, deleted: 0 };
+    }
+
+    // lectureId_campusCode をキーにグループ化
+    var groups = {};
+    oldDocs.forEach(function(doc) {
+      var lid = String(doc.lectureId || '');
+      var cc  = String(doc.campusCode || '').padStart(2, '0');
+      var key = lid + '_' + cc;
+      if (!groups[key]) groups[key] = { lectureId: lid, campusCode: cc, entries: [] };
+      groups[key].entries.push({
+        entryId:       String(doc.entryId     || doc._id  || ''),
+        date:          String(doc.date        || ''),
+        startTime:     String(doc.startTime   || ''),
+        durationSlots: Number(doc.durationSlots) || 9,
+        subject:       String(doc.subject     || ''),
+        grade:         String(doc.grade       || ''),
+        teacherName:   String(doc.teacherName  || ''),
+        teacherEmail:  String(doc.teacherEmail || ''),
+        classLabel:    doc.classLabel || null,
+        teacherId:     String(doc.teacherId   || '')
+      });
+    });
+
+    // 新形式ドキュメントを書き込み
+    var converted = 0;
+    Object.keys(groups).forEach(function(key) {
+      var g = groups[key];
+      firestoreSet_('lectureEntries', key, {
+        lectureId:  g.lectureId,
+        campusCode: g.campusCode,
+        entries:    g.entries,
+        updatedAt:  new Date().toISOString()
+      });
+      converted++;
+      Logger.log('✓ 新形式ドキュメント書き込み: ' + key + ' (' + g.entries.length + '件)');
+    });
+
+    // 旧形式ドキュメントを削除
+    var deleted = 0;
+    oldDocs.forEach(function(doc) {
+      firestoreDelete_('lectureEntries', doc._id);
+      deleted++;
+    });
+
+    var msg = '移行完了: 新ドキュメント' + converted + '件作成、旧ドキュメント' + deleted + '件削除、スキップ' + skipped + '件';
+    Logger.log('✓ migrateLectureEntriesToCampusDocs: ' + msg);
+    recordOperationLog('lectureEntries移行', msg, '成功');
+    return { success: true, converted: converted, skipped: skipped, deleted: deleted };
+  } catch (error) {
+    Logger.log('❌ migrateLectureEntriesToCampusDocs エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
