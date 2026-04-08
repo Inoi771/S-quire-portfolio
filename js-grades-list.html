@@ -1637,6 +1637,7 @@
           if (result.success) {
             showMessage('avgMessage',
               '✅ 保存しました（新規 ' + result.savedCount + '件・更新 ' + result.updatedCount + '件）', 'success');
+            if (typeof fbInvalidateGradeCache_ === 'function') fbInvalidateGradeCache_(year, testName, '');
             loadGradesAverage(); // 再読み込みで合計を更新
           } else {
             showMessage('avgMessage', '❌ ' + result.error, 'error');

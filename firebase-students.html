@@ -6,6 +6,55 @@
 var _fbMasterDataCache = {}; // { year: Promise<Array> } — 同一年度の重複読み取りを防ぐ
 
 /**
+ * localStorage キャッシュ付きデータ取得ヘルパー
+ * キャッシュがあれば即座に返し、裏でAPIから最新データを取得してキャッシュを更新する
+ * @param {string} cacheKey localStorage のキー
+ * @param {Function} fetchFn データを取得する関数（Promiseを返す）
+ * @return {Promise<Object>} 結果オブジェクト
+ */
+function fbCachedFetch_(cacheKey, fetchFn) {
+  var cached = null;
+  try {
+    var raw = localStorage.getItem(cacheKey);
+    if (raw) cached = JSON.parse(raw);
+  } catch (e) { /* 破損時は無視 */ }
+
+  var fetchPromise = fetchFn().then(function(result) {
+    if (result && result.success) {
+      try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) {
+        // 容量超過時は古いキャッシュを整理
+        fbCleanOldCache_();
+        try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e2) {}
+      }
+    }
+    return result;
+  });
+
+  if (cached && cached.success) {
+    // キャッシュを即座に返し、裏で更新
+    fetchPromise.catch(function() {});
+    return Promise.resolve(cached);
+  }
+  return fetchPromise;
+}
+
+/**
+ * localStorage の成績キャッシュが容量超過時に古いものを削除
+ */
+function fbCleanOldCache_() {
+  var keys = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && k.indexOf('s-quire-g-') === 0) keys.push(k);
+  }
+  // 半分を削除（古い順＝先に登録された順）
+  var removeCount = Math.ceil(keys.length / 2);
+  for (var j = 0; j < removeCount; j++) {
+    localStorage.removeItem(keys[j]);
+  }
+}
+
+/**
  * 内部ヘルパー: Firestoreドキュメントから年度に合わせた生徒データを計算して返す
  * @param {Object} doc Firestoreドキュメントデータ
  * @param {string} docId ドキュメントID（studentId）
@@ -143,11 +192,14 @@ function gasApiPromise_(funcName, args) {
  * @return {Promise<Object>} { success, students, error }
  */
 function fbGetStudentListWithGrades(year, testName) {
-  return gasApiPromise_('getStudentListWithGrades', [parseInt(year, 10), String(testName || '').trim()])
-    .catch(function(err) {
-      console.error('fbGetStudentListWithGradesエラー:', err);
-      return { success: false, error: err.message || String(err), students: [] };
-    });
+  var key = 's-quire-g-list-' + year + '-' + testName;
+  return fbCachedFetch_(key, function() {
+    return gasApiPromise_('getStudentListWithGrades', [parseInt(year, 10), String(testName || '').trim()])
+      .catch(function(err) {
+        console.error('fbGetStudentListWithGradesエラー:', err);
+        return { success: false, error: err.message || String(err), students: [] };
+      });
+  });
 }
 
 /**
@@ -201,11 +253,14 @@ function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
   if (!testName || !campusCode) {
     return Promise.resolve({ success: true, students: [] });
   }
-  return gasApiPromise_('getStudentsWithGradesByTest', [parseInt(year, 10), campusCode, testName])
-    .catch(function(err) {
-      console.error('fbGetStudentsWithGradesByTestエラー:', err);
-      return { success: false, error: err.message || String(err), students: [] };
-    });
+  var key = 's-quire-g-sbt-' + year + '-' + campusCode + '-' + testName;
+  return fbCachedFetch_(key, function() {
+    return gasApiPromise_('getStudentsWithGradesByTest', [parseInt(year, 10), campusCode, testName])
+      .catch(function(err) {
+        console.error('fbGetStudentsWithGradesByTestエラー:', err);
+        return { success: false, error: err.message || String(err), students: [] };
+      });
+  });
 }
 
 /**
@@ -219,11 +274,14 @@ function fbGetStudentGradeReport(year, studentId) {
   if (!studentId) {
     return Promise.resolve({ success: false, error: '生徒IDが指定されていません' });
   }
-  return gasApiPromise_('getStudentGradeReport', [parseInt(year, 10), studentId])
-    .catch(function(err) {
-      console.error('fbGetStudentGradeReportエラー:', err);
-      return { success: false, error: err.message || String(err) };
-    });
+  var key = 's-quire-g-rpt-' + year + '-' + studentId;
+  return fbCachedFetch_(key, function() {
+    return gasApiPromise_('getStudentGradeReport', [parseInt(year, 10), studentId])
+      .catch(function(err) {
+        console.error('fbGetStudentGradeReportエラー:', err);
+        return { success: false, error: err.message || String(err) };
+      });
+  });
 }
 
 /**
@@ -292,10 +350,44 @@ function fbSubmitGradeData(year, studentId, testName, scores, studentName) {
   for (var i = 0; i < keys.length; i++) scoresWithName[keys[i]] = scores[keys[i]];
   scoresWithName.studentName = studentName || '';
   return gasApiPromise_('submitGradeData', [parseInt(year, 10), studentId, testName, scoresWithName])
+    .then(function(result) {
+      if (result && result.success) {
+        // 成績保存成功時: 関連キャッシュを無効化（次回読み込みで最新データを取得）
+        fbInvalidateGradeCache_(year, testName, studentId);
+      }
+      return result;
+    })
     .catch(function(err) {
       console.error('fbSubmitGradeDataエラー:', err);
       return { success: false, error: err.message || String(err) };
     });
+}
+
+/**
+ * 成績データ変更時に関連するキャッシュを無効化する
+ * @param {number} year 年度
+ * @param {string} testName テスト名
+ * @param {string} studentId 生徒ID
+ */
+function fbInvalidateGradeCache_(year, testName, studentId) {
+  var prefixes = [
+    's-quire-g-list-' + year + '-' + testName,
+    's-quire-g-sbt-' + year + '-',
+    's-quire-g-cavg-' + year + '-' + testName,
+    's-quire-g-savg-' + year + '-' + testName,
+    's-quire-g-rpt-' + year + '-' + studentId
+  ];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (!k) continue;
+    for (var j = 0; j < prefixes.length; j++) {
+      if (k.indexOf(prefixes[j]) === 0) {
+        localStorage.removeItem(k);
+        i--; // インデックスがずれるので調整
+        break;
+      }
+    }
+  }
 }
 
 /**
@@ -322,11 +414,14 @@ function fbGetGradesYearFolders() {
  * @return {Promise<Object>} { success, averages }
  */
 function fbGetSchoolAverages(year, testName) {
-  return gasApiPromise_('getSchoolAverages', [parseInt(year, 10), testName])
-    .catch(function(err) {
-      console.error('fbGetSchoolAveragesエラー:', err);
-      return { success: false, error: err.message || String(err) };
-    });
+  var key = 's-quire-g-savg-' + year + '-' + testName;
+  return fbCachedFetch_(key, function() {
+    return gasApiPromise_('getSchoolAverages', [parseInt(year, 10), testName])
+      .catch(function(err) {
+        console.error('fbGetSchoolAveragesエラー:', err);
+        return { success: false, error: err.message || String(err) };
+      });
+  });
 }
 
 /**
@@ -352,11 +447,14 @@ function fbGetGradeSummary(year, testName) {
  * @return {Promise<Object>} { success, campuses }
  */
 function fbGetCampusAverages(year, testName) {
-  return gasApiPromise_('getCampusAverages', [parseInt(year, 10), String(testName || '').trim()])
-    .catch(function(err) {
-      console.error('fbGetCampusAveragesエラー:', err);
-      return { success: false, error: err.message || String(err) };
-    });
+  var key = 's-quire-g-cavg-' + year + '-' + testName;
+  return fbCachedFetch_(key, function() {
+    return gasApiPromise_('getCampusAverages', [parseInt(year, 10), String(testName || '').trim()])
+      .catch(function(err) {
+        console.error('fbGetCampusAveragesエラー:', err);
+        return { success: false, error: err.message || String(err) };
+      });
+  });
 }
 
 /**
