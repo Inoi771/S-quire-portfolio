@@ -11,6 +11,7 @@ on:
       - 'firebase.json'
       - 'scripts/build.js'
       - 'package.json'
+      - 'static/**'
       - '.github/workflows/deploy-firebase.yml'
   workflow_dispatch:
 
