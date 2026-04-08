@@ -13,41 +13,38 @@ markdown# DESIGN.md — 設計判断・アーキテクチャ詳細
 
 ### 講師ID発行フロー
 ```
-①LINE自己登録 → doPost() → Firestore staffs に新規ドキュメント作成
-②管理者手動追加 → addAllowedUser() → Firestore staffs に新規ドキュメント作成
-③初回アプリ起動 → getUserProfile() → Firestore staffs を検索、なければ新規作成
+①LINE自己登録 → doPost() → Supabase staffs に新規レコード作成
+②管理者手動追加 → addUserAccess() → Supabase staffs に新規レコード作成
+③初回アプリ起動 → getAppStartupData() → Supabase staffs を検索（RPC: find_staff_by_auth）
 ```
 
-### staffs コレクション構造（Firestore）
-```json
-{
-  "teacherId": "T1707123456789_abc123def",
-  "emails": ["teacher@example.com", "personal@gmail.com"],
-  "firebaseUids": ["uid_abc123", "uid_def456"],
-  "email": "teacher@example.com",
-  "firebaseUid": "uid_abc123",
-  "name": "田中 花子",
-  "notificationEmail": "",
-  "notificationMethod": "gmail",
-  "lineUserId": null
-}
+### staffs テーブル構造（Supabase）
+```
+id (TEXT PK)         — teacherId（例: T1707123456789_abc123def）
+email (TEXT)         — プライマリメール
+emails (TEXT[])      — 複数メール対応
+firebase_uid (TEXT)  — プライマリUID
+firebase_uids (TEXT[]) — 複数UID対応
+display_name (TEXT)  — 表示名
+line_user_id (TEXT)  — LINE連携用
+notification_method (TEXT) — 通知方法（gmail/line/both/none）
 ```
 
-- `emails` / `firebaseUids`: 配列。1人のスタッフが複数 Google アカウントでアクセス可能
-- `email` / `firebaseUid`: スカラー（後方互換）。最新ログイン値を常に反映
-- `notificationEmail`: 通知先メール（アクセス制御とは別概念）
+- `emails` / `firebase_uids`: PostgreSQL配列。1人のスタッフが複数 Google アカウントでアクセス可能
+- `email` / `firebase_uid`: スカラー（後方互換）。最新ログイン値を常に反映
+- `notification_email`: 通知先メール（アクセス制御とは別概念）
 
 ### 認証・照合フロー
 
 ```
-isAllowedUser(): ADMIN_EMAILS → firebaseUids ARRAY_CONTAINS → emails ARRAY_CONTAINS → Drive編集者
-resolveStaffByUid_(): firebaseUids → email配列 → レガシースカラー → 配列自動マイグレーション
+isAllowedUser(): ADMIN_EMAILS → Supabase RPC find_staff_by_auth(uid, email) → Drive編集者
+resolveStaffByUid_(): Supabase RPC find_staff_by_auth → 配列自動マイグレーション
 ```
 
 ### 新機能実装時のルール
 
 1. 人物の参照はIDで行う（名前・メールを外部キーにしない）
-2. 表示名は動的に解決する（Firestore staffs から毎回引く）
+2. 表示名は動的に解決する（Supabase staffs から毎回引く）
 3. IDは一度発行したら変更しない（ソフトデリートで対応）
 4. 新エンティティにも必ずIDをふる
 

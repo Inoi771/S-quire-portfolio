@@ -22,7 +22,7 @@
 - `addAdminEmail(newEmail)` — Admin 追加（Admin のみ）
 - `removeAdminEmail(emailToRemove)` — Admin 削除（自分自身は不可、最低1人保持）
 - `getSetupStatus()` — 初回セットアップが必要かを返す（`isFirstSetup`, `currentUserEmail`, `hasAppFolder`）。ADMIN_EMAILS が空なら `isFirstSetup: true`
-- `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Firestore staffs 作成（`emails`/`firebaseUids` 配列＋`displayName` 含む）＋ allowedUsers 登録を一括で行う
+- `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Supabase staffs 作成＋ allowedUsers 登録を一括で行う
 - `getAllowedUsers()` — Driveフォルダの共有ユーザー一覧を取得（Admin のみ。ACCESS_FOLDER_ID 優先）
 - `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加＋staffs作成＋allowedUsers登録）
 - `removeUserAccess(email)` — ユーザーのアプリアクセスを完全削除（Admin のみ。オーナーと自分自身は削除不可）。`staff.emails` 配列の全メールを Drive共有・allowedUsers・ADMIN_EMAILS から一括削除し、staffs ドキュメントも削除
@@ -53,8 +53,8 @@
 - `getAppStartupData(firebaseEmail, firebaseUid)` — アプリ起動時の一括データ取得。スタッフ照合・テーマカラー・Admin判定等を返す。スタッフまたはAdminの場合は `allowedUsers` に自動登録
 
 ### セクション6: プロフィール管理
-- `getUserProperty(key)` — ユーザープロパティ取得（`STAFF_FIELD_MAP_` に含まれるキーは Firestore staffs から取得）
-- `setUserProperty(key, value)` — ユーザープロパティ設定（`STAFF_FIELD_MAP_` に含まれるキーは Firestore staffs へ書き込み、旧 `_UP_` キーを自動削除）
+- `getUserProperty(key)` — ユーザープロパティ取得（`STAFF_FIELD_MAP_` に含まれるキーは Supabase staffs から取得）
+- `setUserProperty(key, value)` — ユーザープロパティ設定（`STAFF_FIELD_MAP_` に含まれるキーは Supabase staffs へ書き込み、旧 `_UP_` キーを自動削除）
 - `cleanupMigratedUserProperties_()` — 内部ヘルパー。Firestore 移行済み・廃止済みの `_UP_` ScriptProperty キーを一括削除。`getAppStartupData()` から起動時に呼び出される
 - `getRegisteredEmail()` — 登録メール取得（初回はGoogle アカウントのメール）
 - `getUserProfile()` — `@aiCallable` プロフィール取得
@@ -222,7 +222,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getDriveContents(folderId)` — Drive フォルダ探索（Admin のみ）
 - `uploadPDFToFolder(pdfBase64, fileName, targetFolderId)` — PDF アップロード（Admin のみ）
 - `deleteFileFromDrive(fileId)` — ファイル削除（Admin のみ）
-- `removeDuplicateStaffs()` — Firestore staffs コレクション内の重複ドキュメントを検出・削除（Admin のみ。同一メールの古いドキュメントを削除し最新を残す）
+- `removeDuplicateStaffs()` — Supabase staffs テーブル内の重複レコードを検出・削除（Admin のみ。同一メールの古いレコードを削除し最新を残す）
 
 ### セクション11: フォルダ・シート自動初期化
 - `initializeAllSheets()` — 全フォルダ・シート初期化

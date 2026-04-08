@@ -603,7 +603,7 @@ GAS エディタで確認した「ウェブアプリ URL」（`https://script.go
 
 | コレクション | DocId形式 | 用途 |
 |------------|---------|------|
-| `staffs` | `{teacherId}` | スタッフ情報（メール・UID・通知設定等） |
+| ~~`staffs`~~ | — | **Supabaseに移行済み** |
 | `allowedUsers` | `{email}` | セキュリティルール用ホワイトリスト |
 | `config` | `notification_routing` | システム設定（校舎別通知振り分け等） |
 | `students` | `{campus2}{year4}{grade2}{seq2}` | 生徒情報 |

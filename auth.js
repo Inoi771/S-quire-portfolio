@@ -256,36 +256,14 @@ function isAllowedUser() {
     var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
     if (!folderId) return true;
 
-    // 3. Firebase UID で staffs 検索（2回目以降の最速パス）
-    if (_firebaseUidContext_) {
-      try {
-        var staffByUids = firestoreQuery_('staffs', [fsFilter_('firebaseUids', 'ARRAY_CONTAINS', _firebaseUidContext_)], 1);
-        if (staffByUids && staffByUids.length > 0) {
-          Logger.log('✓ isAllowedUser: firebaseUids で許可: ' + _firebaseUidContext_);
-          return true;
-        }
-        // レガシーフォールバック
-        var staffByUid = firestoreQuery_('staffs', [fsFilter_('firebaseUid', 'EQUAL', _firebaseUidContext_)], 1);
-        if (staffByUid && staffByUid.length > 0) {
-          Logger.log('✓ isAllowedUser: firebaseUid(legacy) で許可');
-          return true;
-        }
-      } catch (uidErr) {
-        Logger.log('⚠ isAllowedUser: UID チェックエラー（スキップ）: ' + uidErr);
-      }
-    }
-
-    // 4. Firestore staffs の emails 配列でメールチェック
+    // 3. Supabase RPC で UID + メール一括検索（1クエリで4パターンを検索）
     try {
-      var staffByEmails = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', email)], 1);
-      if (staffByEmails && staffByEmails.length > 0) {
-        Logger.log('✓ isAllowedUser: emails で許可: ' + email);
-        return true;
-      }
-      // レガシーフォールバック
-      var staffByEmail = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
-      if (staffByEmail && staffByEmail.length > 0) {
-        Logger.log('✓ isAllowedUser: email(legacy) で許可: ' + email);
+      var staffRows = supabaseRpc_('find_staff_by_auth', {
+        p_uid: _firebaseUidContext_ || null,
+        p_email: email || null
+      });
+      if (staffRows && staffRows.length > 0) {
+        Logger.log('✓ isAllowedUser: Supabase staffs で許可');
         return true;
       }
     } catch (staffErr) {
@@ -323,17 +301,17 @@ function getAllowedUsers() {
   try {
     var usersMap = {};
 
-    // Firestore staffs コレクションから登録スタッフを取得
+    // Supabase staffs テーブルから登録スタッフを取得
     try {
-      var allStaffs = firestoreQuery_('staffs', [], 500);
-      (allStaffs || []).forEach(function(staff) {
-        var staffEmail = staff.email || '';
+      var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name' });
+      (allRows || []).forEach(function(row) {
+        var staffEmail = row.email || '';
         if (!staffEmail) return;
         usersMap[staffEmail] = {
           email: staffEmail,
-          name: staff.displayName || staff.name || '',
+          name: row.display_name || row.name || '',
           role: '登録済み',
-          teacherId: staff.teacherId || staff._id || ''
+          teacherId: row.id || ''
         };
       });
     } catch (staffErr) {
@@ -383,29 +361,29 @@ function addUserAccess(email) {
     var folder = DriveApp.getFolderById(folderId);
     folder.addEditor(email);
 
-    // Firestore staffs に新規スタッフドキュメントを作成
+    // Supabase staffs に新規スタッフを作成
     try {
-      var existingStaff = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
+      var existingStaff = supabaseSelect_('staffs', 'email=eq.' + email, { limit: 1 });
       if (!existingStaff || existingStaff.length === 0) {
         var newTeacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        firestoreSet_('staffs', newTeacherId, {
-          teacherId: newTeacherId,
+        supabaseUpsert_('staffs', {
+          id: newTeacherId,
           email: email,
           emails: [email],
           name: '',
-          firebaseUid: null,
-          firebaseUids: [],
-          lineUserId: null,
-          displayName: '',
+          firebase_uid: null,
+          firebase_uids: [],
+          line_user_id: null,
+          display_name: '',
           subjects: [],
-          preferredCampuses: [],
-          aiAssistantName: '',
-          aiPersonality: '',
-          themeColor: '',
-          notificationMethod: 'gmail',
-          notificationEmail: '',
-          addedAt: new Date().toISOString()
-        });
+          preferred_campuses: [],
+          ai_assistant_name: '',
+          ai_personality: '',
+          theme_color: '',
+          notification_method: 'gmail',
+          notification_email: '',
+          added_at: new Date().toISOString()
+        }, 'id');
         Logger.log('✓ addUserAccess: staffs に新規登録 teacherId=' + newTeacherId);
       }
     } catch (staffErr) {
@@ -456,14 +434,11 @@ function removeUserAccess(email) {
       return { success: false, error: 'フォルダのオーナーは削除できません' };
     }
 
-    // Firestore staffs からスタッフを検索（emails 配列 → レガシー email の順）
+    // Supabase staffs からスタッフを検索
     var staff = null;
     try {
-      var staffResult = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', email)], 1);
-      if (!staffResult || staffResult.length === 0) {
-        staffResult = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
-      }
-      if (staffResult && staffResult.length > 0) staff = staffResult[0];
+      var staffRows = supabaseRpc_('find_staff_by_auth', { p_uid: null, p_email: email });
+      if (staffRows && staffRows.length > 0) staff = staffFromSupabase_(staffRows[0]);
     } catch (staffErr) {
       Logger.log('⚠ removeUserAccess: staffs 検索エラー: ' + staffErr);
     }
@@ -485,14 +460,14 @@ function removeUserAccess(email) {
       }
     });
 
-    // Firestore staffs ドキュメントを削除
+    // Supabase staffs レコードを削除
     if (staff) {
       var teacherId = staff.teacherId || staff._id;
       try {
-        firestoreDelete_('staffs', teacherId);
+        supabaseDelete_('staffs', 'id=eq.' + teacherId);
         Logger.log('✓ removeUserAccess: staffs/' + teacherId + ' を削除');
-      } catch (fsErr) {
-        Logger.log('⚠ removeUserAccess: staffs 削除失敗: ' + fsErr);
+      } catch (sbErr) {
+        Logger.log('⚠ removeUserAccess: staffs 削除失敗: ' + sbErr);
       }
 
       // 通知振り分け設定からも自動削除
@@ -555,11 +530,12 @@ function linkUserById(inputId) {
     inputId = (inputId || '').trim();
     if (!inputId) return { success: false, found: false, error: '講師IDを入力してください' };
 
-    // Firestore staffs から講師IDでドキュメントを取得
-    var staff = firestoreGet_('staffs', inputId);
-    if (!staff) {
+    // Supabase staffs から講師IDでレコードを取得
+    var staffRows = supabaseSelect_('staffs', 'id=eq.' + inputId, { limit: 1 });
+    if (!staffRows || staffRows.length === 0) {
       return { success: true, found: false };
     }
+    var staff = staffFromSupabase_(staffRows[0]);
 
     // 配列フィールドの初期化（レガシードキュメント対応）
     var updated = false;
@@ -571,8 +547,7 @@ function linkUserById(inputId) {
     if (currentEmail && currentEmail !== 'unknown@example.com') {
       var emailLower = currentEmail.toLowerCase();
       if (staff.emails.indexOf(emailLower) === -1) { staff.emails.push(emailLower); updated = true; }
-      staff.email = emailLower; // スカラーも最新値に
-      // allowedUsers にも追加
+      staff.email = emailLower;
       try {
         firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
       } catch (fsErr) {
@@ -583,12 +558,12 @@ function linkUserById(inputId) {
     // firebaseUid をコンテキストから取得して配列に追加
     if (_firebaseUidContext_) {
       if (staff.firebaseUids.indexOf(_firebaseUidContext_) === -1) { staff.firebaseUids.push(_firebaseUidContext_); updated = true; }
-      staff.firebaseUid = _firebaseUidContext_; // スカラーも最新値に
+      staff.firebaseUid = _firebaseUidContext_;
       updated = true;
     }
 
     if (updated) {
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
       Logger.log('✓ linkUserById: staffs/' + inputId + ' を更新');
     }
 
@@ -654,21 +629,17 @@ function addEmailToTeacher(newEmail) {
       return { success: false, error: 'このメールアドレスは既に登録されています' };
     }
 
-    // 他のスタッフに登録されていないか確認（配列＋レガシー両方）
-    var existing = firestoreQuery_('staffs', [fsFilter_('emails', 'ARRAY_CONTAINS', newEmail)], 1);
-    if (!existing || existing.length === 0) {
-      existing = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', newEmail)], 1);
-    }
+    // 他のスタッフに登録されていないか確認
+    var existing = supabaseRpc_('find_staff_by_auth', { p_uid: null, p_email: newEmail });
     if (existing && existing.length > 0) {
-      var existTid = existing[0].teacherId || existing[0]._id;
-      if (existTid !== teacherId) {
+      if (existing[0].id !== teacherId) {
         return { success: false, error: 'このメールアドレスは既に別の講師に登録されています' };
       }
     }
 
     // emails 配列に追加
     staff.emails.push(newEmail);
-    writeStaffToFirestore_(staff);
+    writeStaffToSupabase_(staff);
     Logger.log('✓ addEmailToTeacher: ' + newEmail + ' を ' + teacherId + ' に追加');
 
     // allowedUsers にも追加
@@ -723,7 +694,7 @@ function removeEmailFromTeacher(emailToRemove) {
     if (staff.email === emailToRemove) {
       staff.email = staff.emails[0];
     }
-    writeStaffToFirestore_(staff);
+    writeStaffToSupabase_(staff);
     Logger.log('✓ removeEmailFromTeacher: ' + emailToRemove + ' を削除');
 
     // allowedUsers からも削除
@@ -857,29 +828,29 @@ function initializeFirstAdmin(displayName) {
         existingStaff.firebaseUid = firebaseUid;
       }
       existingStaff.updatedAt = new Date().toISOString();
-      writeStaffToFirestore_(existingStaff);
-      Logger.log('✓ initializeFirstAdmin: 既存 staffs ドキュメントを更新 teacherId=' + teacherId);
+      writeStaffToSupabase_(existingStaff);
+      Logger.log('✓ initializeFirstAdmin: 既存 staffs を更新 teacherId=' + teacherId);
     } else {
       // 新規作成
       teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      firestoreSet_('staffs', teacherId, {
-        teacherId: teacherId,
+      supabaseUpsert_('staffs', {
+        id: teacherId,
         email: emailLower,
         emails: [emailLower],
         name: name,
-        firebaseUid: firebaseUid,
-        firebaseUids: firebaseUid ? [firebaseUid] : [],
-        lineUserId: null,
-        displayName: name,
+        firebase_uid: firebaseUid,
+        firebase_uids: firebaseUid ? [firebaseUid] : [],
+        line_user_id: null,
+        display_name: name,
         subjects: [],
-        preferredCampuses: [],
-        aiAssistantName: '',
-        aiPersonality: '',
-        themeColor: '',
-        notificationMethod: 'gmail',
-        notificationEmail: '',
-        addedAt: new Date().toISOString()
-      });
+        preferred_campuses: [],
+        ai_assistant_name: '',
+        ai_personality: '',
+        theme_color: '',
+        notification_method: 'gmail',
+        notification_email: '',
+        added_at: new Date().toISOString()
+      }, 'id');
     }
 
     // 3. allowedUsers に登録
@@ -912,11 +883,11 @@ function initFirestoreAllowedUsers() {
       if (em && emails.indexOf(em) === -1) emails.push(em);
     });
 
-    // 2. Firestore staffs コレクションから全メールアドレスを取得
+    // 2. Supabase staffs テーブルから全メールアドレスを取得
     try {
-      var allStaffs = firestoreQuery_('staffs', [], 500);
-      (allStaffs || []).forEach(function(staff) {
-        var em = (staff.email || '').toLowerCase();
+      var allRows = supabaseSelect_('staffs', null, { select: 'email' });
+      (allRows || []).forEach(function(row) {
+        var em = (row.email || '').toLowerCase();
         if (em && emails.indexOf(em) === -1) emails.push(em);
       });
     } catch (staffErr) {

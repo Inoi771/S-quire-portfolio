@@ -225,23 +225,22 @@ function doPost(e) {
       Logger.log('メールアドレス判定: ' + isEmail + ' (email=' + text + ', name=' + displayName + ')');
 
       if (isEmail) {
-        // Firestore staffs で重複チェック
-        var existingStaff = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', text)], 1);
-        var dupEmail = existingStaff && existingStaff.length > 0;
+        // Supabase staffs で重複チェック
+        var existingRows = supabaseSelect_('staffs', 'email=eq.' + text, { limit: 1 });
+        var dupEmail = existingRows && existingRows.length > 0;
         Logger.log('重複チェック: dupEmail=' + dupEmail);
 
         if (dupEmail) {
           // 既存スタッフなら lineUserId を更新
-          var existStaff = existingStaff[0];
+          var existStaff = staffFromSupabase_(existingRows[0]);
           if (existStaff.lineUserId === lineUserId) {
             sendLineMessage(lineUserId, '✅ すでに登録済みです。引き続きご利用ください。\n\nアプリURL:\nhttps://fir-quire.web.app\n\n⚠️ LINE内で開くとログインできない場合があります。その場合は上のURLをコピーして、ChromeやSafariなどのブラウザから開いてください。');
             Logger.log('⚠ LINE登録済みのため案内のみ: ' + text);
           } else {
-            // lineUserId を更新
             existStaff.lineUserId = lineUserId;
             if (displayName && !existStaff.displayName) existStaff.displayName = displayName;
             if (displayName && !existStaff.name) existStaff.name = displayName;
-            writeStaffToFirestore_(existStaff);
+            writeStaffToSupabase_(existStaff);
             var tid = existStaff.teacherId || existStaff._id;
             var replyMsg = '✅ LINE連携が完了しました！';
             if (displayName) replyMsg += '\n表示名: ' + (existStaff.displayName || displayName);
@@ -251,28 +250,28 @@ function doPost(e) {
             Logger.log('✓ 既存スタッフの lineUserId を更新: ' + tid);
           }
         } else {
-          // 新規スタッフを staffs に作成
+          // 新規スタッフを Supabase staffs に作成
           var teacherId = 'T' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
           Logger.log('teacherId 発行: ' + teacherId);
 
-          firestoreSet_('staffs', teacherId, {
-            teacherId: teacherId,
+          supabaseUpsert_('staffs', {
+            id: teacherId,
             email: text,
             emails: [text],
             name: displayName || '',
-            firebaseUid: null,
-            firebaseUids: [],
-            lineUserId: lineUserId,
-            displayName: displayName || '',
+            firebase_uid: null,
+            firebase_uids: [],
+            line_user_id: lineUserId,
+            display_name: displayName || '',
             subjects: [],
-            preferredCampuses: [],
-            aiAssistantName: '',
-            aiPersonality: '',
-            themeColor: '',
-            notificationMethod: 'gmail',
-            notificationEmail: '',
-            addedAt: new Date().toISOString()
-          });
+            preferred_campuses: [],
+            ai_assistant_name: '',
+            ai_personality: '',
+            theme_color: '',
+            notification_method: 'gmail',
+            notification_email: '',
+            added_at: new Date().toISOString()
+          }, 'id');
           Logger.log('✓ staffs に新規登録完了');
 
           // LINE User ID で直接プッシュ送信（replyToken の30秒制限を回避）
@@ -312,7 +311,7 @@ function doPost(e) {
         }
       } else {
         // メールアドレス以外のメッセージ → 未登録ユーザーにのみ案内を送信
-        var knownStaff = firestoreQuery_('staffs', [fsFilter_('lineUserId', 'EQUAL', lineUserId)], 1);
+        var knownStaff = supabaseSelect_('staffs', 'line_user_id=eq.' + lineUserId, { limit: 1 });
         if (knownStaff && knownStaff.length > 0) {
           Logger.log('登録済みユーザーのため案内スキップ: ' + lineUserId);
         } else {

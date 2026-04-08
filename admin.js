@@ -1729,18 +1729,18 @@ function parseGeminiErrorMessage_(response) {
 function removeDuplicateStaffs() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    var allStaffs = firestoreQuery_('staffs', [], 500);
-    if (!allStaffs || allStaffs.length === 0) {
+    var allRows = supabaseSelect_('staffs', null, { select: 'id,email,updated_at,added_at' });
+    if (!allRows || allRows.length === 0) {
       return { success: true, removed: 0, details: ['重複なし'] };
     }
 
     // メールアドレスごとにグループ化
     var emailGroups = {};
-    allStaffs.forEach(function(staff) {
-      var email = (staff.email || '').toLowerCase();
+    allRows.forEach(function(row) {
+      var email = (row.email || '').toLowerCase();
       if (!email) return;
       if (!emailGroups[email]) emailGroups[email] = [];
-      emailGroups[email].push(staff);
+      emailGroups[email].push(row);
     });
 
     var removed = 0;
@@ -1749,20 +1749,20 @@ function removeDuplicateStaffs() {
       var group = emailGroups[email];
       if (group.length <= 1) return;
 
-      // updatedAt → addedAt の降順でソートし、最新を残す
+      // updated_at → added_at の降順でソートし、最新を残す
       group.sort(function(a, b) {
-        var dateA = a.updatedAt || a.addedAt || '';
-        var dateB = b.updatedAt || b.addedAt || '';
+        var dateA = a.updated_at || a.added_at || '';
+        var dateB = b.updated_at || b.added_at || '';
         return dateB > dateA ? 1 : (dateB < dateA ? -1 : 0);
       });
 
       var keep = group[0];
-      var keepId = keep.teacherId || keep._id;
+      var keepId = keep.id;
       for (var i = 1; i < group.length; i++) {
         var dup = group[i];
-        var dupId = dup.teacherId || dup._id;
+        var dupId = dup.id;
         try {
-          firestoreDelete_('staffs', dupId);
+          supabaseDelete_('staffs', 'id=eq.' + dupId);
           removed++;
           details.push(email + ': 削除 ' + dupId + '（残: ' + keepId + '）');
           Logger.log('✓ removeDuplicateStaffs: 削除 staffs/' + dupId + ' (重複: ' + email + ')');

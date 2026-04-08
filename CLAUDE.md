@@ -359,7 +359,8 @@ MyProject/
 - **firebase-init.html の制約**: Firestore SDKのプロトタイプ（Query.prototype.get 等）を書き換えてはいけない（enablePersistence との干渉でエラーが発生する）
 - **Firestore読み取り最小化**: Firestoreは読み取り回数を最小化する設計を必ず検討すること。具体的には、集計・一覧用の読み取り専用ドキュメントを活用し、書き込み時に+1回で読み取り時に数百回→1回にする設計を優先する。サブコレクション＋親ドキュメントに集計を持たせる構造が有効
 - **成績データはSupabase**: grades・schoolAverages・testAnalysis・studentAnalysis はすべてSupabase（PostgreSQL）に保存。Firestoreのキャッシュコレクション（gradeSummaries・gradeListCache・gradeReportCache・distCache・gradesMeta）は廃止済み。SQL集計関数（get_campus_averages等）で代替。フロントエンドの成績読み取りはGAS API経由（gas-bridge）で行う
-- **AIアシスタントデータもSupabase**: aiLearnedKnowledge・aiFeedback はSupabase（`ai_learned_knowledge`・`ai_feedback` テーブル）に保存。Firestoreの読み取り回数削減のため移行。Firestoreに残すのは講習日程（`lectureEntries`）等のリアルタイム性が必要なデータのみ
+- **AIアシスタントデータもSupabase**: aiLearnedKnowledge・aiFeedback はSupabase（`ai_learned_knowledge`・`ai_feedback` テーブル）に保存。Firestoreの読み取り回数削減のため移行
+- **スタッフデータもSupabase**: staffs コレクションは Supabase `staffs` テーブルに移行。認証時の検索は RPC関数 `find_staff_by_auth` で1クエリに統合。allowedUsers コレクション（Firestoreセキュリティルール用）のみFirestoreに残す。Firestoreに残すのは講習日程（`lectureEntries`）・スケジュール・allowedUsers等のリアルタイム性またはセキュリティルールが必要なデータのみ
 
 ---
 

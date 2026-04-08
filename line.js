@@ -2,20 +2,24 @@
 // 【セクション15】LINE通知・お問い合わせ通知機能
 // ========================================
 // LINE Messaging API と Gmail を使った通知送信・通知設定管理
-// すべてのデータは Firestore staffs コレクションの teacherId をキーに管理される
+// すべてのデータは Supabase staffs テーブルの id（teacherId）をキーに管理される
 
 /**
- * teacherId から Firestore staffs ドキュメントを取得する内部ヘルパー（キャッシュ付き）
+ * teacherId から Supabase staffs レコードを取得する内部ヘルパー（キャッシュ付き）
  * @param {string} teacherId 講師ID
- * @return {Object|null} スタッフドキュメント or null
+ * @return {Object|null} スタッフドキュメント（camelCase） or null
  */
 var _staffCache_ = {};
 function getStaffByTeacherId_(teacherId) {
   if (!teacherId) return null;
   if (_staffCache_[teacherId]) return _staffCache_[teacherId];
-  var staff = firestoreGet_('staffs', teacherId);
-  if (staff) _staffCache_[teacherId] = staff;
-  return staff;
+  var rows = supabaseSelect_('staffs', 'id=eq.' + teacherId, { limit: 1 });
+  if (rows && rows.length > 0) {
+    var staff = staffFromSupabase_(rows[0]);
+    _staffCache_[teacherId] = staff;
+    return staff;
+  }
+  return null;
 }
 
 /**
@@ -51,8 +55,8 @@ function getCurrentTeacherId_() {
   if (staff) return staff.teacherId || staff._id;
   // フォールバック: メールで staffs を検索
   var email = getCurrentUserEmail().toLowerCase();
-  var result = firestoreQuery_('staffs', [fsFilter_('email', 'EQUAL', email)], 1);
-  if (result && result.length > 0) return result[0].teacherId || result[0]._id;
+  var result = supabaseSelect_('staffs', 'email=eq.' + email, { select: 'id', limit: 1 });
+  if (result && result.length > 0) return result[0].id;
   return '';
 }
 
@@ -334,7 +338,7 @@ function updateNotificationSettings(method, notificationEmail) {
     var staff = getStaffByTeacherId_(teacherId);
     if (staff) {
       staff.notificationMethod = method;
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
     }
 
     // Gmail通知先メールアドレスを staffs に保存（指定があれば）
@@ -351,7 +355,7 @@ function updateNotificationSettings(method, notificationEmail) {
           staff.notificationEmails = emailArr;
           staff.notificationEmail = emailArr[0]; // 後方互換
         }
-        writeStaffToFirestore_(staff);
+        writeStaffToSupabase_(staff);
       }
     }
 
@@ -448,7 +452,7 @@ function updateLineSchedulerNotifPref(type, method, notifEmails) {
           staff.schedulerNotifEmails[type] = emailArr;
         }
       }
-      writeStaffToFirestore_(staff);
+      writeStaffToSupabase_(staff);
     }
     var methodLabel = { line: 'LINEのみ', gmail: 'メールのみ', both: 'LINE+メール両方', none: '通知しない' };
     return { success: true, message: (methodLabel[method] || method) + 'に変更しました' };
@@ -502,11 +506,11 @@ function getLineUserMapping() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
     // staffs から lineUserId が設定されているスタッフを収集
-    var allStaffs = firestoreQuery_('staffs', [], 500);
+    var allRows = supabaseSelect_('staffs', 'line_user_id=neq.null', { select: 'id,line_user_id' });
     var mapping = {};
-    (allStaffs || []).forEach(function(staff) {
-      if (staff.lineUserId) {
-        mapping[staff.teacherId || staff._id] = staff.lineUserId;
+    (allRows || []).forEach(function(row) {
+      if (row.line_user_id) {
+        mapping[row.id] = row.line_user_id;
       }
     });
     return { success: true, mapping: mapping };
@@ -524,8 +528,8 @@ function getLineUserMapping() {
 function getLineRegisteredUsers() {
   if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
   try {
-    // staffs から全スタッフを取得
-    var allStaffs = firestoreQuery_('staffs', [], 500);
+    // Supabase staffs から全スタッフを取得
+    var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name,notification_method,line_user_id' });
 
     // 現在アクセス権があるユーザーのメールを収集
     var allowedEmails = {};
@@ -546,26 +550,25 @@ function getLineRegisteredUsers() {
     }
 
     // staffs ベースでイテレート（LINE未登録ユーザーも候補に含める）
-    // メールアドレスで重複排除（初回ウィザード複数回実行で重複ドキュメントが存在する場合への対応）
     var seenEmails = {};
-    var users = (allStaffs || [])
-      .filter(function(staff) {
+    var users = (allRows || [])
+      .filter(function(row) {
         if (!folderId) return true;
-        return staff.email && allowedEmails[staff.email.toLowerCase()];
+        return row.email && allowedEmails[row.email.toLowerCase()];
       })
-      .filter(function(staff) {
-        var emailKey = (staff.email || '').toLowerCase();
+      .filter(function(row) {
+        var emailKey = (row.email || '').toLowerCase();
         if (!emailKey || seenEmails[emailKey]) return false;
         seenEmails[emailKey] = true;
         return true;
       })
-      .map(function(staff) {
+      .map(function(row) {
         return {
-          teacherId: staff.teacherId || staff._id || '',
-          email: staff.email || '',
-          name: staff.displayName || staff.name || '',
-          method: staff.notificationMethod || 'gmail',
-          lineRegistered: !!staff.lineUserId
+          teacherId: row.id || '',
+          email: row.email || '',
+          name: row.display_name || row.name || '',
+          method: row.notification_method || 'gmail',
+          lineRegistered: !!row.line_user_id
         };
       });
 
@@ -1254,18 +1257,18 @@ function buildShimurochoMessage_(sendYear, sendMonth, sendDay, closedDays) {
 }
 
 /**
- * Firestore staffs で lineUserId が設定されている全 teacherId を返す内部ヘルパー
+ * Supabase staffs で line_user_id が設定されている全 teacherId を返す内部ヘルパー
  * meeting/report の全員送信用
  * @return {Array<string>} teacherId 配列
  */
 function getAllLineRegisteredTeacherIds_() {
-  var allStaffs = firestoreQuery_('staffs', [], 500);
+  var allRows = supabaseSelect_('staffs', 'line_user_id=neq.null');
   var ids = [];
-  (allStaffs || []).forEach(function(staff) {
-    if (staff.lineUserId) {
-      ids.push(staff.teacherId || staff._id);
-      // キャッシュにも入れておく
-      _staffCache_[staff.teacherId || staff._id] = staff;
+  (allRows || []).forEach(function(row) {
+    if (row.line_user_id) {
+      var staff = staffFromSupabase_(row);
+      ids.push(row.id);
+      _staffCache_[row.id] = staff;
     }
   });
   return ids;
