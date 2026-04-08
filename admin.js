@@ -1949,18 +1949,16 @@ function migrateLectureEntriesToCampusDocs() {
 
 /**
  * 講師配置データを取得する（フロントエンド向け）
- * @param {number} fiscalYear - 年度（省略時は現在年度）
+ * データは年度に関わらず1件のみ保存。年度はデータ内フィールドで管理。
  */
-function getStaffPlacementForWeb(fiscalYear) {
+function getStaffPlacementForWeb() {
   try {
-    var year = fiscalYear || getCurrentFiscalYear_();
-    var key = 'STAFF_PLACEMENT_' + year;
-    var json = getScriptProperty(key);
+    var json = getScriptProperty('STAFF_PLACEMENT');
     var campusConfig = getCampusConfig() || {};
     if (!json) {
-      return { success: true, data: null, year: year, campusConfig: campusConfig };
+      return { success: true, data: null, campusConfig: campusConfig };
     }
-    return { success: true, data: JSON.parse(json), year: year, campusConfig: campusConfig };
+    return { success: true, data: JSON.parse(json), campusConfig: campusConfig };
   } catch (e) {
     Logger.log('❌ getStaffPlacementForWeb エラー: ' + e);
     return { success: false, error: e.toString() };
@@ -1969,16 +1967,14 @@ function getStaffPlacementForWeb(fiscalYear) {
 
 /**
  * 講師配置データを保存する（管理者のみ）
- * @param {number} fiscalYear - 年度
- * @param {string} dataJson - JSON文字列
+ * @param {string} dataJson - JSON文字列（年度フィールドをデータ内に含む）
  */
-function saveStaffPlacementForWeb(fiscalYear, dataJson) {
+function saveStaffPlacementForWeb(dataJson) {
   try {
     var email = getFirebaseEmailContext_();
     if (!isAdmin_(email)) return { success: false, error: '管理者のみ編集できます' };
-    var year = fiscalYear || getCurrentFiscalYear_();
-    setScriptProperty('STAFF_PLACEMENT_' + year, dataJson);
-    Logger.log('✓ saveStaffPlacementForWeb: ' + year + '年度の配置データを保存');
+    setScriptProperty('STAFF_PLACEMENT', dataJson);
+    Logger.log('✓ saveStaffPlacementForWeb: 配置データを保存');
     return { success: true };
   } catch (e) {
     Logger.log('❌ saveStaffPlacementForWeb エラー: ' + e);
