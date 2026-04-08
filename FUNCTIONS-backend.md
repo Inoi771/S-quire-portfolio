@@ -133,7 +133,9 @@
 - `detectCampusFromMessage_(message, campusConfig)` — メッセージ内の校舎名から campusCode を検出する内部ヘルパー
 - `resolveStudentNamesInMessage_(message, students, campusConfig)` — メッセージ内の生徒氏名を生徒IDまたは伏字に置き換える内部ヘルパー（個人情報保護用）。Phase 1: フルネームマッチング（1人→ID、複数→全ID列挙）。Phase 2: 苗字のみマッチング（学年・校舎の文脈で絞り込み。1人→ID、複数→`[個人名:田中]` 伏字）
 - `restoreStudentNamesInResponse_(text, students)` — Geminiの応答テキスト内の `[生徒ID:XXXX]` を氏名に、`[個人名:田中]` を苗字に戻す内部ヘルパー（ユーザー表示用。バックエンドで完結するため氏名が外部に渡ることはない）
-- `requestAIAssistant(userMessage, chatHistory)` — `@aiCallable` メインエントリー（意図判定と回答生成を1回のAPI呼び出しで完結。送信前に生徒氏名をIDへ自動置換して個人情報を保護）
+- `classifyMessageIntent_(message, chatHistory)` — メッセージの意図を正規表現ベースで分類する内部ヘルパー（条件付きコンテキスト読み込み用。直前のAI応答も考慮してフォローアップに対応）
+- `buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName, currentAcademicYear)` — Gemini API の systemInstruction 用の静的プロンプトを組み立てる内部ヘルパー（ルール・機能説明・レスポンス形式定義を含む）
+- `requestAIAssistant(userMessage, chatHistory)` — `@aiCallable` メインエントリー（systemInstruction + マルチターン contents に分離した構造で Gemini API を呼び出し。意図分類による条件付きコンテキスト読み込みでトークン使用量を最適化。送信前に生徒氏名をIDへ自動置換して個人情報を保護）
 - `getAiKnowledgeBase()` — AIナレッジベースの全エントリ取得（Admin のみ）
 - `saveAiKnowledgeEntry(entryJson)` — ナレッジベースのエントリ追加・更新（Admin のみ。idがあれば更新、なければ新規）
 - `deleteAiKnowledgeEntry(entryId)` — ナレッジベースのエントリ削除（Admin のみ）
