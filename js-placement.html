@@ -352,14 +352,15 @@ function buildEditCampusSection(d, campusCodes) {
   }
   var html = '<div style="overflow-x:auto;">';
   html += '<table style="border-collapse:collapse;width:100%;font-size:13px;">';
-  html += '<tr style="background:#f0f0f0;"><th style="padding:6px 8px;text-align:left;">校舎</th><th style="padding:6px 8px;">略称</th><th style="padding:6px 8px;">TEL</th><th style="padding:6px 8px;">FAX</th><th style="padding:6px 8px;">校舎責任者</th></tr>';
+  html += '<tr style="background:#f0f0f0;"><th style="padding:6px 8px;text-align:left;">校舎</th><th style="padding:6px 8px;">略称</th><th style="padding:6px 8px;">TEL</th><th style="padding:6px 8px;">FAX</th><th style="padding:6px 8px;">携帯</th><th style="padding:6px 8px;">校舎責任者</th></tr>';
   campusCodes.forEach(function(code) {
     var c = d.campuses[code] || {};
     html += '<tr>';
     html += '<td style="padding:6px 8px;font-weight:bold;">' + escHtml(c.name || code) + '</td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.abbr || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'abbr\',this.value)" style="width:40px;padding:4px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px;" placeholder="藍"></td>';
-    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="693-0225"></td>';
-    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="693-0225"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.mobile || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'mobile\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="080-XXXX-XXXX"></td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.principal || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'principal\',this.value)" style="width:80px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="山田太郎"></td>';
     html += '</tr>';
   });
@@ -675,6 +676,9 @@ function buildPlacementPrintHtml(data, year) {
         if (campus.fax) campusInfo += '<br>FAX ' + escHtml(campus.fax);
         campusInfo += '</small>';
       }
+    }
+    if (campus.mobile) {
+      campusInfo += '<br><small>携帯 ' + escHtml(campus.mobile) + '</small>';
     }
     if (campus.principal) {
       campusInfo += '<br><small>責任者 ' + escHtml(campus.principal) + '</small>';
