@@ -931,3 +931,38 @@ function testFetchPublicAverageScorePage() {
 }
 
 // ========================================
+// S14-B: オーバーライド一括取得
+// ========================================
+
+/**
+ * カレンダー表示用のオーバーライド系データ7種を一括取得する
+ * 起動時の HTTP リクエスト数を 7→1 に削減するためのバンドル関数
+ * @aiCallable
+ * @return {Object} { basicTestDates, basicTestDetails, jukuEvents, closedDays, pubHighExamDates, lecturePeriods, lectureDeadlines }
+ */
+function getScheduleOverridesBundle() {
+  try {
+    var result = {
+      basicTestDates: getBasicTestDateOverrides(),
+      basicTestDetails: getBasicTestDetails(),
+      jukuEvents: getJukuEventOverrides(),
+      closedDays: getClosedDayOverrides(),
+      pubHighExamDates: getPublicHighExamDateOverrides(),
+      lecturePeriods: getLecturePeriods(),
+      lectureDeadlines: getLectureDeadlineOverrides()
+    };
+    Logger.log('✓ getScheduleOverridesBundle: 7種一括取得完了');
+    return result;
+  } catch (error) {
+    Logger.log('❌ getScheduleOverridesBundleエラー: ' + error);
+    return {
+      basicTestDates: {},
+      basicTestDetails: {},
+      jukuEvents: {},
+      closedDays: { add: [], del: [] },
+      pubHighExamDates: {},
+      lecturePeriods: [],
+      lectureDeadlines: {}
+    };
+  }
+}

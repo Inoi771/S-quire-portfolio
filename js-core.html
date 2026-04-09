@@ -773,47 +773,24 @@
         }
       }
 
-      // 基礎学力テスト日程の上書き設定を取得
+      // オーバーライド系データ7種を一括取得（HTTP リクエスト 7→1 に削減）
       google.script.run
-        .withSuccessHandler(function(overrides) { basicTestDateOverrides = overrides || {}; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getBasicTestDateOverrides();
-
-      // 基礎学力テスト詳細の上書き設定を取得
-      google.script.run
-        .withSuccessHandler(function(details) { basicTestDetailsOverrides = details || {}; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getBasicTestDetails();
-
-      // 塾内部イベント上書き設定を取得
-      google.script.run
-        .withSuccessHandler(function(overrides) { jukuEventOverrides = overrides || {}; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getJukuEventOverrides();
-
-      // 休校日上書き設定を取得（予定タブ専用）
-      google.script.run
-        .withSuccessHandler(function(overrides) { closedDayOverrides = overrides || { add: [], del: [] }; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getClosedDayOverrides();
-
-      // 公立高校一般選抜日程の上書き設定を取得
-      google.script.run
-        .withSuccessHandler(function(overrides) { pubHighExamDateOverrides = overrides || {}; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getPublicHighExamDateOverrides();
-
-      // 講習期間データを取得（予定タブの締切イベント表示用）
-      google.script.run
-        .withSuccessHandler(function(result) { scheduleLecturePeriods = Array.isArray(result) ? result : []; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getLecturePeriods();
-
-      // 講習日程締切の手動上書き設定を取得
-      google.script.run
-        .withSuccessHandler(function(overrides) { lectureDeadlineOverrides = overrides || {}; onOverrideLoaded_(); })
-        .withFailureHandler(function() { onOverrideLoaded_(); })
-        .getLectureDeadlineOverrides();
+        .withSuccessHandler(function(bundle) {
+          basicTestDateOverrides = bundle.basicTestDates || {};
+          basicTestDetailsOverrides = bundle.basicTestDetails || {};
+          jukuEventOverrides = bundle.jukuEvents || {};
+          closedDayOverrides = bundle.closedDays || { add: [], del: [] };
+          pubHighExamDateOverrides = bundle.pubHighExamDates || {};
+          scheduleLecturePeriods = Array.isArray(bundle.lecturePeriods) ? bundle.lecturePeriods : [];
+          lectureDeadlineOverrides = bundle.lectureDeadlines || {};
+          overridesLoadedCount = 7;
+          if (allSchedules.length > 0) renderCalendar();
+        })
+        .withFailureHandler(function() {
+          overridesLoadedCount = 7;
+          if (allSchedules.length > 0) renderCalendar();
+        })
+        .getScheduleOverridesBundle();
 
       // 祝日データをスクリプトプロパティのキャッシュから取得（時間トリガーで毎日更新済み）
       google.script.run

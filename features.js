@@ -94,6 +94,14 @@ function detectAnalysisTestName_(message, testNames) {
  * @return {string} コンテキスト文字列
  */
 function buildLiveAnalysisContext_(year, testName) {
+  // CacheService で同じテスト×年度の結果を5分間キャッシュ（Supabase RPC削減）
+  try {
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'liveCtx_' + year + '_' + testName;
+    var cached = cache.get(cacheKey);
+    if (cached) return cached;
+  } catch (e) { /* CacheService 障害は非致命的 */ }
+
   var ctx = '\n\n【テスト集計データ（その場取得）: ' + testName + '(' + year + '年度)】\n';
   ctx += '※詳細分析は未生成のため、以下の集計値から分析・説明してください。\n';
 
@@ -124,6 +132,9 @@ function buildLiveAnalysisContext_(year, testName) {
   } catch (e) {
     Logger.log('⚠ 学校平均取得スキップ: ' + e);
   }
+
+  // 結果を5分間キャッシュ
+  try { cache.put(cacheKey, ctx, 300); } catch (e) { /* 非致命的 */ }
 
   return ctx;
 }
