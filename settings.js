@@ -205,7 +205,6 @@ function writeStaffToSupabase_(staff) {
  */
 function getSettings() {
   try {
-    // ロゴは Firebase Hosting の /logo.png を直接参照（Drive API不要）
     var settings = {
       geminiApiKey: getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定',
       appFolderId: getProperty(PROP_KEYS.APP_FOLDER_ID) || '',
@@ -706,6 +705,34 @@ function getSubjectOptions() {
  * @param {string} firebaseUid Firebase Auth の UID（省略可）
  * @return {Object} 起動に必要なデータ一式
  */
+/**
+ * ロゴ画像をCacheServiceでキャッシュして返す（Drive APIは初回のみ）
+ * @param {string} appFolderId APP_FOLDER_ID
+ * @return {string} data:image/png;base64,... または空文字
+ */
+function getCachedLogoUrl_(appFolderId) {
+  if (!appFolderId) return '';
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('LOGO_BASE64');
+    if (cached) return cached;
+
+    var rootFolder = DriveApp.getFolderById(appFolderId);
+    var assetsFolders = rootFolder.getFoldersByName('assets');
+    if (!assetsFolders.hasNext()) return '';
+    var logoFiles = assetsFolders.next().getFilesByName('logo.png');
+    if (!logoFiles.hasNext()) return '';
+
+    var logoBase64 = Utilities.base64Encode(logoFiles.next().getBlob().getBytes());
+    var dataUrl = 'data:image/png;base64,' + logoBase64;
+    cache.put('LOGO_BASE64', dataUrl, 21600); // 6時間キャッシュ
+    return dataUrl;
+  } catch (e) {
+    Logger.log('⚠ getCachedLogoUrl_: ' + e);
+    return '';
+  }
+}
+
 function getAppStartupData(firebaseEmail, firebaseUid) {
   try {
     // Firebase Auth コンテキストをセット
@@ -762,6 +789,9 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       }
     }
 
+    // ロゴ取得（CacheServiceで6時間キャッシュ → Drive APIは初回のみ）
+    var logoUrl = getCachedLogoUrl_(appFolderId);
+
     Logger.log('✓ getAppStartupData: 完了（admin=' + isAdminResult + ', firstSetup=' + isFirstSetup + ', staff=' + !!staff + '）');
     return {
       success: true,
@@ -778,7 +808,8 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       accessFolderId: accessFolderId,
       aiAssistantName: aiAssistantName,
       aiPersonality: aiPersonality,
-      preferredCampuses: preferredCampuses
+      preferredCampuses: preferredCampuses,
+      logoUrl: logoUrl
     };
   } catch (error) {
     Logger.log('❌ getAppStartupDataエラー: ' + error);
