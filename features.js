@@ -40,7 +40,8 @@ function classifyMessageIntent_(message, chatHistory) {
     students:   /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
     settings:   /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
     schedule:   /予定|カレンダー|スケジュール|来月|先月|今月|\d+月.*予定/.test(message),
-    navigation: /見せて|開いて|表示して|タブ|画面/.test(message)
+    navigation: /見せて|開いて|表示して|タブ|画面/.test(message),
+    placement: /配置|勤務|どこ.*校|どの.*校|校舎.*誰|誰.*いる|出勤|先生.*どこ|講師.*どこ|曜日.*校舎/.test(message)
   };
   // 直前のAI応答から文脈を引き継ぐ（フォローアップ対応）
   if (chatHistory && chatHistory.length > 0) {
@@ -53,6 +54,7 @@ function classifyMessageIntent_(message, chatHistory) {
       if (/講習|授業/.test(lastAi.text)) detected.lectures = true;
       if (/料金|月謝/.test(lastAi.text)) detected.pricing = true;
       if (/予定|カレンダー/.test(lastAi.text)) detected.schedule = true;
+      if (/配置|勤務|校舎.*講師/.test(lastAi.text)) detected.placement = true;
     }
   }
   return detected;
@@ -159,6 +161,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- Keep responses concise. Maintain accuracy in explanations of features and logic; only adapt the speaking style above.\n'
     + '- For casual conversation, chitchat, life advice, general questions (weather, recipes, etc.), respond warmly and freely.\n'
     + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
+    + '- For questions about instructor placement/location (配置/勤務): answer directly from provided placement data. Use the current day-of-week from [Current Date] to answer "today" questions. On Sundays (日曜), explain there are no placements.\n'
     + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
     + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry.\n'
     + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
@@ -167,7 +170,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '■ Grades Tab (成績管理): Student CRUD, test score entry (国語,社会,数学,理科,英語), OCR import, grade list/analysis/report views, master settings\n'
     + '■ Settings Tab (設定): Theme color, AI name/style, profile (display name, subjects), preferred campus, account transfer\n'
     + '■ Admin Tab (管理, admin only): Script properties, Drive operations, user management, logs, initialization\n'
-    + '■ Documents Tab (資料): Annual calendar PDF, pricing table PDF\n'
+    + '■ Documents Tab (資料): Annual calendar PDF, pricing table PDF, instructor placement table (講師配置表)\n'
     + '■ Lectures Tab (講習管理): Lecture schedule creation, internal handouts, external flyers, image generation\n'
     + '\n[Configurable Settings]\n'
     + '- themeColor: hex color (e.g. #43e97b)\n'
@@ -175,7 +178,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- aiPersonality: polite/friendly/energetic/cool/kansai/hakata/tohoku/nagoya/awa (current: ' + (aiPersonality || 'polite') + ')\n'
     + '- displayName: user\'s display name\n'
     + '\n[Navigable Screens (use these IDs for navigate_tab action)]\n'
-    + 'schedule, grades>grades-score, grades>grades-list, grades>grades-analysis, grades>grades-report, grades>grades-input, grades>grades-placement, lectures>lectures-schedule, lectures>lectures-materials, lectures>lectures-flyer, universities>univ-calendar, universities>univ-pricing, settings\n'
+    + 'schedule, grades>grades-score, grades>grades-list, grades>grades-analysis, grades>grades-report, grades>grades-input, grades>grades-placement, lectures>lectures-schedule, lectures>lectures-materials, lectures>lectures-flyer, universities>univ-calendar, universities>univ-pricing, universities>univ-placement, settings\n'
     + '\n[Student Name Redaction]\n'
     + '- [生徒ID:XXXXXXXXXX]: One specific student. Do NOT show the raw ID to the user.\n'
     + '- [個人名:田中]: Surname-only with multiple matches. Ask: "田中さんが複数います。フルネームか学年・校舎を教えてください"\n'
@@ -838,6 +841,62 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 運営情報コンテキスト生成スキップ: ' + e);
     }
 
+    // 条件付き: 講師配置データ（配置・勤務関連時のみ）
+    var placementContext = '';
+    if (intents.placement) {
+      try {
+        var placementJson = getScriptProperty('STAFF_PLACEMENT');
+        if (placementJson) {
+          var placementData = JSON.parse(placementJson);
+          var pCampuses = placementData.campuses || {};
+          var pTeachers = placementData.teachers || [];
+          var pSupervisors = placementData.supervisors || {};
+          var pDays = ['月', '火', '水', '木', '金', '土'];
+
+          // 校舎コード→名前マッピング
+          var pCampusNames = {};
+          Object.keys(pCampuses).forEach(function(code) {
+            pCampusNames[code] = pCampuses[code].name || code;
+          });
+
+          placementContext = '\n\n【講師配置データ（' + (placementData.year || '') + '年度）】\n';
+          placementContext += '曜日: 月〜土（日曜は配置なし）\n';
+
+          // 講師別: 名前→各曜日の校舎名
+          placementContext += '\n■ 講師別配置\n';
+          pTeachers.forEach(function(t) {
+            var line = t.name + '(' + (t.subject || '') + '): ';
+            var dayParts = [];
+            pDays.forEach(function(day) {
+              var code = t[day] || '';
+              if (code) {
+                dayParts.push(day + '=' + (pCampusNames[code] || code));
+              }
+            });
+            line += dayParts.length > 0 ? dayParts.join(', ') : '配置なし';
+            placementContext += line + '\n';
+          });
+
+          // 校舎別: 各曜日→責任者＋講師リスト
+          placementContext += '\n■ 校舎別配置\n';
+          Object.keys(pCampuses).sort().forEach(function(code) {
+            placementContext += pCampusNames[code] + ':\n';
+            pDays.forEach(function(day) {
+              var names = pTeachers.filter(function(t) { return t[day] === code; }).map(function(t) { return t.name; });
+              var sup = (pSupervisors[code] && pSupervisors[code][day]) ? pSupervisors[code][day] : '';
+              if (names.length > 0 || sup) {
+                placementContext += '  ' + day + ': ' + (sup ? '責任者=' + sup + ' / ' : '') + '講師=' + (names.length > 0 ? names.join('、') : 'なし') + '\n';
+              } else {
+                placementContext += '  ' + day + ': なし\n';
+              }
+            });
+          });
+        }
+      } catch (e) {
+        Logger.log('⚠ 講師配置コンテキスト取得スキップ: ' + e);
+      }
+    }
+
     // 条件付き（既存ロジック維持）: 講習エントリコンテキスト
     var lectureEntriesContext = '';
     try {
@@ -929,14 +988,16 @@ function requestAIAssistant(userMessage, chatHistory) {
 
     // === 最終ユーザーターンの組み立て（動的コンテキスト + ユーザーメッセージ） ===
     var now = new Date();
+    var dayOfWeekNames = ['日', '月', '火', '水', '木', '金', '土'];
+    var todayDayOfWeek = dayOfWeekNames[now.getDay()];
     var userTurn = '[Current Date & Academic Year]\n'
-      + 'Today: ' + now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate() + '\n'
+      + 'Today: ' + now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate() + ' (' + todayDayOfWeek + '曜日)\n'
       + 'Academic year: ' + currentAcademicYear + ' (April ' + currentAcademicYear + ' – March ' + (currentAcademicYear + 1) + ')\n'
       + userInfo + '\n'
       + adminContext + '\n'
       + kbContext + campusListContext + pricingContext + testNamesContext + gradeAnalysisContext
       + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
-      + studentGradeYearContext + operationsContext + lectureEntriesContext
+      + studentGradeYearContext + operationsContext + placementContext + lectureEntriesContext
       + '\n\n[User Message]\n' + resolvedUserMessage;
 
     // 最終ユーザーターンを contents 配列に追加
