@@ -288,7 +288,6 @@
 **【ユーザー管理】** (`js-admin.html`)
 - `loadAllowedUsers()` — アクセス許可ユーザー一覧を取得して描画
 - `removeAllowedUser(email)` — ユーザーのアクセスを削除（確認ダイアログ付き）
-- `cleanupDuplicateStaffs()` — Supabase staffs の重複レコードを整理（`removeDuplicateStaffs` を呼び出し）
 
 **【通知設定】** (`js-admin.html`)
 - `loadNotificationSettings()` — お問い合わせ転送通知の設定をバックエンドから取得して表示

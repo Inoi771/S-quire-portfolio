@@ -135,36 +135,6 @@
       });
     }
 
-    // ===== 🧹 重複ユーザー整理 =====
-
-    function cleanupDuplicateStaffs() {
-      var btn = document.getElementById('cleanupDuplicateBtn');
-      btn.disabled = true;
-      btn.textContent = '整理中...';
-      showMessage('cleanupMessage', '確認中...', 'info');
-      google.script.run
-        .withSuccessHandler(function(result) {
-          btn.disabled = false;
-          btn.textContent = '重複を整理する';
-          if (result.success) {
-            if (result.removed > 0) {
-              showMessage('cleanupMessage', '✅ ' + result.removed + ' 件の重複を削除しました', 'success');
-              loadAllowedUsers();
-            } else {
-              showMessage('cleanupMessage', '✅ 重複はありませんでした', 'success');
-            }
-          } else {
-            showMessage('cleanupMessage', '❌ ' + result.error, 'error');
-          }
-        })
-        .withFailureHandler(function(err) {
-          btn.disabled = false;
-          btn.textContent = '重複を整理する';
-          showMessage('cleanupMessage', '❌ エラー: ' + err, 'error');
-        })
-        .removeDuplicateStaffs();
-    }
-
     // ===== 📬 通知設定（ユーザー設定画面用） =====
 
     function loadNotificationSettings() {

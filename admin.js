@@ -1721,64 +1721,6 @@ function parseGeminiErrorMessage_(response) {
 }
 
 
-/**
- * Firestore staffs コレクション内の重複ドキュメントを検出・削除する（Admin のみ）
- * 同じメールアドレスのドキュメントが複数ある場合、最も新しいもの（updatedAt/addedAt）を残し古いものを削除
- * @return {Object} { success, removed: number, details: string[] }
- */
-function removeDuplicateStaffs() {
-  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-  try {
-    var allRows = supabaseSelect_('staffs', null, { select: 'id,email,updated_at,added_at' });
-    if (!allRows || allRows.length === 0) {
-      return { success: true, removed: 0, details: ['重複なし'] };
-    }
-
-    // メールアドレスごとにグループ化
-    var emailGroups = {};
-    allRows.forEach(function(row) {
-      var email = (row.email || '').toLowerCase();
-      if (!email) return;
-      if (!emailGroups[email]) emailGroups[email] = [];
-      emailGroups[email].push(row);
-    });
-
-    var removed = 0;
-    var details = [];
-    Object.keys(emailGroups).forEach(function(email) {
-      var group = emailGroups[email];
-      if (group.length <= 1) return;
-
-      // updated_at → added_at の降順でソートし、最新を残す
-      group.sort(function(a, b) {
-        var dateA = a.updated_at || a.added_at || '';
-        var dateB = b.updated_at || b.added_at || '';
-        return dateB > dateA ? 1 : (dateB < dateA ? -1 : 0);
-      });
-
-      var keep = group[0];
-      var keepId = keep.id;
-      for (var i = 1; i < group.length; i++) {
-        var dup = group[i];
-        var dupId = dup.id;
-        try {
-          supabaseDelete_('staffs', 'id=eq.' + dupId);
-          removed++;
-          details.push(email + ': 削除 ' + dupId + '（残: ' + keepId + '）');
-          Logger.log('✓ removeDuplicateStaffs: 削除 staffs/' + dupId + ' (重複: ' + email + ')');
-        } catch (delErr) {
-          details.push(email + ': 削除失敗 ' + dupId + ' - ' + delErr);
-        }
-      }
-    });
-
-    Logger.log('✓ removeDuplicateStaffs: ' + removed + ' 件削除');
-    return { success: true, removed: removed, details: details };
-  } catch (error) {
-    Logger.log('❌ removeDuplicateStaffsエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
 
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
