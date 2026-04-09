@@ -653,6 +653,15 @@
       return;
     }
 
+    // ロゴ画像を即座に設定（getSettings()を待たない）
+    if (data.logoUrl) {
+      var logoImg = document.getElementById('appLogoImg');
+      if (logoImg) {
+        logoImg.src = data.logoUrl;
+        logoImg.style.display = 'inline';
+      }
+    }
+
     // テーマカラーを即座に適用
     if (data.themeColor) {
       applyThemeColor(data.themeColor);
