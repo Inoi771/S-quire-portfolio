@@ -1955,10 +1955,16 @@ function getStaffPlacementForWeb() {
   try {
     var json = getScriptProperty('STAFF_PLACEMENT');
     var campusConfig = getCampusConfig() || {};
+    // スタッフ一覧をSupabaseから取得（名前順）
+    var staffRows = supabaseSelect_('staffs', null, { select: 'id,display_name,name' }) || [];
+    var staffList = staffRows
+      .map(function(r) { return { id: r.id, name: r.display_name || r.name || '' }; })
+      .filter(function(s) { return s.name; })
+      .sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
     if (!json) {
-      return { success: true, data: null, campusConfig: campusConfig };
+      return { success: true, data: null, campusConfig: campusConfig, staffList: staffList };
     }
-    return { success: true, data: JSON.parse(json), campusConfig: campusConfig };
+    return { success: true, data: JSON.parse(json), campusConfig: campusConfig, staffList: staffList };
   } catch (e) {
     Logger.log('❌ getStaffPlacementForWeb エラー: ' + e);
     return { success: false, error: e.toString() };
