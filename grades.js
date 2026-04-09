@@ -10,7 +10,12 @@
  * @return {string} 設定値
  */
 function getScriptProperty(key) {
-  return PropertiesService.getScriptProperties().getProperty(key) || '';
+  // 同一実行内のインメモリキャッシュ（PropertiesServiceへの冗長アクセスを防止）
+  if (!getScriptProperty._cache) getScriptProperty._cache = {};
+  if (getScriptProperty._cache[key] !== undefined) return getScriptProperty._cache[key];
+  var val = PropertiesService.getScriptProperties().getProperty(key) || '';
+  getScriptProperty._cache[key] = val;
+  return val;
 }
 
 /**
@@ -21,6 +26,8 @@ function getScriptProperty(key) {
  */
 function setScriptProperty(key, value) {
   PropertiesService.getScriptProperties().setProperty(key, value);
+  // インメモリキャッシュも更新
+  if (getScriptProperty._cache) getScriptProperty._cache[key] = value;
   return true;
 }
 

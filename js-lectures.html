@@ -969,55 +969,64 @@
         currentLectureScrollTop  = container.scrollTop;
       };
 
-      // クリック/タップでエントリ作成（座標から10分単位のスロットに自動スナップ）
+      // クリック/タップでエントリ作成（イベント委譲でリスナーを最小化）
       // getBoundingClientRect を使うことで CSS zoom やスクロール位置にも自動対応する
       var touchStartX = 0, touchStartY = 0;
-      container.querySelectorAll('.lec-day-row').forEach(function(row) {
-        var dateKey = row.dataset.date;
 
-        // X座標（viewport基準）からスロット番号を計算する（10分単位に自動スナップ）
-        function calcSlotFromX(clientX) {
-          var rect = row.getBoundingClientRect();
-          var x    = clientX - rect.left;
-          var slot = Math.floor(x / (rect.width / SLOTS));
-          return Math.max(0, Math.min(slot, SLOTS - 1));
-        }
+      // X座標（viewport基準）からスロット番号を計算する（10分単位に自動スナップ）
+      function calcSlotFromX(row, clientX) {
+        var rect = row.getBoundingClientRect();
+        var x    = clientX - rect.left;
+        var slot = Math.floor(x / (rect.width / SLOTS));
+        return Math.max(0, Math.min(slot, SLOTS - 1));
+      }
 
-        // デスクトップ：クリックで即時作成
-        row.addEventListener('click', function(ev) {
-          // エントリ自体のクリックは onEntryClick で stopPropagation されるのでここには届かないが念のため
-          if (ev.target.closest('.lec-entry')) return;
-          ev.stopPropagation();
-          handleLecGridAction(dateKey, calcSlotFromX(ev.clientX));
-        });
+      // 既存リスナーを除去して再登録（メモリリーク防止）
+      if (container._lecClickHandler) container.removeEventListener('click', container._lecClickHandler);
+      if (container._lecTouchStartHandler) container.removeEventListener('touchstart', container._lecTouchStartHandler);
+      if (container._lecTouchEndHandler) container.removeEventListener('touchend', container._lecTouchEndHandler);
 
-        // モバイル：touchstart で座標記録、touchend で判定
-        row.addEventListener('touchstart', function(ev) {
-          var t = ev.touches[0];
-          touchStartX = t.clientX;
-          touchStartY = t.clientY;
-        }, { passive: true });
+      // デスクトップ：クリックで即時作成（イベント委譲）
+      container._lecClickHandler = function(ev) {
+        var row = ev.target.closest('.lec-day-row');
+        if (!row || ev.target.closest('.lec-entry')) return;
+        ev.stopPropagation();
+        handleLecGridAction(row.dataset.date, calcSlotFromX(row, ev.clientX));
+      };
+      container.addEventListener('click', container._lecClickHandler);
 
-        row.addEventListener('touchend', function(ev) {
-          var t = ev.changedTouches[0];
-          var dx = Math.abs(t.clientX - touchStartX);
-          var dy = Math.abs(t.clientY - touchStartY);
-          ev.preventDefault(); // 合成clickを常にブロック（指ズレによる誤操作防止）
-          if (dx < 10 && dy < 10) {
-            // CSS zoom 環境でも正確に判定するため getBoundingClientRect で座標比較
-            var entries = row.querySelectorAll('.lec-entry:not(.lec-entry-readonly)');
-            for (var i = 0; i < entries.length; i++) {
-              var rect = entries[i].getBoundingClientRect();
-              if (t.clientX >= rect.left && t.clientX <= rect.right &&
-                  t.clientY >= rect.top  && t.clientY <= rect.bottom) {
-                var eid = entries[i].dataset.entryId;
-                if (eid) { onEntryClick(ev, eid); return; }
-              }
+      // モバイル：touchstart で座標記録（イベント委譲）
+      container._lecTouchStartHandler = function(ev) {
+        if (!ev.target.closest('.lec-day-row')) return;
+        var t = ev.touches[0];
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+      };
+      container.addEventListener('touchstart', container._lecTouchStartHandler, { passive: true });
+
+      // モバイル：touchend で判定（イベント委譲）
+      container._lecTouchEndHandler = function(ev) {
+        var row = ev.target.closest('.lec-day-row');
+        if (!row) return;
+        var t = ev.changedTouches[0];
+        var dx = Math.abs(t.clientX - touchStartX);
+        var dy = Math.abs(t.clientY - touchStartY);
+        ev.preventDefault(); // 合成clickを常にブロック（指ズレによる誤操作防止）
+        if (dx < 10 && dy < 10) {
+          // CSS zoom 環境でも正確に判定するため getBoundingClientRect で座標比較
+          var entries = row.querySelectorAll('.lec-entry:not(.lec-entry-readonly)');
+          for (var i = 0; i < entries.length; i++) {
+            var rect = entries[i].getBoundingClientRect();
+            if (t.clientX >= rect.left && t.clientX <= rect.right &&
+                t.clientY >= rect.top  && t.clientY <= rect.bottom) {
+              var eid = entries[i].dataset.entryId;
+              if (eid) { onEntryClick(ev, eid); return; }
             }
-            handleLecGridAction(dateKey, calcSlotFromX(t.clientX));
           }
-        }, { passive: false });
-      });
+          handleLecGridAction(row.dataset.date, calcSlotFromX(row, t.clientX));
+        }
+      };
+      container.addEventListener('touchend', container._lecTouchEndHandler, { passive: false });
 
       // エントリ描画
       renderLecEntries(campusCode);

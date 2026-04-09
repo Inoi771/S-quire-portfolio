@@ -132,10 +132,11 @@ function buildPlacementSchoolFilter_() {
 
   var sel = document.getElementById('placement-school-filter');
   if (!sel) return;
-  sel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+  var placementOptsHtml = '<option value="">-- 絞り込まない --</option>';
   Object.keys(schools).sort().forEach(function(s) {
-    sel.innerHTML += '<option value="' + s + '">' + s + '</option>';
+    placementOptsHtml += '<option value="' + s + '">' + s + '</option>';
   });
+  sel.innerHTML = placementOptsHtml;
 }
 
 /**
