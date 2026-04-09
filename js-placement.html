@@ -374,20 +374,54 @@ function buildEditTeacherSection(d, campusCodes) {
     campusOptions += '<option value="' + code + '">' + escHtml(c.name || code) + '</option>';
   });
 
-  var html = '';
-  html += '<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
-  // 既に配置済みの講師IDセット
+  // 既に配置済みの講師名セット
   var addedNames = {};
   d.teachers.forEach(function(t) { if (t.name) addedNames[t.name] = true; });
+
+  // 配属設定あり・なし・追加済でグループ分け
+  var withPref = placementStaffList.filter(function(s) { return s.preferredCampuses && s.preferredCampuses.length > 0 && !addedNames[s.name]; });
+  var withoutPref = placementStaffList.filter(function(s) { return (!s.preferredCampuses || s.preferredCampuses.length === 0) && !addedNames[s.name]; });
+  var alreadyAdded = placementStaffList.filter(function(s) { return addedNames[s.name]; });
+
   var staffOptions = '<option value="">— 講師を選択 —</option>';
-  placementStaffList.forEach(function(s) {
-    staffOptions += '<option value="' + escHtml(s.name) + '"' + (addedNames[s.name] ? ' disabled style="color:#aaa;"' : '') + '>' + escHtml(s.name) + (addedNames[s.name] ? '（追加済）' : '') + '</option>';
-  });
+  if (withPref.length > 0) {
+    staffOptions += '<optgroup label="配属設定あり">';
+    withPref.forEach(function(s) { staffOptions += '<option value="' + escHtml(s.name) + '">' + escHtml(s.name) + '</option>'; });
+    staffOptions += '</optgroup>';
+  }
+  if (withoutPref.length > 0) {
+    staffOptions += '<optgroup label="その他">';
+    withoutPref.forEach(function(s) { staffOptions += '<option value="' + escHtml(s.name) + '">' + escHtml(s.name) + '</option>'; });
+    staffOptions += '</optgroup>';
+  }
+  if (alreadyAdded.length > 0) {
+    staffOptions += '<optgroup label="追加済">';
+    alreadyAdded.forEach(function(s) { staffOptions += '<option value="' + escHtml(s.name) + '" disabled style="color:#aaa;">' + escHtml(s.name) + '</option>'; });
+    staffOptions += '</optgroup>';
+  }
+
+  var subjectSelectHtml = '<select style="padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  ['英語','数学','国語','理科','社会','その他'].forEach(function(s) { subjectSelectHtml += '<option>' + s + '</option>'; });
+  subjectSelectHtml += '</select>';
+
+  var html = '';
+  // 行1: スタッフから追加（設定の配属校舎を自動入力）
+  html += '<div style="margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+  html += '<span style="font-size:11px;color:#888;white-space:nowrap;">スタッフ:</span>';
   html += '<select id="pe-new-teacher-select" style="flex:1;min-width:100px;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">' + staffOptions + '</select>';
   html += '<select id="pe-new-teacher-subject" style="padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
   ['英語','数学','国語','理科','社会','その他'].forEach(function(s) { html += '<option>' + s + '</option>'; });
   html += '</select>';
   html += '<button onclick="addPlacementTeacher()" style="padding:6px 12px;background:#667eea;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;white-space:nowrap;">+ 追加</button>';
+  html += '</div>';
+  // 行2: 手動で追加
+  html += '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+  html += '<span style="font-size:11px;color:#888;white-space:nowrap;">手動:</span>';
+  html += '<input type="text" id="pe-new-teacher-manual-name" placeholder="講師名を入力" style="flex:1;min-width:80px;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  html += '<select id="pe-new-teacher-manual-subject" style="padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  ['英語','数学','国語','理科','社会','その他'].forEach(function(s) { html += '<option>' + s + '</option>'; });
+  html += '</select>';
+  html += '<button onclick="addPlacementTeacherManual()" style="padding:6px 12px;background:#43a047;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;white-space:nowrap;">+ 追加</button>';
   html += '</div>';
 
   if (d.teachers.length === 0) {
@@ -436,11 +470,25 @@ function buildEditSupervisorSection(d, campusCodes) {
     html += '<tr style="border-bottom:1px solid #f0f0f0;">';
     html += '<td style="padding:5px 8px;font-weight:bold;font-size:12px;white-space:nowrap;">' + escHtml(c.name || code) + '</td>';
     PLACEMENT_DAYS.forEach(function(day) {
-      html += '<td style="padding:3px;"><input type="text" value="' + escHtml(sup[day] || '') + '" onchange="updatePlacementSupervisor(\'' + code + '\',\'' + day + '\',this.value)" style="width:54px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center;" placeholder="名前"></td>';
+      // その曜日・その校舎に配置されている講師のリスト
+      var assigned = d.teachers.filter(function(t) { return t[day] === code; });
+      var current = sup[day] || '';
+      var opts = '<option value="">—</option>';
+      assigned.forEach(function(t) {
+        opts += '<option value="' + escHtml(t.name) + '"' + (current === t.name ? ' selected' : '') + '>' + escHtml(t.name) + '</option>';
+      });
+      // 現在の責任者が配置リストにない場合も選択肢に残す
+      if (current && !assigned.some(function(t) { return t.name === current; })) {
+        opts += '<option value="' + escHtml(current) + '" selected>' + escHtml(current) + '</option>';
+      }
+      html += '<td style="padding:3px;"><select onchange="updatePlacementSupervisor(\'' + code + '\',\'' + day + '\',this.value)" style="padding:3px;border:1px solid #ddd;border-radius:4px;font-size:11px;max-width:80px;">' + opts + '</select></td>';
     });
     html += '</tr>';
   });
   html += '</table></div>';
+  if (!d.teachers.length) {
+    return '<p style="color:#999;font-size:13px;padding:8px;">まず講師を追加してください</p>';
+  }
   return html;
 }
 
@@ -451,7 +499,14 @@ function updatePlacementCampus(code, field, value) {
 }
 
 function updatePlacementTeacher(idx, field, value) {
-  if (_placementEditData.teachers[idx]) _placementEditData.teachers[idx][field] = value;
+  if (!_placementEditData.teachers[idx]) return;
+  _placementEditData.teachers[idx][field] = value;
+  // 曜日の配属校舎が変わったら責任者セクションも更新
+  if (PLACEMENT_DAYS.indexOf(field) !== -1) {
+    var campusCodes = Object.keys(_placementEditData.campuses).sort();
+    var supBody = document.getElementById('pe-sec-super-body');
+    if (supBody) supBody.innerHTML = buildEditSupervisorSection(_placementEditData, campusCodes);
+  }
 }
 
 function updatePlacementSupervisor(code, day, value) {
@@ -463,23 +518,44 @@ function addPlacementTeacher() {
   var selectEl = document.getElementById('pe-new-teacher-select');
   var subjEl = document.getElementById('pe-new-teacher-subject');
   if (!selectEl || !selectEl.value) { showToast('講師を選択してください', 'error'); return; }
-  var t = { name: selectEl.value, subject: subjEl ? subjEl.value : '英語' };
+  var selectedName = selectEl.value;
+  // スタッフリストから設定情報を取得
+  var staff = null;
+  for (var i = 0; i < placementStaffList.length; i++) {
+    if (placementStaffList[i].name === selectedName) { staff = placementStaffList[i]; break; }
+  }
+  var subject = (staff && staff.subjects && staff.subjects[0]) || (subjEl ? subjEl.value : '英語');
+  var t = { name: selectedName, subject: subject };
+  // preferred_campuses が1校舎のみなら全曜日に自動入力
+  var pref = (staff && staff.preferredCampuses && staff.preferredCampuses.length === 1) ? staff.preferredCampuses[0] : '';
+  PLACEMENT_DAYS.forEach(function(day) { t[day] = pref; });
+  _placementEditData.teachers.push(t);
+  _rebuildTeacherAndSupervisor();
+}
+
+function addPlacementTeacherManual() {
+  var nameEl = document.getElementById('pe-new-teacher-manual-name');
+  var subjEl = document.getElementById('pe-new-teacher-manual-subject');
+  var name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { showToast('講師名を入力してください', 'error'); return; }
+  var t = { name: name, subject: subjEl ? subjEl.value : '英語' };
   PLACEMENT_DAYS.forEach(function(day) { t[day] = ''; });
   _placementEditData.teachers.push(t);
-  var body = document.getElementById('pe-sec-teacher-body');
-  if (body) {
-    var campusCodes = Object.keys(_placementEditData.campuses).sort();
-    body.innerHTML = buildEditTeacherSection(_placementEditData, campusCodes);
-  }
+  if (nameEl) nameEl.value = '';
+  _rebuildTeacherAndSupervisor();
 }
 
 function removePlacementTeacher(idx) {
   _placementEditData.teachers.splice(idx, 1);
+  _rebuildTeacherAndSupervisor();
+}
+
+function _rebuildTeacherAndSupervisor() {
+  var campusCodes = Object.keys(_placementEditData.campuses).sort();
   var body = document.getElementById('pe-sec-teacher-body');
-  if (body) {
-    var campusCodes = Object.keys(_placementEditData.campuses).sort();
-    body.innerHTML = buildEditTeacherSection(_placementEditData, campusCodes);
-  }
+  if (body) body.innerHTML = buildEditTeacherSection(_placementEditData, campusCodes);
+  var supBody = document.getElementById('pe-sec-super-body');
+  if (supBody) supBody.innerHTML = buildEditSupervisorSection(_placementEditData, campusCodes);
 }
 
 function closePlacementEdit() {
