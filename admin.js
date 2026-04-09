@@ -1959,12 +1959,18 @@ function getStaffPlacementForWeb() {
     var campusDetails = getCampusDetailsConfig();
     var campusDetailsMap = {};
     campusDetails.forEach(function(c) { campusDetailsMap[c.code] = c; });
-    // スタッフ一覧をSupabaseから取得（名前順）
-    var staffRows = supabaseSelect_('staffs', null, { select: 'id,display_name,name' }) || [];
+    // スタッフ一覧をSupabaseから取得（preferred_campuses/subjects含む）
+    var staffRows = supabaseSelect_('staffs', null, { select: 'id,display_name,name,preferred_campuses,subjects' }) || [];
     var staffList = staffRows
-      .map(function(r) { return { id: r.id, name: r.display_name || r.name || '' }; })
+      .map(function(r) { return { id: r.id, name: r.display_name || r.name || '', preferredCampuses: r.preferred_campuses || [], subjects: r.subjects || [] }; })
       .filter(function(s) { return s.name; })
-      .sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
+      .sort(function(a, b) {
+        // 配属設定あり（preferredCampuses）を上位に、同グループ内は五十音順
+        var aHas = (a.preferredCampuses.length > 0) ? 0 : 1;
+        var bHas = (b.preferredCampuses.length > 0) ? 0 : 1;
+        if (aHas !== bHas) return aHas - bHas;
+        return a.name.localeCompare(b.name, 'ja');
+      });
     var data = json ? JSON.parse(json) : null;
     // 保存済みデータの campuses に campus config のデフォルト値をマージ
     if (data && data.campuses) {
