@@ -140,6 +140,9 @@
           '<div id="cp-edit-' + idx + '" style="' + editBg + 'margin-bottom:6px;">' +
             '<div style="font-size:11px;color:#666;margin-bottom:4px;">コード: <strong>' + campus.code + '</strong>（変更不可）</div>' +
             '<input id="cp-input-' + idx + '" value="' + nameHtml + '" placeholder="校舎名" style="' + inputSt + '">' +
+            '<input id="cp-tel-' + idx + '" value="' + escapeHtml_(campus.tel || '') + '" placeholder="TEL（例: 693-0225）" style="' + inputSt + '">' +
+            '<input id="cp-fax-' + idx + '" value="' + escapeHtml_(campus.fax || '') + '" placeholder="FAX（省略時はTELと同じ）" style="' + inputSt + '">' +
+            '<input id="cp-principal-' + idx + '" value="' + escapeHtml_(campus.principal || '') + '" placeholder="校舎責任者名" style="' + inputSt + '">' +
             '<div style="display:flex;gap:4px;">' +
               '<button onclick="saveCampusRow(' + idx + ',\'' + codeEsc + '\', this)" style="' + btnSave + '">保存</button>' +
               '<button onclick="cancelEditRow(\'cp\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
@@ -239,6 +242,9 @@
     }
     function saveCampusRow(idx, campusCode, btn) {
       var newName = document.getElementById('cp-input-' + idx).value.trim();
+      var newTel = (document.getElementById('cp-tel-' + idx) || {}).value || '';
+      var newFax = (document.getElementById('cp-fax-' + idx) || {}).value || '';
+      var newPrincipal = (document.getElementById('cp-principal-' + idx) || {}).value || '';
       if (!newName) { showMessage('adminMessage', '校舎名を入力してください', 'error'); return; }
       if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
       google.script.run
@@ -254,7 +260,7 @@
           if (btn) { btn.disabled = false; btn.textContent = '保存'; }
           showMessage('adminMessage', '❌ ' + err, 'error');
         })
-        .updateCampusName(campusCode, newName);
+        .updateCampusDetails(campusCode, newName, newTel, newFax, newPrincipal);
     }
 
     // 学年 表示切替
@@ -408,6 +414,9 @@
     function addNewCampus() {
       var campusCode = document.getElementById('newCampusCode').value.trim();
       var campusName = document.getElementById('newCampusName').value.trim();
+      var campusTel = (document.getElementById('newCampusTel') || {}).value || '';
+      var campusFax = (document.getElementById('newCampusFax') || {}).value || '';
+      var campusPrincipal = (document.getElementById('newCampusPrincipal') || {}).value || '';
 
       if (!campusCode || !campusName) {
         showMessage('adminMessage', 'コードと校舎名を入力してください', 'error');
@@ -423,6 +432,9 @@
             showMessage('adminMessage', '✓ ' + result.message, 'success');
             document.getElementById('newCampusCode').value = '';
             document.getElementById('newCampusName').value = '';
+            if (document.getElementById('newCampusTel')) document.getElementById('newCampusTel').value = '';
+            if (document.getElementById('newCampusFax')) document.getElementById('newCampusFax').value = '';
+            if (document.getElementById('newCampusPrincipal')) document.getElementById('newCampusPrincipal').value = '';
             loadGradesSettings();
             if (typeof loadDropdownData === 'function') loadDropdownData();
           } else {
@@ -433,7 +445,7 @@
           if (btn) { btn.disabled = false; btn.textContent = '➕ 追加'; }
           showMessage('adminMessage', '❌ エラー: ' + err, 'error');
         })
-        .addCampus(campusCode, campusName);
+        .addCampus(campusCode, campusName, campusTel, campusFax, campusPrincipal);
     }
 
     function deleteCampusItem(campusCode) {
