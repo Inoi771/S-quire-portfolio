@@ -28,7 +28,7 @@ function loadStaffPlacement() {
       var parsed = JSON.parse(cached);
       placementCampusConfig = parsed.campusConfig || {};
       placementData = parsed.data;
-      placementIsAdmin = (typeof isAdmin !== 'undefined') ? isAdmin : false;
+      placementIsAdmin = (typeof isAdminUser !== 'undefined') ? isAdminUser : false;
       placementLoaded = true;
       renderPlacement(root);
     }
@@ -51,7 +51,7 @@ function loadStaffPlacement() {
       try { localStorage.setItem('s-quire-placement', JSON.stringify({ data: result.data, campusConfig: result.campusConfig })); } catch (e) {}
       placementCampusConfig = result.campusConfig || {};
       placementData = result.data;
-      placementIsAdmin = (typeof isAdmin !== 'undefined') ? isAdmin : false;
+      placementIsAdmin = (typeof isAdminUser !== 'undefined') ? isAdminUser : false;
       placementLoaded = true;
       renderPlacement(root);
     })
