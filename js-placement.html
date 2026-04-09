@@ -11,17 +11,6 @@ var placementViewMode = 'campus'; // 'campus' or 'teacher'
 var placementIsAdmin = false;     // 管理者かどうか
 var placementLoaded = false;      // 読み込み済みフラグ
 
-/**
- * 電話番号を整形する（080/090/070以外は088-を付与）
- */
-function formatPhone(num) {
-  if (!num) return '';
-  var n = String(num).trim();
-  if (/^0[789]0/.test(n)) return n;  // 070/080/090 はそのまま
-  if (!/^088/.test(n)) return '088-' + n;
-  return n;
-}
-
 var PLACEMENT_DAYS = ['月', '火', '水', '木', '金', '土'];
 
 /**
@@ -602,14 +591,12 @@ function buildPlacementPrintHtml(data, year) {
     });
 
     var campusInfo = escHtml(campus.name || code);
-    var telFmt = formatPhone(campus.tel);
-    var faxFmt = formatPhone(campus.fax);
-    if (telFmt) {
-      if (telFmt === faxFmt) {
-        campusInfo += '<br><small>TEL&amp;FAX<br>' + escHtml(telFmt) + '</small>';
+    if (campus.tel) {
+      if (campus.tel === campus.fax) {
+        campusInfo += '<br><small>TEL&amp;FAX<br>' + escHtml(campus.tel) + '</small>';
       } else {
-        campusInfo += '<br><small>TEL ' + escHtml(telFmt);
-        if (faxFmt) campusInfo += '<br>FAX ' + escHtml(faxFmt);
+        campusInfo += '<br><small>TEL ' + escHtml(campus.tel);
+        if (campus.fax) campusInfo += '<br>FAX ' + escHtml(campus.fax);
         campusInfo += '</small>';
       }
     }
