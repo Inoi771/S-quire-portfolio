@@ -27,7 +27,8 @@
 **【3】タブ制御**
 - `switchTab(tabName)` — タブ切り替え。各タブ固有の初期化も行う
 - `switchSubTab(event, subTabName)` — 成績管理のサブタブ切り替え（`event` は必須引数。`data-subtab` 属性でクローンボタンのアクティブ状態も同期）
-- `initSubTabLoop(containerId)` — サブタブバーの無限ループスクロールを初期化（汎用）。ボタンを前後にクローンし、端に達したら本物の位置にジャンプ。対象: `gradesSubTabs`・`lecSubTabNav`・`univSubTabs`・`adminSubTabs`
+- `initSubTabLoop(containerId)` — サブタブバーの無限ループスクロールを初期化（汎用・モバイル専用）。画面幅800px未満のときのみボタンを前後にクローンし、端に達したら本物の位置にジャンプ。PC（800px以上）では通常表示。対象: `gradesSubTabs`・`lecSubTabNav`・`univSubTabs`・`adminSubTabs`
+- `destroySubTabLoop(containerId)` — サブタブバーの無限ループスクロールを解除。クローンボタンを削除し通常表示に戻す。リサイズ時に自動呼び出し
 
 **【4】スケジュール関連**
 - `onScheduleDataLoaded()`, `renderCalendar()`

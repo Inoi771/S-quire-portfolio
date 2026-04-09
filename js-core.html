@@ -1110,30 +1110,48 @@
     }
 
     /**
-     * サブタブバーの無限ループスクロールを初期化する（汎用）
-     * タブボタンを前後にクローンし、スクロール端に達したら本物の位置にジャンプする
+     * サブタブバーの無限ループスクロールを初期化する（汎用・モバイル専用）
+     * 画面幅800px未満のときのみ有効。タブボタンを前後にクローンし、スクロール端に達したら本物の位置にジャンプする
      * @param {string} containerId タブバーコンテナのID
      */
+    var _loopContainerIds = [];
+    var _loopResizeTimer = null;
+
     function initSubTabLoop(containerId) {
+      // リサイズ管理用の配列に登録（重複防止）
+      if (_loopContainerIds.indexOf(containerId) === -1) {
+        _loopContainerIds.push(containerId);
+      }
+
       var container = document.getElementById(containerId);
-      if (!container || container.dataset.loopInit) return;
+      if (!container) return;
+
+      // PC（800px以上）ではループを無効化
+      if (window.innerWidth >= 800) {
+        destroySubTabLoop(containerId);
+        return;
+      }
+
+      // 既に初期化済みならスキップ
+      if (container.dataset.loopInit) return;
       container.dataset.loopInit = '1';
 
       // オリジナルボタンを収集（コンテナ直下のbutton要素）
       var origBtns = Array.prototype.slice.call(container.querySelectorAll('button'));
-      var count = origBtns.length;
-      if (count === 0) return;
+      if (origBtns.length === 0) return;
 
-      // 前後にクローンを追加
+      // 前後にクローンを追加（data-clone属性で識別）
       origBtns.forEach(function(btn) {
         var after = btn.cloneNode(true);
         after.classList.remove('active');
+        after.setAttribute('data-clone', '1');
         container.appendChild(after);
       });
       var frag = document.createDocumentFragment();
       origBtns.forEach(function(btn) {
         var before = btn.cloneNode(true);
         before.classList.remove('active');
+        before.setAttribute('data-clone', '1');
         frag.appendChild(before);
       });
       container.insertBefore(frag, container.firstChild);
@@ -1146,9 +1164,17 @@
       // 初期スクロール位置をオリジナルセットの先頭に
       container.scrollLeft = realStart;
 
+      // レイアウト再計算用の関数を保存
+      container._loopOrigBtns = origBtns;
+      container._updateLoopLayout = function() {
+        realStart = origBtns[0].offsetLeft;
+        setWidth = 0;
+        origBtns.forEach(function(btn) { setWidth += btn.offsetWidth; });
+      };
+
       // スクロール終了時にクローン領域→本物領域へジャンプ（デバウンス100ms）
       var jumpTimer = null;
-      container.addEventListener('scroll', function() {
+      container._loopScrollHandler = function() {
         clearTimeout(jumpTimer);
         jumpTimer = setTimeout(function() {
           var sl = container.scrollLeft;
@@ -1162,16 +1188,56 @@
             container.style.scrollBehavior = '';
           }
         }, 100);
-      }, { passive: true });
-
-      // リサイズ時に幅を再計算
-      window.addEventListener('resize', function() {
-        if (!container.dataset.loopInit) return;
-        realStart = origBtns[0].offsetLeft;
-        setWidth = 0;
-        origBtns.forEach(function(btn) { setWidth += btn.offsetWidth; });
-      });
+      };
+      container.addEventListener('scroll', container._loopScrollHandler, { passive: true });
     }
+
+    /**
+     * サブタブバーの無限ループスクロールを解除する
+     * クローンを削除し、イベントリスナーを解除して通常表示に戻す
+     * @param {string} containerId タブバーコンテナのID
+     */
+    function destroySubTabLoop(containerId) {
+      var container = document.getElementById(containerId);
+      if (!container || !container.dataset.loopInit) return;
+
+      // スクロールリスナーを解除
+      if (container._loopScrollHandler) {
+        container.removeEventListener('scroll', container._loopScrollHandler);
+        container._loopScrollHandler = null;
+      }
+
+      // クローンボタンを削除（data-clone属性で識別）
+      Array.prototype.slice.call(container.querySelectorAll('button[data-clone]'))
+        .forEach(function(btn) { container.removeChild(btn); });
+
+      // 状態をリセット（再初期化可能にする）
+      delete container.dataset.loopInit;
+      container._loopOrigBtns = null;
+      container._updateLoopLayout = null;
+      container.scrollLeft = 0;
+    }
+
+    // 集中リサイズハンドラ: モバイル↔PC切り替え時にループを有効/無効化
+    window.addEventListener('resize', function() {
+      clearTimeout(_loopResizeTimer);
+      _loopResizeTimer = setTimeout(function() {
+        var isMobile = window.innerWidth < 800;
+        _loopContainerIds.forEach(function(id) {
+          var container = document.getElementById(id);
+          if (!container) return;
+          if (isMobile) {
+            if (!container.dataset.loopInit) {
+              initSubTabLoop(id);
+            } else if (container._updateLoopLayout) {
+              container._updateLoopLayout();
+            }
+          } else {
+            destroySubTabLoop(id);
+          }
+        });
+      }, 200);
+    });
 
     function switchSubTab(event, subTabName) {
       // 現在のサブタブのスクロール位置を保存
