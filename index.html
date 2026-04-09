@@ -88,7 +88,10 @@
     })();
   </script>
 
-  <!-- ===== Firebase SDK ===== -->
+  <!-- ===== Firebase SDK（preload で並列ダウンロード開始） ===== -->
+  <link rel="preload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" as="script" crossorigin>
+  <link rel="preload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" as="script" crossorigin>
+  <link rel="preload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" as="script" crossorigin>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>

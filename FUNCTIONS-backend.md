@@ -391,6 +391,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLectureDeadlineOverrides()` — `@aiCallable` 講習日程締切の手動上書き設定を全件取得（`{"lectureId": "YYYY-MM-DD"}`）
 - `setLectureDeadlineOverride(lectureId, dateStr)` — 指定講習の締切日を手動上書き保存（Admin のみ）
 - `deleteLectureDeadlineOverride(lectureId)` — 指定講習の締切日上書き設定を削除して自動計算に戻す（Admin のみ）
+- `getScheduleOverridesBundle()` — `@aiCallable` カレンダー表示用のオーバーライド系データ7種を一括取得（HTTP リクエスト 7→1 に削減）。返却: `{ basicTestDates, basicTestDetails, jukuEvents, closedDays, pubHighExamDates, lecturePeriods, lectureDeadlines }`
 
 ### セクション15: LINE通知・お問い合わせ通知機能
 - `doPost(e)` — POST ハンドラー。`body.type === 'gasApi'` なら Firebase Hosting からの API コールとして `handleApiCall_()` に委譲。それ以外は LINE Webhook として処理（メール自己登録・Drive Editor 付与・管理者通知）。セクション3内に配置
