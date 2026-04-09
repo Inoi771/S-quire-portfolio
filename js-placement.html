@@ -5,6 +5,7 @@
 
 var placementData = null;         // 現在表示中のデータ
 var placementCampusConfig = {};   // 校舎コード→名前マッピング
+var placementStaffList = [];      // スタッフ一覧 [{id, name}]
 var placementViewMode = 'campus'; // 'campus' or 'teacher'
 var placementIsAdmin = false;     // 管理者かどうか
 var placementLoaded = false;      // 読み込み済みフラグ
@@ -51,6 +52,7 @@ function loadStaffPlacement() {
       try { localStorage.setItem('s-quire-placement', JSON.stringify({ data: result.data, campusConfig: result.campusConfig })); } catch (e) {}
       placementCampusConfig = result.campusConfig || {};
       placementData = result.data;
+      placementStaffList = result.staffList || [];
       placementIsAdmin = (typeof isAdminUser !== 'undefined') ? isAdminUser : false;
       placementLoaded = true;
       renderPlacement(root);
@@ -370,7 +372,14 @@ function buildEditTeacherSection(d, campusCodes) {
 
   var html = '';
   html += '<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
-  html += '<input type="text" id="pe-new-teacher-name" placeholder="講師名" style="flex:1;min-width:80px;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+  // 既に配置済みの講師IDセット
+  var addedNames = {};
+  d.teachers.forEach(function(t) { if (t.name) addedNames[t.name] = true; });
+  var staffOptions = '<option value="">— 講師を選択 —</option>';
+  placementStaffList.forEach(function(s) {
+    staffOptions += '<option value="' + escHtml(s.name) + '"' + (addedNames[s.name] ? ' disabled style="color:#aaa;"' : '') + '>' + escHtml(s.name) + (addedNames[s.name] ? '（追加済）' : '') + '</option>';
+  });
+  html += '<select id="pe-new-teacher-select" style="flex:1;min-width:100px;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">' + staffOptions + '</select>';
   html += '<select id="pe-new-teacher-subject" style="padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
   ['英語','数学','国語','理科','社会','その他'].forEach(function(s) { html += '<option>' + s + '</option>'; });
   html += '</select>';
@@ -447,13 +456,12 @@ function updatePlacementSupervisor(code, day, value) {
 }
 
 function addPlacementTeacher() {
-  var nameEl = document.getElementById('pe-new-teacher-name');
+  var selectEl = document.getElementById('pe-new-teacher-select');
   var subjEl = document.getElementById('pe-new-teacher-subject');
-  if (!nameEl || !nameEl.value.trim()) { showToast('講師名を入力してください', 'error'); return; }
-  var t = { name: nameEl.value.trim(), subject: subjEl ? subjEl.value : '英語' };
+  if (!selectEl || !selectEl.value) { showToast('講師を選択してください', 'error'); return; }
+  var t = { name: selectEl.value, subject: subjEl ? subjEl.value : '英語' };
   PLACEMENT_DAYS.forEach(function(day) { t[day] = ''; });
   _placementEditData.teachers.push(t);
-  nameEl.value = '';
   var body = document.getElementById('pe-sec-teacher-body');
   if (body) {
     var campusCodes = Object.keys(_placementEditData.campuses).sort();
