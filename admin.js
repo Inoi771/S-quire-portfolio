@@ -1980,6 +1980,7 @@ function getStaffPlacementForWeb() {
         if (!c.tel && def.tel) c.tel = def.tel;
         if (!c.fax && def.fax) c.fax = def.fax;
         if (!c.principal && def.principal) c.principal = def.principal;
+        if (!c.mobile && def.mobile) c.mobile = def.mobile;
       });
     }
     return { success: true, data: data, campusConfig: campusConfig, campusDetailsMap: campusDetailsMap, staffList: staffList };

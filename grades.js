@@ -270,9 +270,10 @@ function updateSchool(oldName, newName, departmentsStr) {
  * @param {string} tel TEL（省略可）
  * @param {string} fax FAX（省略可）
  * @param {string} principal 校舎責任者名（省略可）
+ * @param {string} mobile 携帯番号（省略可）
  * @return {Object} { success, message, campus, error }
  */
-function addCampus(campusCode, campusName, tel, fax, principal) {
+function addCampus(campusCode, campusName, tel, fax, principal, mobile) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
     if (!campusCode || !campusName) {
@@ -297,7 +298,7 @@ function addCampus(campusCode, campusName, tel, fax, principal) {
       return { success: false, error: 'コードは10文字、名前は30文字以下にしてください' };
     }
 
-    var newCampus = { code: campusCode, name: campusName, tel: (tel || '').trim(), fax: (fax || '').trim(), principal: (principal || '').trim() };
+    var newCampus = { code: campusCode, name: campusName, tel: (tel || '').trim(), fax: (fax || '').trim(), principal: (principal || '').trim(), mobile: (mobile || '').trim() };
     campusConfig.push(newCampus);
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
 
@@ -367,9 +368,10 @@ function updateCampusName(campusCode, newName) {
  * @param {string} tel TEL（null で変更なし）
  * @param {string} fax FAX（null で変更なし）
  * @param {string} principal 校舎責任者名（null で変更なし）
+ * @param {string} mobile 携帯番号（null で変更なし）
  * @return {Object} { success, message, error }
  */
-function updateCampusDetails(campusCode, name, tel, fax, principal) {
+function updateCampusDetails(campusCode, name, tel, fax, principal, mobile) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
     name = (name || '').trim();
@@ -382,6 +384,7 @@ function updateCampusDetails(campusCode, name, tel, fax, principal) {
     if (tel !== null) campusConfig[idx].tel = (tel || '').trim();
     if (fax !== null) campusConfig[idx].fax = (fax || '').trim();
     if (principal !== null) campusConfig[idx].principal = (principal || '').trim();
+    if (mobile !== null) campusConfig[idx].mobile = (mobile || '').trim();
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
     return { success: true, message: '校舎情報を更新しました' };
   } catch (error) {
@@ -534,8 +537,8 @@ function getCampusConfig() {
 }
 
 /**
- * 校舎詳細設定を配列形式で取得（TEL/FAX/責任者含む）
- * @return {Array} [{code, name, tel, fax, principal}]
+ * 校舎詳細設定を配列形式で取得（TEL/FAX/責任者/携帯番号含む）
+ * @return {Array} [{code, name, tel, fax, principal, mobile}]
  */
 function getCampusDetailsConfig() {
   try {
@@ -548,7 +551,8 @@ function getCampusDetailsConfig() {
         name: item.name || '',
         tel: item.tel || '',
         fax: item.fax || '',
-        principal: item.principal || ''
+        principal: item.principal || '',
+        mobile: item.mobile || ''
       };
     });
   } catch (error) {
