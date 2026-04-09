@@ -470,6 +470,13 @@ function getGradesConfigForWeb() {
       ? allGrades.filter(function(g) { return visibleCodes.indexOf(g.code) !== -1; })
       : allGrades;
 
+    // スタッフ一覧（校舎責任者選択用）
+    var staffRows = supabaseSelect_('staffs', null, { select: 'display_name,name' }) || [];
+    var staffNames = staffRows
+      .map(function(r) { return r.display_name || r.name || ''; })
+      .filter(function(n) { return n; })
+      .sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+
     return {
       success: true,
       testNames: testNames,
@@ -477,7 +484,8 @@ function getGradesConfigForWeb() {
       grades: grades,
       allGrades: allGrades,
       visibleGradeCodes: visibleCodes || allGrades.map(function(g) { return g.code; }),
-      schools: getSchoolConfig()
+      schools: getSchoolConfig(),
+      staffNames: staffNames
     };
   } catch (error) {
     Logger.log('❌ getGradesConfigForWebエラー: ' + error);
