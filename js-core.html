@@ -1887,15 +1887,6 @@
     function onSettingsLoaded(settings) {
       currentSettings = settings;
 
-      // ヘッダーのロゴ画像を設定
-      if (settings.logoUrl) {
-        var logoImg = document.getElementById('appLogoImg');
-        if (logoImg) {
-          logoImg.src = settings.logoUrl;
-          logoImg.style.display = 'inline';
-        }
-      }
-
       // ヘッダーのユーザー情報を更新
       document.getElementById('currentUser').textContent = '👤 ' + (settings.displayName || '名前未設定');
       
