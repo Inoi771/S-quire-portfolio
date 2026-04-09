@@ -361,7 +361,13 @@ function buildEditCampusSection(d, campusCodes) {
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.mobile || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'mobile\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="080-XXXX-XXXX"></td>';
-    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.principal || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'principal\',this.value)" style="width:80px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="山田太郎"></td>';
+    var principalOpts = '<option value="">—</option>';
+    var curPrincipal = c.principal || '';
+    placementStaffList.forEach(function(s) { principalOpts += '<option value="' + escHtml(s.name) + '"' + (curPrincipal === s.name ? ' selected' : '') + '>' + escHtml(s.name) + '</option>'; });
+    if (curPrincipal && !placementStaffList.some(function(s) { return s.name === curPrincipal; })) {
+      principalOpts += '<option value="' + escHtml(curPrincipal) + '" selected>' + escHtml(curPrincipal) + '</option>';
+    }
+    html += '<td style="padding:4px;"><select onchange="updatePlacementCampus(\'' + code + '\',\'principal\',this.value)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;max-width:90px;">' + principalOpts + '</select></td>';
     html += '</tr>';
   });
   html += '</table></div>';

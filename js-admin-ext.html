@@ -93,7 +93,17 @@
         .getGradesConfigForWeb();
     }
 
+    var _adminStaffNames = []; // 校舎責任者選択用スタッフ名一覧
+
     function displayGradesSettings(config) {
+      _adminStaffNames = config.staffNames || [];
+      // 校舎追加フォームの責任者ドロップダウンを更新
+      var addPrincipalSel = document.getElementById('newCampusPrincipal');
+      if (addPrincipalSel) {
+        var cur = addPrincipalSel.value;
+        addPrincipalSel.innerHTML = '<option value="">— 校舎責任者を選択 —</option>';
+        _adminStaffNames.forEach(function(n) { addPrincipalSel.innerHTML += '<option value="' + escapeHtml_(n) + '"' + (cur === n ? ' selected' : '') + '>' + escapeHtml_(n) + '</option>'; });
+      }
       var btnEdit   = 'background:#667eea;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;';
       var btnDel    = 'background:#ff6b6b;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;';
       var btnSave   = 'background:#43a047;color:white;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:10px;flex:1;';
@@ -143,7 +153,14 @@
             '<input id="cp-tel-' + idx + '" value="' + escapeHtml_(campus.tel || '') + '" placeholder="TEL（例: 088-693-0225）" style="' + inputSt + '">' +
             '<input id="cp-fax-' + idx + '" value="' + escapeHtml_(campus.fax || '') + '" placeholder="FAX（省略時はTELと同じ）" style="' + inputSt + '">' +
             '<input id="cp-mobile-' + idx + '" value="' + escapeHtml_(campus.mobile || '') + '" placeholder="携帯番号（任意）" style="' + inputSt + '">' +
-            '<input id="cp-principal-' + idx + '" value="' + escapeHtml_(campus.principal || '') + '" placeholder="校舎責任者名" style="' + inputSt + '">' +
+            (function() {
+              var cur = campus.principal || '';
+              var opts = '<option value="">— 選択 —</option>';
+              _adminStaffNames.forEach(function(n) { opts += '<option value="' + escapeHtml_(n) + '"' + (cur === n ? ' selected' : '') + '>' + escapeHtml_(n) + '</option>'; });
+              // 手動入力された名前がリストにない場合も表示
+              if (cur && _adminStaffNames.indexOf(cur) === -1) opts += '<option value="' + escapeHtml_(cur) + '" selected>' + escapeHtml_(cur) + '（手動）</option>';
+              return '<select id="cp-principal-' + idx + '" style="' + inputSt + '">' + opts + '</select>';
+            })() +
             '<div style="display:flex;gap:4px;">' +
               '<button onclick="saveCampusRow(' + idx + ',\'' + codeEsc + '\', this)" style="' + btnSave + '">保存</button>' +
               '<button onclick="cancelEditRow(\'cp\',' + idx + ')" style="' + btnCancel + '">キャンセル</button>' +
