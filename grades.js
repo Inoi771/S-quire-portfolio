@@ -267,38 +267,42 @@ function updateSchool(oldName, newName, departmentsStr) {
  * 校舎を追加（管理者専用）
  * @param {string} campusCode 校舎コード（例: C01）
  * @param {string} campusName 校舎名（例: 校舎A）
+ * @param {string} tel TEL（省略可）
+ * @param {string} fax FAX（省略可）
+ * @param {string} principal 校舎責任者名（省略可）
  * @return {Object} { success, message, campus, error }
  */
-function addCampus(campusCode, campusName) {
+function addCampus(campusCode, campusName, tel, fax, principal) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
     if (!campusCode || !campusName) {
       return { success: false, error: 'コードと名前を入力してください' };
     }
-    
+
     campusCode = campusCode.trim().toUpperCase();
     campusName = campusName.trim();
-    
+
     var campusConfig = [];
     var configJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
     if (configJson) {
       campusConfig = JSON.parse(configJson);
     }
-    
+
     // 重複チェック
     if (campusConfig.some(function(c) { return c.code === campusCode; })) {
       return { success: false, error: 'このコードは既に使用されています' };
     }
-    
+
     if (campusCode.length > 10 || campusName.length > 30) {
       return { success: false, error: 'コードは10文字、名前は30文字以下にしてください' };
     }
-    
-    campusConfig.push({ code: campusCode, name: campusName });
+
+    var newCampus = { code: campusCode, name: campusName, tel: (tel || '').trim(), fax: (fax || '').trim(), principal: (principal || '').trim() };
+    campusConfig.push(newCampus);
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
-    
-    return { success: true, message: '校舎を追加しました', campus: { code: campusCode, name: campusName } };
-    
+
+    return { success: true, message: '校舎を追加しました', campus: newCampus };
+
   } catch (error) {
     Logger.log('❌ addCampusエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -352,19 +356,36 @@ function deleteCampus(campusCode) {
  * @return {Object} { success, message, error }
  */
 function updateCampusName(campusCode, newName) {
+  return updateCampusDetails(campusCode, newName, null, null, null);
+}
+
+/**
+ * 校舎詳細を変更（管理者専用）
+ * ※コードは変更不可
+ * @param {string} campusCode 校舎コード（変更不可）
+ * @param {string} name 校舎名
+ * @param {string} tel TEL（null で変更なし）
+ * @param {string} fax FAX（null で変更なし）
+ * @param {string} principal 校舎責任者名（null で変更なし）
+ * @return {Object} { success, message, error }
+ */
+function updateCampusDetails(campusCode, name, tel, fax, principal) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
-    newName = (newName || '').trim();
-    if (!newName) return { success: false, error: '新しい校舎名を入力してください' };
+    name = (name || '').trim();
+    if (!name) return { success: false, error: '校舎名を入力してください' };
     var configJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
     var campusConfig = configJson ? JSON.parse(configJson) : [];
     var idx = campusConfig.findIndex(function(c) { return c.code === campusCode; });
     if (idx === -1) return { success: false, error: '校舎が見つかりません' };
-    campusConfig[idx].name = newName;
+    campusConfig[idx].name = name;
+    if (tel !== null) campusConfig[idx].tel = (tel || '').trim();
+    if (fax !== null) campusConfig[idx].fax = (fax || '').trim();
+    if (principal !== null) campusConfig[idx].principal = (principal || '').trim();
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
-    return { success: true, message: '校舎名を変更しました' };
+    return { success: true, message: '校舎情報を更新しました' };
   } catch (error) {
-    Logger.log('❌ updateCampusNameエラー: ' + error);
+    Logger.log('❌ updateCampusDetailsエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }
@@ -499,7 +520,7 @@ function getCampusConfig() {
     initializeGradesConfig();
     var configJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
     var config = JSON.parse(configJson || '[]');
-    
+
     // 辞書形式に変換
     var result = {};
     config.forEach(function(item) {
@@ -509,6 +530,30 @@ function getCampusConfig() {
   } catch (error) {
     Logger.log('❌ getCampusConfigエラー: ' + error);
     return CAMPUSES;
+  }
+}
+
+/**
+ * 校舎詳細設定を配列形式で取得（TEL/FAX/責任者含む）
+ * @return {Array} [{code, name, tel, fax, principal}]
+ */
+function getCampusDetailsConfig() {
+  try {
+    initializeGradesConfig();
+    var configJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
+    var config = JSON.parse(configJson || '[]');
+    return config.map(function(item) {
+      return {
+        code: item.code,
+        name: item.name || '',
+        tel: item.tel || '',
+        fax: item.fax || '',
+        principal: item.principal || ''
+      };
+    });
+  } catch (error) {
+    Logger.log('❌ getCampusDetailsConfigエラー: ' + error);
+    return [];
   }
 }
 

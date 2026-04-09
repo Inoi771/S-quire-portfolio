@@ -1955,16 +1955,28 @@ function getStaffPlacementForWeb() {
   try {
     var json = getScriptProperty('STAFF_PLACEMENT');
     var campusConfig = getCampusConfig() || {};
+    // 校舎詳細（TEL/FAX/責任者）をデフォルト値として取得
+    var campusDetails = getCampusDetailsConfig();
+    var campusDetailsMap = {};
+    campusDetails.forEach(function(c) { campusDetailsMap[c.code] = c; });
     // スタッフ一覧をSupabaseから取得（名前順）
     var staffRows = supabaseSelect_('staffs', null, { select: 'id,display_name,name' }) || [];
     var staffList = staffRows
       .map(function(r) { return { id: r.id, name: r.display_name || r.name || '' }; })
       .filter(function(s) { return s.name; })
       .sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
-    if (!json) {
-      return { success: true, data: null, campusConfig: campusConfig, staffList: staffList };
+    var data = json ? JSON.parse(json) : null;
+    // 保存済みデータの campuses に campus config のデフォルト値をマージ
+    if (data && data.campuses) {
+      Object.keys(data.campuses).forEach(function(code) {
+        var def = campusDetailsMap[code] || {};
+        var c = data.campuses[code];
+        if (!c.tel && def.tel) c.tel = def.tel;
+        if (!c.fax && def.fax) c.fax = def.fax;
+        if (!c.principal && def.principal) c.principal = def.principal;
+      });
     }
-    return { success: true, data: JSON.parse(json), campusConfig: campusConfig, staffList: staffList };
+    return { success: true, data: data, campusConfig: campusConfig, campusDetailsMap: campusDetailsMap, staffList: staffList };
   } catch (e) {
     Logger.log('❌ getStaffPlacementForWeb エラー: ' + e);
     return { success: false, error: e.toString() };
