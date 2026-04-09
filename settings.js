@@ -205,35 +205,14 @@ function writeStaffToSupabase_(staff) {
  */
 function getSettings() {
   try {
-    // アプリフォルダ直下の assets フォルダから logo.png の公開URLを取得
-    var logoUrl = '';
-    try {
-      var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-      if (rootFolderId) {
-        var rootFolder = DriveApp.getFolderById(rootFolderId);
-        var assetsFolders = rootFolder.getFoldersByName('assets');
-        if (assetsFolders.hasNext()) {
-          var assetsFolder = assetsFolders.next();
-          var logoFiles = assetsFolder.getFilesByName('logo.png');
-          if (logoFiles.hasNext()) {
-            var logoFile = logoFiles.next();
-            var logoBlob = logoFile.getBlob();
-            var logoBase64 = Utilities.base64Encode(logoBlob.getBytes());
-            logoUrl = 'data:image/png;base64,' + logoBase64;
-          }
-        }
-      }
-    } catch (e) {
-      Logger.log('❌ assets取得エラー: ' + e);
-    }
-
+    // ロゴは Firebase Hosting の /logo.png を直接参照（Drive API不要）
     var settings = {
       geminiApiKey: getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定',
       appFolderId: getProperty(PROP_KEYS.APP_FOLDER_ID) || '',
       themeColor: getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b',
       currentUser: getCurrentUserEmail(),
       displayName: getUserProperty('DISPLAY_NAME') || '',
-      logoUrl: logoUrl
+      logoUrl: ''
     };
 
     return settings;
