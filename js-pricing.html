@@ -196,6 +196,10 @@
       // 横スクロール可能なテーブルにヒント（右端フェード）を付与
       var wraps = output.querySelectorAll('.pricing-table-wrap');
       wraps.forEach(function(wrap) {
+        // 既存リスナーを除去してメモリリークを防止
+        if (wrap._checkScrollHandler) {
+          wrap.removeEventListener('scroll', wrap._checkScrollHandler);
+        }
         function checkScroll() {
           if (wrap.scrollWidth > wrap.clientWidth + 2) {
             wrap.classList.add('has-scroll');
@@ -208,6 +212,7 @@
             wrap.classList.remove('has-scroll');
           }
         }
+        wrap._checkScrollHandler = checkScroll;
         wrap.addEventListener('scroll', checkScroll, { passive: true });
         checkScroll();
       });

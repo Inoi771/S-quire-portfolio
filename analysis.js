@@ -11,10 +11,8 @@
 
 /**
  * Gemini APIへのリクエストを行い、エラー種別に応じて自動リトライする
- * 429（レート制限）: 30秒→60秒→90秒（最大3回）
- * 503・500（高負荷・一時障害）: 30秒（最大1回）
- *   ※15秒では回復しないケースがあるため30秒に延長。
- *   ※150人バッチ処理での最悪ケース（全5コールが503）: 5×30秒=150秒追加→合計約4.6分（GAS6分制限内）
+ * 429（レート制限）: 5秒→15秒→30秒（最大3回、指数バックオフ）
+ * 503・500（高負荷・一時障害）: 10秒（最大1回）
  * @param {string} url APIエンドポイントURL
  * @param {Object} options UrlFetchApp のオプション
  * @return {HTTPResponse} レスポンス
@@ -23,18 +21,19 @@ function fetchGeminiWithRetry_(url, options) {
   var res = UrlFetchApp.fetch(url, options);
   var code = res.getResponseCode();
 
-  // 503・500（高負荷・一時障害）: 1回のみリトライ（30秒待機）
+  // 503・500（高負荷・一時障害）: 1回のみリトライ（10秒待機）
   if (code === 503 || code === 500) {
-    Logger.log('⚠ Gemini API高負荷/障害(' + code + ')。30秒後に1回リトライします...');
-    Utilities.sleep(30000);
+    Logger.log('⚠ Gemini API高負荷/障害(' + code + ')。10秒後に1回リトライします...');
+    Utilities.sleep(10000);
     res = UrlFetchApp.fetch(url, options);
     code = res.getResponseCode();
   }
 
-  // 429（レート制限）: 最大3回リトライ（30秒→60秒→90秒）
+  // 429（レート制限）: 最大3回リトライ（5秒→15秒→30秒 指数バックオフ）
+  var retryWaits = [5000, 15000, 30000];
   for (var i = 0; i < 3; i++) {
     if (code !== 429) break;
-    var waitMs = 30000 * (i + 1);
+    var waitMs = retryWaits[i];
     Logger.log('⚠ Gemini APIレート制限(429)。' + (waitMs / 1000) + '秒後にリトライ（' + (i + 1) + '/3）...');
     Utilities.sleep(waitMs);
     res = UrlFetchApp.fetch(url, options);
@@ -86,12 +85,21 @@ function getGradeAnalysis(year, testName) {
 }
 
 /**
+ * getYearTestAvgs_ の実行中キャッシュ（同一実行内で同じ year+testName を何度も取得しないようにする）
+ * GAS は実行ごとにリセットされるため、明示的クリア不要
+ */
+var yearTestAvgsCache_ = {};
+
+/**
  * 指定年度・テスト名の塾平均・学校「平均」行をまとめて取得する内部ヘルパー
+ * 同一実行中は結果をキャッシュし、同じ year+testName の重複クエリを防止する
  * @param {number} year 学年年度
  * @param {string} testName テスト名
  * @return {Object} { jukuAvg, schoolAvg }（取得できなければ各フィールドが null）
  */
 function getYearTestAvgs_(year, testName) {
+  var cacheKey = year + '|' + testName;
+  if (yearTestAvgsCache_[cacheKey]) return yearTestAvgsCache_[cacheKey];
   var jukuAvg = null;
   try {
     var campResult = getCampusAverages(year, testName);
@@ -125,7 +133,9 @@ function getYearTestAvgs_(year, testName) {
   } catch (e) {
     Logger.log('⚠ getYearTestAvgs_ schoolAvg取得スキップ (' + year + '/' + testName + '): ' + e);
   }
-  return { jukuAvg: jukuAvg, schoolAvg: schoolAvg };
+  var result = { jukuAvg: jukuAvg, schoolAvg: schoolAvg };
+  yearTestAvgsCache_[cacheKey] = result;
+  return result;
 }
 
 /**

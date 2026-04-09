@@ -66,11 +66,12 @@
         // score-test から選択肢をコピー
         var scoreSel = document.getElementById('score-test');
         if (scoreSel && scoreSel.options.length > 1) {
-          testSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+          var testOptsHtml = '<option value="">-- テストを選択してください --</option>';
           for (var i = 1; i < scoreSel.options.length; i++) {
             var opt = scoreSel.options[i];
-            testSel.innerHTML += '<option value="' + opt.value + '">' + opt.text + '</option>';
+            testOptsHtml += '<option value="' + opt.value + '">' + opt.text + '</option>';
           }
+          testSel.innerHTML = testOptsHtml;
         } else {
           // score-test もまだ空の場合、直接バックエンドから取得
           google.script.run
@@ -78,10 +79,11 @@
               if (!r.success || !r.testNames) return;
               var sel = document.getElementById('list-test-select');
               if (sel && sel.options.length <= 1) {
-                sel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+                var selHtml = '<option value="">-- テストを選択してください --</option>';
                 r.testNames.forEach(function(t) {
-                  sel.innerHTML += '<option value="' + t + '">' + t + '</option>';
+                  selHtml += '<option value="' + t + '">' + t + '</option>';
                 });
+                sel.innerHTML = selHtml;
               }
             })
             .withFailureHandler(function(err) { console.error('getGradesConfigForWeb失敗:', err); })
@@ -111,12 +113,13 @@
       // 志望校フィルター（schoolsData は loadDropdownData() で設定済み）
       var schoolSel = document.getElementById('list-school-filter');
       if (schoolSel && schoolSel.options.length <= 1) {
-        schoolSel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+        var schoolOptsHtml = '<option value="">-- 絞り込まない --</option>';
         if (typeof schoolsData !== 'undefined') {
           schoolsData.forEach(function(s) {
-            schoolSel.innerHTML += '<option value="' + s.name + '">' + s.name + '</option>';
+            schoolOptsHtml += '<option value="' + s.name + '">' + s.name + '</option>';
           });
         }
+        schoolSel.innerHTML = schoolOptsHtml;
       }
     }
 
@@ -126,7 +129,7 @@
       var wrapEl    = document.getElementById('list-dept-filter-wrap');
       var deptSel   = document.getElementById('list-dept-filter');
 
-      deptSel.innerHTML = '<option value="">-- 絞り込まない --</option>';
+      var deptHtml = '<option value="">-- 絞り込まない --</option>';
       wrapEl.style.display = 'none';
 
       if (schoolVal && typeof schoolsData !== 'undefined') {
@@ -136,11 +139,12 @@
         }
         if (school && school.departments && school.departments.length > 0) {
           school.departments.forEach(function(d) {
-            deptSel.innerHTML += '<option value="' + d + '">' + d + '</option>';
+            deptHtml += '<option value="' + d + '">' + d + '</option>';
           });
           wrapEl.style.display = 'block';
         }
       }
+      deptSel.innerHTML = deptHtml;
     }
 
     /** 「全校舎」チェックボックス変更時（各校舎チェックとは独立） */

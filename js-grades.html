@@ -160,10 +160,11 @@ function loadDropdownData(onComplete) {
     var listTestSel = document.getElementById('list-test-select');
     if (listTestSel) {
       var savedListVal = listTestSel.value;
-      listTestSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+      var listTestOptsHtml = '<option value="">-- テストを選択してください --</option>';
       result.testNames.forEach(function(t) {
-        listTestSel.innerHTML += '<option value="' + t + '">' + t + '</option>';
+        listTestOptsHtml += '<option value="' + t + '">' + t + '</option>';
       });
+      listTestSel.innerHTML = listTestOptsHtml;
       if (savedListVal) listTestSel.value = savedListVal;
     }
 

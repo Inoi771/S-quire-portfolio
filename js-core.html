@@ -38,6 +38,7 @@
   // タブ事前読み込みフラグ（起動時にバックグラウンドで読み込んだかどうか）
   var settingsTabPreloaded = false;
   var adminTabPreloaded = false;
+  var adminSubTabLoaded_ = {};      // 管理サブタブの初回読み込みフラグ
   var tabDataPreloaded_ = false;    // preloadTabData() の二重呼び出し防止
   var scheduleLoadStarted_ = false; // getScheduleData() の二重呼び出し防止
 
@@ -1088,24 +1089,34 @@
       // スクロール位置を復元
       restoreScrollPosition('admin-' + tabName);
 
-      // 初回読み込み
+      // 初回読み込み（読み込み済みのサブタブは再取得しない）
+      if (!adminSubTabLoaded_) adminSubTabLoaded_ = {};
       if (tabName === 'users') {
         loadUsersList();
       } else if (tabName === 'properties') {
-        loadProperties();
-        setTimeout(function() {
-          loadGradesSettings();
-          loadSigmaSettings();
-          initStudentAnalysisPanel();
-        }, 500);
+        if (!adminSubTabLoaded_.properties) {
+          adminSubTabLoaded_.properties = true;
+          loadProperties();
+          setTimeout(function() {
+            loadGradesSettings();
+            loadSigmaSettings();
+            initStudentAnalysisPanel();
+          }, 500);
+        }
       } else if (tabName === 'sheets') {
         loadSheetsList();
       } else if (tabName === 'drive') {
         exploreDriveFolder();
       } else if (tabName === 'logs') {
-        loadLogsTab();
+        if (!adminSubTabLoaded_.logs) {
+          adminSubTabLoaded_.logs = true;
+          loadLogsTab();
+        }
       } else if (tabName === 'scheduler') {
-        initLineScheduler();
+        if (!adminSubTabLoaded_.scheduler) {
+          adminSubTabLoaded_.scheduler = true;
+          initLineScheduler();
+        }
       }
     }
 

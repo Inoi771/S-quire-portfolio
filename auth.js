@@ -59,7 +59,12 @@ function verifyFirebaseIdToken_(idToken) {
  * @return {string} 値（存在しない場合は空文字列）
  */
 function getProperty(key) {
-  return PropertiesService.getScriptProperties().getProperty(key) || '';
+  // 同一実行内のインメモリキャッシュ（PropertiesServiceへの冗長アクセスを防止）
+  if (!getProperty._cache) getProperty._cache = {};
+  if (getProperty._cache[key] !== undefined) return getProperty._cache[key];
+  var val = PropertiesService.getScriptProperties().getProperty(key) || '';
+  getProperty._cache[key] = val;
+  return val;
 }
 
 /**
@@ -70,6 +75,8 @@ function getProperty(key) {
  */
 function setProperty(key, value) {
   PropertiesService.getScriptProperties().setProperty(key, value);
+  // インメモリキャッシュも更新
+  if (getProperty._cache) getProperty._cache[key] = value;
   return true;
 }
 
