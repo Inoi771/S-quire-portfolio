@@ -188,6 +188,22 @@
             var successMsg = '✅ ' + (result.message || '処理が完了しました');
             addAIWidgetMessage('ai', successMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
+            // 講習エントリ操作成功後、キャッシュをクリアして画面を自動更新
+            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry') {
+              var affectedCampus = String(execParams.campusCode || '').padStart(2, '0');
+              if (typeof lectureEntries !== 'undefined') {
+                delete lectureEntries[affectedCampus];
+              }
+              if (typeof dirtyCampuses !== 'undefined') {
+                dirtyCampuses[affectedCampus] = false;
+              }
+              if (typeof allCampusEntriesCache !== 'undefined') {
+                allCampusEntriesCache = [];
+              }
+              if (typeof refreshLecEntries === 'function') {
+                refreshLecEntries();
+              }
+            }
           } else {
             var errMsg = '❌ ' + (result ? result.error || 'エラーが発生しました' : 'エラーが発生しました');
             addAIWidgetMessage('ai', errMsg);
