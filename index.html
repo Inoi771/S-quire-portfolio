@@ -1047,7 +1047,7 @@
               <button id="lec-delete-btn" onclick="deleteLecEntry()" disabled style="padding: 6px 16px; background: white; border: 1px solid #ccc; border-radius: 20px; font-size: 14px; color: #ccc; cursor: not-allowed; font-weight: 600; white-space: nowrap;">🗑️ 削除</button>
               <span id="lec-status-msg" style="font-size: 12px; color: #666;"></span>
               <button onclick="showLecCalExportModal()" style="margin-left: auto; padding: 6px 16px; background: #f0fff4; border: 1px solid #a5d6a7; border-radius: 20px; font-size: 14px; color: #2e7d32; cursor: pointer; font-weight: 600; white-space: nowrap;">📅 カレンダー追加</button>
-              <button onclick="openLecOcrModal()" style="padding: 6px 16px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 20px; font-size: 14px; color: #f57f17; cursor: pointer; font-weight: 600; white-space: nowrap;">📷 手書き読み取り</button>
+              <button onclick="openLecOcrModal()" style="padding: 6px 16px; background: #FF6B6B; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap;">📸 写真・PDF から読み込む（AI OCR）</button>
               <button onclick="showLecHelpModal()" style="padding: 6px 16px; background: #f0f4ff; border: 1px solid #c5cae9; border-radius: 20px; font-size: 14px; color: #667eea; cursor: pointer; font-weight: 600; white-space: nowrap;">❓ 操作方法</button>
             </div>
 
@@ -3130,20 +3130,39 @@
 
   <!-- ===== 講習管理 手書き読み取りモーダル ===== -->
   <div id="lecOcrOverlay" onclick="closeLecOcrModal()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
-  <div id="lecOcrModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:16px; padding:20px; width:92%; max-width:500px; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.2); max-height:90vh; overflow-y:auto;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-      <h3 style="margin:0; font-size:20px; color:#333;">📷 手書き日程を読み取る</h3>
-      <button onclick="closeLecOcrModal()" style="background:none; border:none; font-size:28px; cursor:pointer; color:#999; line-height:1;">✕</button>
+  <div id="lecOcrModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:16px; padding:28px; width:92%; max-width:none; max-height:90vh; overflow-y:auto; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h3 style="margin:0; font-size:26px;">📄 写真・PDF から読み込む</h3>
+      <button onclick="closeLecOcrModal()" style="background:none; border:none; font-size:32px; cursor:pointer; color:#999; line-height:1;">✕</button>
     </div>
-    <div style="font-size:13px; color:#666; margin-bottom:12px;">日程表の写真やPDFをアップロードすると、AIが日時・科目・学年を読み取ります。担当講師は自動でログイン中のユーザーに設定されます。</div>
-    <!-- ファイル選択 -->
-    <input type="file" id="lec-ocr-file" accept="image/*,application/pdf" onchange="onLecOcrFileChange()" style="font-size:13px; margin-bottom:8px; width:100%;">
-    <div id="lec-ocr-preview" style="margin-bottom:10px;"></div>
-    <button id="lec-ocr-run-btn" onclick="runLecOcr()" style="width:100%; padding:10px; background:var(--theme-color,#667eea); color:white; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px;">読み取る</button>
+    <p style="font-size:18px; color:#666; margin:0 0 20px; line-height:1.5;">写真またはPDFを選択すると、日程を自動で読み取ります。担当講師はログイン中のユーザーに自動設定されます。</p>
+
+    <input type="file" id="lec-ocr-file" accept="image/*,application/pdf" onchange="onLecOcrFileChange()" style="display:none;">
+    <div style="display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:20px;">
+      <button onclick="document.getElementById('lec-ocr-file').removeAttribute('capture'); document.getElementById('lec-ocr-file').setAttribute('accept','image/*,application/pdf'); document.getElementById('lec-ocr-file').click();"
+              style="padding:20px; background:#f0f0f0; border:1px solid #ddd; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px;">
+        📸 写真を選択
+      </button>
+      <button onclick="document.getElementById('lec-ocr-file').removeAttribute('capture'); document.getElementById('lec-ocr-file').setAttribute('accept','application/pdf'); document.getElementById('lec-ocr-file').click(); document.getElementById('lec-ocr-file').setAttribute('accept','image/*,application/pdf');"
+              style="padding:20px; background:#e8f0fe; border:1px solid #c5d0e6; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px; color:#3c4f8a;">
+        📄 PDFを選択
+      </button>
+    </div>
+
+    <img id="lec-ocr-img-preview" style="display:none; width:100%; border-radius:8px; margin-bottom:16px; border:1px solid #ddd; max-height:300px; object-fit:contain;">
+    <div id="lec-ocr-pdf-preview" style="display:none; padding:18px; background:#e8f0fe; border:1px solid #c5d0e6; border-radius:10px; margin-bottom:16px; font-size:18px; color:#3c4f8a; word-break:break-all;"></div>
+
+    <button id="lec-ocr-run-btn" onclick="runLecOcr()"
+            style="width:100%; padding:20px; background:#FF6B6B; color:white; border:none; border-radius:12px; cursor:pointer; font-weight:600; font-size:22px; margin-bottom:10px; display:none; min-height:64px;">
+      AI で読み込む
+    </button>
+
+    <div id="lec-ocr-message" style="margin-top:10px; font-size:18px;"></div>
+
     <!-- 確認テーブル -->
-    <div id="lec-ocr-result-area" style="display:none;">
-      <div style="font-size:13px; font-weight:600; color:#333; margin-bottom:6px;">読み取り結果 — 内容を確認して「保存」してください</div>
-      <div style="font-size:11px; color:#e57373; margin-bottom:8px;" id="lec-ocr-warn-msg"></div>
+    <div id="lec-ocr-result-area" style="display:none; margin-top:16px;">
+      <div style="font-size:15px; font-weight:600; color:#333; margin-bottom:6px;">読み取り結果 — 内容を確認して「保存」してください</div>
+      <div style="font-size:13px; color:#e57373; margin-bottom:8px;" id="lec-ocr-warn-msg"></div>
       <div style="overflow-x:auto; margin-bottom:12px;">
         <table id="lec-ocr-result-table" style="width:100%; border-collapse:collapse; font-size:12px;">
           <thead>
@@ -3161,7 +3180,7 @@
           <tbody id="lec-ocr-result-body"></tbody>
         </table>
       </div>
-      <button id="lec-ocr-save-btn" onclick="saveLecOcrEntries()" style="width:100%; padding:10px; background:#43a047; color:white; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">このまま保存</button>
+      <button id="lec-ocr-save-btn" onclick="saveLecOcrEntries()" style="width:100%; padding:20px; background:#43a047; color:white; border:none; border-radius:12px; font-size:22px; font-weight:600; cursor:pointer; min-height:64px;">このまま保存</button>
     </div>
   </div>
 
