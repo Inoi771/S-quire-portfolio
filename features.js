@@ -4383,6 +4383,12 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       '授業コマを読み取り、JSON 配列のみで返してください。マークダウンなし。\n\n' +
       '年度: ' + lectureYear + '年（月日のみ記載の場合はこの年で補完）\n' +
       campusText + '\n\n' +
+      '【重要】日付の省略記法を正しく展開してください:\n' +
+      '- "7/15,30" → 7月15日と7月30日の2エントリ\n' +
+      '- "8/1.6" や "8/1・6" → 8月1日と8月6日の2エントリ\n' +
+      '- "7/15,30,8/1.6" → 7月15日・7月30日・8月1日・8月6日の4エントリ\n' +
+      '- "7/15〜8/5 毎週水" → 期間内の毎週水曜日を個別エントリに展開\n' +
+      '省略された日付は前の月を引き継ぐ。各日付を必ず別々のエントリとして出力すること。\n\n' +
       '[{"date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,' +
       '"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull",' +
       '"classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}]\n\n' +
