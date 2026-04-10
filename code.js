@@ -355,6 +355,7 @@ function handleApiCall_(body) {
     }
 
     // Firebase ID トークンを検証してユーザーコンテキストを設定
+    Logger.log('handleApiCall_: idToken長=' + (idToken ? idToken.length : 0));
     if (idToken) {
       var authResult = verifyFirebaseIdToken_(idToken);
       if (authResult) {

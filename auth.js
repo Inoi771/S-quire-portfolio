@@ -46,6 +46,7 @@ function verifyFirebaseIdToken_(idToken) {
       return null;
     }
     var user = result.users[0];
+    Logger.log('verifyFirebaseIdToken_: localId=' + (user.localId || '(空)') + ' email=' + (user.email || '(空)'));
     return { email: user.email || null, uid: user.localId || null };
   } catch (e) {
     Logger.log('❌ verifyFirebaseIdToken_エラー: ' + e);
@@ -819,6 +820,7 @@ function initializeFirstAdmin(displayName) {
 
     // 2. 既存の staffs ドキュメントを検索して再利用（リセット後の再登録でも重複を作らない）
     var firebaseUid = _firebaseUidContext_ || null;
+    Logger.log('initializeFirstAdmin: firebaseUid=' + (firebaseUid || '(空)') + ' uidContext=' + (_firebaseUidContext_ || '(空)'));
     var existingStaff = resolveStaffByUid_(firebaseUid, emailLower);
     var teacherId;
     if (existingStaff) {

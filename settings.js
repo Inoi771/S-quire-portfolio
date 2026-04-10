@@ -171,8 +171,12 @@ function resolveStaffByUid_(firebaseUid, email) {
     if (firebaseUid && staff.firebaseUid !== firebaseUid) { staff.firebaseUid = firebaseUid; updated = true; }
 
     if (updated) {
-      writeStaffToSupabase_(staff);
-      Logger.log('✓ resolveStaffByUid_: 配列更新 teacherId=' + (staff.teacherId || staff._id));
+      try {
+        writeStaffToSupabase_(staff);
+        Logger.log('✓ resolveStaffByUid_: 配列更新 teacherId=' + (staff.teacherId || staff._id) + ' uid=' + (staff.firebaseUid || '(空)'));
+      } catch (writeErr) {
+        Logger.log('⚠ resolveStaffByUid_: staffs 書き込み失敗: ' + writeErr);
+      }
     }
     _currentStaff_ = staff;
   }
@@ -711,7 +715,9 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
     if (firebaseEmail) setFirebaseEmailContext_(firebaseEmail);
     // handleApiCall_ がトークンから設定した UID を優先、引数はフォールバック
     if (!_firebaseUidContext_ && firebaseUid) setFirebaseUidContext_(firebaseUid);
+    var resolvedUid = _firebaseUidContext_ || firebaseUid || null;
     var email = getCurrentUserEmail();
+    Logger.log('getAppStartupData: email=' + email + ' uid=' + (resolvedUid || '(空)') + ' uidContext=' + (_firebaseUidContext_ || '(空)') + ' uidArg=' + (firebaseUid || '(空)'));
 
     // 管理者かどうかを素早く判定（ScriptProperties の文字列比較のみ・Drive API不要）
     var adminEmailsRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
@@ -721,8 +727,21 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
     // 初回セットアップチェック（Admin未登録なら true）
     var isFirstSetup = adminList.length === 0;
 
-    // Firestore staffs からスタッフを照合
-    var staff = resolveStaffByUid_(firebaseUid || _firebaseUidContext_, email);
+    // Supabase staffs からスタッフを照合
+    var staff = resolveStaffByUid_(resolvedUid, email);
+
+    // 安全ネット: resolveStaffByUid_ で UID が保存されなかった場合の明示的な補完
+    if (staff && resolvedUid && !staff.firebaseUid) {
+      try {
+        staff.firebaseUid = resolvedUid;
+        if (!Array.isArray(staff.firebaseUids)) staff.firebaseUids = [];
+        if (staff.firebaseUids.indexOf(resolvedUid) === -1) staff.firebaseUids.push(resolvedUid);
+        writeStaffToSupabase_(staff);
+        Logger.log('✓ getAppStartupData: Firebase UID を明示的に補完 uid=' + resolvedUid);
+      } catch (uidErr) {
+        Logger.log('⚠ getAppStartupData: UID 補完失敗: ' + uidErr);
+      }
+    }
 
     var teacherId       = '';
     var displayName     = '';
