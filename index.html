@@ -42,7 +42,7 @@
         // position:fixed の要素は app-container の zoom が届かないため個別に適用
         // 【全画面オーバーレイ】背景黒幕・全画面UI（zoom + 幅高さを ratio で割って補正）
         ['aiWidgetOverlay', 'schedulerEditOverlay', 'lecHelpOverlay',
-         'lecCalExportOverlay', 'flyerHelpOverlay', 'matGreetingOverlay',
+         'lecCalExportOverlay', 'lecOcrOverlay', 'flyerHelpOverlay', 'matGreetingOverlay',
          'ocrOverlay', 'drawerOverlay', 'setupWizard', 'splashScreen',
          'appDialogOverlay', 'hiddenAdminOverlay', 'idInputOverlay',
          'fbLoginScreen'].forEach(function(id) {
@@ -60,6 +60,7 @@
           { id: 'schedulerEditModal', widthVw: 92 },
           { id: 'lecHelpModal',       widthVw: 90 },
           { id: 'lecCalExportModal',  widthVw: 90 },
+          { id: 'lecOcrModal',        widthVw: 92 },
           { id: 'flyerHelpModal',     widthVw: 90 },
           { id: 'matGreetingModal',   widthVw: 90 },
           { id: 'appDialogModal',     widthVw: 85 },
@@ -1046,6 +1047,7 @@
               <button id="lec-delete-btn" onclick="deleteLecEntry()" disabled style="padding: 6px 16px; background: white; border: 1px solid #ccc; border-radius: 20px; font-size: 14px; color: #ccc; cursor: not-allowed; font-weight: 600; white-space: nowrap;">🗑️ 削除</button>
               <span id="lec-status-msg" style="font-size: 12px; color: #666;"></span>
               <button onclick="showLecCalExportModal()" style="margin-left: auto; padding: 6px 16px; background: #f0fff4; border: 1px solid #a5d6a7; border-radius: 20px; font-size: 14px; color: #2e7d32; cursor: pointer; font-weight: 600; white-space: nowrap;">📅 カレンダー追加</button>
+              <button onclick="openLecOcrModal()" style="padding: 6px 16px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 20px; font-size: 14px; color: #f57f17; cursor: pointer; font-weight: 600; white-space: nowrap;">📷 手書き読み取り</button>
               <button onclick="showLecHelpModal()" style="padding: 6px 16px; background: #f0f4ff; border: 1px solid #c5cae9; border-radius: 20px; font-size: 14px; color: #667eea; cursor: pointer; font-weight: 600; white-space: nowrap;">❓ 操作方法</button>
             </div>
 
@@ -3123,6 +3125,43 @@
           <div style="font-size:13px; color:#888; margin-top:2px;">Apple カレンダー、Outlook など<br>他のカレンダーアプリ用</div>
         </div>
       </button>
+    </div>
+  </div>
+
+  <!-- ===== 講習管理 手書き読み取りモーダル ===== -->
+  <div id="lecOcrOverlay" onclick="closeLecOcrModal()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
+  <div id="lecOcrModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:16px; padding:20px; width:92%; max-width:500px; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.2); max-height:90vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h3 style="margin:0; font-size:20px; color:#333;">📷 手書き日程を読み取る</h3>
+      <button onclick="closeLecOcrModal()" style="background:none; border:none; font-size:28px; cursor:pointer; color:#999; line-height:1;">✕</button>
+    </div>
+    <div style="font-size:13px; color:#666; margin-bottom:12px;">日程表の写真やPDFをアップロードすると、AIが日時・科目・学年を読み取ります。担当講師は自動でログイン中のユーザーに設定されます。</div>
+    <!-- ファイル選択 -->
+    <input type="file" id="lec-ocr-file" accept="image/*,application/pdf" onchange="onLecOcrFileChange()" style="font-size:13px; margin-bottom:8px; width:100%;">
+    <div id="lec-ocr-preview" style="margin-bottom:10px;"></div>
+    <button id="lec-ocr-run-btn" onclick="runLecOcr()" style="width:100%; padding:10px; background:var(--theme-color,#667eea); color:white; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px;">読み取る</button>
+    <!-- 確認テーブル -->
+    <div id="lec-ocr-result-area" style="display:none;">
+      <div style="font-size:13px; font-weight:600; color:#333; margin-bottom:6px;">読み取り結果 — 内容を確認して「保存」してください</div>
+      <div style="font-size:11px; color:#e57373; margin-bottom:8px;" id="lec-ocr-warn-msg"></div>
+      <div style="overflow-x:auto; margin-bottom:12px;">
+        <table id="lec-ocr-result-table" style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:#f5f5f5;">
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">日付</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">開始</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">分</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">科目</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">学年</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">クラス</th>
+              <th style="padding:5px 6px; text-align:left; border-bottom:1px solid #e0e0e0; white-space:nowrap;">校舎</th>
+              <th style="padding:5px 2px; border-bottom:1px solid #e0e0e0;"></th>
+            </tr>
+          </thead>
+          <tbody id="lec-ocr-result-body"></tbody>
+        </table>
+      </div>
+      <button id="lec-ocr-save-btn" onclick="saveLecOcrEntries()" style="width:100%; padding:10px; background:#43a047; color:white; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">このまま保存</button>
     </div>
   </div>
 
