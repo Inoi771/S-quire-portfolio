@@ -4433,6 +4433,82 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
 }
 
 /**
+ * 貼り付けテキストから講習日程を解析しエントリ候補を返す（保存はしない）
+ * @aiCallable
+ * @param {string} scheduleText 日程テキスト（ワード・エクセル等からのコピー）
+ * @param {number} lectureYear 講習の年（月日のみの日付補完に使用）
+ * @param {string} campusCodesJson 配属校舎コードの JSON 配列文字列
+ * @param {string} campusNamesJson 校舎コード→名前マップの JSON 文字列
+ * @return {Object} { success, entries:[{date,startTime,durationMinutes,subject,grade,classLabel,campusCode}], error }
+ */
+function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson) {
+  try {
+    var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
+    if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
+    if (!scheduleText || !scheduleText.trim()) return { success: false, error: 'テキストが空です' };
+
+    var campusNames = safeJsonParse_(campusNamesJson, {});
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+
+    var campusText = '';
+    var campusKeys = Object.keys(campusNames);
+    if (campusKeys.length === 1) {
+      campusText = '担当者の配属校舎は「' + campusNames[campusKeys[0]] + '」（コード: ' + campusKeys[0] + '）のみです。campusCode はすべて "' + campusKeys[0] + '" としてください。';
+    } else if (campusKeys.length > 1) {
+      var nameList = campusKeys.map(function(k) { return '"' + campusNames[k] + '": "' + k + '"'; }).join(', ');
+      campusText = '校舎コード一覧（テキストに校舎名がある場合は対応コードを使用してください）: ' + nameList + '。不明な場合は campusCode を null としてください。';
+    }
+
+    var prompt = '以下は学習塾の講習日程テキストです。\n' +
+      '授業コマを読み取り、JSON 配列のみで返してください。マークダウンなし。\n\n' +
+      '年度: ' + lectureYear + '年（月日のみ記載の場合はこの年で補完）\n' +
+      campusText + '\n\n' +
+      '【重要】日付の省略記法を正しく展開してください:\n' +
+      '- "7/15,30" → 7月15日と7月30日の2エントリ\n' +
+      '- "8/1.6" や "8/1・6" → 8月1日と8月6日の2エントリ\n' +
+      '- "7/15,30,8/1.6" → 7月15日・7月30日・8月1日・8月6日の4エントリ\n' +
+      '- "7/15〜8/5 毎週水" → 期間内の毎週水曜日を個別エントリに展開\n' +
+      '省略された日付は前の月を引き継ぐ。各日付を必ず別々のエントリとして出力すること。\n\n' +
+      '[{"date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,' +
+      '"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull",' +
+      '"classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}]\n\n' +
+      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。\n\n' +
+      '--- 日程テキスト ---\n' + scheduleText;
+
+    var payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+    };
+
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    var json = JSON.parse(response.getContentText());
+    if (!json.candidates || !json.candidates[0]) {
+      return { success: false, error: 'AIからの応答がありませんでした' };
+    }
+
+    var text = json.candidates[0].content.parts[0].text.trim();
+    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '').trim();
+    var entries = JSON.parse(text);
+
+    if (!Array.isArray(entries)) {
+      return { success: false, error: '日程データを読み取れませんでした' };
+    }
+
+    Logger.log('✓ parseLectureScheduleFromText: ' + entries.length + '件読み取り (year=' + lectureYear + ')');
+    return { success: true, entries: entries };
+  } catch (error) {
+    Logger.log('❌ parseLectureScheduleFromText エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 会話履歴と修正コメントを踏まえて英語プロンプトを再生成する内部ヘルパー
  * @param {string} originalPromptJa 最初の日本語プロンプト
  * @param {Array} history 会話履歴 [{role:'user'|'ai', text:string}]

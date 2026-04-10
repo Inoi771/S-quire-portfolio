@@ -3152,10 +3152,24 @@
               style="padding:20px; background:#e8f0fe; border:1px solid #c5d0e6; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px; color:#3c4f8a;">
         📄 PDFを選択
       </button>
+      <button onclick="toggleLecOcrTextArea()"
+              style="padding:20px; background:#f3e5f5; border:1px solid #ce93d8; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px; color:#7b1fa2;">
+        📝 テキストを貼り付け
+      </button>
     </div>
 
     <img id="lec-ocr-img-preview" style="display:none; width:100%; border-radius:8px; margin-bottom:16px; border:1px solid #ddd; max-height:300px; object-fit:contain;">
     <div id="lec-ocr-pdf-preview" style="display:none; padding:18px; background:#e8f0fe; border:1px solid #c5d0e6; border-radius:10px; margin-bottom:16px; font-size:18px; color:#3c4f8a; word-break:break-all;"></div>
+
+    <!-- テキスト貼り付けエリア（初期非表示） -->
+    <div id="lec-ocr-text-area" style="display:none; margin-bottom:16px;">
+      <textarea id="lec-ocr-text-input" placeholder="ワード・エクセルからコピーした日程テキストをここに貼り付けてください"
+        style="width:100%; height:160px; padding:12px; border:1px solid #ce93d8; border-radius:10px; font-size:16px; resize:vertical; box-sizing:border-box;"></textarea>
+      <button onclick="runLecOcrFromText()" id="lec-ocr-text-run-btn"
+              style="width:100%; padding:20px; background:#FF6B6B; color:white; border:none; border-radius:12px; cursor:pointer; font-weight:600; font-size:22px; margin-top:10px; min-height:64px;">
+        AI で読み込む
+      </button>
+    </div>
 
     <button id="lec-ocr-run-btn" onclick="runLecOcr()"
             style="width:100%; padding:20px; background:#FF6B6B; color:white; border:none; border-radius:12px; cursor:pointer; font-weight:600; font-size:22px; margin-bottom:10px; display:none; min-height:64px;">
