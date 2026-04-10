@@ -600,6 +600,22 @@
   function startAppAfterAuth_() {
     // getAppStartupData・getScheduleData・アニメーション の3つが揃ったらスプラッシュを閉じる
 
+    // フェイルセーフ: 30秒経ってもスプラッシュが閉じない場合は強制起動
+    setTimeout(function() {
+      var splash = document.getElementById('splashScreen');
+      if (splash && !splash.classList.contains('splash-fade-out')) {
+        console.warn('[startup] スプラッシュ画面タイムアウト（30秒） — 強制起動');
+        if (splashStartupData_) {
+          applyStartupData_(splashStartupData_);
+        } else {
+          hideSplashScreen();
+          initializeApp();
+          setupTabNavigation();
+          checkAdminTabVisibility();
+        }
+      }
+    }, 30000);
+
     // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
     fbGetScheduleData()
       .then(function(schedules) {
