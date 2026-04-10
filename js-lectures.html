@@ -2015,6 +2015,8 @@
       document.getElementById('lec-ocr-result-body').innerHTML = '';
       document.getElementById('lec-ocr-warn-msg').textContent = '';
       document.getElementById('lec-ocr-message').innerHTML = '';
+      document.getElementById('lec-ocr-text-area').style.display = 'none';
+      document.getElementById('lec-ocr-text-input').value = '';
       var runBtn = document.getElementById('lec-ocr-run-btn');
       runBtn.disabled = false;
       runBtn.textContent = 'AI で読み込む';
@@ -2032,6 +2034,9 @@
     function onLecOcrFileChange() {
       var file = document.getElementById('lec-ocr-file').files[0];
       if (!file) return;
+      // テキストエリアを閉じる（相互排他）
+      document.getElementById('lec-ocr-text-area').style.display = 'none';
+      document.getElementById('lec-ocr-text-input').value = '';
       var imgPreview = document.getElementById('lec-ocr-img-preview');
       var pdfPreview = document.getElementById('lec-ocr-pdf-preview');
       document.getElementById('lec-ocr-message').innerHTML = '';
@@ -2056,6 +2061,67 @@
         reader.readAsDataURL(file);
       }
       document.getElementById('lec-ocr-run-btn').style.display = 'block';
+    }
+
+    function toggleLecOcrTextArea() {
+      // ファイル入力をリセット（相互排他）
+      document.getElementById('lec-ocr-file').value = '';
+      document.getElementById('lec-ocr-img-preview').style.display = 'none';
+      document.getElementById('lec-ocr-img-preview').src = '';
+      document.getElementById('lec-ocr-pdf-preview').style.display = 'none';
+      document.getElementById('lec-ocr-run-btn').style.display = 'none';
+      document.getElementById('lec-ocr-message').innerHTML = '';
+      document.getElementById('lec-ocr-result-area').style.display = 'none';
+      // テキストエリアを表示
+      document.getElementById('lec-ocr-text-area').style.display = 'block';
+      document.getElementById('lec-ocr-text-input').focus();
+      fitToScreen();
+    }
+
+    function runLecOcrFromText() {
+      var text = document.getElementById('lec-ocr-text-input').value.trim();
+      if (!text) { showToast('テキストを貼り付けてください', 'warning'); return; }
+
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
+      var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
+
+      var pref = preferredCampuses || [];
+      lecOcrCampusCodes = pref.length > 0 ? pref : Object.keys(campusData);
+      lecOcrCampusNames = {};
+      lecOcrCampusCodes.forEach(function(code) {
+        if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
+      });
+
+      var btn = document.getElementById('lec-ocr-text-run-btn');
+      btn.disabled = true;
+      btn.textContent = '読み取り中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = 'AI で読み込む';
+          if (!result.success) {
+            showToast('読み取りエラー: ' + result.error, 'error');
+            return;
+          }
+          if (!result.entries || result.entries.length === 0) {
+            showToast('日程を読み取れませんでした。テキストを確認してください', 'warning');
+            return;
+          }
+          renderLecOcrResult_(result.entries);
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = 'AI で読み込む';
+          showToast('読み取りエラー: ' + (err.message || err), 'error');
+        })
+        .parseLectureScheduleFromText(
+          text,
+          lectureYear,
+          JSON.stringify(lecOcrCampusCodes),
+          JSON.stringify(lecOcrCampusNames)
+        );
     }
 
     function runLecOcr() {
