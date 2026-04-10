@@ -445,6 +445,7 @@ function getUserProfile() {
       currentEmail: currentEmail,
       registeredEmail: staff.email || currentEmail,
       teacherId: teacherId,
+      registeredName: staff.name || '',
       displayName: displayName,
       isDisplayNameSet: !!staff.displayName,
       subjects: subjects,
