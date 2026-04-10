@@ -1995,4 +1995,303 @@
       list.innerHTML = html;
     }
 
+    // ===== OCR: 手書き日程読み取り =====
+
+    var lecOcrCampusCodes = [];  // OCR実行時の配属校舎コード配列
+    var lecOcrCampusNames = {};  // OCR実行時の校舎コード→名前マップ
+    var lecOcrHasNullCampus = false; // 校舎未設定行があったか
+
+    function openLecOcrModal() {
+      if (!currentLectureId) {
+        showToast('先に講習を選択してください', 'warning');
+        return;
+      }
+      document.getElementById('lec-ocr-file').value = '';
+      document.getElementById('lec-ocr-preview').innerHTML = '';
+      document.getElementById('lec-ocr-result-area').style.display = 'none';
+      document.getElementById('lec-ocr-result-body').innerHTML = '';
+      document.getElementById('lec-ocr-warn-msg').textContent = '';
+      var runBtn = document.getElementById('lec-ocr-run-btn');
+      runBtn.disabled = false;
+      runBtn.textContent = '読み取る';
+      document.getElementById('lecOcrOverlay').style.display = 'block';
+      document.getElementById('lecOcrModal').style.display = 'block';
+      fitToScreen();
+    }
+
+    function closeLecOcrModal() {
+      document.getElementById('lecOcrOverlay').style.display = 'none';
+      document.getElementById('lecOcrModal').style.display = 'none';
+    }
+
+    function onLecOcrFileChange() {
+      var file = document.getElementById('lec-ocr-file').files[0];
+      var preview = document.getElementById('lec-ocr-preview');
+      if (!file) { preview.innerHTML = ''; return; }
+      if (file.type.startsWith('image/')) {
+        var url = URL.createObjectURL(file);
+        preview.innerHTML = '<img src="' + url + '" style="max-width:100%;max-height:180px;border-radius:8px;margin-top:6px;display:block;">';
+      } else {
+        var kb = Math.round(file.size / 1024);
+        preview.innerHTML = '<div style="padding:8px 10px;background:#f5f5f5;border-radius:8px;margin-top:6px;font-size:13px;color:#555;">📄 ' + escapeHtml(file.name) + ' (' + kb + ' KB)</div>';
+      }
+      document.getElementById('lec-ocr-result-area').style.display = 'none';
+    }
+
+    function runLecOcr() {
+      var file = document.getElementById('lec-ocr-file').files[0];
+      if (!file) { showToast('ファイルを選択してください', 'warning'); return; }
+
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
+      var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
+
+      // 配属校舎情報を収集
+      var pref = preferredCampuses || [];
+      lecOcrCampusCodes = pref.length > 0 ? pref : Object.keys(campusData);
+      lecOcrCampusNames = {};
+      lecOcrCampusCodes.forEach(function(code) {
+        if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
+      });
+
+      var btn = document.getElementById('lec-ocr-run-btn');
+      btn.disabled = true;
+      btn.textContent = '読み取り中...';
+
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var base64 = ev.target.result.split(',')[1];
+        var mimeType = file.type || 'image/jpeg';
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btn.disabled = false;
+            btn.textContent = '読み取る';
+            if (!result.success) {
+              showToast('読み取りエラー: ' + result.error, 'error');
+              return;
+            }
+            if (!result.entries || result.entries.length === 0) {
+              showToast('日程を読み取れませんでした。別の画像をお試しください', 'warning');
+              return;
+            }
+            renderLecOcrResult_(result.entries);
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.textContent = '読み取る';
+            showToast('読み取りエラー: ' + (err.message || err), 'error');
+          })
+          .ocrLectureSchedule(
+            base64,
+            mimeType,
+            lectureYear,
+            JSON.stringify(lecOcrCampusCodes),
+            JSON.stringify(lecOcrCampusNames)
+          );
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderLecOcrResult_(entries) {
+      var tbody = document.getElementById('lec-ocr-result-body');
+      tbody.innerHTML = '';
+      var allGrades = ['小', '中1', '中2', '中3', '高1', '高2', '高3', '新中1', '新中2', '新中3', '新高1', '新高2', '新高3'];
+      var subjects = (selectedSubjects && selectedSubjects.length > 0)
+        ? selectedSubjects
+        : ['国語', '社会', '数学', '理科', '英語'];
+
+      var hasIssue = false;
+      entries.forEach(function(entry, idx) {
+        var tr = document.createElement('tr');
+        var hasCampusIssue = !entry.campusCode;
+        var hasSubjectIssue = !entry.subject;
+        var hasGradeIssue = !entry.grade;
+        if (hasCampusIssue || hasSubjectIssue || hasGradeIssue) hasIssue = true;
+        if (hasCampusIssue) {
+          tr.style.background = '#fff3f3';
+        } else if (hasSubjectIssue || hasGradeIssue) {
+          tr.style.background = '#fffde7';
+        }
+
+        function mkInput(type, val, field, extraStyle) {
+          var el = document.createElement('input');
+          el.type = type;
+          el.value = val != null ? val : '';
+          el.dataset.field = field;
+          el.style.cssText = 'border:1px solid #ccc; border-radius:4px; font-size:12px; padding:2px 4px;' + (extraStyle || '');
+          return el;
+        }
+        function mkSelect(options, val, field, warn) {
+          var sel = document.createElement('select');
+          sel.dataset.field = field;
+          sel.style.cssText = 'border:1px solid ' + (warn ? '#e57373' : '#ccc') + '; border-radius:4px; font-size:12px; padding:2px 3px; max-width:80px;';
+          options.forEach(function(o) {
+            var opt = document.createElement('option');
+            opt.value = o.v;
+            opt.textContent = o.l;
+            if (o.v === (val || '')) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          return sel;
+        }
+        function td(el, extraStyle) {
+          var cell = document.createElement('td');
+          cell.style.cssText = 'padding:4px 5px; vertical-align:middle;' + (extraStyle || '');
+          if (el) cell.appendChild(el);
+          return cell;
+        }
+
+        tr.appendChild(td(mkInput('date', entry.date, 'date', 'width:110px;')));
+        tr.appendChild(td(mkInput('time', entry.startTime, 'startTime', 'width:72px;')));
+        tr.appendChild(td(mkInput('number', entry.durationMinutes || 90, 'durationMinutes', 'width:48px;')));
+
+        var subjectOpts = [{v:'', l:'未設定'}].concat(subjects.map(function(s) { return {v:s, l:s}; }));
+        tr.appendChild(td(mkSelect(subjectOpts, entry.subject, 'subject', hasSubjectIssue)));
+
+        var gradeOpts = [{v:'', l:'未設定'}].concat(allGrades.map(function(g) { return {v:g, l:g}; }));
+        tr.appendChild(td(mkSelect(gradeOpts, entry.grade, 'grade', hasGradeIssue)));
+
+        var classOpts = [{v:'', l:'なし'}, {v:'A', l:'A'}, {v:'B', l:'B'}, {v:'C', l:'C'}];
+        tr.appendChild(td(mkSelect(classOpts, entry.classLabel, 'classLabel', false)));
+
+        var campusOpts = [{v:'', l:'未設定'}].concat(lecOcrCampusCodes.map(function(code) {
+          return {v: code, l: lecOcrCampusNames[code] || code};
+        }));
+        tr.appendChild(td(mkSelect(campusOpts, entry.campusCode, 'campusCode', hasCampusIssue)));
+
+        var btnDel = document.createElement('button');
+        btnDel.textContent = '✕';
+        btnDel.style.cssText = 'background:none; border:none; color:#bbb; font-size:15px; cursor:pointer; padding:0 3px;';
+        btnDel.onclick = function() { tr.remove(); };
+        tr.appendChild(td(btnDel));
+
+        tbody.appendChild(tr);
+      });
+
+      var warnEl = document.getElementById('lec-ocr-warn-msg');
+      warnEl.textContent = hasIssue ? '⚠ 赤・黄色の行は未設定の項目があります。保存前に確認してください。' : '';
+      document.getElementById('lec-ocr-result-area').style.display = 'block';
+      fitToScreen();
+    }
+
+    function saveLecOcrEntries() {
+      var tbody = document.getElementById('lec-ocr-result-body');
+      var rows = tbody.querySelectorAll('tr');
+      if (rows.length === 0) { showToast('保存するエントリがありません', 'warning'); return; }
+
+      var entriesByCampus = {};
+      lecOcrHasNullCampus = false;
+
+      rows.forEach(function(tr) {
+        var date       = tr.querySelector('[data-field="date"]').value;
+        var startTime  = tr.querySelector('[data-field="startTime"]').value;
+        var durationM  = parseInt(tr.querySelector('[data-field="durationMinutes"]').value, 10) || 90;
+        var subject    = tr.querySelector('[data-field="subject"]').value;
+        var grade      = tr.querySelector('[data-field="grade"]').value;
+        var classLabel = tr.querySelector('[data-field="classLabel"]').value || null;
+        var campusCode = tr.querySelector('[data-field="campusCode"]').value;
+        if (!date || !startTime) return;
+        if (!campusCode) { lecOcrHasNullCampus = true; return; }
+        if (!entriesByCampus[campusCode]) entriesByCampus[campusCode] = [];
+        entriesByCampus[campusCode].push({
+          id:            'ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+          date:          date,
+          startTime:     startTime,
+          durationSlots: Math.max(1, Math.round(durationM / 10)),
+          subject:       subject || '',
+          grade:         grade || '',
+          classLabel:    classLabel,
+          teacherName:   myTeacherName  || '',
+          teacherEmail:  myTeacherEmail || '',
+          teacherId:     myTeacherId    || ''
+        });
+      });
+
+      var campusKeys = Object.keys(entriesByCampus);
+      if (campusKeys.length === 0) {
+        showToast(lecOcrHasNullCampus ? '校舎を選択してください' : '保存するエントリがありません', 'warning');
+        return;
+      }
+
+      var saveBtn = document.getElementById('lec-ocr-save-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+
+      // 各校舎の既存エントリとマージしてから保存
+      var pending = campusKeys.length;
+      var mergedByCampus = {};
+
+      campusKeys.forEach(function(code) {
+        var newEnts = entriesByCampus[code];
+        var existing = lectureEntries[code];
+        if (existing !== undefined) {
+          // メモリにロード済みならそのまま使用
+          mergedByCampus[code] = existing.concat(newEnts);
+          pending--;
+          if (pending === 0) doOcrSave_();
+        } else {
+          // 未ロードの校舎は GAS から取得
+          (function(campusCode, newOcrEnts) {
+            google.script.run
+              .withSuccessHandler(function(res) {
+                var existEnts = (res && res.entries) ? res.entries.map(function(e) {
+                  return { id: e.entryId || '', date: e.date || '', startTime: e.startTime || '',
+                           durationSlots: Number(e.durationSlots) || 9, subject: e.subject || '',
+                           grade: e.grade || '', teacherName: e.teacherName || '',
+                           teacherEmail: e.teacherEmail || '', classLabel: e.classLabel || null,
+                           teacherId: e.teacherId || '' };
+                }) : [];
+                mergedByCampus[campusCode] = existEnts.concat(newOcrEnts);
+                pending--;
+                if (pending === 0) doOcrSave_();
+              })
+              .withFailureHandler(function() {
+                mergedByCampus[campusCode] = newOcrEnts;
+                pending--;
+                if (pending === 0) doOcrSave_();
+              })
+              .getLectureScheduleEntries(currentLectureId, campusCode);
+          })(code, newEnts);
+        }
+      });
+
+      function doOcrSave_() {
+        var keys = Object.keys(mergedByCampus);
+        var completed = 0;
+        var failed = 0;
+        keys.forEach(function(campusCode) {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              completed++;
+              if (!result || !result.success) failed++;
+              if (completed === keys.length) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'このまま保存';
+                if (failed > 0) {
+                  showToast('一部の保存に失敗しました', 'error');
+                } else {
+                  var msg = (lecOcrHasNullCampus ? '校舎未設定の行はスキップして、' : '') +
+                    keys.length + '校舎分を保存しました';
+                  showToast(msg, 'success');
+                  // メモリを更新して再描画
+                  keys.forEach(function(cc) { lectureEntries[cc] = mergedByCampus[cc]; });
+                  renderLecEntries(currentLectureCampus);
+                  closeLecOcrModal();
+                }
+              }
+            })
+            .withFailureHandler(function(err) {
+              completed++;
+              failed++;
+              if (completed === keys.length) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'このまま保存';
+                showToast('保存エラー: ' + (err.message || err), 'error');
+              }
+            })
+            .saveLectureScheduleEntries(currentLectureId, campusCode, JSON.stringify(mergedByCampus[campusCode]));
+        });
+      }
+    }
+
 </script>
