@@ -56,6 +56,10 @@ fbAuth.onAuthStateChanged(function(user) {
       splash.style.display = 'flex';
     }
 
+    // スプラッシュ進捗テキストを更新（認証完了）
+    var _splashText = document.getElementById('splashStatusText');
+    if (_splashText) _splashText.textContent = 'データ取得中...';
+
     // allowedUsers に自分のエントリを書き込んでからコールバックを実行
     // （Firestoreセキュリティルール: allowedUsers に登録されたユーザーのみ他コレクションにアクセス可）
     var _fbAuthEmail = (user.email || '').toLowerCase();

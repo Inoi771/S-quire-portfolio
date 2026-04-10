@@ -42,17 +42,19 @@
   var tabDataPreloaded_ = false;    // preloadTabData() の二重呼び出し防止
   var scheduleLoadStarted_ = false; // getScheduleData() の二重呼び出し防止
 
-  // 高速起動: 3条件すべて揃ったらスプラッシュを閉じる
+  // 高速起動: 2条件（GASデータ＋アニメーション）が揃ったらスプラッシュを閉じる
+  // スケジュールは起動をブロックしない（バックグラウンドで読み込み継続）
   var splashStartupData_ = null;   // getAppStartupData() の結果
-  var splashScheduleDone_ = false; // getScheduleData() 完了フラグ
   var splashAnimDone_ = false;     // スプラッシュアニメーション完了フラグ
+  var startupApplied_ = false;     // applyStartupData_ 二重実行防止
 
   // 設定タブ: 事前読み込みキャッシュ（null = 未取得、object = 取得済み）
   var preloadedProfile = null;
   var preloadedNotificationSettings = null;
 
   function checkStartupComplete_() {
-    if (splashStartupData_ && splashScheduleDone_ && splashAnimDone_) {
+    if (!startupApplied_ && splashStartupData_ && splashAnimDone_) {
+      startupApplied_ = true;
       applyStartupData_(splashStartupData_);
     }
   }
@@ -602,9 +604,11 @@
 
     // フェイルセーフ: 30秒経ってもスプラッシュが閉じない場合は強制起動
     setTimeout(function() {
+      if (startupApplied_) return;
       var splash = document.getElementById('splashScreen');
       if (splash && !splash.classList.contains('splash-fade-out')) {
         console.warn('[startup] スプラッシュ画面タイムアウト（30秒） — 強制起動');
+        startupApplied_ = true;
         if (splashStartupData_) {
           applyStartupData_(splashStartupData_);
         } else {
@@ -616,16 +620,13 @@
       }
     }, 30000);
 
-    // スケジュールデータを先行読み込み（アニメーション中に裏で取得）
+    // スケジュールデータを先行読み込み（バックグラウンド：起動をブロックしない）
     fbGetScheduleData()
       .then(function(schedules) {
-        onScheduleDataLoaded(schedules); // カレンダーデータをセット
-        splashScheduleDone_ = true;
-        checkStartupComplete_();
+        onScheduleDataLoaded(schedules); // カレンダーデータをセット（アプリ起動後でもOK）
       })
       .catch(function() {
-        splashScheduleDone_ = true; // 失敗しても続行
-        checkStartupComplete_();
+        // スケジュール取得失敗 — カレンダーは空表示のまま
       });
     scheduleLoadStarted_ = true;
 
