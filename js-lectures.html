@@ -2007,13 +2007,18 @@
         return;
       }
       document.getElementById('lec-ocr-file').value = '';
-      document.getElementById('lec-ocr-preview').innerHTML = '';
+      document.getElementById('lec-ocr-img-preview').style.display = 'none';
+      document.getElementById('lec-ocr-img-preview').src = '';
+      document.getElementById('lec-ocr-pdf-preview').style.display = 'none';
+      document.getElementById('lec-ocr-pdf-preview').textContent = '';
       document.getElementById('lec-ocr-result-area').style.display = 'none';
       document.getElementById('lec-ocr-result-body').innerHTML = '';
       document.getElementById('lec-ocr-warn-msg').textContent = '';
+      document.getElementById('lec-ocr-message').innerHTML = '';
       var runBtn = document.getElementById('lec-ocr-run-btn');
       runBtn.disabled = false;
-      runBtn.textContent = '読み取る';
+      runBtn.textContent = 'AI で読み込む';
+      runBtn.style.display = 'none';
       document.getElementById('lecOcrOverlay').style.display = 'block';
       document.getElementById('lecOcrModal').style.display = 'block';
       fitToScreen();
@@ -2026,16 +2031,31 @@
 
     function onLecOcrFileChange() {
       var file = document.getElementById('lec-ocr-file').files[0];
-      var preview = document.getElementById('lec-ocr-preview');
-      if (!file) { preview.innerHTML = ''; return; }
-      if (file.type.startsWith('image/')) {
-        var url = URL.createObjectURL(file);
-        preview.innerHTML = '<img src="' + url + '" style="max-width:100%;max-height:180px;border-radius:8px;margin-top:6px;display:block;">';
-      } else {
-        var kb = Math.round(file.size / 1024);
-        preview.innerHTML = '<div style="padding:8px 10px;background:#f5f5f5;border-radius:8px;margin-top:6px;font-size:13px;color:#555;">📄 ' + escapeHtml(file.name) + ' (' + kb + ' KB)</div>';
-      }
+      if (!file) return;
+      var imgPreview = document.getElementById('lec-ocr-img-preview');
+      var pdfPreview = document.getElementById('lec-ocr-pdf-preview');
+      document.getElementById('lec-ocr-message').innerHTML = '';
       document.getElementById('lec-ocr-result-area').style.display = 'none';
+      if (file.type === 'application/pdf') {
+        imgPreview.style.display = 'none';
+        imgPreview.src = '';
+        pdfPreview.innerHTML = '📄 <strong>' + escapeHtml(file.name) + '</strong>'
+          + '<span style="margin-left:10px; color:#999; font-size:13px;">'
+          + (file.size > 1024 * 1024
+              ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
+              : Math.round(file.size / 1024) + ' KB')
+          + '</span>';
+        pdfPreview.style.display = 'block';
+      } else {
+        pdfPreview.style.display = 'none';
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+          imgPreview.src = ev.target.result;
+          imgPreview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+      document.getElementById('lec-ocr-run-btn').style.display = 'block';
     }
 
     function runLecOcr() {
