@@ -632,8 +632,8 @@
         setupTabNavigation();
         checkAdminTabVisibility();
       })
-      // Firebase Auth メールを渡す（Session.getActiveUser() が空の場合のフォールバック用）
-      .getAppStartupData(window.fbUserEmail || '');
+      // Firebase Auth メール＋UIDを渡す（Session.getActiveUser() が空の場合のフォールバック用）
+      .getAppStartupData(window.fbUserEmail || '', (window.fbCurrentUser && window.fbCurrentUser.uid) || '');
   }
 
   /**
