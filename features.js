@@ -463,6 +463,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ プロフィール取得スキップ: ' + e);
     }
     var userDisplayName = (profile && profile.success && profile.displayName) || '';
+    var userRegisteredName = (profile && profile.success && profile.registeredName) || '';
     var userSubjects = (profile && profile.success && profile.subjects && profile.subjects.length > 0) ? profile.subjects.join('、') : '';
     var userSubjectsList = (profile && profile.success && profile.subjects) || [];
     var userPreferredCampusList = (profile && profile.success && profile.preferredCampuses) || [];
@@ -521,6 +522,9 @@ function requestAIAssistant(userMessage, chatHistory) {
     } else {
       userInfo += '\n- Display name: not set';
       profileReminder += '表示名未設定。回答末尾に「設定タブのプロフィールから表示名を設定いただけます」と追記。';
+    }
+    if (userRegisteredName && userRegisteredName !== userDisplayName) {
+      userInfo += '\n- Registered name: ' + userRegisteredName;
     }
     if (userSubjects) {
       userInfo += '\n- Subjects: ' + userSubjects;
@@ -1125,10 +1129,9 @@ function applyConfigChange_(settings) {
   }
   if (settings.displayName) {
     setUserProperty('DISPLAY_NAME', settings.displayName);
-    // staffs の name も同期し、updatedAt を記録
+    // updatedAt を記録（name は登録時のまま変更しない）
     var staff = getCurrentStaff_();
     if (staff) {
-      staff.name = settings.displayName;
       staff.updatedAt = new Date().toISOString();
       writeStaffToSupabase_(staff);
     }
