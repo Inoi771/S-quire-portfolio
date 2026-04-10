@@ -709,7 +709,8 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
   try {
     // Firebase Auth コンテキストをセット
     if (firebaseEmail) setFirebaseEmailContext_(firebaseEmail);
-    if (firebaseUid) setFirebaseUidContext_(firebaseUid);
+    // handleApiCall_ がトークンから設定した UID を優先、引数はフォールバック
+    if (!_firebaseUidContext_ && firebaseUid) setFirebaseUidContext_(firebaseUid);
     var email = getCurrentUserEmail();
 
     // 管理者かどうかを素早く判定（ScriptProperties の文字列比較のみ・Drive API不要）
