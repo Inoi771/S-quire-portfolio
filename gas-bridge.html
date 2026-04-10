@@ -33,7 +33,7 @@
    */
   function callGas_(funcName, args, successFn, failureFn) {
     var controller = new AbortController();
-    var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+    var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
 
     getToken_().then(function(idToken) {
       return fetch(GAS_EXEC_URL, {
