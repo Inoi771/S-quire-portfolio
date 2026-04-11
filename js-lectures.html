@@ -2344,9 +2344,9 @@
             subject:       subject || '',
             grade:         grade || '',
             classLabel:    classLabel,
-            teacherName:   myTeacherName  || '',
-            teacherEmail:  myTeacherEmail || '',
-            teacherId:     myTeacherId    || ''
+            teacherName:   (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherName : (myTeacherName || ''),
+            teacherEmail:  (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherEmail : (myTeacherEmail || ''),
+            teacherId:     (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : (myTeacherId || '')
           });
         } else if (op === 'edit') {
           opsByCampus[campusCode].edits.push({
