@@ -1,0 +1,542 @@
+<script>
+// ===== 【Easter Egg】Clockwork Wonderland =====
+// ヘッダー時計を5回タップ → コントローラーUI → コナミコマンド → イースターエッグ起動
+
+var eeTapCount_ = 0;
+var eeTapTimer_ = null;
+var eeInputSeq_ = [];
+var eeActive_ = false;
+var eeEggTapCount_ = 0;
+var KONAMI_ = ['up','up','down','down','left','right','left','right','B','A'];
+
+// ── ヘッダー時計タップカウンター ──
+function onClockTap() {
+  eeTapCount_++;
+  if (eeTapTimer_) clearTimeout(eeTapTimer_);
+  if (eeTapCount_ >= 5) {
+    eeTapCount_ = 0;
+    eeShowController_();
+    return;
+  }
+  eeTapTimer_ = setTimeout(function() { eeTapCount_ = 0; }, 2000);
+}
+
+// ── コントローラーUI表示 ──
+function eeShowController_() {
+  if (document.getElementById('eeControllerOverlay')) return;
+
+  var overlay = document.createElement('div');
+  overlay.id = 'eeControllerOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10002;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;';
+
+  // 閉じるボタン
+  var closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;';
+  closeBtn.onclick = eeCloseController_;
+  overlay.appendChild(closeBtn);
+
+  // ヒントテキスト
+  var hint = document.createElement('div');
+  hint.style.cssText = 'color:#556;font-size:11px;letter-spacing:3px;margin-bottom:30px;text-transform:uppercase;';
+  hint.textContent = 'ENTER THE CODE';
+  overlay.appendChild(hint);
+
+  // コントローラーコンテナ
+  var ctrl = document.createElement('div');
+  ctrl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:60px;margin-bottom:30px;';
+
+  // === 十字キー ===
+  var dpad = document.createElement('div');
+  dpad.style.cssText = 'display:grid;grid-template-columns:56px 56px 56px;grid-template-rows:56px 56px 56px;gap:3px;';
+
+  var dirs = [
+    {key:'',r:0,c:0},{key:'up',r:0,c:1,label:'▲'},{key:'',r:0,c:2},
+    {key:'left',r:1,c:0,label:'◀'},{key:'',r:1,c:1},{key:'right',r:1,c:2,label:'▶'},
+    {key:'',r:2,c:0},{key:'down',r:2,c:1,label:'▼'},{key:'',r:2,c:2}
+  ];
+
+  dirs.forEach(function(d) {
+    var btn = document.createElement('div');
+    if (d.key) {
+      btn.className = 'ee-dpad-btn';
+      btn.setAttribute('data-key', d.key);
+      btn.textContent = d.label;
+      btn.style.cssText = 'width:56px;height:56px;background:#1a1a2e;border:2px solid #334;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#88aacc;font-size:18px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
+      btn.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_(d.key); eeFlashBtn_(btn); };
+      btn.onclick = function() { eeHandleInput_(d.key); eeFlashBtn_(btn); };
+    } else {
+      btn.style.cssText = 'width:56px;height:56px;';
+    }
+    dpad.appendChild(btn);
+  });
+
+  // === A/Bボタン ===
+  var abWrap = document.createElement('div');
+  abWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;';
+
+  var btnB = document.createElement('div');
+  btnB.className = 'ee-ab-btn';
+  btnB.setAttribute('data-key', 'B');
+  btnB.textContent = 'B';
+  btnB.style.cssText = 'width:60px;height:60px;background:#2a1a2e;border:2px solid #634;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#cc6688;font-size:18px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
+  btnB.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('B'); eeFlashBtn_(btnB); };
+  btnB.onclick = function() { eeHandleInput_('B'); eeFlashBtn_(btnB); };
+
+  var btnA = document.createElement('div');
+  btnA.className = 'ee-ab-btn';
+  btnA.setAttribute('data-key', 'A');
+  btnA.textContent = 'A';
+  btnA.style.cssText = 'width:60px;height:60px;background:#1a2a1e;border:2px solid #364;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#66cc88;font-size:18px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
+  btnA.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('A'); eeFlashBtn_(btnA); };
+  btnA.onclick = function() { eeHandleInput_('A'); eeFlashBtn_(btnA); };
+
+  abWrap.appendChild(btnB);
+  abWrap.appendChild(btnA);
+
+  ctrl.appendChild(dpad);
+  ctrl.appendChild(abWrap);
+  overlay.appendChild(ctrl);
+
+  // === プログレスドット ===
+  var dots = document.createElement('div');
+  dots.id = 'eeProgressDots';
+  dots.style.cssText = 'display:flex;gap:8px;';
+  for (var i = 0; i < 10; i++) {
+    var dot = document.createElement('div');
+    dot.className = 'ee-dot';
+    dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#222;border:1px solid #444;transition:background 0.3s,box-shadow 0.3s;';
+    dots.appendChild(dot);
+  }
+  overlay.appendChild(dots);
+
+  eeInputSeq_ = [];
+  document.body.appendChild(overlay);
+}
+
+// ── ボタンフラッシュ ──
+function eeFlashBtn_(btn) {
+  btn.style.boxShadow = '0 0 16px currentColor';
+  btn.style.background = '#334';
+  setTimeout(function() {
+    btn.style.boxShadow = '';
+    btn.style.background = '';
+  }, 200);
+}
+
+// ── コナミコマンド入力判定 ──
+function eeHandleInput_(key) {
+  var idx = eeInputSeq_.length;
+
+  if (key === KONAMI_[idx]) {
+    // 正解
+    eeInputSeq_.push(key);
+    var dots = document.querySelectorAll('#eeProgressDots .ee-dot');
+    if (dots[idx]) {
+      dots[idx].style.background = '#d4a843';
+      dots[idx].style.boxShadow = '0 0 8px #d4a843';
+    }
+
+    // コナミコマンド完成
+    if (eeInputSeq_.length >= KONAMI_.length) {
+      setTimeout(function() {
+        eeCloseController_();
+        eeShow_();
+      }, 400);
+    }
+  } else {
+    // 不正解 → リセット + 振動
+    eeInputSeq_ = [];
+    var dots = document.querySelectorAll('#eeProgressDots .ee-dot');
+    dots.forEach(function(d) { d.style.background = '#222'; d.style.boxShadow = ''; });
+    var overlay = document.getElementById('eeControllerOverlay');
+    if (overlay) {
+      overlay.style.animation = 'eeShake 0.3s';
+      setTimeout(function() { overlay.style.animation = ''; }, 300);
+    }
+  }
+}
+
+// ── コントローラーを閉じる ──
+function eeCloseController_() {
+  var el = document.getElementById('eeControllerOverlay');
+  if (el) el.remove();
+  eeInputSeq_ = [];
+}
+
+// ===== イースターエッグ本体：Clockwork Wonderland =====
+
+function eeInjectStyles_() {
+  if (document.getElementById('eeStyles')) return;
+  // フォント読み込み
+  if (!document.getElementById('eeFonts')) {
+    var link = document.createElement('link');
+    link.id = 'eeFonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Orbitron:wght@300;400;700&display=swap';
+    document.head.appendChild(link);
+  }
+  var style = document.createElement('style');
+  style.id = 'eeStyles';
+  style.textContent =
+    '@keyframes eeShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}' +
+    '@keyframes eeTwinkle{0%,100%{opacity:0;transform:scale(1)}50%{opacity:var(--op);transform:scale(1.4)}}' +
+    '@keyframes eeSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '@keyframes eeSpinR{from{transform:rotate(0deg)}to{transform:rotate(-360deg)}}' +
+    '@keyframes eeFloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-10px) rotate(1deg)}}' +
+    '@keyframes eeOrbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '@keyframes eeOrbitR{from{transform:rotate(0deg)}to{transform:rotate(-360deg)}}' +
+    '@keyframes eeRotH{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '@keyframes eeRotM{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '@keyframes eeRotS{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '@keyframes eeFadeHint{0%,100%{opacity:.3}50%{opacity:.9}}' +
+    '@keyframes eeParticleFly{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--tx),var(--ty)) scale(0);opacity:0}}' +
+    '@keyframes eeTitleGlow{0%,100%{text-shadow:0 0 20px #d4a843,0 0 40px #d4a84388}50%{text-shadow:0 0 40px #d4a843,0 0 80px #d4a843aa,0 0 120px #d4a84344}}' +
+    '@keyframes eeEggPulse{0%,100%{transform:scale(1);box-shadow:0 0 60px #d4a84366}50%{transform:scale(1.04);box-shadow:0 0 100px #d4a843aa}}' +
+    '@keyframes eeInnerBurst{0%{width:0;height:0;opacity:1}100%{width:300px;height:300px;opacity:0}}' +
+    '@keyframes eeFadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:.8;transform:translateY(0)}}' +
+    '@keyframes eeRuneFloat{from{transform:translateY(110vh) rotate(0deg);opacity:0}10%{opacity:1}90%{opacity:1}to{transform:translateY(-10vh) rotate(360deg);opacity:0}}' +
+    '.ee-overlay{position:fixed;inset:0;background:#0a0a0f;z-index:10002;display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:"Orbitron",sans-serif;cursor:pointer;user-select:none;-webkit-user-select:none}' +
+    '.ee-star{position:absolute;border-radius:50%;background:white;animation:eeTwinkle var(--d) ease-in-out infinite;opacity:0}' +
+    '.ee-rune{position:fixed;font-family:"Cinzel",serif;color:#d4a84344;pointer-events:none;animation:eeRuneFloat var(--rd) linear infinite;font-size:var(--rs)}' +
+    '.ee-hint{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);color:#5566aa88;font-size:11px;letter-spacing:3px;text-transform:uppercase;animation:eeFadeHint 2s ease-in-out infinite;transition:opacity .5s}' +
+    '.ee-stage{position:relative;width:340px;height:340px;display:flex;align-items:center;justify-content:center}' +
+    '.ee-gear-ring{position:absolute;border-radius:50%;border:2px solid transparent;animation:eeSpin linear infinite}' +
+    '.ee-ring-1{width:320px;height:320px;border-color:#b8860b44;box-shadow:0 0 20px #b8860b33,inset 0 0 20px #b8860b11;animation-duration:40s}' +
+    '.ee-ring-2{width:270px;height:270px;border-color:#4488cc44;box-shadow:0 0 15px #4488cc33,inset 0 0 15px #4488cc11;animation-duration:28s;animation-direction:reverse}' +
+    '.ee-ring-3{width:220px;height:220px;border-color:#cc448844;box-shadow:0 0 12px #cc448833;animation-duration:18s}' +
+    '.ee-teacup{position:absolute;font-size:22px;animation:eeOrbit linear infinite;filter:drop-shadow(0 0 6px currentColor)}' +
+    '.ee-tc1{animation-duration:8s;top:0;left:50%;transform-origin:-135px 170px;color:#88ccff}' +
+    '.ee-tc2{animation-duration:12s;top:0;left:50%;transform-origin:-110px 140px;animation-delay:-4s;color:#d4a843}' +
+    '.ee-tc3{animation-duration:15s;top:0;left:50%;transform-origin:-95px 115px;animation-delay:-8s;color:#cc4488}' +
+    '.ee-rabbit{position:absolute;font-size:18px;top:0;left:50%;animation:eeOrbitR 6s linear infinite;transform-origin:-160px 170px;filter:drop-shadow(0 0 8px #ffffffaa)}' +
+    '.ee-egg-wrap{position:relative;width:130px;height:160px;cursor:pointer;transition:transform .15s}' +
+    '.ee-egg-wrap:active{transform:scale(.93)}' +
+    '.ee-egg{width:130px;height:160px;border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;background:radial-gradient(ellipse at 38% 32%,#ffe8c0 0%,#d4a843 35%,#8b5e15 65%,#3d2a08 100%);box-shadow:0 0 30px #d4a84366,0 0 60px #d4a84322,inset -15px -20px 30px #3d2a0855,inset 8px 8px 20px #ffe8c033;position:relative;animation:eeFloat 4s ease-in-out infinite;overflow:hidden}' +
+    '.ee-egg::before{content:"";position:absolute;top:50%;left:50%;width:80px;height:80px;transform:translate(-50%,-50%);border-radius:50%;border:1px solid #ffe8c055;box-shadow:0 0 0 15px #ffe8c011,0 0 0 30px #ffe8c008}' +
+    '.ee-egg::after{content:"";position:absolute;top:15%;left:20%;width:25px;height:35px;border-radius:50%;background:radial-gradient(#ffffff44,transparent);transform:rotate(-30deg)}' +
+    '.ee-clock-face{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:64px;height:64px}' +
+    '.ee-hand{position:absolute;bottom:50%;left:50%;transform-origin:bottom center;border-radius:4px}' +
+    '.ee-hour{width:2px;height:20px;margin-left:-1px;background:#ffe8c0cc;animation:eeRotH 12s linear infinite;box-shadow:0 0 4px #ffe8c0}' +
+    '.ee-minute{width:1.5px;height:26px;margin-left:-0.75px;background:#88ccffcc;animation:eeRotM 2s linear infinite;box-shadow:0 0 4px #88ccff}' +
+    '.ee-second{width:1px;height:28px;margin-left:-0.5px;background:#ff6699cc;animation:eeRotS 1s linear infinite;box-shadow:0 0 3px #ff6699}' +
+    '.ee-crack-canvas{position:absolute;top:0;left:0;width:130px;height:160px;border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;pointer-events:none;opacity:0;transition:opacity .3s}' +
+    '.ee-crack-canvas.ee-show{opacity:1}' +
+    '.ee-counter{position:fixed;top:30px;left:50%;transform:translateX(-50%);display:flex;gap:8px;opacity:0;transition:opacity .5s}' +
+    '.ee-counter.ee-show{opacity:1}' +
+    '.ee-cdot{width:10px;height:10px;border-radius:50%;background:#333;border:1px solid #555;transition:background .3s,box-shadow .3s}' +
+    '.ee-cdot.ee-lit{background:#d4a843;box-shadow:0 0 8px #d4a843}' +
+    '.ee-particle{position:fixed;pointer-events:none;border-radius:50%;animation:eeParticleFly var(--dur) ease-out forwards}' +
+    '.ee-hatch{position:fixed;inset:0;background:radial-gradient(ellipse at center,#1a0a2e 0%,#0a0a0f 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .8s;z-index:10003}' +
+    '.ee-hatch.ee-show{opacity:1;pointer-events:all}' +
+    '.ee-hatch-title{font-family:"Cinzel",serif;font-size:clamp(28px,6vw,48px);color:#d4a843;text-align:center;letter-spacing:6px;text-shadow:0 0 20px #d4a843,0 0 40px #d4a84388;animation:eeTitleGlow 2s ease-in-out infinite;margin-bottom:12px}' +
+    '.ee-hatch-sub{font-size:11px;color:#4488cc;letter-spacing:4px;opacity:.7;margin-bottom:50px}' +
+    '.ee-hatch-egg-c{position:relative;width:200px;height:240px;margin-bottom:40px}' +
+    '.ee-hatch-egg{width:200px;height:240px;border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;background:radial-gradient(ellipse at 38% 32%,#ffe8c0 0%,#d4a843 35%,#8b5e15 65%,#3d2a08 100%);box-shadow:0 0 60px #d4a84366,0 0 120px #d4a84322;animation:eeEggPulse 1s ease-in-out infinite;overflow:hidden}' +
+    '.ee-inner-glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:0;height:0;border-radius:50%;background:radial-gradient(#ffffff,#88ccff44,transparent);animation:eeInnerBurst 2s ease-out infinite}' +
+    '.ee-hatch-msg{font-family:"Cinzel",serif;font-size:13px;color:#88ccff;letter-spacing:3px;text-align:center;opacity:0;animation:eeFadeInUp 1s ease forwards;animation-delay:.5s}' +
+    '.ee-hatch-close{margin-top:40px;padding:10px 28px;background:transparent;border:1px solid #d4a84388;color:#d4a843;font-family:"Orbitron",sans-serif;font-size:10px;letter-spacing:3px;cursor:pointer;opacity:0;animation:eeFadeInUp 1s ease forwards;animation-delay:1.5s;transition:background .3s,box-shadow .3s}' +
+    '.ee-hatch-close:hover{background:#d4a84322;box-shadow:0 0 20px #d4a84344}';
+  document.head.appendChild(style);
+}
+
+// ── イースターエッグ メイン表示 ──
+function eeShow_() {
+  if (eeActive_) return;
+  eeActive_ = true;
+  eeEggTapCount_ = 0;
+  eeInjectStyles_();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'eeOverlay';
+  overlay.className = 'ee-overlay';
+
+  // 星フィールド
+  var sf = document.createElement('div');
+  sf.style.cssText = 'position:fixed;inset:0;pointer-events:none;';
+  for (var i = 0; i < 120; i++) {
+    var s = document.createElement('div');
+    s.className = 'ee-star';
+    var sz = Math.random() * 2 + 0.5;
+    s.style.cssText = 'width:' + sz + 'px;height:' + sz + 'px;top:' + (Math.random()*100) + '%;left:' + (Math.random()*100) + '%;--d:' + (2+Math.random()*4) + 's;--op:' + (0.4+Math.random()*0.6) + ';animation-delay:' + (Math.random()*4) + 's;';
+    sf.appendChild(s);
+  }
+  overlay.appendChild(sf);
+
+  // ルーン文字
+  var runeChars = '\u2699\u2726\u274B\u273F\u2666\u2748\u2735\u22C6\u2727\u25C8\u2295\u2297';
+  for (var i = 0; i < 12; i++) {
+    var r = document.createElement('div');
+    r.className = 'ee-rune';
+    r.textContent = runeChars[Math.floor(Math.random()*runeChars.length)];
+    r.style.cssText = 'left:' + (Math.random()*100) + '%;--rd:' + (8+Math.random()*12) + 's;--rs:' + (12+Math.random()*20) + 'px;animation-delay:' + (Math.random()*10) + 's;';
+    overlay.appendChild(r);
+  }
+
+  // タップヒント
+  var hint = document.createElement('div');
+  hint.className = 'ee-hint';
+  hint.id = 'eeHint';
+  hint.textContent = 'TAP THE EGG';
+  overlay.appendChild(hint);
+
+  // カウンタードット
+  var counter = document.createElement('div');
+  counter.className = 'ee-counter';
+  counter.id = 'eeCounter';
+  for (var i = 0; i < 5; i++) {
+    var cd = document.createElement('div');
+    cd.className = 'ee-cdot';
+    cd.id = 'eeCd' + i;
+    counter.appendChild(cd);
+  }
+  overlay.appendChild(counter);
+
+  // メインステージ
+  var stage = document.createElement('div');
+  stage.className = 'ee-stage';
+
+  // ギアリング
+  ['ee-ring-1','ee-ring-2','ee-ring-3'].forEach(function(cls) {
+    var ring = document.createElement('div');
+    ring.className = 'ee-gear-ring ' + cls;
+    stage.appendChild(ring);
+  });
+
+  // 軌道要素
+  var orbits = [
+    {cls:'ee-teacup ee-tc1',txt:'\u2615'},
+    {cls:'ee-teacup ee-tc2',txt:'\uD83D\uDD11'},
+    {cls:'ee-teacup ee-tc3',txt:'\uD83C\uDF19'},
+    {cls:'ee-rabbit',txt:'\uD83D\uDC07'}
+  ];
+  orbits.forEach(function(o) {
+    var el = document.createElement('div');
+    el.className = o.cls;
+    el.textContent = o.txt;
+    stage.appendChild(el);
+  });
+
+  // 卵
+  var eggWrap = document.createElement('div');
+  eggWrap.className = 'ee-egg-wrap';
+  eggWrap.id = 'eeEggWrap';
+  eggWrap.onclick = function() { eeTapEgg_(); };
+
+  var egg = document.createElement('div');
+  egg.className = 'ee-egg';
+
+  var clockFace = document.createElement('div');
+  clockFace.className = 'ee-clock-face';
+  var hands = [
+    {cls:'ee-hand ee-hour'},
+    {cls:'ee-hand ee-minute'},
+    {cls:'ee-hand ee-second'}
+  ];
+  hands.forEach(function(h) {
+    var hand = document.createElement('div');
+    hand.className = h.cls;
+    clockFace.appendChild(hand);
+  });
+  egg.appendChild(clockFace);
+  eggWrap.appendChild(egg);
+
+  // ひびキャンバス
+  var canvas = document.createElement('canvas');
+  canvas.className = 'ee-crack-canvas';
+  canvas.id = 'eeCrackCanvas';
+  canvas.width = 130;
+  canvas.height = 160;
+  eggWrap.appendChild(canvas);
+
+  stage.appendChild(eggWrap);
+  overlay.appendChild(stage);
+
+  // 孵化画面
+  var hatch = document.createElement('div');
+  hatch.className = 'ee-hatch';
+  hatch.id = 'eeHatchScreen';
+
+  var title = document.createElement('div');
+  title.className = 'ee-hatch-title';
+  title.textContent = 'S \u00B7 Q U I R E';
+  hatch.appendChild(title);
+
+  var sub = document.createElement('div');
+  sub.className = 'ee-hatch-sub';
+  sub.textContent = 'CLOCKWORK WONDERLAND';
+  hatch.appendChild(sub);
+
+  var hatchEggC = document.createElement('div');
+  hatchEggC.className = 'ee-hatch-egg-c';
+
+  var hatchEgg = document.createElement('div');
+  hatchEgg.className = 'ee-hatch-egg';
+  var ig = document.createElement('div');
+  ig.className = 'ee-inner-glow';
+  hatchEgg.appendChild(ig);
+  var cf2 = document.createElement('div');
+  cf2.className = 'ee-clock-face';
+  hands.forEach(function(h) {
+    var hand = document.createElement('div');
+    hand.className = h.cls;
+    cf2.appendChild(hand);
+  });
+  hatchEgg.appendChild(cf2);
+  hatchEggC.appendChild(hatchEgg);
+
+  // ひび割れSVG
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 240');
+  svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+  var path = document.createElementNS(svgNS, 'path');
+  path.id = 'eeCrackPath';
+  path.setAttribute('d', '');
+  path.setAttribute('stroke', '#ffe8c0');
+  path.setAttribute('stroke-width', '1.5');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('opacity', '0');
+  svg.appendChild(path);
+  hatchEggC.appendChild(svg);
+  hatch.appendChild(hatchEggC);
+
+  var msg = document.createElement('div');
+  msg.className = 'ee-hatch-msg';
+  msg.textContent = '\u2014 Curiouser and curiouser \u2014';
+  hatch.appendChild(msg);
+
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'ee-hatch-close';
+  closeBtn.textContent = 'CLOSE \u2715';
+  closeBtn.onclick = eeClose_;
+  hatch.appendChild(closeBtn);
+
+  overlay.appendChild(hatch);
+  document.body.appendChild(overlay);
+}
+
+// ── 卵タップ処理 ──
+var eeCracks_ = [
+  [[65,60],[55,80],[60,100],[50,130]],
+  [[65,60],[80,75],[85,95],[75,120]],
+  [[65,60],[70,40],[80,55]]
+];
+
+function eeTapEgg_() {
+  eeEggTapCount_++;
+  var counter = document.getElementById('eeCounter');
+  if (counter) counter.classList.add('ee-show');
+  var cd = document.getElementById('eeCd' + (eeEggTapCount_ - 1));
+  if (cd) cd.classList.add('ee-lit');
+  var hint = document.getElementById('eeHint');
+  if (hint) hint.style.opacity = '0';
+
+  // ひびを描く
+  var canvas = document.getElementById('eeCrackCanvas');
+  if (canvas && eeEggTapCount_ <= eeCracks_.length) {
+    var ctx = canvas.getContext('2d');
+    var crack = eeCracks_[eeEggTapCount_ - 1];
+    canvas.classList.add('ee-show');
+    ctx.strokeStyle = 'rgba(255,232,192,' + (0.4 + eeEggTapCount_ * 0.15) + ')';
+    ctx.lineWidth = 1;
+    ctx.shadowColor = '#ffe8c0';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(crack[0][0], crack[0][1]);
+    for (var i = 1; i < crack.length; i++) ctx.lineTo(crack[i][0], crack[i][1]);
+    ctx.stroke();
+  }
+
+  // 揺れ
+  var eggWrap = document.getElementById('eeEggWrap');
+  if (eggWrap) {
+    eggWrap.style.animation = 'none';
+    eggWrap.style.transform = 'rotate(' + ((Math.random()-0.5)*12) + 'deg) scale(1.05)';
+    setTimeout(function() { if (eggWrap) { eggWrap.style.transform = ''; eggWrap.style.animation = ''; } }, 200);
+  }
+
+  // パーティクル
+  eeSpawnParticles_(5);
+
+  if (eeEggTapCount_ >= 5) eeHatch_();
+}
+
+// ── パーティクル生成 ──
+function eeSpawnParticles_(n) {
+  var colors = ['#d4a843','#88ccff','#cc4488','#ffe8c0','#4488cc'];
+  for (var i = 0; i < n; i++) {
+    var p = document.createElement('div');
+    p.className = 'ee-particle';
+    var size = 3 + Math.random() * 5;
+    var angle = Math.random() * Math.PI * 2;
+    var dist = 80 + Math.random() * 120;
+    p.style.cssText = 'width:' + size + 'px;height:' + size + 'px;background:' + colors[Math.floor(Math.random()*colors.length)] + ';left:50%;top:50%;--tx:' + (Math.cos(angle)*dist) + 'px;--ty:' + (Math.sin(angle)*dist) + 'px;--dur:' + (0.6+Math.random()*0.6) + 's;box-shadow:0 0 6px currentColor;';
+    document.body.appendChild(p);
+    setTimeout(function(el) { if (el.parentNode) el.parentNode.removeChild(el); }, 1200, p);
+  }
+}
+
+// ── 孵化演出 ──
+function eeHatch_() {
+  var i;
+  for (i = 0; i < 60; i++) {
+    (function(idx) {
+      setTimeout(function() { eeSpawnParticles_(3); }, idx * 30);
+    })(i);
+  }
+
+  setTimeout(function() {
+    var hatchScreen = document.getElementById('eeHatchScreen');
+    if (hatchScreen) hatchScreen.classList.add('ee-show');
+
+    var path = document.getElementById('eeCrackPath');
+    if (path) {
+      path.setAttribute('d', 'M100,20 L85,60 L70,50 L60,90 L80,85 L75,130 L100,120 L125,130 L120,85 L140,90 L130,50 L115,60 Z');
+      path.setAttribute('stroke-dasharray', '500');
+      path.setAttribute('stroke-dashoffset', '500');
+      path.setAttribute('opacity', '1');
+      // アニメーション
+      var start = null;
+      function animatePath(ts) {
+        if (!start) start = ts;
+        var progress = Math.min((ts - start) / 1500, 1);
+        path.setAttribute('stroke-dashoffset', String(500 * (1 - progress)));
+        if (progress < 1) requestAnimationFrame(animatePath);
+      }
+      requestAnimationFrame(animatePath);
+    }
+
+    // 孵化パーティクル
+    for (var j = 0; j < 80; j++) {
+      (function(idx) {
+        setTimeout(function() {
+          var colors = ['#d4a843','#88ccff','#cc4488','#ffe8c0','#ffffff'];
+          var p = document.createElement('div');
+          p.className = 'ee-particle';
+          var size = 2 + Math.random() * 6;
+          var angle = Math.random() * Math.PI * 2;
+          var dist = 150 + Math.random() * 250;
+          p.style.cssText = 'width:' + size + 'px;height:' + size + 'px;background:' + colors[Math.floor(Math.random()*colors.length)] + ';left:50%;top:50%;z-index:10004;--tx:' + (Math.cos(angle)*dist) + 'px;--ty:' + (Math.sin(angle)*dist) + 'px;--dur:' + (0.8+Math.random()*1) + 's;box-shadow:0 0 8px currentColor;';
+          document.body.appendChild(p);
+          setTimeout(function() { if (p.parentNode) p.parentNode.removeChild(p); }, 2000);
+        }, idx * 20);
+      })(j);
+    }
+  }, 300);
+}
+
+// ── イースターエッグを閉じる ──
+function eeClose_() {
+  var overlay = document.getElementById('eeOverlay');
+  if (overlay) overlay.remove();
+  var styleEl = document.getElementById('eeStyles');
+  if (styleEl) styleEl.remove();
+  // 残っているパーティクルを掃除
+  document.querySelectorAll('.ee-particle').forEach(function(p) { p.remove(); });
+  document.querySelectorAll('.ee-rune').forEach(function(r) { r.remove(); });
+  eeActive_ = false;
+  eeEggTapCount_ = 0;
+}
+
+</script>

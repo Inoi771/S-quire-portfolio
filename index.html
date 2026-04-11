@@ -261,7 +261,7 @@
 
         <!-- ===== グローバル AI ウィジェット（ヘッダー） ===== -->
         <div style="display: flex; align-items: center; gap: 10px;">
-          <span id="headerClock" style="color: white; font-size: 14px; opacity: 0.9; font-weight: 600;"></span>
+          <span id="headerClock" onclick="onClockTap()" style="color: white; font-size: 14px; opacity: 0.9; font-weight: 600; cursor:default; user-select:none; -webkit-user-select:none;"></span>
           <button id="aiToggleBtn" onclick="toggleAIWidget()" style="background: rgba(255,255,255,0.3); color: white; border: 2px solid white; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s;">
             🤖 AI
           </button>
@@ -3076,6 +3076,7 @@
 <?!= include("js-admin-lec-deadline") ?>
 <?!= include("js-ai-actions") ?>
 <?!= include("js-admin-chatbot") ?>
+<?!= include("js-easter-egg") ?>
 
 
   <!-- ===== 講習管理 操作方法モーダル ===== -->
