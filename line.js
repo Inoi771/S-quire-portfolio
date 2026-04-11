@@ -195,48 +195,18 @@ function sendNotification(teacherId, subject, body) {
     teacherId = (teacherId || '').trim();
     if (!teacherId) return { success: false, error: '送信先の講師IDが空です' };
 
-    // teacherId から通知先メールアドレス一覧を取得
-    var toEmails = getNotificationEmailsByTeacherId_(teacherId);
-
-    // staffs から通知方法と LINE User ID を取得
+    // 振り分け通知は常にLINEで送信（メール送信は行わない）
     var staff = getStaffByTeacherId_(teacherId);
-    var method = (staff && staff.notificationMethod) ? staff.notificationMethod : 'line';
-
-    if (method === 'none') {
-      Logger.log('⚠ sendNotification: ' + teacherId + ' は通知オフ設定');
-      return { success: true, sentGmail: false, sentLine: false };
-    }
-
-    var sentGmail = false;
+    var lineUserId = staff ? staff.lineUserId : null;
     var sentLine = false;
 
-    // Gmail 送信（選択された全メールアドレスに送信）
-    if (method === 'gmail' || method === 'both') {
-      if (toEmails.length > 0) {
-        toEmails.forEach(function(addr) {
-          try {
-            MailApp.sendEmail(addr, subject, body);
-            sentGmail = true;
-          } catch (mailError) {
-            Logger.log('❌ Gmail送信失敗 (' + addr + '): ' + mailError);
-          }
-        });
-      } else {
-        Logger.log('⚠ メールアドレス未登録: ' + teacherId);
-      }
+    if (lineUserId) {
+      sentLine = sendLineMessage(lineUserId, subject + '\n\n' + body);
+    } else {
+      Logger.log('⚠ sendNotification: LINE未登録のためスキップ (' + teacherId + ')');
     }
 
-    // LINE 送信
-    if (method === 'line' || method === 'both') {
-      var lineUserId = staff ? staff.lineUserId : null;
-      if (lineUserId) {
-        sentLine = sendLineMessage(lineUserId, subject + '\n\n' + body);
-      } else {
-        Logger.log('⚠ LINE User ID 未登録: ' + teacherId);
-      }
-    }
-
-    return { success: true, sentGmail: sentGmail, sentLine: sentLine };
+    return { success: true, sentGmail: false, sentLine: sentLine };
 
   } catch (error) {
     Logger.log('❌ sendNotificationエラー: ' + error);
@@ -494,6 +464,55 @@ function getNotificationMembers() {
   } catch (error) {
     Logger.log('❌ getNotificationMembersエラー: ' + error);
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 全スタッフの通知設定をLINEに一括更新する（Admin のみ・1回限りの移行用）
+ * notificationMethod / schedulerNotifPrefs の 'gmail'・'both' をすべて 'line' に変更する
+ * @return {Object} { success, updatedCount }
+ */
+function batchUpdateNotificationToLine() {
+  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+  try {
+    var allRows = supabaseSelect_('staffs', null, {
+      select: 'id,notification_method,scheduler_notif_prefs'
+    }) || [];
+
+    var toUpdate = [];
+    allRows.forEach(function(row) {
+      var changed = false;
+      var update = { id: row.id };
+
+      if (row.notification_method === 'gmail' || row.notification_method === 'both') {
+        update.notification_method = 'line';
+        changed = true;
+      }
+
+      var prefs = row.scheduler_notif_prefs || {};
+      var prefChanged = false;
+      ['meeting', 'report', 'shitsucho'].forEach(function(type) {
+        if (prefs[type] === 'gmail' || prefs[type] === 'both') {
+          prefs[type] = 'line';
+          prefChanged = true;
+        }
+      });
+      if (prefChanged) {
+        update.scheduler_notif_prefs = prefs;
+        changed = true;
+      }
+
+      if (changed) toUpdate.push(update);
+    });
+
+    if (toUpdate.length > 0) {
+      supabaseBatchUpsert_('staffs', toUpdate, 'id');
+    }
+
+    return { success: true, updatedCount: toUpdate.length };
+  } catch(e) {
+    Logger.log('❌ batchUpdateNotificationToLine エラー: ' + e);
+    return { success: false, error: e.toString() };
   }
 }
 
