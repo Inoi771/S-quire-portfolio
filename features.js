@@ -4525,12 +4525,13 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       '- "delete": 削除を示す記号・文言がある場合\n' +
       '  例: "7/17×"、取り消し線、"削除"の文字、"✕"マーク\n' +
       '  → "op":"delete" とし、削除対象の情報をメインフィールドに入れる\n\n' +
+      '講師名・担当者名が記載されている場合は teacherName として抽出する。不明な場合は null とする。\n\n' +
       'createの場合:\n' +
-      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}\n' +
+      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull","teacherName":"講師名またはnull"}\n' +
       'editの場合（変更前の値 + changesに変更後の値）:\n' +
-      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","changes":{"date":"YYYY-MM-DD"}}\n' +
+      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull","changes":{"date":"YYYY-MM-DD"}}\n' +
       'deleteの場合:\n' +
-      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード"}\n\n' +
+      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull"}\n\n' +
       '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。';
 
     var payload = {
@@ -4617,12 +4618,13 @@ function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson
       '- "delete": 削除を示す記号・文言がある場合\n' +
       '  例: "7/17×"、取り消し線、"削除"の文字、"✕"マーク\n' +
       '  → "op":"delete" とし、削除対象の情報をメインフィールドに入れる\n\n' +
+      '講師名・担当者名が記載されている場合は teacherName として抽出する。不明な場合は null とする。\n\n' +
       'createの場合:\n' +
-      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}\n' +
+      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull","teacherName":"講師名またはnull"}\n' +
       'editの場合（変更前の値 + changesに変更後の値）:\n' +
-      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","changes":{"date":"YYYY-MM-DD"}}\n' +
+      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull","changes":{"date":"YYYY-MM-DD"}}\n' +
       'deleteの場合:\n' +
-      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード"}\n\n' +
+      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull"}\n\n' +
       '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。\n\n' +
       '--- 日程テキスト ---\n' + scheduleText;
 

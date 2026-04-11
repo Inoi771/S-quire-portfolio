@@ -2178,6 +2178,38 @@
       reader.readAsDataURL(file);
     }
 
+    /**
+     * OCR検出名を lec-teacher-select の選択肢と照合し、一致するスタッフを返す
+     * 部分一致は「OCR検出名が登録スタッフ名に含まれる」方向のみ（逆方向は誤マッチ防止のため不使用）
+     * @param {string} ocrName OCRが返した講師名（例: "田中"）
+     * @return {Object|null} { email, name, teacherId } or null
+     */
+    function matchOcrTeacherName_(ocrName) {
+      if (!ocrName || !isAdminUser) return null;
+      var sel = document.getElementById('lec-teacher-select');
+      if (!sel) return null;
+      var candidates = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        var opt = sel.options[i];
+        if (!opt.value) continue;
+        var staffName = opt.getAttribute('data-name') || '';
+        if (!staffName) continue;
+        if (staffName === ocrName) {
+          return { email: opt.value, name: staffName, teacherId: opt.getAttribute('data-teacherid') || '' };
+        }
+        if (staffName.indexOf(ocrName) >= 0) {
+          candidates.push({ email: opt.value, name: staffName, teacherId: opt.getAttribute('data-teacherid') || '' });
+        }
+      }
+      // 自分自身もチェック
+      var selfName = myTeacherName || '';
+      if (selfName && (selfName === ocrName || selfName.indexOf(ocrName) >= 0)) {
+        candidates.push({ email: '', name: selfName, teacherId: myTeacherId || '' });
+      }
+      if (candidates.length === 1) return candidates[0];
+      return null;
+    }
+
     function renderLecOcrResult_(entries) {
       var tbody = document.getElementById('lec-ocr-result-body');
       tbody.innerHTML = '';
@@ -2185,6 +2217,25 @@
       var subjects = (selectedSubjects && selectedSubjects.length > 0)
         ? selectedSubjects
         : ['国語', '社会', '数学', '理科', '英語'];
+
+      // 管理者用：講師ヘッダー表示切替 & 講師オプション構築
+      var thTeacher = document.getElementById('lec-ocr-th-teacher');
+      if (thTeacher) thTeacher.style.display = isAdminUser ? '' : 'none';
+      var teacherOpts = [];
+      if (isAdminUser) {
+        var tSel = document.getElementById('lec-teacher-select');
+        if (tSel) {
+          for (var ti = 0; ti < tSel.options.length; ti++) {
+            var tOpt = tSel.options[ti];
+            teacherOpts.push({
+              v: tOpt.value,
+              l: tOpt.textContent,
+              name: tOpt.getAttribute('data-name') || '',
+              tid: tOpt.getAttribute('data-teacherid') || ''
+            });
+          }
+        }
+      }
 
       var hasIssue = false;
       entries.forEach(function(entry, idx) {
@@ -2280,6 +2331,34 @@
         }));
         tr.appendChild(td(mkSelect(campusOpts, displayEntry.campusCode, 'campusCode', hasCampusIssue)));
 
+        // 管理者用：講師ドロップダウン（OCR検出名でマッチング → ドロップダウン選択 → 自分 の優先順）
+        if (isAdminUser && teacherOpts.length > 0) {
+          var matched = matchOcrTeacherName_(displayEntry.teacherName);
+          var teacherVal = '';
+          if (matched) {
+            teacherVal = matched.email;
+          } else if (lecAdminTeacherEmail) {
+            teacherVal = lecAdminTeacherEmail;
+          }
+          var tSelect = document.createElement('select');
+          tSelect.dataset.field = 'teacher';
+          tSelect.style.cssText = 'border:1px solid #ccc; border-radius:4px; font-size:12px; padding:2px 3px; max-width:80px;';
+          if (op === 'delete') { tSelect.disabled = true; tSelect.style.opacity = '0.6'; }
+          teacherOpts.forEach(function(o) {
+            var optEl = document.createElement('option');
+            optEl.value = o.v;
+            optEl.textContent = o.l;
+            optEl.setAttribute('data-name', o.name || '');
+            optEl.setAttribute('data-teacherid', o.tid || '');
+            if (o.v === teacherVal) optEl.selected = true;
+            tSelect.appendChild(optEl);
+          });
+          if (displayEntry.teacherName) {
+            tSelect.title = 'OCR検出: ' + displayEntry.teacherName;
+          }
+          tr.appendChild(td(tSelect));
+        }
+
         var btnDel = document.createElement('button');
         btnDel.textContent = '✕';
         btnDel.style.cssText = 'background:none; border:none; color:#bbb; font-size:15px; cursor:pointer; padding:0 3px;';
@@ -2334,6 +2413,24 @@
         if (!campusCode) { lecOcrHasNullCampus = true; return; }
         if (!opsByCampus[campusCode]) opsByCampus[campusCode] = { creates: [], edits: [], deletes: [] };
 
+        // 行ごとの講師情報を取得（管理者用ドロップダウン → 全体ドロップダウン → 自分）
+        var rowTeacherName  = myTeacherName  || '';
+        var rowTeacherEmail = myTeacherEmail || '';
+        var rowTeacherId    = myTeacherId    || '';
+        var teacherSelect   = tr.querySelector('[data-field="teacher"]');
+        if (teacherSelect && teacherSelect.value) {
+          var tOpt = teacherSelect.options[teacherSelect.selectedIndex];
+          if (tOpt) {
+            rowTeacherEmail = teacherSelect.value;
+            rowTeacherName  = tOpt.getAttribute('data-name') || tOpt.textContent || teacherSelect.value;
+            rowTeacherId    = tOpt.getAttribute('data-teacherid') || '';
+          }
+        } else if (isAdminUser && lecAdminTeacherEmail) {
+          rowTeacherName  = lecAdminTeacherName;
+          rowTeacherEmail = lecAdminTeacherEmail;
+          rowTeacherId    = lecAdminTeacherId;
+        }
+
         if (op === 'create') {
           if (!date || !startTime) return;
           opsByCampus[campusCode].creates.push({
@@ -2344,9 +2441,9 @@
             subject:       subject || '',
             grade:         grade || '',
             classLabel:    classLabel,
-            teacherName:   (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherName : (myTeacherName || ''),
-            teacherEmail:  (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherEmail : (myTeacherEmail || ''),
-            teacherId:     (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : (myTeacherId || '')
+            teacherName:   rowTeacherName,
+            teacherEmail:  rowTeacherEmail,
+            teacherId:     rowTeacherId
           });
         } else if (op === 'edit') {
           opsByCampus[campusCode].edits.push({
