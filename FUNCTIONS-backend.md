@@ -156,6 +156,7 @@
 - `createWeeklyLectureEntriesAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを毎週一括作成する内部ヘルパー（休校日スキップ、学年別設定の回数分）
 - `editLectureEntryAI_(lectureId, campusCode, entryId, changes)` — AIアシスタントから講習エントリを1件編集する内部ヘルパー
 - `deleteLectureEntryAI_(lectureId, campusCode, entryId)` — AIアシスタントから講習エントリを1件削除する内部ヘルパー
+- `bulkLectureOperationsAI_(lectureId, campusCode, operations)` — AIアシスタントから講習エントリを一括操作する（作成・編集・削除の混合対応）。operations配列の各要素は `{op:"create"|"edit"|"delete", ...params}`。1回のロック・1回のFirestore書き込みで処理
 
 #### ⚠️【重要】Gemini API 呼び出し時の設計ルール
 

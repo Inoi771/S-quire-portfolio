@@ -179,6 +179,12 @@
           campusCode: params.campusCode,
           entryId: params.entryId
         };
+      } else if (action === 'bulk_lecture_operations') {
+        execParams = {
+          lectureId: params.lectureId,
+          campusCode: params.campusCode,
+          operations: params.operations || []
+        };
       }
 
       google.script.run
@@ -189,7 +195,7 @@
             addAIWidgetMessage('ai', successMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
             // 講習エントリ操作成功後、キャッシュをクリアして画面を自動更新
-            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry') {
+            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry' || action === 'bulk_lecture_operations') {
               var affectedCampus = String(execParams.campusCode || '').padStart(2, '0');
               if (typeof lectureEntries !== 'undefined') {
                 delete lectureEntries[affectedCampus];
