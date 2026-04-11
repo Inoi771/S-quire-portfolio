@@ -715,30 +715,6 @@
         .checkAndForwardFormEmails();
     }
 
-    // ===== 【通知設定一括変更】 =====
-    function batchUpdateNotifToLine() {
-      appConfirm('メール設定のスタッフを全員LINEに変更します。よろしいですか？').then(function(ok) {
-        if (!ok) return;
-        var resultDiv = document.getElementById('batchUpdateNotifResult');
-        if (resultDiv) resultDiv.textContent = '処理中...';
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (result.success) {
-              var msg = result.updatedCount > 0
-                ? '✅ ' + result.updatedCount + '人の設定をLINEに変更しました。'
-                : '✅ 変更が必要なスタッフはいませんでした（すでに全員LINE設定済み）。';
-              if (resultDiv) resultDiv.textContent = msg;
-            } else {
-              if (resultDiv) resultDiv.textContent = '❌ ' + result.error;
-            }
-          })
-          .withFailureHandler(function(err) {
-            if (resultDiv) resultDiv.textContent = '❌ ' + err;
-          })
-          .batchUpdateNotificationToLine();
-      });
-    }
-
     // ===== 【LINE通知スケジューラー】 =====
 
     var schedulerLineUsers = []; // LINE登録ユーザーキャッシュ
