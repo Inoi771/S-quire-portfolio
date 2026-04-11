@@ -341,6 +341,7 @@
       if (currentLectureCampus) {
         renderLectureWeekGrid(currentLectureCampus);
       }
+      updateLecToolbarState(); // 週切り替え後も移動モード表示を維持
     }
 
     /**
@@ -1326,11 +1327,32 @@
         deleteBtn.style.cursor   = 'pointer';
         deleteBtn.style.color    = '#e57373';
         deleteBtn.style.borderColor = '#e57373';
+        // 移動モードメッセージを専用要素に表示
+        var moveMsg = document.getElementById('lec-move-msg');
+        if (moveMsg) {
+          var entries = lectureEntries[currentLectureCampus] || [];
+          var entry = entries.find(function(e) { return e.id === selectedEntryId; });
+          var label = entry
+            ? ((entry.subject || '') + ' ' + (entry.grade || '') + ' (' + (entry.date || '') + ' ' + (entry.startTime || '') + ')').trim()
+            : 'エントリ';
+          moveMsg.textContent = '「' + label + '」を移動中 → 移動先をタップ';
+          moveMsg.style.display = '';
+        }
+        lecMoveModeActive = true;
       } else {
         deleteBtn.disabled       = true;
         deleteBtn.style.cursor   = 'not-allowed';
         deleteBtn.style.color    = '#ccc';
         deleteBtn.style.borderColor = '#ccc';
+        // フラグで確実にメッセージを消去
+        if (lecMoveModeActive) {
+          var moveMsg = document.getElementById('lec-move-msg');
+          if (moveMsg) {
+            moveMsg.textContent = '';
+            moveMsg.style.display = 'none';
+          }
+          lecMoveModeActive = false;
+        }
       }
     }
 
