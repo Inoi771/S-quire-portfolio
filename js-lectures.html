@@ -765,6 +765,11 @@
      * @param {string} campusCode 校舎コード
      */
     function switchLectureCampusTab(campusCode) {
+      // 移動モード中は校舎切り替えをブロック
+      if (selectedEntryId) {
+        showToast('コマを移動中です。先に完了またはキャンセルしてください', 'warning');
+        return;
+      }
       // 前の校舎のスクロール位置を保存
       var container = document.getElementById('lec-grid-container');
       if (container && currentLectureCampus) {
@@ -1327,11 +1332,12 @@
         deleteBtn.style.cursor   = 'pointer';
         deleteBtn.style.color    = '#e57373';
         deleteBtn.style.borderColor = '#e57373';
-        // 移動モードメッセージを専用要素に表示
-        var moveMsg = document.getElementById('lec-move-msg');
-        if (moveMsg) {
-          moveMsg.textContent = '移動先をタップ、または削除ボタンをタップ';
-          moveMsg.style.display = '';
+        // 移動モードバナーを表示
+        var banner = document.getElementById('lec-move-banner');
+        if (banner) banner.style.display = 'flex';
+        // 初回のみ下部トーストも表示
+        if (!lecMoveModeActive) {
+          showToast('コマを選択しました。移動先をタップしてください', 'warning');
         }
         lecMoveModeActive = true;
       } else {
@@ -1339,16 +1345,22 @@
         deleteBtn.style.cursor   = 'not-allowed';
         deleteBtn.style.color    = '#ccc';
         deleteBtn.style.borderColor = '#ccc';
-        // フラグで確実にメッセージを消去
+        // フラグで確実にバナーを消去
         if (lecMoveModeActive) {
-          var moveMsg = document.getElementById('lec-move-msg');
-          if (moveMsg) {
-            moveMsg.textContent = '';
-            moveMsg.style.display = 'none';
-          }
+          var banner = document.getElementById('lec-move-banner');
+          if (banner) banner.style.display = 'none';
           lecMoveModeActive = false;
         }
       }
+    }
+
+    /**
+     * 移動モードをキャンセルして選択を解除する
+     */
+    function cancelLecEntryMove() {
+      selectedEntryId = null;
+      updateLecToolbarState();
+      if (currentLectureCampus) renderLecEntries(currentLectureCampus);
     }
 
     /**
