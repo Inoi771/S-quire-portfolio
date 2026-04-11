@@ -1047,7 +1047,7 @@
               <button id="lec-delete-btn" onclick="deleteLecEntry()" disabled style="padding: 6px 16px; background: white; border: 1px solid #ccc; border-radius: 20px; font-size: 14px; color: #ccc; cursor: not-allowed; font-weight: 600; white-space: nowrap;">🗑️ 削除</button>
               <span id="lec-status-msg" style="font-size: 12px; color: #666;"></span>
               <button onclick="showLecCalExportModal()" style="margin-left: auto; padding: 6px 16px; background: #f0fff4; border: 1px solid #a5d6a7; border-radius: 20px; font-size: 14px; color: #2e7d32; cursor: pointer; font-weight: 600; white-space: nowrap;">📅 カレンダー追加</button>
-              <button onclick="openLecOcrModal()" style="padding: 6px 16px; background: #FF6B6B; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap;">📸 写真・PDF から読み込む（AI OCR）</button>
+              <button onclick="openLecOcrModal()" style="padding: 6px 16px; background: #FF6B6B; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap;">📥 日程を読み込む（AI）</button>
               <button onclick="showLecHelpModal()" style="padding: 6px 16px; background: #f0f4ff; border: 1px solid #c5cae9; border-radius: 20px; font-size: 14px; color: #667eea; cursor: pointer; font-weight: 600; white-space: nowrap;">❓ 操作方法</button>
             </div>
 
@@ -3052,8 +3052,8 @@
     </div>
     <div style="display:flex; flex-direction:column; gap:10px; max-height:70vh; overflow-y:auto;">
       <div style="background:#fff0f0; border-radius:8px; padding:12px; border:2px solid #FF6B6B;">
-        <div style="font-weight:700; color:#FF6B6B; font-size:16px; margin-bottom:4px;">📸 写真・PDF から一括読み込み（AI OCR）</div>
-        <div style="font-size:16px; color:#444; line-height:1.6;">ツールバーの「📸 写真・PDF から読み込む（AI OCR）」ボタンをタップ → 日程表の写真またはPDFを選択 → 「AI で読み込む」をタップ → 内容を確認して「このまま保存」</div>
+        <div style="font-weight:700; color:#FF6B6B; font-size:16px; margin-bottom:4px;">📥 日程を読み込む（AI）</div>
+        <div style="font-size:16px; color:#444; line-height:1.6;">ツールバーの「📥 日程を読み込む（AI）」ボタンをタップ → 写真・PDF・テキストのいずれかを選択 → 「AI で読み込む」をタップ → 内容を確認して「このまま保存」</div>
         <div style="font-size:13px; color:#888; margin-top:6px; line-height:1.5;">日付・時間・科目・学年を自動で読み取ります。担当講師は自分に自動設定。「7/15,30,8/1」のような省略記法も対応。</div>
       </div>
       <div style="background:#f0f4ff; border-radius:8px; padding:12px;">
