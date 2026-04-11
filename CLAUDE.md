@@ -247,6 +247,7 @@ MyProject/
 ├── js-admin-lec-deadline.html JS: 講習日程締切管理（約200行）
 ├── js-ai-actions.html   JS: AIアシスタント アクション実行（約350行）
 ├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
+├── js-easter-egg.html   JS: イースターエッグ（隠し機能・Clockwork Wonderland）（約310行）
 ├── js-placement.html    JS: 講師配置表・曜日別配置・PDF出力（約380行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
