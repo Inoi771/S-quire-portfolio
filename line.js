@@ -1428,6 +1428,9 @@ function getScheduledLineMessages(year, month) {
     }
 
     // 種別ごとに重複がある場合は最初の1件のみ採用（重複防止）
+    // __ALL__ を含むドキュメントがある場合は実際の送信人数を1回だけ取得
+    var hasAll = docs.some(function(doc) { return (doc.recipients || []).indexOf('__ALL__') >= 0; });
+    var allLineCount = hasAll ? getAllLineRegisteredTeacherIds_().length : 0;
     var seenTypes = {};
     var messages = [];
     docs.forEach(function(doc) {
@@ -1435,11 +1438,14 @@ function getScheduledLineMessages(year, month) {
       if (type === 'shimurocho') type = 'shitsucho'; // 旧名称の後方互換
       if (seenTypes[type]) return;
       seenTypes[type] = true;
+      var recips = doc.recipients || [];
+      var recipientCount = recips.indexOf('__ALL__') >= 0 ? allLineCount : recips.length;
       messages.push({
         id: doc.id || doc._id,
         type: type,
         yearMonth: doc.yearMonth || yearMonth,
-        recipients: doc.recipients || [],
+        recipients: recips,
+        recipientCount: recipientCount,
         scheduledAt: doc.scheduledAt || '',
         message: doc.message || '',
         sent: doc.sent === true,
