@@ -1021,7 +1021,8 @@
             dtStr = y + '年' + mo + '月' + d + '日(' + dow + ') ' + h + ':' + (mi < 10 ? '0' + mi : mi);
           }
         }
-        var recipCount = (m.recipients || []).length;
+        var recips = m.recipients || [];
+        var recipLabel = recips.indexOf('__ALL__') >= 0 ? '全員' : recips.length + '人';
         var msgPreview = m.message ? escapeHtml_(m.message.slice(0, 30) + (m.message.length > 30 ? '…' : '')) : '（未設定）';
         var sentBadge = m.sent
           ? '<span style="padding:3px 8px;background:#e0e0e0;color:#666;border-radius:12px;font-size:11px;">✅ 送信済</span>'
@@ -1034,7 +1035,7 @@
         html += '<tr style="border-bottom:1px solid #eee;">' +
           '<td style="padding:10px;">' + typeLabel + '</td>' +
           '<td style="padding:10px;white-space:nowrap;">' + dtStr + '</td>' +
-          '<td style="padding:10px;text-align:center;">' + recipCount + '人</td>' +
+          '<td style="padding:10px;text-align:center;">' + recipLabel + '</td>' +
           '<td style="padding:10px;max-width:200px;">' + msgPreview.replace(/\n/g, '↵') + '</td>' +
           '<td style="padding:10px;text-align:center;">' + sentBadge + '</td>' +
           '<td style="padding:10px;text-align:center;white-space:nowrap;">' + ops + '</td>' +
