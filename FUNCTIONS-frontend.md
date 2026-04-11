@@ -154,6 +154,9 @@
 - `createWeeklyLecEntries(date, startSlot)` — 「毎週」チェック時の一括作成：同じ曜日・時刻で count 回分のエントリを毎週作成（休校日を自動スキップ）
 - `moveLecEntry(entryId, date, startSlot)` — 選択中エントリを指定日時に移動
 - `deleteLecEntry()` — 選択中エントリを削除
+- `showLecScheduleListView()` — マイ日程一覧モーダルを表示。全校舎のエントリを取得し、自分のエントリを校舎→学年→教科ごとにグルーピングして表示
+- `closeLecListViewModal()` — マイ日程一覧モーダルを閉じる
+- `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→学年→教科→時間帯で整理）
 - `showLecCalExportModal()` — カレンダーエクスポートモーダルを表示
 - `closeLecCalExportModal()` — カレンダーエクスポートモーダルを閉じる
 - `exportLecCalendar(mode)` — カレンダーエクスポート実行（'google' or 'ics'）。自分のエントリのみをICSファイルに変換してダウンロード。Googleモードではインポート画面も開く
