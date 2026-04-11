@@ -468,55 +468,6 @@ function getNotificationMembers() {
 }
 
 /**
- * 全スタッフの通知設定をLINEに一括更新する（Admin のみ・1回限りの移行用）
- * notificationMethod / schedulerNotifPrefs の 'gmail'・'both' をすべて 'line' に変更する
- * @return {Object} { success, updatedCount }
- */
-function batchUpdateNotificationToLine() {
-  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
-  try {
-    var allRows = supabaseSelect_('staffs', null, {
-      select: 'id,notification_method,scheduler_notif_prefs'
-    }) || [];
-
-    var toUpdate = [];
-    allRows.forEach(function(row) {
-      var changed = false;
-      var update = { id: row.id };
-
-      if (row.notification_method === 'gmail' || row.notification_method === 'both') {
-        update.notification_method = 'line';
-        changed = true;
-      }
-
-      var prefs = row.scheduler_notif_prefs || {};
-      var prefChanged = false;
-      ['meeting', 'report', 'shitsucho'].forEach(function(type) {
-        if (prefs[type] === 'gmail' || prefs[type] === 'both') {
-          prefs[type] = 'line';
-          prefChanged = true;
-        }
-      });
-      if (prefChanged) {
-        update.scheduler_notif_prefs = prefs;
-        changed = true;
-      }
-
-      if (changed) toUpdate.push(update);
-    });
-
-    if (toUpdate.length > 0) {
-      supabaseBatchUpsert_('staffs', toUpdate, 'id');
-    }
-
-    return { success: true, updatedCount: toUpdate.length };
-  } catch(e) {
-    Logger.log('❌ batchUpdateNotificationToLine エラー: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
  * LINE User ID のマッピング一覧を取得（Admin のみ・デバッグ・確認用）
  * teacherId → LINE User ID のマッピングを返す
  * @return {Object} { success, mapping }
