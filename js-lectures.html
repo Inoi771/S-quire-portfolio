@@ -1364,6 +1364,26 @@
     }
 
     /**
+     * 選択中のエントリがある週へ移動する（移動モードバナーのタップ時に呼ばれる）
+     */
+    function goToSelectedLecEntry() {
+      if (!selectedEntryId || !currentLectureCampus) return;
+      var entries = lectureEntries[currentLectureCampus] || [];
+      var entry = entries.find(function(e) { return e.id === selectedEntryId; });
+      if (!entry || !entry.date) return;
+      // エントリの日付の週の月曜日を計算
+      var parts = entry.date.split('-');
+      var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      var day = d.getDay(); // 0=日, 1=月, ..., 6=土
+      var diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      currentLectureWeekStart = d;
+      updateLectureWeekLabel();
+      renderLectureWeekGrid(currentLectureCampus);
+      updateLecToolbarState();
+    }
+
+    /**
      * 変更後に呼び出す。2.5秒後にすべての未保存校舎を自動保存する。
      * @param {string} campusCode
      */
