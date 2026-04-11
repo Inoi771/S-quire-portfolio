@@ -1021,8 +1021,8 @@
             dtStr = y + '年' + mo + '月' + d + '日(' + dow + ') ' + h + ':' + (mi < 10 ? '0' + mi : mi);
           }
         }
-        var recips = m.recipients || [];
-        var recipLabel = recips.indexOf('__ALL__') >= 0 ? '全員' : recips.length + '人';
+        var recipientCount = (m.recipientCount !== undefined) ? m.recipientCount : (m.recipients || []).length;
+        var recipLabel = recipientCount + '人';
         var msgPreview = m.message ? escapeHtml_(m.message.slice(0, 30) + (m.message.length > 30 ? '…' : '')) : '（未設定）';
         var sentBadge = m.sent
           ? '<span style="padding:3px 8px;background:#e0e0e0;color:#666;border-radius:12px;font-size:11px;">✅ 送信済</span>'
