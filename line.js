@@ -1662,6 +1662,95 @@ function sendScheduledLineMessageNow(id) {
 }
 
 /**
+ * 送信済みメッセージを再送信する（Admin 手動実行用）
+ * Firestoreの sent フラグは更新しない。受信者ごとにLINE/メール結果を返す。
+ * @param {string} id スケジュールID
+ * @return {Object} { success, results: [{name, tid, line, gmail}] }
+ *   line/gmail の値: 'sent' | 'failed' | 'skipped' | 'no_id' | 'no_email'
+ */
+function resendScheduledLineMessage(id) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var doc = firestoreGet_('lineSchedules', id);
+    if (!doc) return { success: false, error: '対象IDが見つかりません' };
+
+    var recipientsArr = doc.recipients || [];
+    var msgType = doc.type || '';
+    if (msgType === 'shimurocho') msgType = 'shitsucho';
+    if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
+      recipientsArr = getAllLineRegisteredTeacherIds_();
+    }
+    // LINE User ID で重複排除
+    var seenLineIds = {};
+    var deduped = [];
+    recipientsArr.forEach(function(tid) {
+      var staff = getStaffByTeacherId_(tid);
+      var lid = staff ? staff.lineUserId : null;
+      if (lid) {
+        if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
+      } else {
+        deduped.push(tid);
+      }
+    });
+    recipientsArr = deduped;
+
+    var message = doc.message || '';
+    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
+    var results = [];
+
+    recipientsArr.forEach(function(tid) {
+      var staff = getStaffByTeacherId_(tid);
+      var name = staff ? (staff.name || tid) : tid;
+      var notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+      var pref = notifPrefs[msgType] || 'line';
+      var lineResult = 'skipped';
+      var gmailResult = 'skipped';
+
+      if (pref === 'none') {
+        results.push({ name: name, tid: tid, line: 'skipped', gmail: 'skipped' });
+        return;
+      }
+
+      if (pref === 'line' || pref === 'both') {
+        var lineUserId = staff ? staff.lineUserId : null;
+        if (lineUserId) {
+          lineResult = sendLineMessage(lineUserId, message) ? 'sent' : 'failed';
+        } else {
+          lineResult = 'no_id';
+        }
+      }
+
+      if (pref === 'gmail' || pref === 'both') {
+        var schedEmails = (staff && staff.schedulerNotifEmails && Array.isArray(staff.schedulerNotifEmails[msgType]) && staff.schedulerNotifEmails[msgType].length > 0)
+          ? staff.schedulerNotifEmails[msgType]
+          : getNotificationEmailsByTeacherId_(tid);
+        if (schedEmails.length > 0) {
+          var anyGmailSent = false;
+          schedEmails.forEach(function(addr) {
+            try {
+              MailApp.sendEmail(addr, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
+              anyGmailSent = true;
+            } catch(e) {
+              Logger.log('❌ resend Gmail送信失敗 (' + addr + '): ' + e);
+            }
+          });
+          gmailResult = anyGmailSent ? 'sent' : 'failed';
+        } else {
+          gmailResult = 'no_email';
+        }
+      }
+
+      results.push({ name: name, tid: tid, line: lineResult, gmail: gmailResult });
+    });
+
+    return { success: true, results: results };
+  } catch(e) {
+    Logger.log('❌ resendScheduledLineMessage エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * 送信予定時刻を過ぎた未送信メッセージを一括送信する（時間トリガーから呼ばれる）
  * @return {Object} { success, sentCount, errors }
  */

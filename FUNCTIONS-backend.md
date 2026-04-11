@@ -286,6 +286,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `saveScheduledLineMessage(data)` — スケジュール1件を保存（id 一致する行を更新・なければ追加）
 - `deleteScheduledLineMessage(id)` — スケジュール1件を削除（Admin のみ）
 - `sendScheduledLineMessageNow(id)` — 指定スケジュールを今すぐ手動送信（Admin のみ）。戻り値: `{ success, sentCount, failedEmails }`
+- `resendScheduledLineMessage(id)` — 送信済みメッセージを再送信（Admin のみ）。Firestoreのsentフラグは更新しない。受信者ごとにLINE/メール結果を返す。戻り値: `{ success, results: [{name, tid, line, gmail}] }`（line/gmail: 'sent'|'failed'|'skipped'|'no_id'|'no_email'）
 - `checkAndSendDueLineMessages()` — 送信予定時刻を過ぎた未送信メッセージを一括送信（時間トリガーから呼ばれる）
 - `setupScheduledLineTrigger()` — checkAndSendDueLineMessages を毎時実行するトリガーを設定（Admin のみ）
 - `deleteScheduledLineTrigger()` — checkAndSendDueLineMessages のトリガーをすべて削除（Admin のみ）
