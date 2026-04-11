@@ -1858,10 +1858,19 @@
       fbGetAllLectureEntries(currentLectureId)
         .then(function(entries) {
           allCampusEntriesCache = entries || [];
-          checkAndDisplayDuplicates();
+          var countIssues = checkSessionCounts(allCampusEntriesCache);
+          checkAndDisplayDuplicates(countIssues);
           var dupPanel = document.getElementById('lec-duplicate-panel');
-          var hasdup = dupPanel && dupPanel.style.display !== 'none';
-          if (status) status.textContent = hasdup ? '重複あり' : '重複なし ✓';
+          var hasIssues = dupPanel && dupPanel.style.display !== 'none';
+          if (status) {
+            var hasDup = document.getElementById('lec-duplicate-list');
+            var dupCount = hasDup ? hasDup.querySelectorAll('[data-dup-type]').length : 0;
+            var countCount = hasDup ? hasDup.querySelectorAll('[data-count-type]').length : 0;
+            if (dupCount > 0 && countCount > 0) status.textContent = '重複・回数に問題あり';
+            else if (dupCount > 0) status.textContent = '重複あり';
+            else if (countCount > 0) status.textContent = '回数過不足あり';
+            else status.textContent = '問題なし ✓';
+          }
         })
         .catch(function(err) {
           console.error('runFullDuplicateCheck エラー:', err);
@@ -1888,7 +1897,8 @@
         fbGetAllLectureEntries(currentLectureId)
           .then(function(entries) {
             allCampusEntriesCache = entries || [];
-            checkAndDisplayDuplicates();
+            var countIssues = checkSessionCounts(allCampusEntriesCache);
+            checkAndDisplayDuplicates(countIssues);
           })
           .catch(function(err) { console.error('fetchAllCampusEntries エラー:', err); });
         return;
@@ -1902,7 +1912,8 @@
           var all = [];
           results.forEach(function(r) { all = all.concat(r || []); });
           allCampusEntriesCache = all;
-          checkAndDisplayDuplicates();
+          var countIssues = checkSessionCounts(allCampusEntriesCache);
+          checkAndDisplayDuplicates(countIssues);
         })
         .catch(function(err) { console.error('fetchAllCampusEntries エラー:', err); });
     }
@@ -1992,7 +2003,49 @@
         }
       });
 
-      renderDuplicatePanel(duplicates);
+      renderDuplicatePanel(duplicates, countIssues || []);
+    }
+
+    /**
+     * 全校舎のエントリを対象に、学年×教科×クラス別の回数過不足をチェックする
+     * @param {Array} allEntries 全校舎のエントリ配列
+     * @return {Array} 過不足のある項目の配列 [{campusCode, grade, subject, classLabel, actual, required}]
+     */
+    function checkSessionCounts(allEntries) {
+      if (!currentLectureId) return [];
+      var entries = allEntries.filter(function(e) { return e.lectureId === currentLectureId; });
+
+      // campusCode+grade+subject+classLabel でグルーピングして件数を集計
+      var groups = {};
+      entries.forEach(function(e) {
+        var key = e.campusCode + '_' + e.grade + '_' + e.subject + '_' + (e.classLabel || '');
+        if (!groups[key]) {
+          groups[key] = { campusCode: e.campusCode, grade: e.grade, subject: e.subject, classLabel: e.classLabel || null, count: 0 };
+        }
+        groups[key].count++;
+      });
+
+      var issues = [];
+      Object.keys(groups).forEach(function(key) {
+        var g = groups[key];
+        var settings = getLecGradeSettings(g.grade);
+        var required = settings ? settings.count : 0;
+        // 規定回数が0の学年はスキップ（その講習では開催しない）
+        if (required === 0) return;
+        // 実際の件数が0のものもスキップ（ここでは到達しないが念のため）
+        if (g.count === 0) return;
+        // 過不足がある場合のみ記録
+        if (g.count !== required) {
+          issues.push({ campusCode: g.campusCode, grade: g.grade, subject: g.subject, classLabel: g.classLabel, actual: g.count, required: required });
+        }
+      });
+
+      // 校舎→学年→教科→クラスの順でソート
+      issues.sort(function(a, b) {
+        return (a.campusCode + a.grade + a.subject + (a.classLabel || '')).localeCompare(b.campusCode + b.grade + b.subject + (b.classLabel || ''));
+      });
+
+      return issues;
     }
 
     /**
@@ -2011,22 +2064,38 @@
     }
 
     /**
-     * 重複検出結果をパネルに描画する
+     * 重複検出結果と回数過不足をパネルに描画する
      * @param {Array} duplicates 重複ペアの配列
+     * @param {Array} countIssues 回数過不足の配列
      */
-    function renderDuplicatePanel(duplicates) {
+    function renderDuplicatePanel(duplicates, countIssues) {
       var panel = document.getElementById('lec-duplicate-panel');
       var list  = document.getElementById('lec-duplicate-list');
       if (!panel || !list) return;
+      if (!countIssues) countIssues = [];
 
-      if (duplicates.length === 0) {
+      if (duplicates.length === 0 && countIssues.length === 0) {
         panel.style.display = 'none';
         list.innerHTML = '';
         return;
       }
 
+      // パネルヘッダーを状況に応じて変更
+      var headerEl = panel.querySelector('div:first-child');
+      if (headerEl) {
+        if (duplicates.length > 0 && countIssues.length > 0) {
+          headerEl.innerHTML = '⚠️ 問題が見つかりました';
+        } else if (countIssues.length > 0) {
+          headerEl.innerHTML = '⚠️ 回数の過不足があります';
+        } else {
+          headerEl.innerHTML = '⚠️ 重複が見つかりました';
+        }
+      }
+
       panel.style.display = 'block';
       var html = '';
+
+      // 重複セクション
       duplicates.forEach(function(dup) {
         var a = dup.entryA;
         var b = dup.entryB;
@@ -2043,14 +2112,14 @@
         var endB = slotToTimeStr(timeToSlot(b.startTime) + b.durationSlots);
 
         if (dup.type === 'teacher') {
-          html += '<div style="margin-bottom:8px; padding:8px 10px; background:#fff8e1; border-radius:6px; border-left:3px solid #ff9800;">'
+          html += '<div data-dup-type="teacher" style="margin-bottom:8px; padding:8px 10px; background:#fff8e1; border-radius:6px; border-left:3px solid #ff9800;">'
             + '<div style="font-weight:600; color:#e65100; margin-bottom:4px;">👤 講師重複: ' + nameA + '</div>'
             + '<div style="color:#555; font-size:12px; line-height:1.6;">'
             + campusNameA + ': ' + a.grade + ' ' + a.subject + (a.classLabel || '') + ' ' + dateLabel + ' ' + a.startTime + '〜' + endA
             + '<br>' + campusNameB + ': ' + b.grade + ' ' + b.subject + (b.classLabel || '') + ' ' + dateLabel + ' ' + b.startTime + '〜' + endB
             + '</div></div>';
         } else {
-          html += '<div style="margin-bottom:8px; padding:8px 10px; background:#ffebee; border-radius:6px; border-left:3px solid #e53935;">'
+          html += '<div data-dup-type="grade" style="margin-bottom:8px; padding:8px 10px; background:#ffebee; border-radius:6px; border-left:3px solid #e53935;">'
             + '<div style="font-weight:600; color:#c62828; margin-bottom:4px;">📚 学年重複: ' + a.grade + '（' + campusNameA + '）</div>'
             + '<div style="color:#555; font-size:12px; line-height:1.6;">'
             + nameA + ' ' + a.subject + (a.classLabel || '') + ' ' + dateLabel + ' ' + a.startTime + '〜' + endA
@@ -2058,6 +2127,27 @@
             + '</div></div>';
         }
       });
+
+      // 回数過不足セクション
+      countIssues.forEach(function(issue) {
+        var campusName = campusData[issue.campusCode] || issue.campusCode;
+        var label = issue.grade + ' ' + issue.subject + (issue.classLabel || '');
+        var diff = issue.actual - issue.required;
+        if (diff < 0) {
+          // 不足
+          html += '<div data-count-type="short" style="margin-bottom:8px; padding:8px 10px; background:#e3f2fd; border-radius:6px; border-left:3px solid #1976d2;">'
+            + '<div style="font-weight:600; color:#0d47a1; margin-bottom:4px;">📉 回数不足: ' + campusName + ' ' + label + '</div>'
+            + '<div style="color:#555; font-size:12px;">現在 ' + issue.actual + '回 / 規定 ' + issue.required + '回（あと' + (-diff) + '回）</div>'
+            + '</div>';
+        } else {
+          // 超過
+          html += '<div data-count-type="over" style="margin-bottom:8px; padding:8px 10px; background:#fff3e0; border-radius:6px; border-left:3px solid #f57c00;">'
+            + '<div style="font-weight:600; color:#e65100; margin-bottom:4px;">📈 回数超過: ' + campusName + ' ' + label + '</div>'
+            + '<div style="color:#555; font-size:12px;">現在 ' + issue.actual + '回 / 規定 ' + issue.required + '回（' + diff + '回超過）</div>'
+            + '</div>';
+        }
+      });
+
       list.innerHTML = html;
     }
 
