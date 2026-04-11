@@ -633,4 +633,28 @@ function deleteFeedback(docId) {
       .deleteAiFeedback(docId);
   });
 }
+
+// ===== ナレッジベース アンロック（🔐 Admin 専用 を5回タップ） =====
+(function() {
+  var _kbClickCount = 0;
+  var _kbClickTimer = null;
+  document.addEventListener('DOMContentLoaded', function() {
+    var trigger = document.getElementById('kbUnlockTrigger');
+    if (!trigger) return;
+    trigger.addEventListener('click', function() {
+      _kbClickCount++;
+      if (_kbClickTimer) clearTimeout(_kbClickTimer);
+      _kbClickTimer = setTimeout(function() { _kbClickCount = 0; }, 3000);
+      if (_kbClickCount >= 5) {
+        _kbClickCount = 0;
+        var btn = document.getElementById('admin-chatbot-btn');
+        if (btn) {
+          btn.style.display = '';
+          btn.click();
+        }
+        showToast('🤖 ナレッジベースを開きました');
+      }
+    });
+  });
+})();
 </script>
