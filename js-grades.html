@@ -1363,6 +1363,9 @@ function openCameraDialog() {
   document.getElementById('ocrPdfPreview').textContent = '';
   document.getElementById('ocrRunBtn').style.display = 'none';
   document.getElementById('ocrFileInput').value = '';
+  // テキストエリアをリセット
+  document.getElementById('ocrTextArea').style.display = 'none';
+  document.getElementById('ocrTextInput').value = '';
 }
 
 function closeOcrModal() {
@@ -1452,6 +1455,126 @@ function runOCR() {
   reader.readAsDataURL(file);
 }
 
+/** テキスト貼り付けエリアの表示/非表示を切り替える */
+function toggleGradeOcrTextArea() {
+  var area = document.getElementById('ocrTextArea');
+  var isHidden = area.style.display === 'none';
+  area.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) {
+    // ファイル選択側をリセット（相互排他）
+    document.getElementById('ocrFileInput').value = '';
+    document.getElementById('ocrPreview').style.display = 'none';
+    document.getElementById('ocrPdfPreview').style.display = 'none';
+    document.getElementById('ocrRunBtn').style.display = 'none';
+    document.getElementById('ocrTextInput').focus();
+  }
+}
+
+/** テキスト貼り付けから成績を読み込む */
+function runGradeOcrFromText() {
+  var text = document.getElementById('ocrTextInput').value.trim();
+  if (!text) { showMessage('ocrMessage', 'テキストを貼り付けてください', 'error'); return; }
+
+  var testName = document.getElementById('score-test').value;
+  if (!testName) { showMessage('ocrMessage', 'テスト名を選択してから読み込んでください', 'error'); return; }
+
+  var btn = document.getElementById('ocrTextRunBtn');
+  btn.disabled = true;
+  btn.textContent = '読み込み中...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.textContent = 'AI で読み込む';
+      if (result.success) {
+        var parts = [];
+        if (result.savedCount   > 0) parts.push(result.savedCount   + '件新規保存');
+        if (result.updatedCount > 0) parts.push(result.updatedCount + '件補完更新');
+        var msg = parts.length > 0
+          ? '✓ ' + parts.join('・') + 'しました'
+          : '✓ 補完できるデータがありませんでした';
+        if (result.skippedCount > 0) {
+          msg += '\n⚠️ ' + result.skippedCount + '行スキップ：' + result.skipped.join('、');
+        }
+        showMessage('ocrMessage', msg, 'success');
+      } else {
+        showMessage('ocrMessage', 'エラー: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'AI で読み込む';
+      showMessage('ocrMessage', 'エラー: ' + err, 'error');
+    })
+    .parseGradeDataFromText(text, testName, currentFiscalYear);
+}
+
+/**
+ * 現在選択中の校舎・学年の生徒IDが入った成績入力テンプレートを
+ * .xlsx 形式でダウンロードする（SheetJS 使用）。
+ */
+function downloadGradeTemplateXlsx() {
+  var campusCode = document.getElementById('score-campus').value;
+  var gradeCode  = document.getElementById('score-grade').value;
+  var testName   = document.getElementById('score-test').value;
+  var year       = currentFiscalYear;
+
+  if (!campusCode || !gradeCode) { appAlert('校舎と学年を選択してください'); return; }
+
+  var btn = document.getElementById('gradeTemplateXlsxBtn');
+  var origText = btn.textContent;
+  btn.textContent = '⏳ 生成中...';
+  btn.disabled = true;
+
+  var campusOpts = document.getElementById('score-campus').options;
+  var gradeOpts  = document.getElementById('score-grade').options;
+  var campusName = campusOpts[campusOpts.selectedIndex].text;
+  var gradeName  = gradeOpts[gradeOpts.selectedIndex].text;
+
+  fbGetStudentsForDropdown(campusCode, gradeCode, year)
+    .then(function(result) {
+      btn.textContent = origText;
+      updateGradeTemplateBtnState();
+
+      if (!result.success) { appAlert('エラー: ' + result.error); return; }
+
+      var students = result.students || [];
+
+      // ヘッダー行（氏名は参照用として末尾に配置）
+      var header = ['生徒ID', '国語', '社会', '数学', '理科', '英語', '合計', '第1志望校', '第2志望校', '氏名（参照用・貼り付け不要）'];
+      var rows = [header];
+      students.forEach(function(s) {
+        rows.push([s.studentId, '', '', '', '', '', '', '', '', s.name || '']);
+      });
+
+      var wb = XLSX.utils.book_new();
+      var ws = XLSX.utils.aoa_to_sheet(rows);
+      // 列幅設定
+      ws['!cols'] = [
+        { wch: 14 }, // 生徒ID
+        { wch: 6  }, // 国語
+        { wch: 6  }, // 社会
+        { wch: 6  }, // 数学
+        { wch: 6  }, // 理科
+        { wch: 6  }, // 英語
+        { wch: 6  }, // 合計
+        { wch: 18 }, // 第1志望校
+        { wch: 18 }, // 第2志望校
+        { wch: 14 }  // 氏名（参照用）
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, '成績入力');
+
+      var testLabel = testName || 'テンプレート';
+      var filename  = year + '年度_' + gradeName + '_' + campusName + '_' + testLabel + '_成績入力.xlsx';
+      XLSX.writeFile(wb, filename);
+    })
+    .catch(function(err) {
+      btn.textContent = origText;
+      updateGradeTemplateBtnState();
+      appAlert('エラー: ' + err);
+    });
+}
+
 
 // ===== 成績テンプレート 印刷/PDF =====
 
@@ -1469,6 +1592,14 @@ function updateGradeTemplateBtnState() {
   arrowBtn.style.opacity = ok ? '1' : '0.5';
   btn.style.cursor      = ok ? 'pointer' : 'not-allowed';
   arrowBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+  // xlsx ダウンロードボタン（校舎・学年が選択済みで有効化）
+  var xlsxBtn = document.getElementById('gradeTemplateXlsxBtn');
+  if (xlsxBtn) {
+    var xlsxOk = !!(campus && grade);
+    xlsxBtn.disabled = !xlsxOk;
+    xlsxBtn.style.opacity = xlsxOk ? '1' : '0.5';
+    xlsxBtn.style.cursor  = xlsxOk ? 'pointer' : 'not-allowed';
+  }
 }
 
 /** テンプレートPDFメニューの表示切替 */

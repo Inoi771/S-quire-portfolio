@@ -868,6 +868,206 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
 }
 
 /**
+ * テキスト貼り付けから成績を読み取って保存する。
+ * テスト名はフロントエンドで選択済みのものを受け取る（AIでは判定しない）。
+ * 生徒IDと数字のみを Gemini に渡すため、氏名等の個人情報は含まない。
+ * @param {string} text 貼り付けテキスト（生徒ID＋点数列）
+ * @param {string} testName テスト名（選択済み）
+ * @param {number} year 対象年度
+ * @return {Object} { success, savedCount, updatedCount, skippedCount, skipped, error }
+ */
+function parseGradeDataFromText(text, testName, year) {
+  try {
+    var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
+    if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
+    if (!text || !text.trim()) return { success: false, error: 'テキストが空です' };
+    if (!testName || !testName.trim()) return { success: false, error: 'テスト名が選択されていません' };
+
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+
+    // 志望校リストを取得
+    var schoolConfig = getSchoolConfig();
+    var schoolListText = '';
+    if (schoolConfig && schoolConfig.length > 0) {
+      var schoolNames = schoolConfig.map(function(s) { return s.name; });
+      schoolListText = '\n\n【志望校】以下のリストから最も近い正式名称を使ってください。該当なければ記載通りで。\n' +
+        '志望校リスト: ' + schoolNames.join(', ');
+    }
+
+    var prompt = 'これは学習塾の成績データです。各行から生徒IDと5教科の点数を読み取り、JSONのみで返してください（マークダウン不要）。\n' +
+      '【ルール】\n' +
+      '・1行目にヘッダーがある場合はそれで列順を判断してください\n' +
+      '・ヘッダーがない場合は「生徒ID, 国語, 社会, 数学, 理科, 英語, 合計」の順として処理してください\n' +
+      '・生徒ID（studentId）は数字10桁。先頭の0が欠けている場合は10桁に補完してください\n' +
+      '・点数のない項目はnullにしてください\n' +
+      '・合計列がなければnullにしてください\n' +
+      '・志望校列がなければnullにしてください' + schoolListText + '\n\n' +
+      '{"students":[{' +
+      '"studentId":"10桁の生徒ID",' +
+      '"kokugo":国語点数またはnull,"shakai":社会点数またはnull,' +
+      '"sugaku":数学点数またはnull,"rika":理科点数またはnull,' +
+      '"eigo":英語点数またはnull,"total":合計点またはnull,' +
+      '"shogaku1":"第1志望校名またはnull",' +
+      '"shogaku2":"第2志望校名またはnull"' +
+      '}]}\n\n--- データ ---\n' + text.trim();
+
+    var payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+    };
+
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    var json = JSON.parse(response.getContentText());
+    if (!json.candidates || !json.candidates[0]) {
+      return { success: false, error: 'AIからの応答がありませんでした' };
+    }
+
+    var responseText = json.candidates[0].content.parts[0].text.trim();
+    responseText = responseText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '').trim();
+    var data = JSON.parse(responseText);
+
+    if (!data.students || !Array.isArray(data.students)) {
+      return { success: false, error: '生徒データが読み取れませんでした' };
+    }
+
+    var savedCount   = 0;
+    var updatedCount = 0;
+    var skipped      = [];
+
+    var schoolLookup = buildSchoolLookup(schoolConfig);
+
+    var existingDataMap = {};
+    try {
+      var existingRows = getDataSheetData(year);
+      existingRows.forEach(function(row) {
+        var key = String(row.studentId).trim() + '||' + String(row.testName).trim();
+        existingDataMap[key] = row;
+      });
+    } catch (e) {
+      Logger.log('⚠ 既存データ取得エラー: ' + e);
+    }
+
+    data.students.forEach(function(student) {
+      try {
+        var sid = String(student.studentId || '').trim();
+        if (sid && /^\d+$/.test(sid) && sid.length < 10) {
+          sid = sid.padStart(10, '0');
+        }
+        if (sid.length < 3) {
+          skipped.push('生徒IDが不明な行をスキップしました');
+          return;
+        }
+
+        var dupKey   = sid + '||' + testName;
+        var existing = existingDataMap[dupKey] || null;
+
+        var matched1 = matchSchoolName(student.shogaku1, schoolLookup);
+        var matched2 = matchSchoolName(student.shogaku2, schoolLookup);
+        student.shogaku1       = matched1.name;
+        student.shogaku1_gakka = matched1.dept;
+        student.shogaku2       = matched2.name;
+        student.shogaku2_gakka = matched2.dept;
+
+        function pickNum(existVal, ocrVal) {
+          if (existing && existVal !== 0) return existVal;
+          if (ocrVal !== null && ocrVal !== undefined) return ocrVal;
+          return existing ? existVal : ocrVal;
+        }
+        function pickText(existVal, ocrVal) {
+          if (existing && existVal) return existVal;
+          return ocrVal || existVal || '';
+        }
+
+        var scores;
+        if (existing) {
+          scores = {
+            kokugo:         pickNum(existing.kokugo,  student.kokugo),
+            shakai:         pickNum(existing.shakai,  student.shakai),
+            sugaku:         pickNum(existing.sugaku,  student.sugaku),
+            rika:           pickNum(existing.rika,    student.rika),
+            eigo:           pickNum(existing.eigo,    student.eigo),
+            gokei:          pickNum(existing.total,   student.total),
+            shogaku1:       pickText(existing.shogaku1,  student.shogaku1),
+            shogaku1_gakka: pickText(existing.shogaku1_gakka, student.shogaku1_gakka),
+            shogaku2:       pickText(existing.shogaku2,  student.shogaku2),
+            shogaku2_gakka: pickText(existing.shogaku2_gakka, student.shogaku2_gakka)
+          };
+          var changed = (
+            scores.kokugo         !== existing.kokugo         ||
+            scores.shakai         !== existing.shakai         ||
+            scores.sugaku         !== existing.sugaku         ||
+            scores.rika           !== existing.rika           ||
+            scores.eigo           !== existing.eigo           ||
+            scores.gokei          !== existing.total          ||
+            scores.shogaku1       !== existing.shogaku1       ||
+            scores.shogaku1_gakka !== (existing.shogaku1_gakka || '') ||
+            scores.shogaku2       !== existing.shogaku2       ||
+            scores.shogaku2_gakka !== (existing.shogaku2_gakka || '')
+          );
+          if (!changed) {
+            skipped.push('ID:' + sid + ' - データ完全のためスキップ');
+            return;
+          }
+        } else {
+          scores = {
+            kokugo:         student.kokugo,
+            shakai:         student.shakai,
+            sugaku:         student.sugaku,
+            rika:           student.rika,
+            eigo:           student.eigo,
+            gokei:          student.total,
+            shogaku1:       student.shogaku1 || '',
+            shogaku1_gakka: student.shogaku1_gakka || '',
+            shogaku2:       student.shogaku2 || '',
+            shogaku2_gakka: student.shogaku2_gakka || ''
+          };
+        }
+
+        var result = submitGradeData(year, sid, testName, scores, true);
+        if (result.success) {
+          if (existing) { updatedCount++; } else { savedCount++; }
+          existingDataMap[dupKey] = scores;
+        } else {
+          skipped.push('ID:' + sid + ' → ' + result.error);
+        }
+      } catch (rowErr) {
+        skipped.push('ID:' + (student.studentId || '?') + ' → エラー: ' + rowErr);
+      }
+    });
+
+    if ((savedCount + updatedCount) > 0) {
+      try {
+        delete _dataSheetCache[String(year)];
+        delete _masterDataCache[String(year)];
+        rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
+        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
+        rebuildGradeReportCache(parseInt(year, 10));
+      } catch (e) { Logger.log('⚠ テキスト読み込み後のキャッシュ更新スキップ: ' + e); }
+    }
+
+    return {
+      success:      true,
+      testName:     testName,
+      totalRows:    data.students.length,
+      savedCount:   savedCount,
+      updatedCount: updatedCount,
+      skippedCount: skipped.length,
+      skipped:      skipped
+    };
+
+  } catch (error) {
+    Logger.log('❌ parseGradeDataFromTextエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 生徒IDとテスト名で既存の成績データを1件取得（Firestore）
  * @aiCallable
  * @param {number} year 対象年度
