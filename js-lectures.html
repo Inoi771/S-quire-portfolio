@@ -2652,4 +2652,314 @@
       }
     }
 
+    // ====== 一覧表示（マイ日程） ======
+
+    /**
+     * 一覧モーダルを表示する
+     */
+    function showLecScheduleListView() {
+      if (!currentLectureId) {
+        showToast('講習を選択してください', 'error');
+        return;
+      }
+
+      var modal = document.getElementById('lec-listview-modal');
+      var content = document.getElementById('lec-listview-content');
+      if (!modal || !content) return;
+
+      // モーダル表示＋ローディング
+      modal.style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      content.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#999;font-size:15px;">⏳ 読み込み中...</div>';
+
+      // 対象講師の特定
+      var targetTeacherId = (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : myTeacherId;
+      var targetTeacherName = (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherName : (myTeacherName || '');
+
+      fbGetAllLectureEntries(currentLectureId)
+        .then(function(allEntries) {
+          var myEntries = allEntries.filter(function(e) {
+            return e.teacherId === targetTeacherId;
+          });
+
+          if (myEntries.length === 0) {
+            content.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#999;font-size:15px;">登録されたコマがありません</div>';
+            return;
+          }
+
+          content.innerHTML = buildLecListViewHTML_(myEntries, targetTeacherName);
+        })
+        .catch(function(err) {
+          console.error('一覧表示エラー:', err);
+          content.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#e57373;font-size:15px;">データの取得に失敗しました</div>';
+        });
+    }
+
+    /**
+     * 一覧モーダルを閉じる
+     */
+    function closeLecListViewModal() {
+      var modal = document.getElementById('lec-listview-modal');
+      if (modal) modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+
+    /**
+     * 一覧表示用HTMLを生成する
+     * @param {Array} entries 対象講師のエントリ配列（全校舎分）
+     * @param {string} teacherName 講師名
+     * @return {string} HTML文字列
+     */
+    function buildLecListViewHTML_(entries, teacherName) {
+      var lectureId = currentLectureId;
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === lectureId; });
+      var fy = parseInt((lectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : lectureId;
+
+      // 学年グループ定義（名前ベースでマッチ）
+      var GRADE_GROUPS = [
+        { label: '小学生', names: ['小'] },
+        { label: '中１', names: ['中1', '新中1'] },
+        { label: '中２', names: ['中2', '新中2'] },
+        { label: '中３', names: ['中3', '新中3'] },
+        { label: '高１', names: ['高1', '新高1'] },
+        { label: '高２', names: ['高2', '新高2'] },
+        { label: '高３', names: ['高3', '新高3'] }
+      ];
+
+      // ヘルパー: 終了時刻計算
+      function endTimeLV_(start, slots) {
+        var parts = (start || '00:00').split(':');
+        var h = parseInt(parts[0], 10) || 0;
+        var m = parseInt(parts[1], 10) || 0;
+        var totalMin = h * 60 + m + (slots || 0) * 10;
+        var eh = Math.floor(totalMin / 60);
+        var em = totalMin % 60;
+        return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
+      }
+
+      // ヘルパー: 日付フォーマット（"7/15(火)・22(火)・8/1(金)" 形式）
+      function fmtDatesLV_(sortedDates) {
+        var DOW = ['日', '月', '火', '水', '木', '金', '土'];
+        var prevMonth = -1;
+        return sortedDates.map(function(d) {
+          var dt = new Date(d + 'T00:00:00');
+          var mo = dt.getMonth() + 1;
+          var day = dt.getDate();
+          var dow = DOW[dt.getDay()];
+          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          prevMonth = mo;
+          return str;
+        }).join('・');
+      }
+
+      // ヘルパー: HTMLエスケープ
+      function escLV_(str) {
+        var d = document.createElement('div');
+        d.textContent = str || '';
+        return d.innerHTML;
+      }
+
+      // エントリを校舎ごとにグルーピング
+      var campusBuckets = {};
+      entries.forEach(function(e) {
+        var cc = e.campusCode || '??';
+        if (!campusBuckets[cc]) campusBuckets[cc] = [];
+        campusBuckets[cc].push(e);
+      });
+      var campusCodes = Object.keys(campusBuckets).sort();
+
+      // 全教科リスト（出現順を統一）
+      var ALL_SUBJECTS = ['英語', '数学', '算数', '国語', '理科', '社会', '物理', '化学'];
+
+      // スタイル定義
+      var cellBase = 'border:1px solid #999;padding:5px 8px;font-size:13px;vertical-align:middle;';
+      var cellSubject = cellBase + 'width:60px;text-align:center;font-weight:bold;white-space:nowrap;';
+      var cellDate = cellBase + 'word-break:break-word;';
+      var cellTime = cellBase + 'width:110px;text-align:center;white-space:nowrap;';
+
+      var html = '';
+
+      // タイトル
+      html += '<div style="margin-bottom:16px;">';
+      html += '<div style="font-size:17px;font-weight:700;color:#333;">' + escLV_(fy + '年度 ' + lecName) + '</div>';
+      html += '<div style="font-size:14px;color:#666;margin-top:4px;">講師: ' + escLV_(teacherName) + '</div>';
+      html += '</div>';
+
+      // 校舎ループ
+      campusCodes.forEach(function(cc) {
+        var campusName = (campusData && campusData[cc]) ? campusData[cc] : cc;
+        var campusEntries = campusBuckets[cc];
+
+        html += '<div style="margin-bottom:20px;">';
+        html += '<div style="font-size:15px;font-weight:700;color:#333;margin-bottom:8px;padding:6px 10px;background:#f5f5f5;border-radius:6px;">■ ' + escLV_(campusName) + '</div>';
+
+        // 学年グループループ
+        GRADE_GROUPS.forEach(function(gg) {
+          var gradeEntries = campusEntries.filter(function(e) {
+            return gg.names.indexOf(e.grade || '') !== -1;
+          });
+          if (gradeEntries.length === 0) return;
+
+          html += '<table style="width:100%;border-collapse:collapse;border:1px solid #999;margin-bottom:10px;">';
+
+          // 学年ヘッダー
+          html += '<thead>';
+          html += '<tr><th colspan="3" style="border:1px solid #999;padding:5px 10px;font-size:14px;font-weight:bold;text-align:left;background:#fafafa;">';
+          html += escLV_(gg.label);
+          html += '</th></tr>';
+          html += '<tr style="border-bottom:1px solid #999;">';
+          html += '<th style="' + cellSubject + 'border-bottom:1px solid #999;">教科</th>';
+          html += '<th style="' + cellDate + 'border-bottom:1px solid #999;text-align:center;font-weight:bold;">日付</th>';
+          html += '<th style="' + cellTime + 'border-bottom:1px solid #999;font-weight:bold;">時間</th>';
+          html += '</tr></thead><tbody>';
+
+          // 教科ループ（定義順）
+          ALL_SUBJECTS.forEach(function(subject) {
+            var subEntries = gradeEntries.filter(function(e) { return (e.subject || '') === subject; });
+            if (subEntries.length === 0) return;
+
+            // classLabel ごとにも分ける
+            var classLabels = [];
+            var classMap = {};
+            subEntries.forEach(function(e) {
+              var cl = e.classLabel || '';
+              if (!classMap[cl]) { classMap[cl] = []; classLabels.push(cl); }
+              classMap[cl].push(e);
+            });
+            classLabels.sort();
+
+            classLabels.forEach(function(cl) {
+              var clEntries = classMap[cl];
+              var subjectLabel = subject + (cl ? ' (' + cl + ')' : '');
+
+              // (startTime, durationSlots) でグループ化
+              var timeGroupMap = {};
+              var timeGroupOrder = [];
+              clEntries.forEach(function(e) {
+                var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+                if (!timeGroupMap[key]) {
+                  timeGroupMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+                  timeGroupOrder.push(key);
+                }
+                if (timeGroupMap[key].dates.indexOf(e.date) === -1) {
+                  timeGroupMap[key].dates.push(e.date);
+                }
+              });
+              timeGroupOrder.forEach(function(key) {
+                timeGroupMap[key].dates.sort();
+              });
+
+              var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
+              var rowCount = groups.length;
+
+              groups.forEach(function(grp, idx) {
+                var timeStr = (grp.startTime || '') + '～' + endTimeLV_(grp.startTime, grp.durationSlots);
+                var dateStr = fmtDatesLV_(grp.dates);
+                html += '<tr>';
+                if (idx === 0) {
+                  html += '<td rowspan="' + rowCount + '" style="' + cellSubject + '">' + escLV_(subjectLabel) + '</td>';
+                }
+                html += '<td style="' + cellDate + '">' + escLV_(dateStr) + '</td>';
+                html += '<td style="' + cellTime + '">' + escLV_(timeStr) + '</td>';
+                html += '</tr>';
+              });
+            });
+          });
+
+          // 定義外の教科もフォールバック表示
+          var knownSubjects = {};
+          ALL_SUBJECTS.forEach(function(s) { knownSubjects[s] = true; });
+          var otherEntries = gradeEntries.filter(function(e) { return !knownSubjects[e.subject || '']; });
+          if (otherEntries.length > 0) {
+            var otherSubjects = [];
+            var otherSubMap = {};
+            otherEntries.forEach(function(e) {
+              var s = e.subject || '(不明)';
+              if (!otherSubMap[s]) { otherSubMap[s] = []; otherSubjects.push(s); }
+              otherSubMap[s].push(e);
+            });
+            otherSubjects.forEach(function(subject) {
+              var subEs = otherSubMap[subject];
+              var timeGroupMap = {};
+              var timeGroupOrder = [];
+              subEs.forEach(function(e) {
+                var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+                if (!timeGroupMap[key]) {
+                  timeGroupMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+                  timeGroupOrder.push(key);
+                }
+                if (timeGroupMap[key].dates.indexOf(e.date) === -1) timeGroupMap[key].dates.push(e.date);
+              });
+              timeGroupOrder.forEach(function(k) { timeGroupMap[k].dates.sort(); });
+              var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
+              var rowCount = groups.length;
+              groups.forEach(function(grp, idx) {
+                var timeStr = (grp.startTime || '') + '～' + endTimeLV_(grp.startTime, grp.durationSlots);
+                html += '<tr>';
+                if (idx === 0) html += '<td rowspan="' + rowCount + '" style="' + cellSubject + '">' + escLV_(subject) + '</td>';
+                html += '<td style="' + cellDate + '">' + escLV_(fmtDatesLV_(grp.dates)) + '</td>';
+                html += '<td style="' + cellTime + '">' + escLV_(timeStr) + '</td>';
+                html += '</tr>';
+              });
+            });
+          }
+
+          html += '</tbody></table>';
+        });
+
+        // 学年グループに属さないエントリのフォールバック
+        var allGroupedNames = [];
+        GRADE_GROUPS.forEach(function(gg) { allGroupedNames = allGroupedNames.concat(gg.names); });
+        var ungrouped = campusEntries.filter(function(e) { return allGroupedNames.indexOf(e.grade || '') === -1; });
+        if (ungrouped.length > 0) {
+          var ugGrades = [];
+          var ugMap = {};
+          ungrouped.forEach(function(e) {
+            var g = e.grade || '(不明)';
+            if (!ugMap[g]) { ugMap[g] = []; ugGrades.push(g); }
+            ugMap[g].push(e);
+          });
+          ugGrades.forEach(function(g) {
+            html += '<table style="width:100%;border-collapse:collapse;border:1px solid #999;margin-bottom:10px;">';
+            html += '<thead><tr><th colspan="3" style="border:1px solid #999;padding:5px 10px;font-size:14px;font-weight:bold;text-align:left;background:#fafafa;">' + escLV_(g) + '</th></tr>';
+            html += '<tr style="border-bottom:1px solid #999;">';
+            html += '<th style="' + cellSubject + '">教科</th><th style="' + cellDate + 'text-align:center;font-weight:bold;">日付</th><th style="' + cellTime + 'font-weight:bold;">時間</th>';
+            html += '</tr></thead><tbody>';
+            var subMap2 = {};
+            var subOrder2 = [];
+            ugMap[g].forEach(function(e) {
+              var s = e.subject || '(不明)';
+              if (!subMap2[s]) { subMap2[s] = []; subOrder2.push(s); }
+              subMap2[s].push(e);
+            });
+            subOrder2.forEach(function(subject) {
+              var ses = subMap2[subject];
+              var tgMap = {};
+              var tgOrder = [];
+              ses.forEach(function(e) {
+                var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+                if (!tgMap[key]) { tgMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] }; tgOrder.push(key); }
+                if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
+              });
+              tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+              var groups = tgOrder.map(function(k) { return tgMap[k]; });
+              groups.forEach(function(grp, idx) {
+                html += '<tr>';
+                if (idx === 0) html += '<td rowspan="' + groups.length + '" style="' + cellSubject + '">' + escLV_(subject) + '</td>';
+                html += '<td style="' + cellDate + '">' + escLV_(fmtDatesLV_(grp.dates)) + '</td>';
+                html += '<td style="' + cellTime + '">' + escLV_((grp.startTime || '') + '～' + endTimeLV_(grp.startTime, grp.durationSlots)) + '</td>';
+                html += '</tr>';
+              });
+            });
+            html += '</tbody></table>';
+          });
+        }
+
+        html += '</div>'; // campus section end
+      });
+
+      return html;
+    }
+
 </script>
