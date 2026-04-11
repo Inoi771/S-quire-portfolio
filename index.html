@@ -17,6 +17,8 @@
   <!-- PDF生成ライブラリ（カレンダーPDFダウンロード用） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- スプレッドシート生成ライブラリ（成績テンプレートダウンロード用） -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <?!= include("styles") ?>
   <script>
     // GAS環境でvirtualビューポート(980px)が使われている場合に
@@ -363,7 +365,8 @@
           <h2>✏️ 成績入力</h2>
           <p style="color: #999; margin-bottom: 20px;">生徒の成績を入力します。</p>
 
-          <button onclick="openCameraDialog()" style="width: 100%; padding: 15px; background: #FF6B6B; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; margin-bottom: 12px;">📸 写真・PDF から読み込む（AI OCR）</button>
+          <button onclick="openCameraDialog()" style="width: 100%; padding: 15px; background: #FF6B6B; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; margin-bottom: 8px;">📸 写真・PDF・テキストから読み込む（AI）</button>
+          <button id="gradeTemplateXlsxBtn" onclick="downloadGradeTemplateXlsx()" disabled style="width: 100%; padding: 12px; background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; border-radius: 6px; cursor: not-allowed; font-weight: 600; font-size: 14px; margin-bottom: 12px; opacity: 0.5;">📊 スプレッドシートテンプレートをダウンロード</button>
 
           <!-- テンプレート印刷/PDFボタン -->
           <div style="position: relative; margin-bottom: 20px;">
@@ -3303,10 +3306,16 @@
   <div id="ocrOverlay" onclick="closeOcrModal()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
   <div id="ocrModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:16px; padding:28px; width:90%; max-width:none; max-height:90vh; overflow-y:auto; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.2);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h3 style="margin:0; font-size:26px;">📄 写真・PDF から読み込む</h3>
+      <h3 style="margin:0; font-size:26px;">📸 写真・PDF・テキストから読み込む</h3>
       <button onclick="closeOcrModal()" style="background:none; border:none; font-size:32px; cursor:pointer; color:#999; line-height:1;">✕</button>
     </div>
-    <p style="font-size:18px; color:#666; margin:0 0 20px; line-height:1.5;">写真またはPDFを選択すると、全生徒の成績を自動で読み取って保存します。</p>
+    <p style="font-size:18px; color:#666; margin:0 0 12px; line-height:1.5;">写真・PDFを選択するか、テキストを貼り付けると、全生徒の成績を自動で読み取って保存します。</p>
+
+    <!-- 注意書き -->
+    <div style="background:#fff3e0; border:1px solid #ffb74d; border-radius:8px; padding:12px 14px; margin-bottom:20px; font-size:15px; color:#e65100; line-height:1.6;">
+      ⚠️ <strong>紙の成績表を撮影する場合</strong>は、氏名欄を折り曲げて<strong>生徒IDのみが映るよう</strong>にしてください。<br>
+      📋 <strong>テキストを貼り付ける場合</strong>は、<strong>氏名列を除いた</strong>生徒IDと点数のみを選択してコピーしてください。
+    </div>
 
     <input type="file" id="ocrFileInput" accept="image/*,application/pdf" style="display:none;">
     <div style="display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:20px;">
@@ -3317,6 +3326,21 @@
       <button onclick="document.getElementById('ocrFileInput').removeAttribute('capture'); document.getElementById('ocrFileInput').setAttribute('accept','application/pdf'); document.getElementById('ocrFileInput').click(); document.getElementById('ocrFileInput').setAttribute('accept','image/*,application/pdf');"
               style="padding:20px; background:#e8f0fe; border:1px solid #c5d0e6; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px; color:#3c4f8a;">
         📄 PDFを選択
+      </button>
+      <button onclick="toggleGradeOcrTextArea()"
+              style="padding:20px; background:#f3e5f5; border:1px solid #ce93d8; border-radius:12px; cursor:pointer; font-size:22px; font-weight:600; min-height:64px; color:#6a1b9a;">
+        📝 テキストを貼り付け
+      </button>
+    </div>
+
+    <!-- テキスト入力エリア（初期非表示） -->
+    <div id="ocrTextArea" style="display:none; margin-bottom:16px;">
+      <textarea id="ocrTextInput" rows="7"
+        placeholder="Excelやスプレッドシートから生徒IDと点数列をコピーして貼り付けてください。&#10;&#10;【ヘッダーあり】&#10;生徒ID	国語	社会	数学	理科	英語&#10;0120251301	80	70	90	85	75&#10;&#10;【ヘッダーなし（国語→英語の順）】&#10;0120251301	80	70	90	85	75"
+        style="width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:14px; font-family:monospace; box-sizing:border-box; resize:vertical;"></textarea>
+      <button id="ocrTextRunBtn" onclick="runGradeOcrFromText()"
+              style="width:100%; padding:20px; background:#667eea; color:white; border:none; border-radius:12px; cursor:pointer; font-weight:600; font-size:22px; margin-top:10px; min-height:64px;">
+        AI で読み込む
       </button>
     </div>
 
