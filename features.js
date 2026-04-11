@@ -35,7 +35,7 @@ function classifyMessageIntent_(message, chatHistory) {
   var detected = {
     grades:        /成績|テスト|点数|偏差値|分析|一覧|レポート|成績入力|登録.*点|生徒ID/.test(message),
     pricing:       /料金|月謝|費用|授業料|値段|いくら|支払|金額/.test(message),
-    lectures:      /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前/.test(message),
+    lectures:      /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前|私.*コマ|自分.*コマ|マイ日程|自分.*日程|私.*日程|コマ.*教えて|コマ.*確認|いつ.*授業|授業.*いつ|私.*授業|自分.*授業/.test(message),
     operations:    /休校|開校|テスト日|入試日|ミーティング|報告書|引落|イベント/.test(message),
     students:      /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
     settings:      /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
@@ -184,6 +184,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '・設定変更: テーマカラー・AI名前・しゃべり方・表示名の変更ができます\n'
     + '・講師配置の照会: 「○○先生は今日どこ？」「水曜に△△校にいる先生は？」などに答えられます\n'
     + '・予定の追加・編集・削除: 「塾の予定に○○を追加して」など話しかけるだけで操作できます\n'
+    + '・講習日程の照会: 「私のコマを教えて」「自分の講習日程は？」など、あなたが登録した講習コマを一覧で回答できます\n'
     + '・講習日程の登録: 「春期講習に数学を追加して」など詳細を伝えると直接登録できます\n'
     + '・成績登録のサポート: 「田中さんの数学を80点で登録して」など話しかけるだけで登録できます\n'
     + '・使い方の案内: 「○○の使い方を教えて」などアプリの操作方法を説明できます\n'
@@ -1036,6 +1037,90 @@ function requestAIAssistant(userMessage, chatHistory) {
             });
           } else {
             lectureEntriesContext += '※ 配属校舎が未設定です。校舎を指定してください。\n';
+          }
+
+          // ユーザー自身のエントリのみを抽出してサマリー追加
+          try {
+            var myEmail = '';
+            try { myEmail = getFirebaseEmailContext_() || ''; } catch (e2) {}
+            if (myEmail && targetLecture) {
+              var campusMapForMyEntries = {};
+              campusConfig.forEach(function(c) { campusMapForMyEntries[c.code] = c.name; });
+              var DOW_AI = ['日', '月', '火', '水', '木', '金', '土'];
+
+              // 全校舎分のユーザーエントリを収集
+              var allMyCampuses = lecCampuses.length > 0 ? lecCampuses : Object.keys(campusMapForMyEntries);
+              var myEntriesByCampus = {};
+              allMyCampuses.forEach(function(cc) {
+                try {
+                  var entries = getLectureScheduleEntries(targetLecture.id, cc);
+                  var mine = entries.filter(function(e) { return e.teacherEmail === myEmail; });
+                  if (mine.length > 0) myEntriesByCampus[cc] = mine;
+                } catch (e3) {}
+              });
+
+              var myCampusCodes = Object.keys(myEntriesByCampus).sort();
+              if (myCampusCodes.length > 0) {
+                lectureEntriesContext += '\n\n【あなた（' + userDisplayName + '）の講習コマ一覧】\n';
+                myCampusCodes.forEach(function(cc) {
+                  var cName = campusMapForMyEntries[cc] || cc;
+                  lectureEntriesContext += '■ ' + cName + '\n';
+                  var mine = myEntriesByCampus[cc];
+                  // 学年→教科→時間帯でグルーピング
+                  var byGrade = {};
+                  var gradeOrder = [];
+                  mine.forEach(function(e) {
+                    var g = gradeLabelsMap[e.grade] || e.grade;
+                    if (!byGrade[g]) { byGrade[g] = []; gradeOrder.push(g); }
+                    byGrade[g].push(e);
+                  });
+                  gradeOrder.forEach(function(g) {
+                    var bySubject = {};
+                    var subOrder = [];
+                    byGrade[g].forEach(function(e) {
+                      var s = e.subject + (e.classLabel ? '(' + e.classLabel + ')' : '');
+                      if (!bySubject[s]) { bySubject[s] = []; subOrder.push(s); }
+                      bySubject[s].push(e);
+                    });
+                    subOrder.forEach(function(s) {
+                      // 時間帯でグルーピングし日付をまとめる
+                      var tgMap = {};
+                      var tgOrder = [];
+                      bySubject[s].forEach(function(e) {
+                        var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+                        if (!tgMap[key]) {
+                          tgMap[key] = { start: e.startTime || '', slots: e.durationSlots || 0, dates: [] };
+                          tgOrder.push(key);
+                        }
+                        if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
+                      });
+                      tgOrder.forEach(function(k) {
+                        tgMap[k].dates.sort();
+                        var grp = tgMap[k];
+                        // 終了時刻計算
+                        var sp = (grp.start || '00:00').split(':');
+                        var totalMin = (parseInt(sp[0],10)||0)*60 + (parseInt(sp[1],10)||0) + (grp.slots||0)*10;
+                        var endStr = ('0'+Math.floor(totalMin/60)).slice(-2) + ':' + ('0'+(totalMin%60)).slice(-2);
+                        // 日付フォーマット
+                        var prevMo = -1;
+                        var dateStr = grp.dates.map(function(d) {
+                          var dt = new Date(d + 'T00:00:00');
+                          var mo = dt.getMonth() + 1;
+                          var day = dt.getDate();
+                          var dow = DOW_AI[dt.getDay()];
+                          var str = (mo !== prevMo ? mo + '/' : '') + day + '(' + dow + ')';
+                          prevMo = mo;
+                          return str;
+                        }).join('・');
+                        lectureEntriesContext += g + ' ' + s + ': ' + dateStr + ' ' + grp.start + '～' + endStr + '\n';
+                      });
+                    });
+                  });
+                });
+              }
+            }
+          } catch (e4) {
+            Logger.log('⚠ ユーザーエントリサマリー取得スキップ: ' + e4);
           }
         }
       }
