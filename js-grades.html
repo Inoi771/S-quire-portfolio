@@ -1521,10 +1521,12 @@ function downloadGradeTemplateXlsx() {
 
   if (!campusCode || !gradeCode) { appAlert('校舎と学年を選択してください'); return; }
 
-  var btn = document.getElementById('gradeTemplateXlsxBtn');
+  var btn      = document.getElementById('gradeTemplatePrintBtn');
+  var arrowBtn = document.getElementById('gradeTemplatePdfArrowBtn');
   var origText = btn.textContent;
-  btn.textContent = '⏳ 生成中...';
-  btn.disabled = true;
+  btn.textContent   = '⏳ 生成中...';
+  btn.disabled      = true;
+  arrowBtn.disabled = true;
 
   var campusOpts = document.getElementById('score-campus').options;
   var gradeOpts  = document.getElementById('score-grade').options;
@@ -1533,7 +1535,8 @@ function downloadGradeTemplateXlsx() {
 
   fbGetStudentsForDropdown(campusCode, gradeCode, year)
     .then(function(result) {
-      btn.textContent = origText;
+      btn.textContent   = origText;
+      arrowBtn.disabled = false;
       updateGradeTemplateBtnState();
 
       if (!result.success) { appAlert('エラー: ' + result.error); return; }
@@ -1569,7 +1572,8 @@ function downloadGradeTemplateXlsx() {
       XLSX.writeFile(wb, filename);
     })
     .catch(function(err) {
-      btn.textContent = origText;
+      btn.textContent   = origText;
+      arrowBtn.disabled = false;
       updateGradeTemplateBtnState();
       appAlert('エラー: ' + err);
     });
@@ -1592,14 +1596,6 @@ function updateGradeTemplateBtnState() {
   arrowBtn.style.opacity = ok ? '1' : '0.5';
   btn.style.cursor      = ok ? 'pointer' : 'not-allowed';
   arrowBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
-  // xlsx ダウンロードボタン（校舎・学年が選択済みで有効化）
-  var xlsxBtn = document.getElementById('gradeTemplateXlsxBtn');
-  if (xlsxBtn) {
-    var xlsxOk = !!(campus && grade);
-    xlsxBtn.disabled = !xlsxOk;
-    xlsxBtn.style.opacity = xlsxOk ? '1' : '0.5';
-    xlsxBtn.style.cursor  = xlsxOk ? 'pointer' : 'not-allowed';
-  }
 }
 
 /** テンプレートPDFメニューの表示切替 */
@@ -1646,7 +1642,7 @@ function generateGradeTemplate(mode) {
   }
 
   function restoreBtn() {
-    btn.textContent   = '📄 成績テンプレートのPDF出力';
+    btn.textContent   = '📄 成績テンプレート';
     updateGradeTemplateBtnState();
   }
 
