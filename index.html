@@ -1733,22 +1733,7 @@
               <p style="margin: 0; font-size: 13px; color: #666;">読み込み中...</p>
             </div>
 
-            <!-- ─── お問い合わせ転送通知（isEligible の人のみ） ─── -->
-            <div id="inquiryNotifRow" style="display:none; border:1px solid #e0e0e0; border-radius:8px; padding:14px; margin-bottom:10px;">
-              <div style="font-weight:600; font-size:14px; margin-bottom:10px;">📧 お問い合わせ転送通知</div>
-              <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="line" id="notif-line" onchange="saveNotificationSettings()"> 💬 LINEのみ</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="gmail" id="notif-gmail" onchange="saveNotificationSettings()"> 📧 メールのみ</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notificationMethod" value="both" id="notif-both" onchange="saveNotificationSettings()"> 両方</label>
-              </div>
-              <!-- Gmail通知先メール選択（複数メール登録時のみ表示） -->
-              <div id="notifEmailSelectRow" style="display:none; margin-bottom:10px;">
-                <label style="display:block; font-size:13px; color:#555; margin-bottom:6px;">📨 通知先メールアドレス：</label>
-                <div id="notifEmailCheckboxes" style="display:flex; flex-direction:column; gap:6px;"></div>
-                <small style="color:#888;">通知を受け取るアドレスにチェックを入れてください（複数選択可）。</small>
-              </div>
-              <span id="notificationMessage" style="font-size:12px;color:#888;">変更は自動で保存されます</span>
-            </div>
+            <!-- ─── お問い合わせ転送通知（常にLINEで送信・設定不要） ─── -->
 
             <!-- ─── LINEスケジューラー通知（LINE登録者のみ） ─── -->
             <div id="lineNotifSchedulerBlock" style="display:none;">
@@ -1758,9 +1743,7 @@
               <div id="lineNotifMeetingRow" style="display:none; border:1px solid #e0e0e0; border-radius:8px; padding:14px; margin-bottom:10px;">
                 <div style="font-weight:600; font-size:14px; margin-bottom:10px;">📢 全体ミーティング連絡</div>
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_meeting" value="line" onchange="saveLineSchedulerNotifPref('meeting')"> 💬 LINEのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_meeting" value="gmail" onchange="saveLineSchedulerNotifPref('meeting')"> 📧 メールのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_meeting" value="both" onchange="saveLineSchedulerNotifPref('meeting')"> 両方</label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_meeting" value="line" onchange="saveLineSchedulerNotifPref('meeting')"> 💬 LINEで受け取る</label>
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_meeting" value="none" onchange="saveLineSchedulerNotifPref('meeting')"> 🔕 受け取らない</label>
                 </div>
                 <div id="schedulerEmailRow_meeting" style="display:none; margin-top:8px;">
@@ -1775,9 +1758,7 @@
               <div id="lineNotifReportRow" style="display:none; border:1px solid #e0e0e0; border-radius:8px; padding:14px; margin-bottom:10px;">
                 <div style="font-weight:600; font-size:14px; margin-bottom:10px;">📝 回数報告書提出日連絡</div>
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_report" value="line" onchange="saveLineSchedulerNotifPref('report')"> 💬 LINEのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_report" value="gmail" onchange="saveLineSchedulerNotifPref('report')"> 📧 メールのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_report" value="both" onchange="saveLineSchedulerNotifPref('report')"> 両方</label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_report" value="line" onchange="saveLineSchedulerNotifPref('report')"> 💬 LINEで受け取る</label>
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_report" value="none" onchange="saveLineSchedulerNotifPref('report')"> 🔕 受け取らない</label>
                 </div>
                 <div id="schedulerEmailRow_report" style="display:none; margin-top:8px;">
@@ -1792,9 +1773,7 @@
               <div id="lineNotifShitsuchoRow" style="display:none; border:1px solid #e0e0e0; border-radius:8px; padding:14px; margin-bottom:10px;">
                 <div style="font-weight:600; font-size:14px; margin-bottom:10px;">👔 室長用連絡</div>
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_shitsucho" value="line" onchange="saveLineSchedulerNotifPref('shitsucho')"> 💬 LINEのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_shitsucho" value="gmail" onchange="saveLineSchedulerNotifPref('shitsucho')"> 📧 メールのみ</label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_shitsucho" value="both" onchange="saveLineSchedulerNotifPref('shitsucho')"> 両方</label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_shitsucho" value="line" onchange="saveLineSchedulerNotifPref('shitsucho')"> 💬 LINEで受け取る</label>
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="radio" name="notifPref_shitsucho" value="none" onchange="saveLineSchedulerNotifPref('shitsucho')"> 🔕 受け取らない</label>
                 </div>
                 <div id="schedulerEmailRow_shitsucho" style="display:none; margin-top:8px;">
@@ -2496,6 +2475,14 @@
 
         <!-- ===== 📩 LINE通知タブ ===== -->
         <div id="admin-scheduler" class="admin-tab-content" style="display: none;">
+
+          <!-- 通知設定一括変更 -->
+          <div style="background:white;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:20px;">
+            <h3 style="margin:0 0 8px 0;">🔄 通知設定の一括変更</h3>
+            <p style="font-size:13px;color:#666;margin:0 0 12px 0;">メールまたは「両方」に設定されているスタッフを、まとめてLINEに変更します。1回だけ実行してください。</p>
+            <button onclick="batchUpdateNotifToLine()" style="padding:10px 20px;background:#1a73e8;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">全員をLINEに変更する</button>
+            <div id="batchUpdateNotifResult" style="margin-top:10px;font-size:13px;"></div>
+          </div>
 
           <!-- トリガー管理 -->
           <div style="background:white;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:20px;">
