@@ -1330,12 +1330,7 @@
         // 移動モードメッセージを専用要素に表示
         var moveMsg = document.getElementById('lec-move-msg');
         if (moveMsg) {
-          var entries = lectureEntries[currentLectureCampus] || [];
-          var entry = entries.find(function(e) { return e.id === selectedEntryId; });
-          var label = entry
-            ? ((entry.subject || '') + ' ' + (entry.grade || '') + ' (' + (entry.date || '') + ' ' + (entry.startTime || '') + ')').trim()
-            : 'エントリ';
-          moveMsg.textContent = '「' + label + '」を移動中 → 移動先をタップ';
+          moveMsg.textContent = '移動先をタップ、または削除ボタンをタップ';
           moveMsg.style.display = '';
         }
         lecMoveModeActive = true;
