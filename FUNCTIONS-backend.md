@@ -348,6 +348,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLectureScheduleSpreadsheet_()` — 講習スケジュール用スプレッドシートを取得/作成する内部ヘルパー
 - `saveLectureScheduleEntries(lectureId, campusCode, entriesJson)` — 講習スケジュールエントリ一括保存（全置換・LockService使用）
 - `getLectureScheduleEntries(lectureId, campusCode)` — `@aiCallable` 講習スケジュールエントリ取得
+- `ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` 画像/PDFから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
+- `parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` テキストから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
 - `getDistributionFilesFolder_(lectureId, campusCode)` — 配布物PDF保存フォルダを取得/作成する内部ヘルパー（ルート→配布物/{lectureId}/{campusCode}/）
 - `saveDistributionFile(lectureId, campusCode, fileName, pdfBase64)` — `@aiCallable` 配布物PDFをDriveに保存する。戻り値: `{success, fileId, fileName, message}`
 - `listDistributionFiles(lectureId, campusCode)` — `@aiCallable` 指定講習・校舎の保存済み配布物PDF一覧を取得する（フォルダ未存在時は空配列。新しい順）。戻り値: `[{id, name, createdDate, size}]`
