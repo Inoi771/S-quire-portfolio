@@ -4516,10 +4516,22 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       '- "7/15,30,8/1.6" → 7月15日・7月30日・8月1日・8月6日の4エントリ\n' +
       '- "7/15〜8/5 毎週水" → 期間内の毎週水曜日を個別エントリに展開\n' +
       '省略された日付は前の月を引き継ぐ。各日付を必ず別々のエントリとして出力すること。\n\n' +
-      '[{"date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,' +
-      '"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull",' +
-      '"classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}]\n\n' +
-      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。';
+      '【操作タイプの判別ルール】\n' +
+      '各エントリに "op" フィールドを追加すること:\n' +
+      '- "create"（デフォルト）: 注釈なしの通常エントリ → 新規追加\n' +
+      '- "edit": 変更を示す記号・文言がある場合\n' +
+      '  例: "7/17→18"（日付変更）、"数学→英語"（科目変更）、"10:00→14:00"（時刻変更）、"変更"の文字\n' +
+      '  → "op":"edit" とし、変更前の値をメインフィールド(date,startTime等)に、変更後の値を "changes" オブジェクトに入れる\n' +
+      '- "delete": 削除を示す記号・文言がある場合\n' +
+      '  例: "7/17×"、取り消し線、"削除"の文字、"✕"マーク\n' +
+      '  → "op":"delete" とし、削除対象の情報をメインフィールドに入れる\n\n' +
+      'createの場合:\n' +
+      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}\n' +
+      'editの場合（変更前の値 + changesに変更後の値）:\n' +
+      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","changes":{"date":"YYYY-MM-DD"}}\n' +
+      'deleteの場合:\n' +
+      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード"}\n\n' +
+      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。';
 
     var payload = {
       contents: [{
@@ -4596,10 +4608,22 @@ function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson
       '- "7/15,30,8/1.6" → 7月15日・7月30日・8月1日・8月6日の4エントリ\n' +
       '- "7/15〜8/5 毎週水" → 期間内の毎週水曜日を個別エントリに展開\n' +
       '省略された日付は前の月を引き継ぐ。各日付を必ず別々のエントリとして出力すること。\n\n' +
-      '[{"date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,' +
-      '"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull",' +
-      '"classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}]\n\n' +
-      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。\n\n' +
+      '【操作タイプの判別ルール】\n' +
+      '各エントリに "op" フィールドを追加すること:\n' +
+      '- "create"（デフォルト）: 注釈なしの通常エントリ → 新規追加\n' +
+      '- "edit": 変更を示す記号・文言がある場合\n' +
+      '  例: "7/17→18"（日付変更）、"数学→英語"（科目変更）、"10:00→14:00"（時刻変更）、"変更"の文字\n' +
+      '  → "op":"edit" とし、変更前の値をメインフィールド(date,startTime等)に、変更後の値を "changes" オブジェクトに入れる\n' +
+      '- "delete": 削除を示す記号・文言がある場合\n' +
+      '  例: "7/17×"、取り消し線、"削除"の文字、"✕"マーク\n' +
+      '  → "op":"delete" とし、削除対象の情報をメインフィールドに入れる\n\n' +
+      'createの場合:\n' +
+      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull"}\n' +
+      'editの場合（変更前の値 + changesに変更後の値）:\n' +
+      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","changes":{"date":"YYYY-MM-DD"}}\n' +
+      'deleteの場合:\n' +
+      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード"}\n\n' +
+      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。\n\n' +
       '--- 日程テキスト ---\n' + scheduleText;
 
     var payload = {
