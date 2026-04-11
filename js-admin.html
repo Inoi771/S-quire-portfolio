@@ -1027,7 +1027,7 @@
           ? '<span style="padding:3px 8px;background:#e0e0e0;color:#666;border-radius:12px;font-size:11px;">✅ 送信済</span>'
           : '<span style="padding:3px 8px;background:#e8f5e9;color:#2e7d32;border-radius:12px;font-size:11px;">⏳ 未送信</span>';
         var ops = m.sent
-          ? '<button onclick="resendScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#f3e5f5;color:#6a1b9a;border:1px solid #ce93d8;border-radius:4px;cursor:pointer;font-size:11px;">再送信</button>'
+          ? '<span style="font-size:11px;color:#aaa;">—</span>'
           : '<button onclick="openSchedulerEditModal(\'' + m.id + '\')" style="padding:4px 8px;background:#e8f0fe;color:#3c4f8a;border:1px solid #c5d0e6;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">編集</button>' +
             '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
             '<button onclick="deleteScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#fce4ec;color:#c62828;border:1px solid #ffab91;border-radius:4px;cursor:pointer;font-size:11px;">削除</button>';
@@ -1159,28 +1159,6 @@
           })
           .withFailureHandler(function(err) { appAlert('❌ ' + err); })
           .sendScheduledLineMessageNow(id);
-      });
-    }
-
-    // 送信済みメッセージを再送信する
-    function resendScheduledMsg(id) {
-      appConfirm('このメッセージを再送信しますか？\n※送信済みフラグは変更されません。').then(function(ok) {
-        if (!ok) return;
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (result.success) {
-              var iconMap = { sent: '✅', failed: '❌', skipped: '—', no_id: '(LINE未登録)', no_email: '(メール未登録)' };
-              var lines = ['再送信結果:', '━━━━━━━━━━━━━━━━'];
-              result.results.forEach(function(r) {
-                lines.push(r.name + ':  LINE ' + (iconMap[r.line] || r.line) + '  /  メール ' + (iconMap[r.gmail] || r.gmail));
-              });
-              appAlert(lines.join('\n'));
-            } else {
-              appAlert('❌ ' + result.error);
-            }
-          })
-          .withFailureHandler(function(err) { appAlert('❌ ' + err); })
-          .resendScheduledLineMessage(id);
       });
     }
 

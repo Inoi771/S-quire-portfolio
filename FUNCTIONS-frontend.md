@@ -289,9 +289,6 @@
 - `loadAllowedUsers()` — アクセス許可ユーザー一覧を取得して描画
 - `removeAllowedUser(email)` — ユーザーのアクセスを削除（確認ダイアログ付き）
 
-**【LINEスケジューラー】** (`js-admin.html`)
-- `resendScheduledMsg(id)` — 送信済みスケジュールを再送信。受信者ごとにLINE/メール結果をダイアログ表示。Firestoreのsentフラグは変更しない
-
 **【通知設定】** (`js-admin.html`)
 - `loadNotificationSettings()` — お問い合わせ転送通知の設定をバックエンドから取得して表示
 - `applyNotificationSettingsUI(result)` — 通知設定の結果をUIに反映（LINE登録状態・ラジオボタン・メールチェックボックス）
