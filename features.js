@@ -35,7 +35,7 @@ function classifyMessageIntent_(message, chatHistory) {
   var detected = {
     grades:        /成績|テスト|点数|偏差値|分析|一覧|レポート|成績入力|登録.*点|生徒ID/.test(message),
     pricing:       /料金|月謝|費用|授業料|値段|いくら|支払|金額/.test(message),
-    lectures:      /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前|私.*コマ|自分.*コマ|マイ日程|自分.*日程|私.*日程|コマ.*教えて|コマ.*確認|いつ.*授業|授業.*いつ|私.*授業|自分.*授業/.test(message),
+    lectures:      /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前|私.*コマ|自分.*コマ|マイ日程|自分.*日程|私.*日程|コマ.*教えて|コマ.*確認|いつ.*授業|授業.*いつ|私.*授業|自分.*授業|コマ.*カレンダー|カレンダー.*コマ|カレンダー.*エクスポート|ICS/.test(message),
     operations:    /休校|開校|テスト日|入試日|ミーティング|報告書|引落|イベント/.test(message),
     students:      /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
     settings:      /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
@@ -164,7 +164,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
     + '- For questions about instructor placement/location (配置/勤務): answer directly from provided placement data. Use the current day-of-week from [Current Date] to answer "today" questions. On Sundays (日曜), explain there are no placements. When asked about today\'s overall placement ("今日の配置", "各校舎の配置" etc.), list each campus and who is assigned there (e.g. "○○校: △△先生、□□先生 / ××校: ◇◇先生"). Group by campus, not by teacher.\n'
     + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
-    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, edit_schedule, delete_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations.\n'
+    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, edit_schedule, delete_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations, export_lecture_calendar.\n'
     + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
     + '- [Lecture Schedule Entry Method] When user wants to add/enter lecture schedule ("日程を入れたい", "日程を追加したい" etc.), do NOT navigate directly. Respond as type:"other" and ask which method they want:\n'
     + '  1. 手動入力 — カレンダー画面で教科・学年を選んでタップして入力する\n'
@@ -185,6 +185,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '・講師配置の照会: 「○○先生は今日どこ？」「水曜に△△校にいる先生は？」などに答えられます\n'
     + '・予定の追加・編集・削除: 「塾の予定に○○を追加して」など話しかけるだけで操作できます\n'
     + '・講習日程の照会: 「私のコマを教えて」「自分の講習日程は？」など、あなたが登録した講習コマを一覧で回答できます\n'
+    + '・講習カレンダーエクスポート: 「カレンダーに追加して」「講習をカレンダーにエクスポートして」で、自分のコマをICSファイルとしてダウンロードしGoogleカレンダーに追加できます\n'
     + '・講習日程の登録: 「春期講習に数学を追加して」など詳細を伝えると直接登録できます\n'
     + '・成績登録のサポート: 「田中さんの数学を80点で登録して」など話しかけるだけで登録できます\n'
     + '・使い方の案内: 「○○の使い方を教えて」などアプリの操作方法を説明できます\n'
@@ -273,6 +274,11 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '    delete: {"op":"delete","entryId":"id"}\n'
     + '  Message must list ALL operations clearly.\n'
     + '{"success":true,"type":"app_action","action":"bulk_lecture_operations","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","operations":[{"op":"create","date":"2026-07-17","startTime":"10:00","subject":"数学","grade":"15"}],"message":"confirmation msg"}\n'
+    + '\n■ export_lecture_calendar — Export user\'s lecture entries to Google Calendar: lectureId(R, from Lecture Periods List)\n'
+    + '  Triggered by: "カレンダーに追加して", "講習をカレンダーにエクスポート", "Googleカレンダーに入れて" etc.\n'
+    + '  Downloads ICS file of user\'s own entries and opens Google Calendar import page.\n'
+    + '  If lectureId is ambiguous (multiple active lectures), ask which one.\n'
+    + '{"success":true,"type":"app_action","action":"export_lecture_calendar","lectureId":"id","message":"○○のコマをGoogleカレンダーにエクスポートします"}\n'
     + '\n■ Confirmation response (user said "はい"): Re-send same action with confirmed:true, WITHOUT needsConfirmation.\n'
     + '\n■ Missing information: {"success":true,"type":"other","response":"Japanese question about missing field"}\n'
     + '\n■ All other (chitchat, general): {"success":true,"type":"other","response":"Japanese response"}';

@@ -2962,4 +2962,45 @@
       return html;
     }
 
+    /**
+     * AIアシスタントから呼ばれるカレンダーエクスポート
+     * Firestoreから直接全校舎のエントリを取得してICSダウンロード＋Googleカレンダーインポート画面を開く
+     * @param {string} lectureId 講習ID
+     */
+    function exportLecCalendarFromAI_(lectureId) {
+      if (!lectureId) {
+        showToast('講習が指定されていません', 'error');
+        return;
+      }
+      var targetTeacherId = myTeacherId;
+      var targetTeacherName = myTeacherName || '';
+
+      fbGetAllLectureEntries(lectureId)
+        .then(function(allEntries) {
+          var myEntries = allEntries.filter(function(e) {
+            return e.teacherId === targetTeacherId;
+          });
+          if (myEntries.length === 0) {
+            showToast('エクスポートするコマがありません', 'error');
+            return;
+          }
+          var lectureName = '';
+          var lp = (lecturePeriods || []).find(function(p) { return p.id === lectureId; });
+          if (lp) lectureName = lp.name;
+
+          var icsContent = generateLecICS(myEntries, lectureName, targetTeacherName);
+          var filename = (lectureName || lectureId) + '_' + targetTeacherName + '.ics';
+          downloadFile(icsContent, filename, 'text/calendar;charset=utf-8');
+          showToast(myEntries.length + '件のコマをカレンダーにエクスポートしました', 'success');
+
+          setTimeout(function() {
+            window.open('https://calendar.google.com/calendar/u/0/r/settings/export', '_blank');
+          }, 500);
+        })
+        .catch(function(err) {
+          console.error('AIカレンダーエクスポートエラー:', err);
+          showToast('カレンダーエクスポートに失敗しました', 'error');
+        });
+    }
+
 </script>

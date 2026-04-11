@@ -72,6 +72,12 @@
         addAIWidgetMessage('ai', message);
         navigateToLectures_fromAI(result.lectureId, result.campusCode);
         return message;
+
+      } else if (action === 'export_lecture_calendar') {
+        message = '📅 ' + (result.message || 'カレンダーにエクスポートします');
+        addAIWidgetMessage('ai', message);
+        exportLecCalendarFromAI_(result.lectureId);
+        return message;
       }
 
       // 不明なアクション
