@@ -1540,17 +1540,18 @@ function downloadGradeTemplateXlsx() {
 
       var students = result.students || [];
 
-      // ヘッダー行（氏名は参照用として末尾に配置）
-      var header = ['生徒ID', '国語', '社会', '数学', '理科', '英語', '合計', '第1志望校', '第2志望校', '氏名（参照用・貼り付け不要）'];
+      // ヘッダー行（PDFテンプレートと同じ列順）
+      var header = ['氏名（参照用・貼り付け不要）', '生徒ID', '国語', '社会', '数学', '理科', '英語', '合計', '第1志望校', '第2志望校'];
       var rows = [header];
       students.forEach(function(s) {
-        rows.push([s.studentId, '', '', '', '', '', '', '', '', s.name || '']);
+        rows.push([s.name || '', s.studentId, '', '', '', '', '', '', '', '']);
       });
 
       var wb = XLSX.utils.book_new();
       var ws = XLSX.utils.aoa_to_sheet(rows);
       // 列幅設定
       ws['!cols'] = [
+        { wch: 14 }, // 氏名（参照用）
         { wch: 14 }, // 生徒ID
         { wch: 6  }, // 国語
         { wch: 6  }, // 社会
@@ -1559,8 +1560,7 @@ function downloadGradeTemplateXlsx() {
         { wch: 6  }, // 英語
         { wch: 6  }, // 合計
         { wch: 18 }, // 第1志望校
-        { wch: 18 }, // 第2志望校
-        { wch: 14 }  // 氏名（参照用）
+        { wch: 18 }  // 第2志望校
       ];
       XLSX.utils.book_append_sheet(wb, ws, '成績入力');
 
