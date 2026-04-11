@@ -157,6 +157,7 @@
 - `showLecScheduleListView()` — マイ日程一覧モーダルを表示。全校舎のエントリを取得し、自分のエントリを校舎→学年→教科ごとにグルーピングして表示
 - `closeLecListViewModal()` — マイ日程一覧モーダルを閉じる
 - `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→学年→教科→時間帯で整理）
+- `exportLecCalendarFromAI_(lectureId)` — AIアシスタントからのカレンダーエクスポート。Firestoreから全校舎のエントリを取得し、自分のコマをICSダウンロード＋Googleカレンダーインポート画面を開く
 - `showLecCalExportModal()` — カレンダーエクスポートモーダルを表示
 - `closeLecCalExportModal()` — カレンダーエクスポートモーダルを閉じる
 - `exportLecCalendar(mode)` — カレンダーエクスポート実行（'google' or 'ics'）。自分のエントリのみをICSファイルに変換してダウンロード。Googleモードではインポート画面も開く
