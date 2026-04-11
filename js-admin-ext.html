@@ -1950,11 +1950,47 @@
         modal.style.display = 'flex';
         overlay.style.display = 'block';
         document.getElementById('aiWidgetInput').focus();
+        if (aiWidgetChatHistory.length === 0) showAIWelcomeMessage();
       } else {
         closeAIWidget();
       }
     }
     
+    function showAIWelcomeMessage() {
+      var container = document.getElementById('aiWidgetMessages');
+      if (!container) return;
+      var aiName = (document.getElementById('aiWidgetTitle').textContent || '').replace('🤖 AI ', '').trim() || 'AIアシスタント';
+      var el = document.createElement('div');
+      el.id = 'aiWelcomeMessage';
+      el.style.cssText = 'margin-bottom: 12px; animation: fadeIn 0.3s ease-in;';
+      var chips = [
+        '講習の日程を入れたい',
+        'テスト分析を見たい',
+        '今日の配置を教えて',
+        '何ができる？'
+      ];
+      var chipHtml = chips.map(function(c) {
+        return '<button onclick="sendAIQuickReply(\'' + c + '\')" style="background: white; border: 1.5px solid #4facfe; color: #4facfe; padding: 6px 14px; border-radius: 16px; font-size: 12px; cursor: pointer; white-space: nowrap;">' + c + '</button>';
+      }).join('');
+      el.innerHTML =
+        '<div style="background: #f0f0f0; color: #333; padding: 10px 14px; border-radius: 12px; margin-right: 40px; word-break: break-word;">' +
+          '<small style="opacity: 0.8;">' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '</small><br>' +
+          'こんにちは！' + aiName + 'です😊<br>何でもお気軽にどうぞ。' +
+        '</div>' +
+        '<div style="margin-top: 8px; margin-right: 40px; display: flex; flex-wrap: wrap; gap: 6px;">' +
+          chipHtml +
+        '</div>';
+      container.appendChild(el);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function sendAIQuickReply(text) {
+      var welcome = document.getElementById('aiWelcomeMessage');
+      if (welcome) welcome.remove();
+      document.getElementById('aiWidgetInput').value = text;
+      sendAIWidgetMessage();
+    }
+
     function closeAIWidget() {
       document.getElementById('aiWidgetModal').style.display = 'none';
       document.getElementById('aiWidgetOverlay').style.display = 'none';
