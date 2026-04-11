@@ -1042,9 +1042,18 @@
             <!-- 毎週チェックボックス（学年ボタンの直後） -->
             <div id="lec-weekly-area" style="display: none; margin-bottom: 8px;">
               <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#444;cursor:pointer;">
-                <input type="checkbox" id="lec-weekly-cb" style="width:16px;height:16px;cursor:pointer;">
+                <input type="checkbox" id="lec-weekly-cb" style="width:16px;height:16px;cursor:pointer;" onchange="onLecWeeklyCbChange()">
                 毎週
               </label>
+              <div id="lec-weekly-count-area" style="display:none;margin-top:6px;padding-left:2px;">
+                <div style="display:flex;gap:4px;">
+                  <button class="lec-weekly-count-btn" data-count="2" onclick="setLecWeeklyCount(2)">2週</button>
+                  <button class="lec-weekly-count-btn" data-count="3" onclick="setLecWeeklyCount(3)">3週</button>
+                  <button class="lec-weekly-count-btn lec-weekly-count-selected" data-count="4" onclick="setLecWeeklyCount(4)">4週</button>
+                  <button class="lec-weekly-count-btn" data-count="5" onclick="setLecWeeklyCount(5)">5週</button>
+                  <button class="lec-weekly-count-btn" data-count="6" onclick="setLecWeeklyCount(6)">6週</button>
+                </div>
+              </div>
             </div>
 
             <!-- ステータス表示 -->

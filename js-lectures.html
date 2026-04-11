@@ -1721,6 +1721,23 @@
       scheduleAutoSave(currentLectureCampus);
     }
 
+    /** 毎週チェックボックス変更時 — 週数ボタンの表示/非表示 */
+    function onLecWeeklyCbChange() {
+      var cb   = document.getElementById('lec-weekly-cb');
+      var area = document.getElementById('lec-weekly-count-area');
+      if (!area) return;
+      area.style.display = cb && cb.checked ? 'block' : 'none';
+    }
+
+    /** 週数ボタン押下時 — 選択状態を更新 */
+    function setLecWeeklyCount(n) {
+      selectedWeeklyCount = n;
+      var btns = document.querySelectorAll('.lec-weekly-count-btn');
+      btns.forEach(function(btn) {
+        btn.classList.toggle('lec-weekly-count-selected', parseInt(btn.dataset.count) === n);
+      });
+    }
+
     /**
      * 毎週同じ曜日・時刻にエントリを一括作成する（休校日を除く）
      * @param {string} date YYYY-MM-DD（タップした日）
@@ -1729,7 +1746,7 @@
     function createWeeklyLecEntries(date, startSlot) {
       if (!currentLectureId || !currentLectureCampus) return;
       var cfg   = getLecGradeSettings(selectedGradeForEntry);
-      var count = cfg.count;
+      var count = selectedWeeklyCount;
 
       // 年度を算出
       var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
