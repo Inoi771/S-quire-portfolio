@@ -166,6 +166,7 @@
     var selectedGradeForEntry = null;     // 選択中の学年
     var selectedLecClass = null;          // 選択中のクラスラベル（'A'/'B'/'C'/null）
     var selectedEntryId = null;           // 選択中のエントリID
+    var selectedWeeklyCount = 4;         // 毎週作成の回数（2〜6）
     var lectureEntries = {};              // 校舎コードをキーにしたエントリ配列（例: {'01': [...], '02': [...]}）
     var pendingChanges = false;           // 未保存の変更フラグ
     var autoSaveTimer = null;             // 講習自動保存デバウンスタイマー
