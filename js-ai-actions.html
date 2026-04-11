@@ -150,9 +150,18 @@
       } else if (action === 'add_schedule') {
         execParams = {
           schoolName: params.schoolName,
-          eventName: params.eventName,
-          dateStr: params.dateStr,
-          details: params.details || ''
+          eventName:  params.eventName,
+          date:       params.date,
+          details:    params.details || ''
+        };
+      } else if (action === 'edit_schedule') {
+        execParams = {
+          docId:   params.docId,
+          changes: params.changes || {}
+        };
+      } else if (action === 'delete_schedule') {
+        execParams = {
+          docId: params.docId
         };
       } else if (action === 'create_lecture_entry') {
         execParams = {
