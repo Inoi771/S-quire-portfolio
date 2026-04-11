@@ -1826,7 +1826,7 @@
         <!-- ===== Admin 警告バナー ===== -->
         <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
           <p style="margin: 0; font-size: 14px; color: #856404;">
-            <strong>🔐 Admin 専用</strong> - このセクションはシステム管理者のみがアクセスできます。
+            <strong id="kbUnlockTrigger" style="cursor:default;">🔐 Admin 専用</strong> - このセクションはシステム管理者のみがアクセスできます。
           </p>
         </div>
 
@@ -1841,7 +1841,7 @@
             <button class="admin-tab-btn" data-subtab="admin-normal-config" onclick="switchAdminTab(this, 'normal-config'); initNormalConfigAdmin();">📋 通常設定</button>
             <button class="admin-tab-btn" data-subtab="admin-lectures-config" onclick="switchAdminTab(this, 'lectures-config'); initLecturesAdmin();">📚 講習設定</button>
             <button class="admin-tab-btn" data-subtab="admin-scheduler" onclick="switchAdminTab(this, 'scheduler'); initLineScheduler();">📩 LINE通知</button>
-            <button class="admin-tab-btn" data-subtab="admin-chatbot" onclick="switchAdminTab(this, 'chatbot'); initChatbotAdmin();">🤖 チャットボット</button>
+            <button id="admin-chatbot-btn" class="admin-tab-btn" data-subtab="admin-chatbot" onclick="switchAdminTab(this, 'chatbot'); initChatbotAdmin();" style="display:none;">🤖 チャットボット</button>
             <button class="admin-tab-btn" data-subtab="admin-properties" onclick="switchAdminTab(this, 'properties')">⚙️ 設定</button>
             <button class="admin-tab-btn" data-subtab="admin-logs" onclick="switchAdminTab(this, 'logs')">📋 ログ</button>
           </div>
