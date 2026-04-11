@@ -33,15 +33,16 @@ function getPersonalityInstruction(personality) {
  */
 function classifyMessageIntent_(message, chatHistory) {
   var detected = {
-    grades:     /成績|テスト|点数|偏差値|分析|一覧|レポート|成績入力|登録.*点|生徒ID/.test(message),
-    pricing:    /料金|月謝|費用|授業料|値段|いくら|支払|金額/.test(message),
-    lectures:   /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前/.test(message),
-    operations: /休校|開校|テスト日|入試日|ミーティング|報告書|引落|イベント/.test(message),
-    students:   /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
-    settings:   /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
-    schedule:   /予定|カレンダー|スケジュール|来月|先月|今月|\d+月.*予定/.test(message),
-    navigation: /見せて|開いて|表示して|タブ|画面/.test(message),
-    placement: /配置|勤務|どこ.*校|どの.*校|校舎.*誰|誰.*いる|出勤|先生.*どこ|講師.*どこ|曜日.*校舎/.test(message)
+    grades:        /成績|テスト|点数|偏差値|分析|一覧|レポート|成績入力|登録.*点|生徒ID/.test(message),
+    pricing:       /料金|月謝|費用|授業料|値段|いくら|支払|金額/.test(message),
+    lectures:      /講習|エントリ|授業.*[追削変]|コマ.*[追削変]|日程.*[追削変]|時間割|春期|夏期|冬期|基礎学力|入試直前/.test(message),
+    operations:    /休校|開校|テスト日|入試日|ミーティング|報告書|引落|イベント/.test(message),
+    students:      /生徒.*登録|生徒.*追加|新しい生徒|生徒数|何人|転塾|退塾/.test(message),
+    settings:      /設定|テーマ|色.*変え|名前.*変え|喋り方|口調/.test(message),
+    schedule:      /予定|カレンダー|スケジュール|来月|先月|今月|\d+月.*予定|予定.*[追加変更削除]|[追加変更削除].*予定/.test(message),
+    scheduleWrite: /予定.*[追加変更削除登録]|[追加変更削除登録].*予定/.test(message),
+    navigation:    /見せて|開いて|表示して|タブ|画面/.test(message),
+    placement:     /配置|勤務|どこ.*校|どの.*校|校舎.*誰|誰.*いる|出勤|先生.*どこ|講師.*どこ|曜日.*校舎/.test(message)
   };
   // 直前のAI応答から文脈を引き継ぐ（フォローアップ対応）
   if (chatHistory && chatHistory.length > 0) {
@@ -163,7 +164,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
     + '- For questions about instructor placement/location (配置/勤務): answer directly from provided placement data. Use the current day-of-week from [Current Date] to answer "today" questions. On Sundays (日曜), explain there are no placements.\n'
     + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
-    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations.\n'
+    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, edit_schedule, delete_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations.\n'
     + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
     + '\n[S-quire Features]\n'
     + '■ Schedule Tab (予定): Monthly calendar, AI auto-extraction from PDF/CSV/Sheets, fixed events, closed day/basic test management\n'
@@ -226,8 +227,18 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n■ submit_student — Student registration: campusCode(R), gradeCode(R), sei(R), seiFurigana(R) → ConfirmRule\n'
     + '  Optional: mei, meiFurigana, schoolName\n'
     + '{"success":true,"type":"app_action","action":"submit_student","needsConfirmation":true,"year":CY,"campusCode":"2-digit","gradeCode":"2-digit","sei":"surname","mei":"","seiFurigana":"furigana","meiFurigana":"","schoolName":"","message":"confirmation msg"}\n'
-    + '\n■ add_schedule — Schedule entry: schoolName(R), eventName(R), dateStr(R,MM/DD) → ConfirmRule\n'
-    + '{"success":true,"type":"app_action","action":"add_schedule","needsConfirmation":true,"schoolName":"name","eventName":"event","dateStr":"MM/DD","details":"optional","message":"confirmation msg"}\n'
+    + '\n■ add_schedule — Schedule entry (all users): schoolName(R), eventName(R), date(R,YYYY-MM-DD) → ConfirmRule\n'
+    + '  schoolName rules: 塾の予定→"塾", 中学校の予定→school name including "中学" (e.g. "○○中学校"), 高校の予定→school name including "高校" (e.g. "○○高校")\n'
+    + '  [Clarification Rule] If school type is ambiguous (user does not clearly specify juku/junior/high), do NOT execute. Return type:"other" asking: "塾の予定ですか、中学校の予定ですか、高校の予定ですか？"\n'
+    + '  Year default: current calendar year from [Current Date]. Month default: current calendar month from [Current Date].\n'
+    + '{"success":true,"type":"app_action","action":"add_schedule","needsConfirmation":true,"schoolName":"name","eventName":"event","date":"YYYY-MM-DD","details":"optional","message":"confirmation msg"}\n'
+    + '\n■ edit_schedule — Schedule edit (all users): docId(R, from 【変更・削除可能なカスタムイベント一覧】), changes(R) → ConfirmRule\n'
+    + '  Include ONLY changed fields in changes: schoolName, eventType, date(YYYY-MM-DD), details\n'
+    + '  If target event is NOT in カスタムイベント一覧, return type:"other" explaining it cannot be edited.\n'
+    + '{"success":true,"type":"app_action","action":"edit_schedule","needsConfirmation":true,"docId":"id","changes":{"field":"value"},"message":"confirmation msg"}\n'
+    + '\n■ delete_schedule — Schedule delete (all users): docId(R, from 【変更・削除可能なカスタムイベント一覧】) → ConfirmRule\n'
+    + '  If target event is NOT in カスタムイベント一覧, return type:"other" explaining it cannot be deleted.\n'
+    + '{"success":true,"type":"app_action","action":"delete_schedule","needsConfirmation":true,"docId":"id","message":"以下の予定を削除します：○○ よろしいですか？"}\n'
     + '\n■ create_lecture_entry — Lecture creation: lectureId(R), campusCode(R), date(R,YYYY-MM-DD), startTime(R,HH:MM), subject(R), grade(R,code 07-18) → ConfirmRule\n'
     + '  Optional: durationSlots (10-min units; use grade settings if available, default 9=90min), classLabel (A/B/C)\n'
     + '  [Smart Defaults] If current lecture entries have lectureId+campusCode → use them. 1 preferred campus → auto-set. 2+ → ask. 1 subject → auto-set. 2+ → ask. Grade → ALWAYS ask.\n'
@@ -853,6 +864,26 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 運営情報コンテキスト生成スキップ: ' + e);
     }
 
+    // 条件付き: カスタムイベント一覧（予定の追加・変更・削除 意図時のみ）
+    var customEventsContext = '';
+    if (intents.scheduleWrite) {
+      try {
+        var customEntries = getCustomScheduleEntriesForAI_();
+        if (customEntries.length > 0) {
+          var ceLines = customEntries.map(function(e) {
+            return e.schedule + ' ' + e.school + ' ' + e.eventType
+              + (e.details ? '（' + e.details + '）' : '')
+              + ' [ID:' + e.docId + ']';
+          });
+          customEventsContext = '\n\n【変更・削除可能なカスタムイベント一覧】\n'
+            + ceLines.join('\n')
+            + '\n（※ これ以外の予定は変更・削除できません）';
+        }
+      } catch (e) {
+        Logger.log('⚠ カスタムイベントコンテキスト取得スキップ: ' + e);
+      }
+    }
+
     // 条件付き: 講師配置データ（配置・勤務関連時のみ）
     var placementContext = '';
     if (intents.placement) {
@@ -1009,7 +1040,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       + adminContext + '\n'
       + kbContext + campusListContext + pricingContext + testNamesContext + gradeAnalysisContext
       + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
-      + studentGradeYearContext + operationsContext + placementContext + lectureEntriesContext
+      + studentGradeYearContext + operationsContext + customEventsContext + placementContext + lectureEntriesContext
       + '\n\n[User Message]\n' + resolvedUserMessage;
 
     // 最終ユーザーターンを contents 配列に追加
@@ -1172,7 +1203,27 @@ function executeAiAction(action, paramsJson) {
     }
 
     if (action === 'add_schedule') {
-      return addScheduleEntry(params.schoolName, params.eventName, params.dateStr, params.details || '');
+      var dateParts = String(params.date || '').split('-');
+      var aYear  = parseInt(dateParts[0], 10) || new Date().getFullYear();
+      var aMonth = parseInt(dateParts[1], 10) || (new Date().getMonth() + 1);
+      var aDay   = parseInt(dateParts[2], 10) || 1;
+      return addScheduleEntryAI_(params.schoolName, params.eventName, aYear, aMonth, aDay, params.details || '');
+    }
+
+    if (action === 'edit_schedule') {
+      var editChanges = params.changes || {};
+      if (editChanges.date) {
+        var dp = String(editChanges.date).split('-');
+        editChanges.dateYear  = parseInt(dp[0], 10);
+        editChanges.dateMonth = parseInt(dp[1], 10);
+        editChanges.dateDay   = parseInt(dp[2], 10);
+        delete editChanges.date;
+      }
+      return editScheduleEntryAI_(params.docId, editChanges);
+    }
+
+    if (action === 'delete_schedule') {
+      return deleteScheduleEntryAI_(params.docId);
     }
 
     if (action === 'create_lecture_entry') {

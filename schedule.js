@@ -100,6 +100,8 @@ function saveScheduleEntryToFirestore_(fiscalYear, schoolName, eventType, dateSt
   var docId;
   if (source === 'Admin 直接入力') {
     docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
+  } else if (source === 'AI入力') {
+    docId = makeScheduleSafeId_(fiscalYear) + '_ai_' + timestampMs;
   } else {
     docId = makeScheduleSafeId_(fiscalYear) + '_' + makeScheduleSafeId_(schoolName) + '_' +
             makeScheduleSafeId_(eventType) + '_' + makeScheduleSafeId_(cleanDateStr);
@@ -255,6 +257,129 @@ function addCustomScheduleEntry(schoolName, eventName, dateYear, dateMonth, date
     return { success: true, message: '追加しました', timestamp: saved.timestamp, fiscalYear: fiscalYear };
   } catch (error) {
     Logger.log('❌ addCustomScheduleEntryエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AIアシスタント経由で予定を追加する（全ユーザー対象）
+ * source = 'AI入力' で保存し、タイムスタンプベースの DocId を使用する
+ * @param {string} schoolName 学校名（塾 / ○○中学校 / ○○高校）
+ * @param {string} eventName イベント名
+ * @param {number} dateYear 年（例: 2026）
+ * @param {number} dateMonth 月（例: 7）
+ * @param {number} dateDay 日（例: 19）
+ * @param {string} details 詳細（省略可）
+ * @return {Object} { success, message, docId }
+ */
+function addScheduleEntryAI_(schoolName, eventName, dateYear, dateMonth, dateDay, details) {
+  try {
+    if (!schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
+      return { success: false, error: '学校名・イベント名・日付は必須です' };
+    }
+    var fiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
+    var dateStr = dateMonth + '月' + dateDay + '日';
+    var saved = saveScheduleEntryToFirestore_(fiscalYear, schoolName, eventName, dateStr, details || '', 'AI入力', null);
+    Logger.log('✓ addScheduleEntryAI_: ' + schoolName + ' ' + dateStr);
+    return { success: true, message: '予定を追加しました', docId: saved.docId };
+  } catch (error) {
+    Logger.log('❌ addScheduleEntryAI_エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AIアシスタント向けにカスタムイベント一覧を返す（全ユーザー対象）
+ * source が「Admin 直接入力」または「AI入力」のエントリを返す
+ * @return {Array} [{ docId, school, eventType, schedule, details, source }]
+ */
+function getCustomScheduleEntriesForAI_() {
+  try {
+    var docs = firestoreQuery_('schedules', []);
+    return docs
+      .filter(function(doc) {
+        return doc.source === 'Admin 直接入力' || doc.source === 'AI入力';
+      })
+      .map(function(doc) {
+        return {
+          docId:     doc._id || '',
+          school:    doc.schoolName || '',
+          eventType: doc.eventType || '',
+          schedule:  doc.scheduleDisplay || '',
+          details:   doc.details || '',
+          source:    doc.source || ''
+        };
+      });
+  } catch (error) {
+    Logger.log('❌ getCustomScheduleEntriesForAI_エラー: ' + error);
+    return [];
+  }
+}
+
+/**
+ * AIアシスタント経由でカスタムイベントを変更する（全ユーザー対象）
+ * Admin 直接入力・AI入力のエントリのみ変更可
+ * @param {string} docId 対象ドキュメントID
+ * @param {Object} changes 変更フィールド { schoolName, eventType, dateYear, dateMonth, dateDay, details }
+ * @return {Object} { success, message }
+ */
+function editScheduleEntryAI_(docId, changes) {
+  try {
+    var doc = firestoreGet_('schedules', docId);
+    if (!doc) return { success: false, error: '予定が見つかりません' };
+    if (doc.source !== 'Admin 直接入力' && doc.source !== 'AI入力') {
+      return { success: false, error: 'この予定は変更できません' };
+    }
+    var schoolName = changes.schoolName || doc.schoolName;
+    var eventType  = changes.eventType  || doc.eventType;
+    var details    = (changes.details !== undefined) ? changes.details : doc.details;
+    var dateStr    = doc.dateStr;
+    var fiscalYear = doc.fiscalYear;
+    if (changes.dateYear && changes.dateMonth && changes.dateDay) {
+      fiscalYear = (changes.dateMonth >= 4) ? changes.dateYear : changes.dateYear - 1;
+      dateStr = changes.dateMonth + '月' + changes.dateDay + '日';
+    }
+    var monthMatch = dateStr.match(/(\d{1,2})月/);
+    var month = monthMatch ? parseInt(monthMatch[1]) : 0;
+    var calcYear = (month >= 1 && month <= 3) ? parseInt(fiscalYear) + 1 : parseInt(fiscalYear);
+    var scheduleDisplay = calcYear + '年' + dateStr;
+    var updatedData = {
+      fiscalYear:      parseInt(fiscalYear, 10),
+      schoolName:      schoolName,
+      eventType:       eventType,
+      dateStr:         dateStr,
+      details:         details,
+      source:          doc.source,
+      timestamp:       doc.timestamp,
+      scheduleDisplay: scheduleDisplay
+    };
+    firestoreSet_('schedules', docId, updatedData);
+    Logger.log('✓ editScheduleEntryAI_: ' + docId);
+    return { success: true, message: '予定を更新しました' };
+  } catch (error) {
+    Logger.log('❌ editScheduleEntryAI_エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AIアシスタント経由でカスタムイベントを削除する（全ユーザー対象）
+ * Admin 直接入力・AI入力のエントリのみ削除可
+ * @param {string} docId 対象ドキュメントID
+ * @return {Object} { success, message }
+ */
+function deleteScheduleEntryAI_(docId) {
+  try {
+    var doc = firestoreGet_('schedules', docId);
+    if (!doc) return { success: false, error: '予定が見つかりません' };
+    if (doc.source !== 'Admin 直接入力' && doc.source !== 'AI入力') {
+      return { success: false, error: 'この予定は削除できません' };
+    }
+    firestoreDelete_('schedules', docId);
+    Logger.log('✓ deleteScheduleEntryAI_: ' + docId);
+    return { success: true, message: '予定を削除しました' };
+  } catch (error) {
+    Logger.log('❌ deleteScheduleEntryAI_エラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }
