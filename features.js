@@ -163,7 +163,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
     + '- For questions about instructor placement/location (配置/勤務): answer directly from provided placement data. Use the current day-of-week from [Current Date] to answer "today" questions. On Sundays (日曜), explain there are no placements.\n'
     + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
-    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry.\n'
+    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations.\n'
     + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
     + '\n[S-quire Features]\n'
     + '■ Schedule Tab (予定): Monthly calendar, AI auto-extraction from PDF/CSV/Sheets, fixed events, closed day/basic test management\n'
@@ -239,6 +239,14 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n■ delete_lecture_entry: lectureId(R), campusCode(R), entryId(R) → ConfirmRule\n'
     + '  User can ONLY delete own entries.\n'
     + '{"success":true,"type":"app_action","action":"delete_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","entryId":"id","message":"confirmation msg"}\n'
+    + '\n■ bulk_lecture_operations — Bulk operations (create+edit+delete mix): lectureId(R), campusCode(R), operations(R) → ConfirmRule\n'
+    + '  Use when user requests MULTIPLE lecture entries at once, or a mix of create/edit/delete.\n'
+    + '  operations array items:\n'
+    + '    create: {"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"name","grade":"2-digit","durationSlots":9,"classLabel":"optional"}\n'
+    + '    edit:   {"op":"edit","entryId":"id","changes":{"field":"value"}}\n'
+    + '    delete: {"op":"delete","entryId":"id"}\n'
+    + '  Message must list ALL operations clearly.\n'
+    + '{"success":true,"type":"app_action","action":"bulk_lecture_operations","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","operations":[{"op":"create","date":"2026-07-17","startTime":"10:00","subject":"数学","grade":"15"}],"message":"confirmation msg"}\n'
     + '\n■ Confirmation response (user said "はい"): Re-send same action with confirmed:true, WITHOUT needsConfirmation.\n'
     + '\n■ Missing information: {"success":true,"type":"other","response":"Japanese question about missing field"}\n'
     + '\n■ All other (chitchat, general): {"success":true,"type":"other","response":"Japanese response"}';
@@ -1186,6 +1194,10 @@ function executeAiAction(action, paramsJson) {
 
     if (action === 'delete_lecture_entry') {
       return deleteLectureEntryAI_(params.lectureId, params.campusCode, params.entryId);
+    }
+
+    if (action === 'bulk_lecture_operations') {
+      return bulkLectureOperationsAI_(params.lectureId, params.campusCode, params.operations || []);
     }
 
     return { success: false, error: '不明なアクション: ' + action };
@@ -2884,6 +2896,121 @@ function deleteLectureEntryAI_(lectureId, campusCode, entryId) {
     return { success: false, error: (result && result.error) || '保存に失敗しました' };
   } catch (error) {
     Logger.log('❌ deleteLectureEntryAI_エラー: ' + error);
+    return { success: false, error: error.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * AIアシスタントから講習エントリを一括操作する（作成・編集・削除の混合対応）
+ * 1回のロック・1回のFirestore書き込みで複数操作を実行
+ * @param {string} lectureId 講習ID
+ * @param {string} campusCode 校舎コード
+ * @param {Array} operations 操作配列 [{op:"create"|"edit"|"delete", ...params}, ...]
+ * @return {Object} { success, message, error }
+ */
+function bulkLectureOperationsAI_(lectureId, campusCode, operations) {
+  if (!operations || operations.length === 0) {
+    return { success: false, error: '操作がありません' };
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var normalizedCampus = String(campusCode || '').padStart(2, '0');
+    var existing = getLectureScheduleEntries(lectureId, normalizedCampus);
+
+    var teacherId = getOrCreateTeacherId();
+    var profile = getUserProfile();
+    var teacherName = (profile && profile.displayName) || '';
+    var teacherEmail = '';
+    try { teacherEmail = getFirebaseEmailContext_() || ''; } catch (e) {}
+    var admin = isAdmin();
+
+    var createdCount = 0;
+    var editedCount = 0;
+    var deletedCount = 0;
+    var errors = [];
+
+    for (var i = 0; i < operations.length; i++) {
+      var op = operations[i];
+
+      if (op.op === 'create') {
+        var entryId = 'ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
+        existing.push({
+          id: entryId,
+          lectureId: String(lectureId),
+          campusCode: normalizedCampus,
+          date: String(op.date || ''),
+          startTime: String(op.startTime || ''),
+          durationSlots: Number(op.durationSlots) || 9,
+          subject: String(op.subject || ''),
+          grade: String(op.grade || ''),
+          teacherName: teacherName,
+          teacherEmail: teacherEmail,
+          classLabel: op.classLabel || null,
+          teacherId: teacherId
+        });
+        createdCount++;
+
+      } else if (op.op === 'edit') {
+        var editIdx = -1;
+        for (var ei = 0; ei < existing.length; ei++) {
+          if (existing[ei].id === op.entryId) { editIdx = ei; break; }
+        }
+        if (editIdx === -1) {
+          errors.push('編集: エントリが見つかりません');
+          continue;
+        }
+        if (!admin && existing[editIdx].teacherId && existing[editIdx].teacherId !== teacherId) {
+          errors.push('編集: 他の講師のエントリ');
+          continue;
+        }
+        var changes = op.changes || {};
+        if (changes.date !== undefined) existing[editIdx].date = String(changes.date);
+        if (changes.startTime !== undefined) existing[editIdx].startTime = String(changes.startTime);
+        if (changes.durationSlots !== undefined) existing[editIdx].durationSlots = Number(changes.durationSlots) || 9;
+        if (changes.subject !== undefined) existing[editIdx].subject = String(changes.subject);
+        if (changes.grade !== undefined) existing[editIdx].grade = String(changes.grade);
+        if (changes.classLabel !== undefined) existing[editIdx].classLabel = changes.classLabel || null;
+        editedCount++;
+
+      } else if (op.op === 'delete') {
+        var delIdx = -1;
+        for (var di = 0; di < existing.length; di++) {
+          if (existing[di].id === op.entryId) { delIdx = di; break; }
+        }
+        if (delIdx === -1) {
+          errors.push('削除: エントリが見つかりません');
+          continue;
+        }
+        if (!admin && existing[delIdx].teacherId && existing[delIdx].teacherId !== teacherId) {
+          errors.push('削除: 他の講師のエントリ');
+          continue;
+        }
+        existing.splice(delIdx, 1);
+        deletedCount++;
+      }
+    }
+
+    var totalSuccess = createdCount + editedCount + deletedCount;
+    if (totalSuccess === 0) {
+      return { success: false, error: '処理できる操作がありませんでした' + (errors.length > 0 ? '（' + errors.join('、') + '）' : '') };
+    }
+
+    var result = saveLectureScheduleEntries(lectureId, normalizedCampus, JSON.stringify(existing));
+    if (result && result.success) {
+      var parts = [];
+      if (createdCount > 0) parts.push('追加' + createdCount + '件');
+      if (editedCount > 0) parts.push('変更' + editedCount + '件');
+      if (deletedCount > 0) parts.push('削除' + deletedCount + '件');
+      var msg = parts.join('、') + 'を処理しました';
+      if (errors.length > 0) msg += '（' + errors.length + '件スキップ）';
+      return { success: true, message: msg };
+    }
+    return { success: false, error: (result && result.error) || '保存に失敗しました' };
+  } catch (error) {
+    Logger.log('❌ bulkLectureOperationsAI_エラー: ' + error);
     return { success: false, error: error.toString() };
   } finally {
     lock.releaseLock();
