@@ -385,6 +385,122 @@ function deleteScheduleEntryAI_(docId) {
 }
 
 /**
+ * AIアシスタント向けに全スケジュールエントリを返す（3ヶ月ウィンドウ）
+ * 1ヶ月前〜2ヶ月先のエントリをフィルタして返す（トークン節約）
+ * @return {Array} [{ docId, school, eventType, schedule, details, source }]
+ */
+function getAllScheduleEntriesForAI_() {
+  try {
+    var docs = firestoreQuery_('schedules', []);
+    var now = new Date();
+    var windowStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var windowEnd   = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+
+    return docs
+      .filter(function(doc) {
+        var display = doc.scheduleDisplay || '';
+        var m = display.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+        if (!m) return false;
+        var entryDate = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+        return entryDate >= windowStart && entryDate <= windowEnd;
+      })
+      .map(function(doc) {
+        return {
+          docId:     doc._id || '',
+          school:    doc.schoolName || '',
+          eventType: doc.eventType || '',
+          schedule:  doc.scheduleDisplay || '',
+          details:   doc.details || '',
+          source:    doc.source || ''
+        };
+      });
+  } catch (error) {
+    Logger.log('❌ getAllScheduleEntriesForAI_エラー: ' + error);
+    return [];
+  }
+}
+
+/**
+ * AIアシスタント経由で任意のスケジュールエントリを変更する（source制限なし）
+ * import系エントリの場合は source を 'AI更新' に変更し、新docIdに移行する
+ * @param {string} docId 対象ドキュメントID
+ * @param {Object} changes 変更フィールド { schoolName, eventType, dateYear, dateMonth, dateDay, details }
+ * @return {Object} { success, message }
+ */
+function editScheduleEntryAI_Extended_(docId, changes) {
+  try {
+    var doc = firestoreGet_('schedules', docId);
+    if (!doc) return { success: false, error: '予定が見つかりません' };
+
+    var isCustom = (doc.source === 'Admin 直接入力' || doc.source === 'AI入力' || doc.source === 'AI更新');
+
+    var schoolName = changes.schoolName || doc.schoolName;
+    var eventType  = changes.eventType  || doc.eventType;
+    var details    = (changes.details !== undefined) ? changes.details : doc.details;
+    var dateStr    = doc.dateStr;
+    var fiscalYear = doc.fiscalYear;
+    if (changes.dateYear && changes.dateMonth && changes.dateDay) {
+      fiscalYear = (changes.dateMonth >= 4) ? changes.dateYear : changes.dateYear - 1;
+      dateStr = changes.dateMonth + '月' + changes.dateDay + '日';
+    }
+    var monthMatch = dateStr.match(/(\d{1,2})月/);
+    var month = monthMatch ? parseInt(monthMatch[1]) : 0;
+    var calcYear = (month >= 1 && month <= 3) ? parseInt(fiscalYear) + 1 : parseInt(fiscalYear);
+    var scheduleDisplay = calcYear + '年' + dateStr;
+
+    var newSource = isCustom ? doc.source : 'AI更新';
+    var updatedData = {
+      fiscalYear:      parseInt(fiscalYear, 10),
+      schoolName:      schoolName,
+      eventType:       eventType,
+      dateStr:         dateStr,
+      details:         details,
+      source:          newSource,
+      timestamp:       doc.timestamp,
+      scheduleDisplay: scheduleDisplay
+    };
+    if (!isCustom) {
+      updatedData.originalSource = doc.source;
+    }
+
+    if (isCustom) {
+      // カスタムエントリはそのまま上書き
+      firestoreSet_('schedules', docId, updatedData);
+    } else {
+      // import系: 新しいタイムスタンプベースのdocIdに移行し、旧docIdを削除
+      var newDocId = makeScheduleSafeId_(fiscalYear) + '_ai_' + new Date().getTime();
+      updatedData.timestamp = new Date().toISOString();
+      firestoreSet_('schedules', newDocId, updatedData);
+      firestoreDelete_('schedules', docId);
+    }
+
+    Logger.log('✓ editScheduleEntryAI_Extended_: ' + docId);
+    return { success: true, message: '予定を更新しました' };
+  } catch (error) {
+    Logger.log('❌ editScheduleEntryAI_Extended_エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AIアシスタント経由で任意のスケジュールエントリを削除する（source制限なし）
+ * @param {string} docId 対象ドキュメントID
+ * @return {Object} { success, message }
+ */
+function deleteScheduleEntryAI_Extended_(docId) {
+  try {
+    var doc = firestoreGet_('schedules', docId);
+    if (!doc) return { success: false, error: '予定が見つかりません' };
+    firestoreDelete_('schedules', docId);
+    Logger.log('✓ deleteScheduleEntryAI_Extended_: ' + docId);
+    return { success: true, message: '予定を削除しました' };
+  } catch (error) {
+    Logger.log('❌ deleteScheduleEntryAI_Extended_エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * Admin が手動で追加したカスタムイベントを全年度分取得する（Admin のみ）
  * Firestore の schedules コレクションから source が「Admin 直接入力」のドキュメントのみ返す
  * @return {Array} カスタムイベントの配列 [{ fiscalYear, docId, timestamp, school, eventType, schedule, details }]

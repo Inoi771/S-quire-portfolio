@@ -391,6 +391,30 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + 'Year expressions (current academic year = ' + currentAcademicYear + '): 去年/昨年度→' + (currentAcademicYear - 1) + ', 今年/今年度→' + currentAcademicYear + ', 来年/来年度→' + (currentAcademicYear + 1) + '\n'
     + 'Carry over required fields from chat history. Do NOT re-ask for established fields.\n'
     + 'If the previous AI ended with a question/proposal and the user responds affirmatively ("はい", "お願いします"), execute that proposal.\n'
+    + '\n[Schedule Comparison & Update Behavior]\n'
+    + 'When a user asks about schedule items related to schools (入試, 模試, 学校行事, テスト日程, 説明会 etc.):\n'
+    + '■ Step 1: Check learned_knowledge (ナレッジベース) FIRST.\n'
+    + '  - If knowledge base contains matching info for the CURRENT academic year (CY), use it directly. Do NOT search the web.\n'
+    + '  - If no matching knowledge for the current year exists, proceed to Step 2.\n'
+    + '■ Step 2: Google Search (school info ONLY).\n'
+    + '  - Use Google Search ONLY for school-related schedule items: 入試日程, 模試日程, 学校行事, 説明会, オープンスクール, etc.\n'
+    + '  - Do NOT use Google Search for: 塾の内部予定, ミーティング, 報告書提出, 引落日, 休校日, or other internal juku operations.\n'
+    + '■ Step 3: Compare and propose.\n'
+    + '  - If the app has the entry AND the latest info (from knowledge or web) shows a different date:\n'
+    + '    → Show both: "アプリでは○月○日ですが、最新の情報では△月△日のようです"\n'
+    + '    → Propose: "最新情報に更新しましょうか？" with edit_schedule action and needsConfirmation:true\n'
+    + '    → If user agrees, use edit_schedule with the entry\'s docId\n'
+    + '  - If the app does NOT have the entry but latest info is found:\n'
+    + '    → Show the info\n'
+    + '    → Propose: "予定タブに追加しましょうか？" with add_schedule action and needsConfirmation:true\n'
+    + '    → If user agrees, use add_schedule\n'
+    + '  - If both match: confirm "アプリの情報は最新です（○月○日）"\n'
+    + '■ Step 4: Save to knowledge.\n'
+    + '  - Always save useful school schedule info via learned_knowledge (with year)\n'
+    + '■ Duplicate Detection:\n'
+    + '  - If 【予定一覧】 contains two entries with the same school + similar event name + different dates:\n'
+    + '    → Alert: "○○の予定が2件あります（△月△日と□月□日）。古い方を削除しますか？"\n'
+    + '    → If user agrees, use delete_schedule for the outdated entry\n'
     + '\n[Response Format]\n'
     + 'Return ONLY one of the following JSON formats. All text fields MUST be in Japanese.\n'
     + 'Abbreviations: R=required, CY=' + currentAcademicYear + ' (current academic year)\n'
@@ -429,12 +453,11 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '  [Clarification Rule] If school type is ambiguous (user does not clearly specify juku/junior/high), do NOT execute. Return type:"other" asking: "塾の予定ですか、中学校の予定ですか、高校の予定ですか？"\n'
     + '  Year default: current calendar year from [Current Date]. Month default: current calendar month from [Current Date].\n'
     + '{"success":true,"type":"app_action","action":"add_schedule","needsConfirmation":true,"schoolName":"name","eventName":"event","date":"YYYY-MM-DD","details":"optional","message":"confirmation msg"}\n'
-    + '\n■ edit_schedule — Schedule edit (all users): docId(R, from 【変更・削除可能なカスタムイベント一覧】), changes(R) → ConfirmRule\n'
-    + '  Include ONLY changed fields in changes: schoolName, eventType, date(YYYY-MM-DD), details\n'
-    + '  If target event is NOT in カスタムイベント一覧, return type:"other" explaining it cannot be edited.\n'
+    + '\n■ edit_schedule — Schedule edit (all users): docId(R, from 【予定一覧】), changes(R) → ConfirmRule\n'
+    + '  Any entry can be edited regardless of source. Include ONLY changed fields in changes: schoolName, eventType, date(YYYY-MM-DD), details\n'
     + '{"success":true,"type":"app_action","action":"edit_schedule","needsConfirmation":true,"docId":"id","changes":{"field":"value"},"message":"confirmation msg"}\n'
-    + '\n■ delete_schedule — Schedule delete (all users): docId(R, from 【変更・削除可能なカスタムイベント一覧】) → ConfirmRule\n'
-    + '  If target event is NOT in カスタムイベント一覧, return type:"other" explaining it cannot be deleted.\n'
+    + '\n■ delete_schedule — Schedule delete (all users): docId(R, from 【予定一覧】) → ConfirmRule\n'
+    + '  Any entry can be deleted.\n'
     + '{"success":true,"type":"app_action","action":"delete_schedule","needsConfirmation":true,"docId":"id","message":"以下の予定を削除します：○○ よろしいですか？"}\n'
     + '\n■ create_lecture_entry — Lecture creation: lectureId(R), campusCode(R), date(R,YYYY-MM-DD), startTime(R,HH:MM), subject(R), grade(R,code 07-18) → ConfirmRule\n'
     + '  Optional: durationSlots (10-min units; use grade settings if available, default 9=90min), classLabel (A/B/C)\n'
@@ -1097,23 +1120,23 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 運営情報コンテキスト生成スキップ: ' + e);
     }
 
-    // 条件付き: カスタムイベント一覧（予定の追加・変更・削除 意図時のみ）
+    // 条件付き: 予定一覧（予定の照会・追加・変更・削除 意図時）
     var customEventsContext = '';
-    if (intents.scheduleWrite) {
+    if (intents.scheduleWrite || intents.schedule || intents.operations) {
       try {
-        var customEntries = getCustomScheduleEntriesForAI_();
-        if (customEntries.length > 0) {
-          var ceLines = customEntries.map(function(e) {
+        var allEntries = getAllScheduleEntriesForAI_();
+        if (allEntries.length > 0) {
+          var ceLines = allEntries.map(function(e) {
             return e.schedule + ' ' + e.school + ' ' + e.eventType
               + (e.details ? '（' + e.details + '）' : '')
               + ' [ID:' + e.docId + ']';
           });
-          customEventsContext = '\n\n【変更・削除可能なカスタムイベント一覧】\n'
+          customEventsContext = '\n\n【予定一覧（直近3ヶ月）】\n'
             + ceLines.join('\n')
-            + '\n（※ これ以外の予定は変更・削除できません）';
+            + '\n（※ すべての予定を編集・削除できます）';
         }
       } catch (e) {
-        Logger.log('⚠ カスタムイベントコンテキスト取得スキップ: ' + e);
+        Logger.log('⚠ 予定一覧コンテキスト取得スキップ: ' + e);
       }
     }
 
@@ -1550,11 +1573,11 @@ function executeAiAction(action, paramsJson) {
         editChanges.dateDay   = parseInt(dp[2], 10);
         delete editChanges.date;
       }
-      return editScheduleEntryAI_(params.docId, editChanges);
+      return editScheduleEntryAI_Extended_(params.docId, editChanges);
     }
 
     if (action === 'delete_schedule') {
-      return deleteScheduleEntryAI_(params.docId);
+      return deleteScheduleEntryAI_Extended_(params.docId);
     }
 
     if (action === 'create_lecture_entry') {
