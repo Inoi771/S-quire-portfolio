@@ -42,7 +42,8 @@ function classifyMessageIntent_(message, chatHistory) {
     schedule:      /予定|カレンダー|スケジュール|来月|先月|今月|\d+月.*予定|予定.*[追加変更削除]|[追加変更削除].*予定/.test(message),
     scheduleWrite: /予定.*[追加変更削除登録]|[追加変更削除登録].*予定/.test(message),
     navigation:    /見せて|開いて|表示して|タブ|画面/.test(message),
-    placement:     /配置|勤務|どこ.*校|どの.*校|校舎.*誰|誰.*いる|出勤|先生.*どこ|講師.*どこ|曜日.*校舎/.test(message)
+    placement:     /配置|勤務|どこ.*校|どの.*校|校舎.*誰|誰.*いる|出勤|先生.*どこ|講師.*どこ|曜日.*校舎/.test(message),
+    minutes:       /議事録|会議|ミーティング|決定事項|決まったこと|前回.*決|報告事項|話し合/.test(message)
   };
   // 直前のAI応答から文脈を引き継ぐ（フォローアップ対応）
   if (chatHistory && chatHistory.length > 0) {
@@ -56,6 +57,7 @@ function classifyMessageIntent_(message, chatHistory) {
       if (/料金|月謝/.test(lastAi.text)) detected.pricing = true;
       if (/予定|カレンダー/.test(lastAi.text)) detected.schedule = true;
       if (/配置|勤務|校舎.*講師/.test(lastAi.text)) detected.placement = true;
+      if (/議事録|会議/.test(lastAi.text)) detected.minutes = true;
     }
   }
   return detected;
@@ -1369,6 +1371,16 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 講習エントリコンテキスト取得スキップ: ' + e);
     }
 
+    // --- 議事録コンテキスト ---
+    var minutesContext = '';
+    if (intents.minutes) {
+      try {
+        minutesContext = getMinutesContextForAI_();
+      } catch (e) {
+        Logger.log('⚠ 議事録コンテキスト取得スキップ: ' + e);
+      }
+    }
+
     // === 最終ユーザーターンの組み立て（動的コンテキスト + ユーザーメッセージ） ===
     var now = new Date();
     var dayOfWeekNames = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1380,7 +1392,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       + adminContext + '\n'
       + kbContext + campusListContext + pricingContext + testNamesContext + gradeAnalysisContext
       + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
-      + studentGradeYearContext + studentGradeDataContext + operationsContext + customEventsContext + placementContext + lectureEntriesContext
+      + studentGradeYearContext + studentGradeDataContext + operationsContext + customEventsContext + placementContext + lectureEntriesContext + minutesContext
       + '\n\n[User Message]\n' + resolvedUserMessage;
 
     // 最終ユーザーターンを contents 配列に追加
