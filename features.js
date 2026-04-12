@@ -972,6 +972,21 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 生徒成績年度確認スキップ: ' + e);
     }
 
+    // 条件付き: 生徒IDが含まれ、成績・比較系キーワードがある場合に実成績データを取得
+    try {
+      var gradeIdTokens = resolvedUserMessage.match(/\[生徒ID:(\d+)\]/g);
+      if (gradeIdTokens && gradeIdTokens.length > 0 && /成績|点数|比較|教えて|どう/.test(resolvedUserMessage)) {
+        var sids = gradeIdTokens.map(function(token) {
+          return token.replace('[生徒ID:', '').replace(']', '');
+        });
+        var gradeYears = detectAnalysisYears_(resolvedUserMessage, currentAcademicYear);
+        var gradeTestNames = detectAnalysisTestNames_(resolvedUserMessage, getTestNamesConfig() || []);
+        studentGradeDataContext = buildStudentGradeContext_(sids, gradeYears, gradeTestNames);
+      }
+    } catch (e) {
+      Logger.log('⚠ 生徒成績データコンテキスト取得スキップ: ' + e);
+    }
+
     // 条件付き: 塾の運営情報（運営・予定関連時のみ）
     var operationsContext = '';
     if (intents.operations || intents.schedule) try {
@@ -1340,7 +1355,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       + adminContext + '\n'
       + kbContext + campusListContext + pricingContext + testNamesContext + gradeAnalysisContext
       + studentSummaryContext + lecturePeriodsContext + gradeCodesContext
-      + studentGradeYearContext + operationsContext + customEventsContext + placementContext + lectureEntriesContext
+      + studentGradeYearContext + studentGradeDataContext + operationsContext + customEventsContext + placementContext + lectureEntriesContext
       + '\n\n[User Message]\n' + resolvedUserMessage;
 
     // 最終ユーザーターンを contents 配列に追加
