@@ -106,6 +106,43 @@
       var select = document.getElementById('gradesYearSelect');
       if (select.value) {
         currentFiscalYear = parseInt(select.value);
+
+        // --- 全サブタブの初期化フラグをリセット ---
+        analysisInitialized = false;
+        avgInitialized      = false;
+        reportInitialized   = false;
+
+        // --- キャッシュデータをクリア ---
+        listTableData = [];
+        var listTestSel = document.getElementById('list-test-select');
+        if (listTestSel) listTestSel.innerHTML = '<option value="">-- テストを選択してください --</option>';
+
+        reportStudentListData = [];
+        activeReportStudentId = null;
+
+        avgCurrentData = {};
+        avgTestNames   = [];
+
+        placementTableData = [];
+
+        // --- 現在アクティブなサブタブを即時再初期化 ---
+        var activeSub = document.querySelector('#grades .sub-content.active');
+        if (activeSub) {
+          var activeId = activeSub.id;
+          if (activeId === 'grades-list')           initGradesList();
+          else if (activeId === 'grades-average')   initGradesAverage();
+          else if (activeId === 'grades-analysis')  initGradesAnalysis();
+          else if (activeId === 'grades-report')    initGradesReport();
+          else if (activeId === 'grades-placement') initGradesPlacement();
+        }
+
+        // 成績入力タブで校舎・学年が既に選択済みなら生徒一覧を再取得
+        var scoreCampus = document.getElementById('score-campus').value;
+        var scoreGrade  = document.getElementById('score-grade').value;
+        if (scoreCampus && scoreGrade) {
+          onScoreGradeChanged();
+        }
+
         // 情報入力タブで校舎・学年が既に選択済みなら生徒一覧を再取得
         var campusCode = document.getElementById('input-campus').value;
         var gradeCode  = document.getElementById('input-grade').value;
