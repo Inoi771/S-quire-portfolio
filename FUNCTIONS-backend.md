@@ -115,6 +115,7 @@
 - `rebuildGradeReportCache(year)` — 成績表キャッシュを再構築（gradeReportCache）
 - `rebuildAllCaches(year)` — Admin専用。指定年度の gradeSummaries + gradeListCache + gradeReportCache を一括再構築
 ### セクション8-B: AI成績分析・生徒別AI分析（analysis.js）
+- `fetchGeminiWithRetry_(url, options)` — Gemini APIリクエスト共通ヘルパー。429レート制限時は最大3回リトライ（5秒→15秒→30秒）、500/503は1回リトライ（10秒）。メインキーで429が解消しない場合は予備キー（`GEMINI_API_KEY_BACKUP`）に自動切替
 - `getAnalysisSheet(year)` — AI分析シート取得/作成ヘルパー
 - `getGradeAnalysis(year, testName)` — `@aiCallable` 保存済みAI分析データの取得（`{ exists, analysis, generatedAt }`）
 - `getYearTestAvgs_(year, testName)` — 塾全体平均（getCampusAverages の "all" エントリ）と学校「平均」行を取得して返す内部ヘルパー（`{ jukuAvg, schoolAvg }`）

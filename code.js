@@ -17,6 +17,7 @@
  */
 var PROP_KEYS = {
   GEMINI_API_KEY: 'GEMINI_API_KEY',           // AI機能用（Gemini API キー）
+  GEMINI_API_KEY_BACKUP: 'GEMINI_API_KEY_BACKUP', // AI機能用（予備 Gemini API キー・レート制限時に自動切替）
   APP_FOLDER_ID: 'APP_FOLDER_ID',             // Google Drive アプリフォルダID
   THEME_COLOR: 'THEME_COLOR',                 // UI テーマカラー
   ADMIN_EMAILS: 'ADMIN_EMAILS',               // Admin メール（カンマ区切り）

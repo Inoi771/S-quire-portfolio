@@ -690,7 +690,7 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
@@ -916,7 +916,7 @@ function parseGradeDataFromText(text, testName, year) {
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
@@ -1545,7 +1545,7 @@ function parseAndSaveAveragesFromText(text, year, testName, skipExisting) {
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
@@ -1808,7 +1808,7 @@ function ocrAndExtractAverages(base64Image, mimeType, year, testName) {
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
