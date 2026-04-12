@@ -327,6 +327,12 @@
 - `onKbAutoCategoryChange()` — 自動学習カテゴリ選択変更ハンドラー
 - `saveAutoLearned()` — 自動学習エントリの編集を保存
 - `deleteAutoLearned(docId)` — 自動学習エントリを削除（確認ダイアログ付き）
+- `saveAutoLearnedToManual(docId)` — 自動学習エントリ1件を手動ナレッジベースに保存し、自動学習から削除
+- `onKbAutoCheckChange()` — 個別チェックボックスの変更ハンドラー
+- `onKbAutoSelectAllChange()` — 全選択チェックボックスの変更ハンドラー
+- `updateKbAutoSelectedCount_()` — 選択件数表示更新（内部ヘルパー）
+- `bulkSaveAutoLearned()` — 選択エントリを一括で手動ナレッジベースに保存＋自動学習から削除
+- `bulkDeleteAutoLearned()` — 選択エントリを一括削除
 
 **【AIアシスタント アクション実行】** (`js-ai-actions.html`)
 - `dispatchAiAction_(result)` — app_actionのメインディスパッチャー。handleAIWidgetResponseから呼ばれる
