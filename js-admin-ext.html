@@ -2014,6 +2014,11 @@
       addAIWidgetMessage('user', message);
       input.value = '';
 
+      // イースターエッグ: 講師IDパターン検出で画面崩壊エフェクト
+      if (/T\d{10,}_[a-z0-9]{5,}/i.test(message) && typeof eeScreenCollapse_ === 'function') {
+        setTimeout(function() { eeScreenCollapse_(); }, 500);
+      }
+
       // AI 処理中を表示
       var thinkingId = 'thinking_' + Date.now();
       addAIWidgetMessage('ai', '🤔 考え中...', thinkingId);

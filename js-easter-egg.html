@@ -539,4 +539,161 @@ function eeClose_() {
   eeEggTapCount_ = 0;
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── 画面崩壊エフェクト（講師IDイースターエッグ） ──
+// ══════════════════════════════════════════════════════════════
+
+var eeCollapseActive_ = false;
+
+// ── メインエントリ ──
+function eeScreenCollapse_() {
+  if (eeCollapseActive_) return;
+  eeCollapseActive_ = true;
+
+  eeInjectCollapseStyles_();
+
+  var target = document.querySelector('.app-container');
+  if (!target) { eeCollapseActive_ = false; return; }
+
+  html2canvas(target, { scale: 1, backgroundColor: null, logging: false }).then(function(canvas) {
+    eeStartCollapse_(canvas);
+  }).catch(function() {
+    eeCollapseActive_ = false;
+    var s = document.getElementById('eeCollapseStyles');
+    if (s) s.remove();
+  });
+
+  // フォールバック: 6秒後に確実に復元
+  setTimeout(function() {
+    if (eeCollapseActive_) eeCollapseRestore_();
+  }, 6000);
+}
+
+// ── CSSキーフレーム注入 ──
+function eeInjectCollapseStyles_() {
+  if (document.getElementById('eeCollapseStyles')) return;
+  var style = document.createElement('style');
+  style.id = 'eeCollapseStyles';
+  style.textContent =
+    '@keyframes eeCollTileFall{' +
+      '0%{transform:translate(0,0) rotate(0deg);opacity:1}' +
+      '15%{transform:translate(0,2px) rotate(0deg);opacity:1}' +
+      '100%{transform:translate(var(--ee-tx),var(--ee-dist)) rotate(var(--ee-rot));opacity:0}' +
+    '}' +
+    '@keyframes eeCollFlash{' +
+      '0%{opacity:0.7}100%{opacity:0}' +
+    '}' +
+    '.ee-coll-overlay{' +
+      'position:fixed;top:0;left:0;width:100vw;height:100vh;' +
+      'z-index:10005;background:#000;overflow:hidden;' +
+    '}' +
+    '.ee-coll-tile{' +
+      'position:absolute;' +
+      'animation:eeCollTileFall var(--ee-dur) var(--ee-delay) cubic-bezier(.55,.06,.68,.19) forwards;' +
+    '}' +
+    '.ee-coll-flash{' +
+      'position:fixed;top:0;left:0;width:100vw;height:100vh;' +
+      'background:#fff;z-index:10006;pointer-events:none;' +
+      'animation:eeCollFlash 0.3s ease-out forwards;' +
+    '}';
+  document.head.appendChild(style);
+}
+
+// ── タイル分割＆落下アニメーション ──
+function eeStartCollapse_(canvas) {
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  var tileSize = 65;
+  var cols = Math.ceil(vw / tileSize);
+  var rows = Math.ceil(vh / tileSize);
+  var tw = Math.ceil(canvas.width / cols);
+  var th = Math.ceil(canvas.height / rows);
+
+  // アプリを非表示
+  var appContainer = document.querySelector('.app-container');
+  if (appContainer) appContainer.style.opacity = '0';
+
+  // オーバーレイ作成
+  var overlay = document.createElement('div');
+  overlay.className = 'ee-coll-overlay';
+  overlay.id = 'eeCollOverlay';
+  document.body.appendChild(overlay);
+
+  // 白フラッシュ
+  var flash = document.createElement('div');
+  flash.className = 'ee-coll-flash';
+  document.body.appendChild(flash);
+  setTimeout(function() { flash.remove(); }, 400);
+
+  // タイル生成
+  var maxRow = rows - 1;
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var tileCanvas = document.createElement('canvas');
+      var actualW = Math.min(tw, canvas.width - c * tw);
+      var actualH = Math.min(th, canvas.height - r * th);
+      if (actualW <= 0 || actualH <= 0) continue;
+      tileCanvas.width = actualW;
+      tileCanvas.height = actualH;
+      var ctx = tileCanvas.getContext('2d');
+      ctx.drawImage(canvas, c * tw, r * th, actualW, actualH, 0, 0, actualW, actualH);
+
+      var tile = document.createElement('div');
+      tile.className = 'ee-coll-tile';
+
+      // タイルの画像をbackground-imageに設定
+      tile.style.width = (vw / cols) + 'px';
+      tile.style.height = (vh / rows) + 'px';
+      tile.style.left = (c * vw / cols) + 'px';
+      tile.style.top = (r * vh / rows) + 'px';
+      tile.style.backgroundImage = 'url(' + tileCanvas.toDataURL() + ')';
+      tile.style.backgroundSize = '100% 100%';
+
+      // 下の行から先に落下（行番号が大きいほど早い）
+      var rowDelay = (maxRow - r) * 80 + (Math.random() * 100);
+      var rot = (Math.random() - 0.5) * 60;
+      var tx = (Math.random() - 0.5) * 80;
+
+      tile.style.setProperty('--ee-delay', rowDelay + 'ms');
+      tile.style.setProperty('--ee-dur', '1.4s');
+      tile.style.setProperty('--ee-rot', rot + 'deg');
+      tile.style.setProperty('--ee-dist', (vh + 200) + 'px');
+      tile.style.setProperty('--ee-tx', tx + 'px');
+
+      overlay.appendChild(tile);
+    }
+  }
+
+  // 全タイル落下後に復元
+  var totalDuration = (maxRow * 80 + 100 + 1400 + 500);
+  setTimeout(function() {
+    eeCollapseRestore_();
+  }, totalDuration);
+}
+
+// ── クリーンアップ＆復元 ──
+function eeCollapseRestore_() {
+  if (!eeCollapseActive_) return;
+
+  var overlay = document.getElementById('eeCollOverlay');
+  var appContainer = document.querySelector('.app-container');
+
+  if (overlay) {
+    overlay.style.transition = 'opacity 0.5s ease';
+    overlay.style.opacity = '0';
+  }
+  if (appContainer) {
+    appContainer.style.transition = 'opacity 0.5s ease';
+    appContainer.style.opacity = '1';
+  }
+
+  setTimeout(function() {
+    if (overlay) overlay.remove();
+    var styleEl = document.getElementById('eeCollapseStyles');
+    if (styleEl) styleEl.remove();
+    if (appContainer) appContainer.style.transition = '';
+    eeCollapseActive_ = false;
+  }, 600);
+}
+
 </script>
