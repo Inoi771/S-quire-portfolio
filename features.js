@@ -382,6 +382,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + 'Include optional "learned_knowledge":{"category":"category","content":"1-2 sentence fact in Japanese","reason":"why useful"}\n'
     + 'Additionally, when you use Google Search and find factual info about elementary/junior-high/high schools (偏差値, 所在地, 特徴, テスト日程, 行事, 進学実績, コース等), ALWAYS include "learned_knowledge" to save it — even if the user did not explicitly ask you to remember it.\n'
     + 'Rules: Only factual info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾（スクエア関係）, 中学校関係, 高校関係, 小学校関係, その他\n'
+    + 'Year-sensitive rule: For data that changes annually (偏差値, 定員, 倍率, 合格ライン etc.), ALWAYS include the year in content. Example: "○○高校の偏差値は58（2026年度）"\n'
     + '\n[User Feedback Logging]\n'
     + 'When you respond with "その件については管理者にご確認ください" (info not in knowledge base): include optional "feedback":{"type":"missing_info","summary":"何の情報が不足していたか1文で"}\n'
     + 'When you respond with "現在その機能はございません" (feature does not exist): include optional "feedback":{"type":"missing_feature","summary":"どんな機能が求められたか1文で"}\n'
