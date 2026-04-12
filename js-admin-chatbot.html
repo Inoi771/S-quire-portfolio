@@ -4,6 +4,7 @@
 var kbEntries_ = [];
 var kbAutoEntries_ = [];
 var kbCurrentTab_ = 'manual';
+var kbAutoSelected_ = {};  // { docId: true } 選択状態管理
 
 /**
  * チャットボット管理サブタブの初期化
@@ -314,11 +315,18 @@ function renderAutoLearnedEntries(entries) {
     warning.style.display = entries.length >= 30 ? '' : 'none';
   }
 
+  // 一括操作バーの表示制御
+  var bulkBar = document.getElementById('kbAutoBulkBar');
+
   if (!entries || entries.length === 0) {
     list.innerHTML = '<p style="color:#888; text-align:center; padding: 20px 0;">AIはまだ何も学習していません。会話で塾のルールや情報を教えると、自動的に蓄積されます。</p>';
     if (stats) stats.textContent = '0件';
+    if (bulkBar) bulkBar.style.display = 'none';
     return;
   }
+
+  // エントリありの場合、一括操作バーを表示
+  if (bulkBar) bulkBar.style.display = '';
 
   // 文字数カウント
   var totalChars = 0;
@@ -350,6 +358,12 @@ function renderAutoLearnedEntries(entries) {
       var learnedDate = entry.learnedAt ? new Date(entry.learnedAt).toLocaleDateString('ja-JP') : '';
       html += '<div style="padding: 10px 14px; border-top: 1px solid #eee;">';
       html += '<div style="display: flex; align-items: flex-start; gap: 10px;">';
+      // チェックボックス
+      html += '<label style="display: flex; align-items: center; min-height: 44px; cursor: pointer; flex-shrink: 0;">';
+      html += '<input type="checkbox" class="kb-auto-check" data-doc-id="' + docId + '" onchange="onKbAutoCheckChange()" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--theme-color);"';
+      if (kbAutoSelected_[docId]) html += ' checked';
+      html += '>';
+      html += '</label>';
       html += '<div style="flex: 1;">';
       html += '<div style="font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">' + escapeHtmlKb_(entry.content) + '</div>';
       // 学習理由と日時
@@ -360,7 +374,8 @@ function renderAutoLearnedEntries(entries) {
         html += '<div style="font-size: 11px; color: #999; margin-top: 4px;">' + meta.join(' | ') + '</div>';
       }
       html += '</div>';
-      html += '<div style="display: flex; gap: 4px; flex-shrink: 0;">';
+      html += '<div style="display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end;">';
+      html += '<button onclick="saveAutoLearnedToManual(\'' + docId + '\')" style="padding: 4px 10px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">保存</button>';
       html += '<button onclick="editAutoLearned(\'' + docId + '\')" style="padding: 4px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">編集</button>';
       html += '<button onclick="deleteAutoLearned(\'' + docId + '\')" style="padding: 4px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">削除</button>';
       html += '</div>';
@@ -371,6 +386,12 @@ function renderAutoLearnedEntries(entries) {
   });
 
   list.innerHTML = html;
+
+  // 選択状態をリセット
+  kbAutoSelected_ = {};
+  var selectAll = document.getElementById('kbAutoSelectAll');
+  if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+  updateKbAutoSelectedCount_();
 }
 
 /**
@@ -491,6 +512,216 @@ function deleteAutoLearned(docId) {
         appAlert('エラーが発生しました: ' + err);
       })
       .deleteAutoLearnedKnowledge(docId);
+  });
+}
+
+// ===== 【自動学習 選択・保存・一括操作】 =====
+
+/**
+ * 個別チェックボックスの変更ハンドラー
+ */
+function onKbAutoCheckChange() {
+  var checks = document.querySelectorAll('.kb-auto-check');
+  kbAutoSelected_ = {};
+  checks.forEach(function(cb) {
+    if (cb.checked) kbAutoSelected_[cb.getAttribute('data-doc-id')] = true;
+  });
+  // 全選択チェックボックスの状態を同期
+  var selectAll = document.getElementById('kbAutoSelectAll');
+  if (selectAll) {
+    var total = checks.length;
+    var selected = Object.keys(kbAutoSelected_).length;
+    selectAll.checked = total > 0 && selected === total;
+    selectAll.indeterminate = selected > 0 && selected < total;
+  }
+  updateKbAutoSelectedCount_();
+}
+
+/**
+ * 全選択チェックボックスの変更ハンドラー
+ */
+function onKbAutoSelectAllChange() {
+  var checked = document.getElementById('kbAutoSelectAll').checked;
+  var checks = document.querySelectorAll('.kb-auto-check');
+  kbAutoSelected_ = {};
+  checks.forEach(function(cb) {
+    cb.checked = checked;
+    if (checked) kbAutoSelected_[cb.getAttribute('data-doc-id')] = true;
+  });
+  updateKbAutoSelectedCount_();
+}
+
+/**
+ * 選択件数表示を更新する内部ヘルパー
+ */
+function updateKbAutoSelectedCount_() {
+  var count = Object.keys(kbAutoSelected_).length;
+  var label = document.getElementById('kbAutoSelectedCount');
+  if (label) label.textContent = count > 0 ? count + '件選択中' : '';
+  // 一括ボタンの有効/無効
+  var bulkSaveBtn = document.getElementById('kbAutoBulkSaveBtn');
+  var bulkDeleteBtn = document.getElementById('kbAutoBulkDeleteBtn');
+  if (bulkSaveBtn) bulkSaveBtn.disabled = count === 0;
+  if (bulkDeleteBtn) bulkDeleteBtn.disabled = count === 0;
+}
+
+/**
+ * 自動学習エントリ1件を手動ナレッジベースに保存し、自動学習から削除
+ * @param {string} docId ドキュメントID
+ */
+function saveAutoLearnedToManual(docId) {
+  var entry = null;
+  for (var i = 0; i < kbAutoEntries_.length; i++) {
+    var eid = kbAutoEntries_[i]._id || kbAutoEntries_[i].id || '';
+    if (eid === docId) { entry = kbAutoEntries_[i]; break; }
+  }
+  if (!entry) return;
+
+  // ボタンを無効化
+  var btns = document.querySelectorAll('button[onclick*="saveAutoLearnedToManual"]');
+  btns.forEach(function(b) { if (b.onclick.toString().indexOf(docId) >= 0) { b.disabled = true; b.textContent = '保存中...'; } });
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        // 手動KBに保存成功 → 自動学習から削除
+        google.script.run
+          .withSuccessHandler(function(delResult) {
+            showToast('手動ナレッジベースに保存しました', 'success');
+            initAutoLearnedAdmin();
+          })
+          .withFailureHandler(function(err) {
+            showToast('手動KBに保存済みですが、自動学習側の削除に失敗しました', 'warning');
+            initAutoLearnedAdmin();
+          })
+          .deleteAutoLearnedKnowledge(docId);
+      } else {
+        appAlert('保存に失敗しました: ' + (result ? result.error : '不明'));
+        initAutoLearnedAdmin();
+      }
+    })
+    .withFailureHandler(function(err) {
+      appAlert('エラーが発生しました: ' + err);
+      initAutoLearnedAdmin();
+    })
+    .saveAiKnowledgeEntry(JSON.stringify({ category: entry.category, content: entry.content }));
+}
+
+/**
+ * 選択されたエントリを一括で手動ナレッジベースに保存し、自動学習から削除
+ */
+function bulkSaveAutoLearned() {
+  var docIds = Object.keys(kbAutoSelected_);
+  if (docIds.length === 0) { appAlert('エントリを選択してください。'); return; }
+
+  appConfirm(docIds.length + '件の知識を手動ナレッジベースに保存しますか？\n保存後、自動学習側からは削除されます。').then(function(ok) {
+    if (!ok) return;
+    var btn = document.getElementById('kbAutoBulkSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '処理中 (0/' + docIds.length + ')...'; }
+    var completed = 0;
+    var errors = [];
+
+    function processNext() {
+      if (completed >= docIds.length) {
+        if (btn) { btn.disabled = false; btn.textContent = '📥 一括保存'; }
+        if (errors.length > 0) {
+          appAlert((completed - errors.length) + '件保存しました。' + errors.length + '件でエラーが発生しました。');
+        } else {
+          showToast(completed + '件を手動ナレッジベースに保存しました', 'success');
+        }
+        kbAutoSelected_ = {};
+        initAutoLearnedAdmin();
+        return;
+      }
+
+      var docId = docIds[completed];
+      var entry = null;
+      for (var i = 0; i < kbAutoEntries_.length; i++) {
+        var eid = kbAutoEntries_[i]._id || kbAutoEntries_[i].id || '';
+        if (eid === docId) { entry = kbAutoEntries_[i]; break; }
+      }
+      if (!entry) { errors.push(docId); completed++; processNext(); return; }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            google.script.run
+              .withSuccessHandler(function() {
+                completed++;
+                if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+                processNext();
+              })
+              .withFailureHandler(function() {
+                errors.push(docId); completed++;
+                if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+                processNext();
+              })
+              .deleteAutoLearnedKnowledge(docId);
+          } else {
+            errors.push(docId); completed++;
+            if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+            processNext();
+          }
+        })
+        .withFailureHandler(function() {
+          errors.push(docId); completed++;
+          if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+          processNext();
+        })
+        .saveAiKnowledgeEntry(JSON.stringify({ category: entry.category, content: entry.content }));
+    }
+
+    processNext();
+  });
+}
+
+/**
+ * 選択されたエントリを一括削除
+ */
+function bulkDeleteAutoLearned() {
+  var docIds = Object.keys(kbAutoSelected_);
+  if (docIds.length === 0) { appAlert('エントリを選択してください。'); return; }
+
+  appConfirm(docIds.length + '件の学習データを削除しますか？\n削除するとAIの回答に反映されなくなります。').then(function(ok) {
+    if (!ok) return;
+    var btn = document.getElementById('kbAutoBulkDeleteBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '処理中 (0/' + docIds.length + ')...'; }
+    var completed = 0;
+    var errors = [];
+
+    function processNext() {
+      if (completed >= docIds.length) {
+        if (btn) { btn.disabled = false; btn.textContent = '🗑 一括削除'; }
+        if (errors.length > 0) {
+          appAlert((completed - errors.length) + '件削除しました。' + errors.length + '件でエラーが発生しました。');
+        } else {
+          showToast(completed + '件を削除しました', 'success');
+        }
+        kbAutoSelected_ = {};
+        initAutoLearnedAdmin();
+        return;
+      }
+
+      var docId = docIds[completed];
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            completed++;
+          } else {
+            errors.push(docId); completed++;
+          }
+          if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+          processNext();
+        })
+        .withFailureHandler(function() {
+          errors.push(docId); completed++;
+          if (btn) btn.textContent = '処理中 (' + completed + '/' + docIds.length + ')...';
+          processNext();
+        })
+        .deleteAutoLearnedKnowledge(docId);
+    }
+
+    processNext();
   });
 }
 
