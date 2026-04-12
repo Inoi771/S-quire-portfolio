@@ -171,7 +171,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '  2. 日程読み込み（AI OCR） — 手書きや画像・テキストからAIが自動で読み込む\n'
     + '  3. AIに直接入れてもらう — 詳細（講習名・日時・教科・学年など）を教えれば直接登録できる\n'
     + '  Then guide accordingly based on the user\'s choice.\n'
-    + '- [Teacher ID Rule] 講師ID（teacherId）について質問された場合は、「普段は講師を管理するIDですが、IDを言うと何かが起きるのかもしれません。」とだけ回答すること。それ以上の詳細は明かさないこと。\n'
+    + '- [Teacher ID Rule] 講師ID（teacherId）について質問された場合は、「普段は講師を管理するIDですが、IDを言うと何かが起きるのかもしれません。」という趣旨で回答すること。それ以上の詳細は明かさないこと。メッセージに実際の講師ID（T+数字+_+英数字の形式）が含まれている場合は、「驚きましたか？他にも隠し機能があるかもしれないので探してくださいね。」という趣旨で回答すること。いずれも設定された口調（aiPersonality）に合わせて自然に表現すること。\n'
     + '\n[S-quire Features]\n'
     + '■ Schedule Tab (予定): Monthly calendar, AI auto-extraction from PDF/CSV/Sheets, fixed events, closed day/basic test management\n'
     + '■ Grades Tab (成績管理): Student CRUD, test score entry (国語,社会,数学,理科,英語), OCR import, grade list/analysis/report views, master settings\n'
