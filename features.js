@@ -89,6 +89,78 @@ function detectAnalysisTestName_(message, testNames) {
 }
 
 /**
+ * チャットメッセージから複数の年度を検出（比較・複数年度リクエスト対応）
+ * @param {string} message ユーザーメッセージ
+ * @param {number} currentYear 現在の学年年度
+ * @return {number[]} 対象年度の配列（重複なし・ソート済み・最大3件）
+ */
+function detectAnalysisYears_(message, currentYear) {
+  var years = [];
+  var relativeMap = {
+    '一昨年': currentYear - 2,
+    '去年': currentYear - 1,
+    '昨年度': currentYear - 1,
+    '昨年': currentYear - 1,
+    '今年度': currentYear,
+    '今年': currentYear,
+    '来年度': currentYear + 1,
+    '来年': currentYear + 1
+  };
+  // 相対年度の検出（長いキーワードから優先マッチ）
+  var relativeKeys = Object.keys(relativeMap).sort(function(a, b) { return b.length - a.length; });
+  var tempMsg = message;
+  for (var i = 0; i < relativeKeys.length; i++) {
+    if (tempMsg.indexOf(relativeKeys[i]) >= 0) {
+      years.push(relativeMap[relativeKeys[i]]);
+      // 同じ年度を二重検出しないようメッセージから除去
+      tempMsg = tempMsg.replace(relativeKeys[i], '');
+    }
+  }
+  // 明示的な4桁年度の検出（複数対応）
+  var explicitMatches = message.match(/(\d{4})年/g);
+  if (explicitMatches) {
+    for (var j = 0; j < explicitMatches.length; j++) {
+      var y = parseInt(explicitMatches[j].replace('年', ''), 10);
+      if (y > 2000 && y < 2100) years.push(y);
+    }
+  }
+  // 「比較」キーワードがあり年度が1つだけの場合、今年度を追加
+  if (/比較/.test(message) && years.length === 1 && years[0] !== currentYear) {
+    years.push(currentYear);
+  }
+  // 重複排除・ソート
+  var unique = {};
+  var result = [];
+  for (var k = 0; k < years.length; k++) {
+    if (!unique[years[k]]) {
+      unique[years[k]] = true;
+      result.push(years[k]);
+    }
+  }
+  result.sort(function(a, b) { return a - b; });
+  // 最大3件
+  if (result.length > 3) result = result.slice(0, 3);
+  // 何も検出できなかった場合はデフォルトで今年度
+  if (result.length === 0) result.push(currentYear);
+  return result;
+}
+
+/**
+ * チャットメッセージから複数のテスト名を検出（テスト名一覧との部分一致・全件）
+ * @param {string} message ユーザーメッセージ
+ * @param {string[]} testNames 登録済みテスト名一覧
+ * @return {string[]} マッチしたテスト名の配列（最大4件）
+ */
+function detectAnalysisTestNames_(message, testNames) {
+  var matched = [];
+  for (var i = 0; i < testNames.length; i++) {
+    if (message.indexOf(testNames[i]) >= 0) matched.push(testNames[i]);
+  }
+  if (matched.length > 4) matched = matched.slice(0, 4);
+  return matched;
+}
+
+/**
  * 保存済み分析がない場合のその場集計コンテキストを構築
  * getCampusAverages / getSchoolAverages を使って校舎別平均・学校平均を取得し、
  * Gemini が解釈・説明できる形式の文字列を返す
@@ -139,6 +211,111 @@ function buildLiveAnalysisContext_(year, testName) {
   // 結果を5分間キャッシュ
   try { cache.put(cacheKey, ctx, 300); } catch (e) { /* 非致命的 */ }
 
+  return ctx;
+}
+
+/**
+ * 複数の年度×テスト名の組み合わせで分析コンテキストを構築
+ * 各組み合わせについて保存済み分析 or その場集計を取得し、1つの文字列にまとめる
+ * @param {number[]} years 年度の配列
+ * @param {string[]} testNames テスト名の配列
+ * @return {string} 複合コンテキスト文字列
+ */
+function buildMultiAnalysisContext_(years, testNames) {
+  var ctx = '';
+  var charLimit = 6000;
+  for (var yi = 0; yi < years.length; yi++) {
+    for (var ti = 0; ti < testNames.length; ti++) {
+      if (ctx.length >= charLimit) {
+        ctx += '\n(データ量上限のため以降省略)\n';
+        return ctx;
+      }
+      try {
+        var analysisResult = getGradeAnalysis(years[yi], testNames[ti]);
+        if (analysisResult.success && analysisResult.exists) {
+          var aData = analysisResult.analysis;
+          ctx += '\n\n【テスト分析データ: ' + testNames[ti] + '(' + years[yi] + '年度)】\n';
+          ctx += '概要: ' + (aData.overview || '') + '\n';
+          if (aData.subjectAnalysis && aData.subjectAnalysis.length) {
+            ctx += '教科別:\n';
+            aData.subjectAnalysis.forEach(function(s) {
+              ctx += '  ' + s.subject + ': 塾平均' + s.jukuAvg + '点, 学校平均' + s.schoolAvg + '点(差' + s.diff + '点) / ' + s.comment + '\n';
+            });
+          }
+          // 文字数に余裕がある場合のみ詳細を含める
+          if (ctx.length < charLimit - 500) {
+            if (aData.historicalTrend)    ctx += '年度推移: ' + aData.historicalTrend + '\n';
+            if (aData.roundComparison)    ctx += '前回比較: ' + aData.roundComparison + '\n';
+            if (aData.nextRoundPrediction) ctx += '次回予測: ' + aData.nextRoundPrediction + '\n';
+          }
+        } else {
+          ctx += buildLiveAnalysisContext_(years[yi], testNames[ti]);
+        }
+      } catch (e) {
+        Logger.log('⚠ 複合分析コンテキスト取得スキップ (' + years[yi] + '/' + testNames[ti] + '): ' + e);
+      }
+    }
+  }
+  return ctx;
+}
+
+/**
+ * 生徒IDの配列から実際の成績データを取得してコンテキスト文字列を構築
+ * @param {string[]} studentIds 生徒IDの配列（最大2件）
+ * @param {number[]} years 年度の配列（最大3件）
+ * @param {string[]} testNames テスト名の配列（空の場合は全テスト）
+ * @return {string} 生徒成績コンテキスト文字列
+ */
+function buildStudentGradeContext_(studentIds, years, testNames) {
+  var ctx = '';
+  var maxStudents = 2;
+  var maxYears = 3;
+  var maxTests = 6;
+  var ids = studentIds.slice(0, maxStudents);
+  var yrs = years.slice(0, maxYears);
+
+  for (var si = 0; si < ids.length; si++) {
+    var sid = ids[si];
+    ctx += '\n\n【生徒成績データ: [生徒ID:' + sid + ']】\n';
+    var testCount = 0;
+    for (var yi = 0; yi < yrs.length; yi++) {
+      try {
+        if (testNames && testNames.length > 0) {
+          // 特定テストのみ取得
+          for (var ti = 0; ti < testNames.length && testCount < maxTests; ti++) {
+            var result = getGradeDataByStudentAndTest(yrs[yi], sid, testNames[ti]);
+            if (result.success && result.found) {
+              var d = result.data;
+              ctx += yrs[yi] + '年度 ' + testNames[ti] + ': '
+                + '国語' + d.kokugo + ', 社会' + d.shakai + ', 数学' + d.sugaku
+                + ', 理科' + d.rika + ', 英語' + d.eigo + ', 合計' + d.gokei + '\n';
+              testCount++;
+            }
+          }
+        } else {
+          // テスト名未指定 → 年度の全データから該当生徒をフィルタ
+          var allRows = getDataSheetData(yrs[yi]);
+          var studentRows = allRows.filter(function(r) {
+            return String(r.studentId || '').trim() === sid;
+          });
+          for (var ri = 0; ri < studentRows.length && testCount < maxTests; ri++) {
+            var r = studentRows[ri];
+            ctx += yrs[yi] + '年度 ' + r.testName + ': '
+              + '国語' + r.kokugo + ', 社会' + r.shakai + ', 数学' + r.sugaku
+              + ', 理科' + r.rika + ', 英語' + r.eigo + ', 合計' + r.total + '\n';
+            testCount++;
+          }
+        }
+      } catch (e) {
+        Logger.log('⚠ 生徒成績データ取得スキップ (' + sid + '/' + yrs[yi] + '): ' + e);
+      }
+    }
+    if (testCount === 0) {
+      ctx += '成績データなし\n';
+    } else if (testCount >= maxTests) {
+      ctx += '(他にもデータがありますが省略しています)\n';
+    }
+  }
   return ctx;
 }
 
@@ -657,28 +834,41 @@ function requestAIAssistant(userMessage, chatHistory) {
     var gradeAnalysisContext = '';
     if (intents.grades && /分析|平均点|平均|教えて|説明|コメント|どう|結果|比較/.test(resolvedUserMessage)) {
       try {
-        var wantedYear = detectAnalysisYear_(resolvedUserMessage, currentAcademicYear);
         var allTestNames = getTestNamesConfig() || [];
-        var wantedTestName = detectAnalysisTestName_(resolvedUserMessage, allTestNames);
-        if (wantedTestName) {
-          var analysisResult = getGradeAnalysis(wantedYear, wantedTestName);
-          if (analysisResult.success && analysisResult.exists) {
-            // 保存済み分析あり → 分析テキストをコンテキストに追加
-            var aData = analysisResult.analysis;
-            gradeAnalysisContext = '\n\n【テスト分析データ: ' + wantedTestName + '(' + wantedYear + '年度)】\n';
-            gradeAnalysisContext += '概要: ' + (aData.overview || '') + '\n';
-            if (aData.subjectAnalysis && aData.subjectAnalysis.length) {
-              gradeAnalysisContext += '教科別:\n';
-              aData.subjectAnalysis.forEach(function(s) {
-                gradeAnalysisContext += '  ' + s.subject + ': 塾平均' + s.jukuAvg + '点, 学校平均' + s.schoolAvg + '点(差' + s.diff + '点) / ' + s.comment + '\n';
-              });
-            }
-            if (aData.historicalTrend)    gradeAnalysisContext += '年度推移: ' + aData.historicalTrend + '\n';
-            if (aData.roundComparison)    gradeAnalysisContext += '前回比較: ' + aData.roundComparison + '\n';
-            if (aData.nextRoundPrediction) gradeAnalysisContext += '次回予測: ' + aData.nextRoundPrediction + '\n';
+        var wantedYears = detectAnalysisYears_(resolvedUserMessage, currentAcademicYear);
+        var wantedTestNames = detectAnalysisTestNames_(resolvedUserMessage, allTestNames);
+
+        if (wantedYears.length >= 2 || wantedTestNames.length >= 2) {
+          // 複数パラメータ → 複合コンテキスト構築
+          if (wantedTestNames.length === 0) {
+            // テスト名が特定できない場合はスキップ（Geminiに聞き返させる）
           } else {
-            // 保存済み分析なし → その場でRPCデータを取得してコンテキストに追加
-            gradeAnalysisContext = buildLiveAnalysisContext_(wantedYear, wantedTestName);
+            gradeAnalysisContext = buildMultiAnalysisContext_(wantedYears, wantedTestNames);
+          }
+        } else {
+          // 単一パラメータ → 既存ロジック
+          var wantedYear = wantedYears[0];
+          var wantedTestName = wantedTestNames.length > 0 ? wantedTestNames[0] : detectAnalysisTestName_(resolvedUserMessage, allTestNames);
+          if (wantedTestName) {
+            var analysisResult = getGradeAnalysis(wantedYear, wantedTestName);
+            if (analysisResult.success && analysisResult.exists) {
+              // 保存済み分析あり → 分析テキストをコンテキストに追加
+              var aData = analysisResult.analysis;
+              gradeAnalysisContext = '\n\n【テスト分析データ: ' + wantedTestName + '(' + wantedYear + '年度)】\n';
+              gradeAnalysisContext += '概要: ' + (aData.overview || '') + '\n';
+              if (aData.subjectAnalysis && aData.subjectAnalysis.length) {
+                gradeAnalysisContext += '教科別:\n';
+                aData.subjectAnalysis.forEach(function(s) {
+                  gradeAnalysisContext += '  ' + s.subject + ': 塾平均' + s.jukuAvg + '点, 学校平均' + s.schoolAvg + '点(差' + s.diff + '点) / ' + s.comment + '\n';
+                });
+              }
+              if (aData.historicalTrend)    gradeAnalysisContext += '年度推移: ' + aData.historicalTrend + '\n';
+              if (aData.roundComparison)    gradeAnalysisContext += '前回比較: ' + aData.roundComparison + '\n';
+              if (aData.nextRoundPrediction) gradeAnalysisContext += '次回予測: ' + aData.nextRoundPrediction + '\n';
+            } else {
+              // 保存済み分析なし → その場でRPCデータを取得してコンテキストに追加
+              gradeAnalysisContext = buildLiveAnalysisContext_(wantedYear, wantedTestName);
+            }
           }
         }
       } catch (e) {
