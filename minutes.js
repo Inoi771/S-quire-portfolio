@@ -296,3 +296,45 @@ function generateMeetingSummary_(transcript) {
     return { success: false, error: '要約の生成に失敗しました: ' + error.toString() };
   }
 }
+
+// ========================================
+// AIアシスタント連携
+// ========================================
+
+/**
+ * 過去の全議事録をAIコンテキスト用テキストに整形する
+ * 年度フィルタなし・1回のSupabaseクエリで全件取得
+ * @return {string} AIプロンプトに注入するテキスト（件数0なら空文字）
+ */
+function getMinutesContextForAI_() {
+  var rows = supabaseSelect_('meeting_minutes', null, {
+    order: 'fiscal_year.desc,month.desc',
+    select: 'fiscal_year,month,title,summary'
+  });
+
+  if (!rows || rows.length === 0) return '';
+
+  // 年度ごとにグルーピング
+  var byYear = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var fy = r.fiscal_year;
+    if (!byYear[fy]) byYear[fy] = [];
+    byYear[fy].push(r);
+  }
+
+  var text = '\n\n【会議議事録（過去の全記録）】\n';
+  var years = Object.keys(byYear).sort(function(a, b) { return b - a; });
+  for (var y = 0; y < years.length; y++) {
+    var fy = years[y];
+    text += '\n── ' + fy + '年度 ──\n';
+    var entries = byYear[fy];
+    for (var j = 0; j < entries.length; j++) {
+      var e = entries[j];
+      text += e.month + '月「' + e.title + '」\n';
+      if (e.summary) text += e.summary + '\n';
+    }
+  }
+
+  return text;
+}
