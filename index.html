@@ -1625,12 +1625,10 @@
           </div>
         </div>
 
-        <!-- 議事録サブタブ（スタブ） -->
+        <!-- 議事録サブタブ -->
         <div id="univ-minutes" class="univ-sub-content" style="display: none;">
-          <div style="background: #f9f9f9; border-radius: 10px; padding: 40px; text-align: center; color: #999;">
-            <div style="font-size: 48px; margin-bottom: 16px;">🚧</div>
-            <h2 style="color: #666; margin-bottom: 10px;">📝 議事録</h2>
-            <p>準備中です</p>
+          <div id="minutes-root" style="padding: 8px 6px;">
+            <p style="text-align:center;color:#999;padding:40px;">読み込み中...</p>
           </div>
         </div>
 
@@ -3094,6 +3092,7 @@
 <?!= include("js-lectures-imagen") ?>
 <?!= include("js-pricing") ?>
 <?!= include("js-placement") ?>
+<?!= include("js-minutes") ?>
 <?!= include("js-grades") ?>
 <?!= include("js-grades-list") ?>
 <?!= include("js-grades-report-pdf") ?>

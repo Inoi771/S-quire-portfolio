@@ -182,7 +182,7 @@ markdown# S-quire — プロジェクト設計書
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 3**
+**現在のデプロイ回数: 4**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -249,6 +249,7 @@ MyProject/
 ├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
 ├── js-easter-egg.html   JS: イースターエッグ（隠し機能・Clockwork Wonderland）（約310行）
 ├── js-placement.html    JS: 講師配置表・曜日別配置・PDF出力（約380行）
+├── js-minutes.html      JS: 議事録管理・音声文字起こし・要約（約350行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
 ├── supabase.js          Supabase REST APIクライアント（成績データ用）
@@ -256,6 +257,7 @@ MyProject/
 ├── firebase-auth.html   Firebase Auth管理（<head>内ロード）
 ├── firebase-schedule.html Firebase スケジュール・講習クライアント関数
 ├── firebase-students.html Firebase 生徒データクライアント関数（成績関連はGAS API経由）
+├── minutes.js           議事録管理・AI文字起こし＋要約（約250行）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
 ├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
 └── CLAUDE.md            この設計書
@@ -335,6 +337,7 @@ MyProject/
 | `admin.js` | S10+S11+S12 | Admin API・初期化・ユーティリティ |
 | `line.js` | S15+S17 | LINE通知・LINEスケジューラー |
 | `features.js` | S9+S18+S19 | AIアシスタント・料金表・講習管理 |
+| `minutes.js` | S20 | 議事録管理・AI文字起こし＋要約 |
 
 ---
 
@@ -392,7 +395,7 @@ MyProject/
 | `univ-calendar` | 📅 カレンダー | 実装済み |
 | `univ-pricing` | 💰 料金表 | 実装済み |
 | `univ-placement` | 👨‍🏫 講師配置 | 実装済み |
-| `univ-minutes` | 📝 議事録 | スタブ |
+| `univ-minutes` | 📝 議事録 | 実装済み |
 
 ---
 
@@ -430,7 +433,7 @@ MyProject/
 |------|------|
 | 講習管理 > エントリのリサイズ・ドラッグ移動 | 将来実装 |
 | 講習管理 > 配布物 他種PDFボタン | 将来追加予定 |
-| 資料 > 議事録 | スタブ |
+| ~~資料 > 議事録~~ | 実装済み |
 | 分析 > テスト間推移折れ線グラフ | 将来実装 |
 
 ---
