@@ -395,7 +395,8 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n[Shared Rules]\n'
     + '- YearRule: unmentioned→CY, 去年/昨年度→' + (currentAcademicYear - 1) + ', 一昨年→' + (currentAcademicYear - 2) + ', explicit→that year. NEVER confuse calendar year with academic year.\n'
     + '- TestNameRule: MUST exist in [Test Names List]. If unknown/unmentioned, return type:"other" asking which test (show full list).\n'
-    + '- AnalysisDataRule: If context contains 【テスト分析データ:...】or 【テスト集計データ（その場取得）:...】section, analyze and explain the data directly in your response as type:"other" (DO NOT return show_grade_analysis action). For 【テスト集計データ】, compare campus averages, highlight differences vs school average, and point out which campus/subject stands out. Use clear, plain Japanese for non-expert teachers.\n'
+    + '- AnalysisDataRule: If context contains 【テスト分析データ:...】or 【テスト集計データ（その場取得）:...】section, analyze and explain the data directly in your response as type:"other" (DO NOT return show_grade_analysis action). For 【テスト集計データ】, compare campus averages, highlight differences vs school average, and point out which campus/subject stands out. When MULTIPLE years or tests are provided, COMPARE them: highlight year-over-year trends, test-to-test score changes, and campus/subject differences. Use clear, plain Japanese for non-expert teachers.\n'
+    + '- StudentGradeDataRule: If context contains 【生徒成績データ:...】section, use the actual scores to answer the user\'s question directly as type:"other" (DO NOT return show_student_report action). Compare across years/tests/students if multiple are provided. Calculate differences and trends.\n'
     + '- MessageRule: "message" field must contain actual resolved values (year, testName, student name). NEVER use placeholders like ○○.\n'
     + '- ConfirmRule: Set needsConfirmation:true, show all details. Only re-send with confirmed:true (no needsConfirmation) after user says "はい".\n'
     + '\n■ config_change — Settings change:\n'
@@ -930,6 +931,9 @@ function requestAIAssistant(userMessage, chatHistory) {
       gradeCodesContext = '\n\n【学年コード一覧】\n小1=07, 小2=08, 小3=09, 小4=10, 小5=11, 小6=12, 中1=13, 中2=14, 中3=15, 高1=16, 高2=17, 高3=18';
     }
 
+    // 生徒成績データコンテキスト（Step 6-7で接続予定、現時点では空文字で初期化）
+    var studentGradeDataContext = '';
+
     // 条件付き（既存ロジック維持）: 生徒IDが含まれる場合のみ成績年度を確認
     var studentGradeYearContext = '';
     try {
@@ -1349,7 +1353,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       contents: contents,
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 1500,
+        maxOutputTokens: (gradeAnalysisContext.length > 500 || studentGradeDataContext.length > 200) ? 2500 : 1500,
         responseMimeType: 'application/json'
       }
     };
