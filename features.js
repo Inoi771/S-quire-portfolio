@@ -1371,14 +1371,12 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 講習エントリコンテキスト取得スキップ: ' + e);
     }
 
-    // --- 議事録コンテキスト ---
+    // --- 議事録コンテキスト（常時読み込み: 過去の決定事項はあらゆる質問に関連しうる） ---
     var minutesContext = '';
-    if (intents.minutes) {
-      try {
-        minutesContext = getMinutesContextForAI_();
-      } catch (e) {
-        Logger.log('⚠ 議事録コンテキスト取得スキップ: ' + e);
-      }
+    try {
+      minutesContext = getMinutesContextForAI_();
+    } catch (e) {
+      Logger.log('⚠ 議事録コンテキスト取得スキップ: ' + e);
     }
 
     // === 最終ユーザーターンの組み立て（動的コンテキスト + ユーザーメッセージ） ===
