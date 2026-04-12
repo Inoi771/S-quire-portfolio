@@ -46,6 +46,9 @@
 - `updateSchedules()` — 全年度フォルダをスキャンして `autoImportAllSchedules()` を呼ぶ
 - `extractTextFromPDF(file)` — PDF → テキスト（Google Docs OCR）
 - `extractEventsFromText(schoolName, text, year)` — テキスト → イベント配列（Gemini API）
+- `getAllScheduleEntriesForAI_()` — 全スケジュールエントリを3ヶ月ウィンドウ（1ヶ月前〜2ヶ月先）でフィルタして返す（AIアシスタント用）
+- `editScheduleEntryAI_Extended_(docId, changes)` — AIアシスタント経由で任意のスケジュールエントリを変更（source制限なし。import系はsource→'AI更新'に変更し新docIdに移行）
+- `deleteScheduleEntryAI_Extended_(docId)` — AIアシスタント経由で任意のスケジュールエントリを削除（source制限なし）
 
 ### セクション5: 設定管理
 - `getSettings()` — `@aiCallable` 設定取得（ロゴ・ファビコンを base64 で返す）
