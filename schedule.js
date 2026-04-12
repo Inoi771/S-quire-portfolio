@@ -587,7 +587,7 @@ ${EVENT_TYPES.join('、')}
   };
   
   try {
-    var response = UrlFetchApp.fetch(url, options);
+    var response = fetchGeminiWithRetry_(url, options);
     var responseCode = response.getResponseCode();
     
     if (responseCode !== 200) {

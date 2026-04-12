@@ -1072,13 +1072,13 @@ function callGeminiForScheduleExtraction(prompt) {
       }
     };
     
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
     });
-    
+
     var responseCode = response.getResponseCode();
     if (responseCode !== 200) {
       Logger.log('❌ Gemini API エラー ' + responseCode + ': ' + response.getContentText());

@@ -211,6 +211,7 @@ function getSettings() {
   try {
     var settings = {
       geminiApiKey: getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定',
+      geminiApiKeyBackup: getProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP) ? '***設定済み***' : '未設定',
       appFolderId: getProperty(PROP_KEYS.APP_FOLDER_ID) || '',
       themeColor: getUserProperty('USER_THEME_COLOR') || getProperty(PROP_KEYS.THEME_COLOR) || '#43e97b',
       currentUser: getCurrentUserEmail(),
@@ -239,6 +240,20 @@ function updateSettings(settingsData) {
         return { success: false, error: 'APIキーの更新は Admin のみ可能です' };
       }
       setProperty(PROP_KEYS.GEMINI_API_KEY, settingsData.geminiApiKey);
+    }
+
+    // 予備APIキーの更新（Admin のみ）
+    if (settingsData.geminiApiKeyBackup && settingsData.geminiApiKeyBackup !== '***設定済み***') {
+      if (!isAdmin()) {
+        return { success: false, error: '予備APIキーの更新は Admin のみ可能です' };
+      }
+      setProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP, settingsData.geminiApiKeyBackup);
+    }
+    // 予備APIキーの削除（空文字が送られた場合）
+    if (settingsData.geminiApiKeyBackup === '') {
+      if (isAdmin()) {
+        setProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP, '');
+      }
     }
 
     // フォルダIDの更新（Admin のみ）
@@ -764,6 +779,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
     }
 
     var geminiApiKey   = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
+    var geminiApiKeyBackup = getProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP) ? '***設定済み***' : '未設定';
     var appFolderId    = getProperty(PROP_KEYS.APP_FOLDER_ID) || '';
     var accessFolderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || '';
 
@@ -794,6 +810,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       themeColor: themeColor,
       displayName: displayName,
       geminiApiKey: geminiApiKey,
+      geminiApiKeyBackup: geminiApiKeyBackup,
       appFolderId: appFolderId,
       accessFolderId: accessFolderId,
       aiAssistantName: aiAssistantName,

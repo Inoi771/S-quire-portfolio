@@ -303,6 +303,7 @@ MyProject/
 
 主要プロパティ：
 - `GEMINI_API_KEY` — AI機能全般
+- `GEMINI_API_KEY_BACKUP` — 予備AIキー（レート制限時に自動切替・任意）
 - `APP_FOLDER_ID` — **必須**。未設定時は全機能停止
 - `ADMIN_EMAILS` — Admin権限管理
 - `SUPABASE_URL` — Supabase プロジェクトURL（成績データ用）

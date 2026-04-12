@@ -2119,6 +2119,13 @@
             </div>
 
             <div class="setting-item">
+              <label for="geminiApiKeyBackup">🔑 Gemini API キー（予備）</label>
+              <input type="password" id="geminiApiKeyBackup" placeholder="予備キー未設定（任意）">
+              <div class="hint">レート制限時に自動で切り替わる予備キー（Google AI Studio から別プロジェクトで取得）</div>
+              <div class="status inactive" id="geminiApiBackupStatus">未設定</div>
+            </div>
+
+            <div class="setting-item">
               <label for="appFolderId">📁 アプリフォルダ ID</label>
               <input type="text" id="appFolderId" placeholder="フォルダのURLから /folders/ の後の文字列をコピー">
               <div class="hint">Google Drive のフォルダを開いて、URLから ID をコピーしてください</div>
@@ -2610,6 +2617,11 @@
                       <td style="padding:8px 12px; color:#666;">Google AI Studio で取得。設定タブからも変更可</td>
                     </tr>
                     <tr style="border-bottom:1px solid #eee; background:#fafafa;">
+                      <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">GEMINI_API_KEY_BACKUP</td>
+                      <td style="padding:8px 12px;">予備のAPIキー。メインキーがレート制限に達した際に自動で切り替わる（任意）</td>
+                      <td style="padding:8px 12px; color:#666;">別プロジェクトで取得したキーを設定。設定タブからも変更可</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid #eee;">
                       <td style="padding:8px 12px; font-family:monospace; font-size:12px; color:#c0392b; white-space:nowrap;">APP_FOLDER_ID</td>
                       <td style="padding:8px 12px;">S-quireのデータを保存するGoogle DriveフォルダのID</td>
                       <td style="padding:8px 12px; color:#666;">DriveのURL「/folders/」以降の文字列。設定タブからも変更可</td>

@@ -40,6 +40,22 @@ function fetchGeminiWithRetry_(url, options) {
     code = res.getResponseCode();
   }
 
+  // 予備キーへのフォールバック（メインキーで429が解消しなかった場合）
+  if (code === 429) {
+    var backupKey = getProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP);
+    if (backupKey) {
+      var altUrl = url.replace(/([?&])key=[^&]+/, '$1key=' + backupKey);
+      Logger.log('🔄 予備キーに切り替えます...');
+      res = UrlFetchApp.fetch(altUrl, options);
+      code = res.getResponseCode();
+      if (code !== 429) {
+        Logger.log('✓ 予備キーで成功（HTTP ' + code + '）');
+      } else {
+        Logger.log('⚠ 予備キーもレート制限(429)です');
+      }
+    }
+  }
+
   return res;
 }
 

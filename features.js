@@ -1170,7 +1170,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       muteHttpExceptions: true
     };
 
-    var response = UrlFetchApp.fetch(url, options);
+    var response = fetchGeminiWithRetry_(url, options);
 
     if (response.getResponseCode() !== 200) {
       return { success: false, error: parseGeminiErrorMessage_(response), type: 'error' };
@@ -4700,7 +4700,7 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
@@ -4789,7 +4789,7 @@ function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson
       generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
     };
 
-    var response = UrlFetchApp.fetch(url, {
+    var response = fetchGeminiWithRetry_(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify(payload),

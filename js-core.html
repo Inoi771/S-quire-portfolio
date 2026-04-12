@@ -704,6 +704,7 @@
       displayName: data.displayName,
       currentUser: data.currentUserEmail,
       geminiApiKey: data.geminiApiKey,
+      geminiApiKeyBackup: data.geminiApiKeyBackup,
       appFolderId: data.appFolderId,
       aiAssistantName: data.aiAssistantName,
       aiPersonality: data.aiPersonality
@@ -1919,6 +1920,7 @@
         .withSuccessHandler(function(roleInfo) {
           if (roleInfo.isAdmin) {
             updateApiKeyStatus(settings.geminiApiKey);
+            updateBackupKeyStatus(settings.geminiApiKeyBackup);
           }
         })
         .getUserRoleInfo();
@@ -1939,12 +1941,25 @@
       }
     }
 
+    function updateBackupKeyStatus(status) {
+      var statusEl = document.getElementById('geminiApiBackupStatus');
+      if (!statusEl) return;
+      if (status === '***設定済み***') {
+        statusEl.textContent = '✓ 設定済み';
+        statusEl.className = 'status active';
+      } else {
+        statusEl.textContent = '未設定（任意）';
+        statusEl.className = 'status inactive';
+      }
+    }
+
     function saveSettings() {
       var settingsData = {
         geminiApiKey: document.getElementById('geminiApiKey').value,
+        geminiApiKeyBackup: document.getElementById('geminiApiKeyBackup') ? document.getElementById('geminiApiKeyBackup').value : '',
         appFolderId: document.getElementById('appFolderId').value
       };
-      
+
       google.script.run
         .withSuccessHandler(function(result) {
           if (!result || !result.success) {
@@ -1956,6 +1971,11 @@
           if (settingsData.geminiApiKey && settingsData.geminiApiKey !== '***設定済み***') {
             updateApiKeyStatus('***設定済み***');
             document.getElementById('geminiApiKey').value = '';
+          }
+          // 予備キーが新たに設定された場合、ステータスを更新
+          if (settingsData.geminiApiKeyBackup && settingsData.geminiApiKeyBackup !== '***設定済み***') {
+            updateBackupKeyStatus('***設定済み***');
+            document.getElementById('geminiApiKeyBackup').value = '';
           }
         })
         .withFailureHandler(function(error) {

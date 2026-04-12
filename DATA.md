@@ -14,6 +14,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | キー | 内容 |
 |------|------|
 | `GEMINI_API_KEY` | Gemini API キー |
+| `GEMINI_API_KEY_BACKUP` | 予備 Gemini API キー（レート制限時に自動切替・任意） |
 | `APP_FOLDER_ID` | Google Drive ルートフォルダID（必須・未設定時全機能停止） |
 | `THEME_COLOR` | UIテーマカラー（デフォルト: `#43e97b`） |
 | `ADMIN_EMAILS` | Adminユーザーのメール（カンマ区切り） |
