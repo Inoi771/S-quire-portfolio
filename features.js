@@ -1371,12 +1371,17 @@ function requestAIAssistant(userMessage, chatHistory) {
       Logger.log('⚠ 講習エントリコンテキスト取得スキップ: ' + e);
     }
 
-    // --- 議事録コンテキスト（常時読み込み: 過去の決定事項はあらゆる質問に関連しうる） ---
+    // --- 議事録コンテキスト（塾運営に関連する質問時に読み込む） ---
+    // 設定・ナビゲーション・成績のみの質問では不要。それ以外は塾の方針に関わる可能性があるため読み込む
     var minutesContext = '';
-    try {
-      minutesContext = getMinutesContextForAI_();
-    } catch (e) {
-      Logger.log('⚠ 議事録コンテキスト取得スキップ: ' + e);
+    var skipMinutes = intents.settings || intents.navigation ||
+      (intents.grades && !intents.operations && !intents.pricing && !intents.lectures && !intents.placement && !intents.minutes);
+    if (!skipMinutes) {
+      try {
+        minutesContext = getMinutesContextForAI_();
+      } catch (e) {
+        Logger.log('⚠ 議事録コンテキスト取得スキップ: ' + e);
+      }
     }
 
     // === 最終ユーザーターンの組み立て（動的コンテキスト + ユーザーメッセージ） ===
