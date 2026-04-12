@@ -2262,6 +2262,14 @@
         message = '❌ 不明な応答タイプです';
       }
 
+      // Web検索ソースがあれば追記
+      if (result.searchSources && result.searchSources.length > 0) {
+        message += '\n\n🔍 出典:';
+        result.searchSources.forEach(function(src) {
+          message += '\n・' + src.title;
+        });
+      }
+
       addAIWidgetMessage('ai', message);
       return message;
     }

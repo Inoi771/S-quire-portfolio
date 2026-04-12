@@ -380,7 +380,8 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n[Knowledge Learning — Self-Improvement]\n'
     + 'When a user corrects you, teaches operational facts, shares procedures, or provides scheduling/policy info:\n'
     + 'Include optional "learned_knowledge":{"category":"category","content":"1-2 sentence fact in Japanese","reason":"why useful"}\n'
-    + 'Rules: Only factual juku info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾（スクエア関係）, 中学校関係, 高校関係, その他\n'
+    + 'Additionally, when you use Google Search and find factual info about elementary/junior-high/high schools (偏差値, 所在地, 特徴, テスト日程, 行事, 進学実績, コース等), ALWAYS include "learned_knowledge" to save it — even if the user did not explicitly ask you to remember it.\n'
+    + 'Rules: Only factual info. NOT opinions/temporary states. NOT info already in knowledge base. Categories: 塾（スクエア関係）, 中学校関係, 高校関係, 小学校関係, その他\n'
     + '\n[User Feedback Logging]\n'
     + 'When you respond with "その件については管理者にご確認ください" (info not in knowledge base): include optional "feedback":{"type":"missing_info","summary":"何の情報が不足していたか1文で"}\n'
     + 'When you respond with "現在その機能はございません" (feature does not exist): include optional "feedback":{"type":"missing_feature","summary":"どんな機能が求められたか1文で"}\n'
@@ -1366,8 +1367,9 @@ function requestAIAssistant(userMessage, chatHistory) {
     var payload = {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: contents,
+      tools: [{ google_search: {} }],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 1.0,
         maxOutputTokens: (gradeAnalysisContext.length > 500 || studentGradeDataContext.length > 200) ? 2500 : 1500,
         responseMimeType: 'application/json'
       }
@@ -1397,6 +1399,19 @@ function requestAIAssistant(userMessage, chatHistory) {
 
       try {
         var aiResponse = JSON.parse(cleanedText);
+
+        // Web検索のソース情報を付加
+        try {
+          var gm = result.candidates[0].groundingMetadata;
+          if (gm && gm.groundingChunks && gm.groundingChunks.length > 0) {
+            aiResponse.searchSources = gm.groundingChunks
+              .filter(function(c) { return c.web && c.web.title && c.web.uri; })
+              .slice(0, 3)
+              .map(function(c) { return { title: c.web.title, url: c.web.uri }; });
+          }
+        } catch (gmErr) {
+          Logger.log('⚠ groundingMetadata 取得スキップ: ' + gmErr);
+        }
 
         // Geminiの返答内の生徒IDを氏名に戻す（バックエンドで完結・氏名は外部に渡っていない）
         var textFields = ['answer', 'response', 'explanation', 'message'];
@@ -1743,11 +1758,11 @@ function getAiKnowledgeBaseForPrompt_() {
 function saveAutoLearnedKnowledge_(data) {
   if (!data || !data.content) return;
 
-  // 上限チェック（30件を超えたら新規学習を一時停止）
+  // 上限チェック（50件を超えたら新規学習を一時停止）
   try {
     var existing = supabaseSelect_('ai_learned_knowledge', null, { select: 'id' });
-    if (existing && existing.length >= 30) {
-      Logger.log('⚠ 自動学習上限（30件）に達しているため保存スキップ');
+    if (existing && existing.length >= 50) {
+      Logger.log('⚠ 自動学習上限（50件）に達しているため保存スキップ');
       return;
     }
   } catch (e) {
