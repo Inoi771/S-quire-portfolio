@@ -2434,6 +2434,7 @@
       }
 
       var hasIssue = false;
+      var ocrMismatchNames = []; // 別講師名検出チェック用（非管理者）
       entries.forEach(function(entry, idx) {
         var tr = document.createElement('tr');
         var op = entry.op || 'create';
@@ -2460,6 +2461,17 @@
         var hasSubjectIssue = !displayEntry.subject;
         var hasGradeIssue = !displayEntry.grade;
         if (hasCampusIssue || hasSubjectIssue || hasGradeIssue) hasIssue = true;
+
+        // 非管理者用：別講師名検出チェック（敬称除去＋前方一致で同一人物判定）
+        if (!isAdminUser && displayEntry.teacherName) {
+          var stripped_ = displayEntry.teacherName.replace(/先生|さん|くん|ちゃん|氏|様/g, '').trim();
+          if (stripped_.length >= 2 && stripped_ !== myTeacherName && !myTeacherName.startsWith(stripped_)) {
+            tr.dataset.ocrTeacher = displayEntry.teacherName;
+            if (ocrMismatchNames.indexOf(displayEntry.teacherName) < 0) {
+              ocrMismatchNames.push(displayEntry.teacherName);
+            }
+          }
+        }
 
         // 操作タイプ別の背景色
         if (op === 'delete') {
@@ -2564,6 +2576,20 @@
         tbody.appendChild(tr);
       });
 
+      // 別講師名警告バナーの表示/非表示
+      var existingWarn = document.getElementById('lec-ocr-teacher-warning');
+      if (existingWarn) existingWarn.remove();
+      if (!isAdminUser && ocrMismatchNames.length > 0) {
+        var warnBanner = document.createElement('div');
+        warnBanner.id = 'lec-ocr-teacher-warning';
+        warnBanner.style.cssText = 'background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:10px 14px; margin-bottom:10px; font-size:13px; color:#856404;';
+        warnBanner.innerHTML = '⚠️ <b>別の講師名を検出しました：「' + ocrMismatchNames.join('」「') + '」</b><br>この日程は別の講師のものである可能性があります。ご自身の日程であれば、そのまま「保存」してください。';
+        var tableEl = tbody.parentElement;
+        if (tableEl && tableEl.parentElement) {
+          tableEl.parentElement.insertBefore(warnBanner, tableEl);
+        }
+      }
+
       var warnEl = document.getElementById('lec-ocr-warn-msg');
       warnEl.textContent = hasIssue ? '⚠ 赤・黄色の行は未設定の項目があります。保存前に確認してください。' : '';
       document.getElementById('lec-ocr-result-area').style.display = 'block';
@@ -2592,6 +2618,19 @@
       var tbody = document.getElementById('lec-ocr-result-body');
       var rows = tbody.querySelectorAll('tr');
       if (rows.length === 0) { showToast('保存するエントリがありません', 'warning'); return; }
+
+      // 別講師名の確認ダイアログ（非管理者のみ）
+      if (!isAdminUser) {
+        var mismatchTeachers = [];
+        rows.forEach(function(tr) {
+          var ocrName = tr.dataset.ocrTeacher;
+          if (ocrName && mismatchTeachers.indexOf(ocrName) < 0) mismatchTeachers.push(ocrName);
+        });
+        if (mismatchTeachers.length > 0) {
+          var confirmed = window.confirm('「' + mismatchTeachers.join('」「') + '」という別の講師名が含まれています。\nこの日程をご自身（' + (myTeacherName || 'あなた') + '）の日程として保存しますか？');
+          if (!confirmed) return;
+        }
+      }
 
       // 操作タイプ別に校舎ごとにグループ化
       var opsByCampus = {};
