@@ -516,12 +516,22 @@
     function updateLecOcrBtnState() {
       var btn = document.getElementById('lec-ocr-btn');
       if (!btn) return;
-      if (isAdminUser && !lecAdminTeacherName) {
-        btn.disabled = true;
-        btn.style.opacity = '0.4';
-        btn.style.cursor = 'not-allowed';
-        btn.title = '先に講師を選択してください';
+      var hint = document.getElementById('lec-ocr-admin-hint');
+      if (isAdminUser) {
+        if (hint) hint.style.display = '';
+        if (!lecAdminTeacherName) {
+          btn.disabled = true;
+          btn.style.opacity = '0.4';
+          btn.style.cursor = 'not-allowed';
+          btn.title = '先に講師を選択してください';
+        } else {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+          btn.title = '';
+        }
       } else {
+        if (hint) hint.style.display = 'none';
         btn.disabled = false;
         btn.style.opacity = '1';
         btn.style.cursor = 'pointer';
