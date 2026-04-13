@@ -426,19 +426,39 @@
           }
           var myEmailLower = (myTeacherEmail || '').toLowerCase();
           var html = '<option value="">-- 自分として入力 (' + (myTeacherName || 'あなた') + ') --</option>';
+          var existingNames = {};
           result.users.forEach(function(u) {
             if (!u.email) return;
             var emailLower = u.email.toLowerCase();
             if (emailLower === myEmailLower) return; // 自分はデフォルト選択肢に表示
             var tid = u.teacherId || '';
-            html += '<option value="' + u.email + '" data-name="' + (u.name || u.email) + '" data-teacherid="' + tid + '">'
-                  + (u.name || u.email) + '</option>';
+            var uName = u.name || u.email;
+            existingNames[uName] = true;
+            html += '<option value="' + u.email + '" data-name="' + uName + '" data-teacherid="' + tid + '">'
+                  + uName + '</option>';
           });
-          sel.innerHTML = html;
-          // 初期値：未選択（＝自分自身）
-          lecAdminTeacherEmail = '';
-          lecAdminTeacherName  = '';
-          lecAdminTeacherId    = '';
+          // 講師配置表に登録された講師も追加（Supabase未登録の手動追加講師のみ）
+          google.script.run
+            .withSuccessHandler(function(pr) {
+              if (pr && pr.success) {
+                (pr.teachers || []).forEach(function(t) {
+                  if (!t.name || existingNames[t.name]) return; // 重複スキップ
+                  html += '<option value="__placement__' + t.name + '" data-name="' + t.name + '" data-teacherid="">'
+                        + t.name + '（配置表）</option>';
+                });
+              }
+              sel.innerHTML = html;
+              lecAdminTeacherEmail = '';
+              lecAdminTeacherName  = '';
+              lecAdminTeacherId    = '';
+            })
+            .withFailureHandler(function() {
+              sel.innerHTML = html; // エラーでも既存ユーザーは表示
+              lecAdminTeacherEmail = '';
+              lecAdminTeacherName  = '';
+              lecAdminTeacherId    = '';
+            })
+            .getPlacementTeacherNames();
         })
         .withFailureHandler(function(err) {
           console.error('getAllowedUsers エラー:', err);
@@ -455,9 +475,16 @@
       var badge = document.getElementById('lec-admin-teacher-badge');
       if (sel.value) {
         var opt = sel.options[sel.selectedIndex];
-        lecAdminTeacherEmail = sel.value;
-        lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value;
-        lecAdminTeacherId    = opt.getAttribute('data-teacherid') || '';
+        if (sel.value.indexOf('__placement__') === 0) {
+          // 配置表のみ登録の講師（メール・teacherId なし）
+          lecAdminTeacherEmail = '';
+          lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value.replace('__placement__', '');
+          lecAdminTeacherId    = '';
+        } else {
+          lecAdminTeacherEmail = sel.value;
+          lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value;
+          lecAdminTeacherId    = opt.getAttribute('data-teacherid') || '';
+        }
         if (badge) badge.textContent = '「' + lecAdminTeacherName + '」として入力・編集します';
       } else {
         lecAdminTeacherEmail = '';
@@ -1710,9 +1737,9 @@
         subject:       selectedSubjectForEntry,
         grade:         selectedGradeForEntry,
         classLabel:    selectedLecClass,
-        teacherName:   (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherName : (myTeacherName || 'Unknown'),
-        teacherEmail:  (isAdminUser && lecAdminTeacherEmail) ? lecAdminTeacherEmail : (myTeacherEmail || ''),
-        teacherId:     (isAdminUser && lecAdminTeacherId) ? lecAdminTeacherId : (myTeacherId || '')
+        teacherName:   (isAdminUser && lecAdminTeacherName) ? lecAdminTeacherName : (myTeacherName || 'Unknown'),
+        teacherEmail:  (isAdminUser && lecAdminTeacherName) ? lecAdminTeacherEmail : (myTeacherEmail || ''),
+        teacherId:     (isAdminUser && lecAdminTeacherName) ? lecAdminTeacherId : (myTeacherId || '')
       };
       if (!lectureEntries[currentLectureCampus]) lectureEntries[currentLectureCampus] = [];
       lectureEntries[currentLectureCampus].push(entry);
@@ -2581,7 +2608,7 @@
             rowTeacherName  = tOpt.getAttribute('data-name') || tOpt.textContent || teacherSelect.value;
             rowTeacherId    = tOpt.getAttribute('data-teacherid') || '';
           }
-        } else if (isAdminUser && lecAdminTeacherEmail) {
+        } else if (isAdminUser && lecAdminTeacherName) {
           rowTeacherName  = lecAdminTeacherName;
           rowTeacherEmail = lecAdminTeacherEmail;
           rowTeacherId    = lecAdminTeacherId;
