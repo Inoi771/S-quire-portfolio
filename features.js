@@ -684,6 +684,96 @@ function restoreStudentNamesInResponse_(text, students) {
 }
 
 /**
+ * 挨拶・雑談メッセージかどうかを判定する
+ * 業務関連キーワードを含まない短いメッセージを雑談とみなす
+ * @param {string} message ユーザーメッセージ
+ * @return {boolean}
+ */
+function isChitchatMessage_(message) {
+  var msg = message.trim();
+  // 20文字超は業務関連の可能性あり
+  if (msg.length > 20) return false;
+  // 業務関連キーワードが含まれていれば通常処理へ
+  if (/成績|テスト|点数|料金|月謝|講習|スケジュール|予定|生徒|先生|講師|校舎|配置|議事録|設定|分析|登録|コマ|日程/.test(msg)) return false;
+  // 挨拶・雑談パターン
+  return /こんにちは|こんにちわ|こんばんは|おはよう|ありがとう|お疲れ|よろしく|はじめまして|元気|なるほど|わかった|了解|そうですね|頑張|助かり|嬉し|楽し|よかった|すごい|hello|hi/.test(msg);
+}
+
+/**
+ * 挨拶・雑談向けの高速AIアシスタント（データ読み込みをスキップ）
+ * @param {string} url Gemini APIエンドポイント
+ * @param {string} userMessage ユーザーメッセージ
+ * @param {Array} chatHistory 会話履歴
+ * @param {string} aiName AIアシスタント名
+ * @param {string} aiPersonality 口調設定
+ * @param {string} userName ユーザー表示名
+ * @return {Object} AIレスポンス
+ */
+function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPersonality, userName) {
+  var personalityDesc = aiPersonality === 'friendly' ? 'フレンドリーで親しみやすい口調'
+    : aiPersonality === 'casual' ? 'カジュアルで砕けた口調'
+    : '丁寧でプロフェッショナルな口調';
+
+  var systemPrompt = 'あなたは' + aiName + 'という名前の個別指導塾スタッフ向けAIアシスタントです。'
+    + personalityDesc + 'で短く返答してください。'
+    + (userName ? 'ユーザーの表示名は「' + userName + '」です。' : '')
+    + '\n必ず以下のJSON形式のみで返答してください（説明文・コードブロック不要）:'
+    + '\n{"type":"answer","answer":"返答内容"}';
+
+  var contents = [];
+  if (chatHistory && chatHistory.length > 0) {
+    chatHistory.slice(-6).forEach(function(item) {
+      contents.push({
+        role: item.role === 'user' ? 'user' : 'model',
+        parts: [{ text: item.text }]
+      });
+    });
+  }
+
+  var now = new Date();
+  var userTurn = '[現在時刻] ' + Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') + '\n[メッセージ] ' + userMessage;
+  contents.push({ role: 'user', parts: [{ text: userTurn }] });
+
+  var payload = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: contents,
+    generationConfig: {
+      temperature: 1.0,
+      maxOutputTokens: 300,
+      responseMimeType: 'application/json'
+    }
+  };
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var response = fetchGeminiWithRetry_(url, options);
+  if (response.getResponseCode() !== 200) {
+    return { success: false, error: parseGeminiErrorMessage_(response), type: 'error' };
+  }
+
+  var result = JSON.parse(response.getContentText());
+  if (result.candidates && result.candidates.length > 0) {
+    var parts = (result.candidates[0].content.parts || []);
+    var textPart = parts.filter(function(p) { return !p.thought; }).pop();
+    var rawText = textPart ? (textPart.text || '') : '';
+    var cleanedText = rawText.replace(/```+json[\r\n]*/gi, '').replace(/```+[\r\n]*/g, '').trim();
+    var jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) cleanedText = jsonMatch[0];
+    try {
+      return JSON.parse(cleanedText);
+    } catch (e) {
+      return { type: 'answer', answer: rawText };
+    }
+  }
+  return { success: false, error: 'AIレスポンスが空', type: 'error' };
+}
+
+/**
  * AI アシスタントの主処理
  * 意図判定と回答生成を1回のAPI呼び出しで完結させる（API消費最小化設計）
  * @aiCallable
@@ -715,6 +805,12 @@ function requestAIAssistant(userMessage, chatHistory) {
     var userPreferredCampusList = (profile && profile.success && profile.preferredCampuses) || [];
     var aiAssistantName = (profile && profile.success && profile.aiAssistantName) || 'イノイマン';
     var aiPersonality = (profile && profile.success && profile.aiPersonality) || 'polite';
+
+    // === 挨拶・雑談の早期判定（重いデータ読み込みをスキップして高速返答） ===
+    if (isChitchatMessage_(userMessage)) {
+      Logger.log('💬 雑談モード: データ読み込みをスキップして高速返答');
+      return requestAIAssistantFast_(url, userMessage, chatHistory, aiAssistantName, aiPersonality, userDisplayName);
+    }
 
     // 生徒マスタを取得して氏名→ID変換の準備（個人情報保護）
     var studentMaster = [];
