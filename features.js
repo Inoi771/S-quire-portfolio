@@ -1406,7 +1406,6 @@ function requestAIAssistant(userMessage, chatHistory) {
     var payload = {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: contents,
-      tools: [{ google_search: {} }],
       generationConfig: {
         temperature: 1.0,
         maxOutputTokens: (gradeAnalysisContext.length > 500 || studentGradeDataContext.length > 200) ? 2500 : 1500,
