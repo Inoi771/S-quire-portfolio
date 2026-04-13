@@ -443,7 +443,7 @@
               if (pr && pr.success) {
                 (pr.teachers || []).forEach(function(t) {
                   if (!t.name || existingNames[t.name]) return; // 重複スキップ
-                  html += '<option value="__placement__' + t.name + '" data-name="' + t.name + '" data-teacherid="">'
+                  html += '<option value="__placement__' + t.name + '" data-name="' + t.name + '" data-teacherid="" data-subject="' + (t.subject || '') + '">'
                         + t.name + '（配置表）</option>';
                 });
               }
@@ -480,6 +480,12 @@
           lecAdminTeacherEmail = '';
           lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value.replace('__placement__', '');
           lecAdminTeacherId    = '';
+          // 科目が1つ登録されていれば自動選択
+          var placementSubject = opt.getAttribute('data-subject') || '';
+          if (placementSubject && selectedSubjectForEntry !== placementSubject) {
+            var subjectBtn = document.querySelector('.lec-subject-btn[data-subject="' + placementSubject + '"]');
+            if (subjectBtn) toggleLecSubjectBtn(placementSubject);
+          }
         } else {
           lecAdminTeacherEmail = sel.value;
           lecAdminTeacherName  = opt.getAttribute('data-name') || sel.value;
