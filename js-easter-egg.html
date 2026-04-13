@@ -29,90 +29,132 @@ function eeShowController_() {
   overlay.id = 'eeControllerOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10002;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;';
 
-  // カード（枠線・白背景）
+  // コントローラー本体（ファミコン風）
   var card = document.createElement('div');
-  card.style.cssText = 'position:relative;background:#fff;border:2px solid #ccc;border-radius:20px;padding:40px 48px 32px;display:flex;flex-direction:column;align-items:center;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+  card.style.cssText = 'position:relative;background:linear-gradient(180deg, #7B1828 0%, #6B1420 50%, #5B1018 100%);border:3px solid #4A0C14;border-radius:14px;padding:0;display:flex;flex-direction:column;align-items:center;box-shadow:0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08);width:340px;max-width:90vw;overflow:hidden;';
 
   // 閉じるボタン
   var closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;';
+  closeBtn.style.cssText = 'position:absolute;top:6px;right:10px;background:none;border:none;color:rgba(255,255,255,0.3);font-size:16px;cursor:pointer;z-index:10;';
   closeBtn.onclick = eeCloseController_;
   card.appendChild(closeBtn);
 
-  // ヒントテキスト
-  var hint = document.createElement('div');
-  hint.style.cssText = 'color:#888;font-size:11px;letter-spacing:3px;margin-bottom:30px;text-transform:uppercase;';
-  hint.textContent = 'ENTER THE CODE';
-  card.appendChild(hint);
+  // ゴールドストライプ（ファミコンの金帯）
+  var stripe = document.createElement('div');
+  stripe.style.cssText = 'width:100%;background:linear-gradient(180deg, #D4A843 0%, #C49A38 50%, #B48A2E 100%);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #8B6914;box-shadow:inset 0 1px 0 rgba(255,255,255,0.4),inset 0 -1px 0 rgba(0,0,0,0.1);margin-top:10px;';
+  var logo = document.createElement('div');
+  logo.style.cssText = 'color:#3d2a08;font-size:13px;font-weight:bold;letter-spacing:2px;text-shadow:0 1px 0 rgba(255,255,255,0.3);';
+  logo.textContent = 'S-quire';
+  stripe.appendChild(logo);
+  var hintLabel = document.createElement('div');
+  hintLabel.style.cssText = 'color:#5a3d0a;font-size:9px;letter-spacing:2px;text-transform:uppercase;';
+  hintLabel.textContent = 'ENTER THE CODE';
+  stripe.appendChild(hintLabel);
+  card.appendChild(stripe);
 
-  // コントローラーコンテナ
-  var ctrl = document.createElement('div');
-  ctrl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:60px;margin-bottom:30px;';
+  // メインボタンエリア
+  var main = document.createElement('div');
+  main.style.cssText = 'padding:20px 16px 12px;display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;';
 
-  // === 十字キー ===
-  var dpad = document.createElement('div');
-  dpad.style.cssText = 'display:grid;grid-template-columns:56px 56px 56px;grid-template-rows:56px 56px 56px;gap:3px;';
+  // === 十字キー（十字型の一体構造） ===
+  var dpadWrap = document.createElement('div');
+  dpadWrap.style.cssText = 'position:relative;width:108px;height:108px;flex-shrink:0;';
+  var crossH = document.createElement('div');
+  crossH.style.cssText = 'position:absolute;top:36px;left:0;width:108px;height:36px;background:#1a1a1a;border-radius:3px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.05);';
+  dpadWrap.appendChild(crossH);
+  var crossV = document.createElement('div');
+  crossV.style.cssText = 'position:absolute;top:0;left:36px;width:36px;height:108px;background:#1a1a1a;border-radius:3px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.05);';
+  dpadWrap.appendChild(crossV);
 
-  var dirs = [
-    {key:'',r:0,c:0},{key:'up',r:0,c:1,label:'▲'},{key:'',r:0,c:2},
-    {key:'left',r:1,c:0,label:'◀'},{key:'',r:1,c:1},{key:'right',r:1,c:2,label:'▶'},
-    {key:'',r:2,c:0},{key:'down',r:2,c:1,label:'▼'},{key:'',r:2,c:2}
+  var dpadDirs = [
+    {key:'up', top:'2px', left:'36px', w:'36px', h:'34px', label:'▲'},
+    {key:'down', top:'72px', left:'36px', w:'36px', h:'34px', label:'▼'},
+    {key:'left', top:'36px', left:'2px', w:'34px', h:'36px', label:'◀'},
+    {key:'right', top:'36px', left:'72px', w:'34px', h:'36px', label:'▶'}
   ];
-
-  dirs.forEach(function(d) {
+  dpadDirs.forEach(function(d) {
     var btn = document.createElement('div');
-    if (d.key) {
-      btn.className = 'ee-dpad-btn';
-      btn.setAttribute('data-key', d.key);
-      btn.textContent = d.label;
-      btn.style.cssText = 'width:56px;height:56px;background:#1a1a2e;border:2px solid #334;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#88aacc;font-size:18px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
-      btn.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_(d.key); eeFlashBtn_(btn); };
-      btn.onclick = function() { eeHandleInput_(d.key); eeFlashBtn_(btn); };
-    } else {
-      btn.style.cssText = 'width:56px;height:56px;';
-    }
-    dpad.appendChild(btn);
+    btn.className = 'ee-dpad-btn';
+    btn.setAttribute('data-key', d.key);
+    btn.textContent = d.label;
+    btn.style.cssText = 'position:absolute;top:'+d.top+';left:'+d.left+';width:'+d.w+';height:'+d.h+';display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.25);font-size:12px;cursor:pointer;user-select:none;-webkit-user-select:none;z-index:1;transition:color 0.15s;';
+    btn.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_(d.key); eeFlashDpad_(btn); };
+    btn.onclick = function() { eeHandleInput_(d.key); eeFlashDpad_(btn); };
+    dpadWrap.appendChild(btn);
   });
 
-  // === A/Bボタン ===
+  // === 中央 SELECT/START（装飾） ===
+  var centerArea = document.createElement('div');
+  centerArea.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;transform:rotate(-25deg);';
+  ['SELECT','START'].forEach(function(txt) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-direction:column;align-items:center;';
+    var pill = document.createElement('div');
+    pill.style.cssText = 'width:30px;height:8px;background:#1a1a1a;border-radius:4px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.5),0 1px 0 rgba(255,255,255,0.05);';
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'color:rgba(255,255,255,0.2);font-size:5px;letter-spacing:1px;text-align:center;margin-top:2px;';
+    lbl.textContent = txt;
+    row.appendChild(pill);
+    row.appendChild(lbl);
+    centerArea.appendChild(row);
+  });
+
+  // === A/Bボタン（斜め配置） ===
   var abWrap = document.createElement('div');
-  abWrap.style.cssText = 'display:flex;align-items:center;gap:16px;';
+  abWrap.style.cssText = 'display:flex;align-items:center;gap:10px;flex-shrink:0;transform:rotate(-15deg);';
 
   var btnB = document.createElement('div');
   btnB.className = 'ee-ab-btn';
   btnB.setAttribute('data-key', 'B');
   btnB.textContent = 'B';
-  btnB.style.cssText = 'width:60px;height:60px;background:#2a1a2e;border:2px solid #634;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#cc6688;font-size:18px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
-  btnB.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('B'); eeFlashBtn_(btnB); };
-  btnB.onclick = function() { eeHandleInput_('B'); eeFlashBtn_(btnB); };
+  btnB.style.cssText = 'width:48px;height:48px;background:radial-gradient(circle at 38% 35%, #993344, #6B1420);border:2px solid #4A0C14;border-radius:50%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:13px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;box-shadow:0 3px 6px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.12);transition:box-shadow 0.15s,transform 0.1s;';
+  btnB.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('B'); eeFlashAB_(btnB); };
+  btnB.onclick = function() { eeHandleInput_('B'); eeFlashAB_(btnB); };
 
   var btnA = document.createElement('div');
   btnA.className = 'ee-ab-btn';
   btnA.setAttribute('data-key', 'A');
   btnA.textContent = 'A';
-  btnA.style.cssText = 'width:60px;height:60px;background:#1a2a1e;border:2px solid #364;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#66cc88;font-size:18px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,box-shadow 0.15s;';
-  btnA.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('A'); eeFlashBtn_(btnA); };
-  btnA.onclick = function() { eeHandleInput_('A'); eeFlashBtn_(btnA); };
+  btnA.style.cssText = 'width:48px;height:48px;background:radial-gradient(circle at 38% 35%, #993344, #6B1420);border:2px solid #4A0C14;border-radius:50%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:13px;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none;box-shadow:0 3px 6px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.12);transition:box-shadow 0.15s,transform 0.1s;';
+  btnA.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_('A'); eeFlashAB_(btnA); };
+  btnA.onclick = function() { eeHandleInput_('A'); eeFlashAB_(btnA); };
 
   abWrap.appendChild(btnB);
   abWrap.appendChild(btnA);
 
-  ctrl.appendChild(dpad);
-  ctrl.appendChild(abWrap);
-  card.appendChild(ctrl);
+  main.appendChild(dpadWrap);
+  main.appendChild(centerArea);
+  main.appendChild(abWrap);
+  card.appendChild(main);
 
   // === プログレスドット ===
+  var dotsWrap = document.createElement('div');
+  dotsWrap.style.cssText = 'padding:4px 20px 6px;width:100%;box-sizing:border-box;';
   var dots = document.createElement('div');
   dots.id = 'eeProgressDots';
-  dots.style.cssText = 'display:flex;gap:8px;';
+  dots.style.cssText = 'display:flex;gap:6px;justify-content:center;';
   for (var i = 0; i < 10; i++) {
     var dot = document.createElement('div');
     dot.className = 'ee-dot';
-    dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#222;border:1px solid #444;transition:background 0.3s,box-shadow 0.3s;';
+    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#4A1520;border:1px solid #5A1828;transition:background 0.3s,box-shadow 0.3s;';
     dots.appendChild(dot);
   }
-  card.appendChild(dots);
+  dotsWrap.appendChild(dots);
+  card.appendChild(dotsWrap);
+
+  // === スピーカーグリル（装飾ライン） ===
+  var grillArea = document.createElement('div');
+  grillArea.style.cssText = 'width:100%;padding:4px 24px 14px;box-sizing:border-box;display:flex;justify-content:flex-end;';
+  var grill = document.createElement('div');
+  grill.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+  for (var gi = 0; gi < 4; gi++) {
+    var gl = document.createElement('div');
+    gl.style.cssText = 'width:' + (48 - gi * 4) + 'px;height:2px;background:rgba(0,0,0,0.25);border-radius:1px;box-shadow:0 1px 0 rgba(255,255,255,0.04);';
+    grill.appendChild(gl);
+  }
+  grillArea.appendChild(grill);
+  card.appendChild(grillArea);
 
   overlay.appendChild(card);
   eeInputSeq_ = [];
@@ -126,6 +168,24 @@ function eeFlashBtn_(btn) {
   setTimeout(function() {
     btn.style.boxShadow = '';
     btn.style.background = '';
+  }, 200);
+}
+
+// ── 十字キーフラッシュ（ファミコン風） ──
+function eeFlashDpad_(btn) {
+  btn.style.color = 'rgba(255,255,255,0.8)';
+  setTimeout(function() {
+    btn.style.color = '';
+  }, 200);
+}
+
+// ── A/Bボタンフラッシュ（ファミコン風） ──
+function eeFlashAB_(btn) {
+  btn.style.transform = 'scale(0.9)';
+  btn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.15)';
+  setTimeout(function() {
+    btn.style.transform = '';
+    btn.style.boxShadow = '';
   }, 200);
 }
 
@@ -153,7 +213,7 @@ function eeHandleInput_(key) {
     // 不正解 → リセット + 振動
     eeInputSeq_ = [];
     var dots = document.querySelectorAll('#eeProgressDots .ee-dot');
-    dots.forEach(function(d) { d.style.background = '#222'; d.style.boxShadow = ''; });
+    dots.forEach(function(d) { d.style.background = '#4A1520'; d.style.boxShadow = ''; });
     var overlay = document.getElementById('eeControllerOverlay');
     if (overlay) {
       overlay.style.animation = 'eeShake 0.3s';
