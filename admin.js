@@ -1948,3 +1948,22 @@ function saveStaffPlacementForWeb(dataJson) {
     return { success: false, error: e.toString() };
   }
 }
+
+/**
+ * 講師配置表に登録されている講師名一覧を返す（講習管理ドロップダウン用）
+ * @returns {{ success: boolean, teachers: Array<{name: string, subject: string}> }}
+ */
+function getPlacementTeacherNames() {
+  try {
+    var json = getScriptProperty('STAFF_PLACEMENT');
+    if (!json) return { success: true, teachers: [] };
+    var data = JSON.parse(json);
+    var teachers = (data.teachers || [])
+      .map(function(t) { return { name: t.name || '', subject: t.subject || '' }; })
+      .filter(function(t) { return t.name; });
+    return { success: true, teachers: teachers };
+  } catch (e) {
+    Logger.log('❌ getPlacementTeacherNames エラー: ' + e);
+    return { success: false, teachers: [], error: e.toString() };
+  }
+}

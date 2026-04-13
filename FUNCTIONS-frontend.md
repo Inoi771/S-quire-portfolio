@@ -150,6 +150,8 @@
 - `onEntryClick(event, entryId)` — エントリクリック時：選択 or 解除（所有者チェック付き：管理者以外は自分のエントリのみ選択可能）
 - `getDefaultGradeSettingsJS(lectureName, grade)` — 講習名・学年コードからデフォルトのコマ設定を返す（フロントエンド版。duration: スロット数、count: 回数。基礎学力テスト対策・入試直前は中3のみ有効、他学年は0）
 - `getLecGradeSettings(grade)` — 現在選択中の講習の学年別設定を取得（gradeSettings があればそちらを優先、なければ名前ベースのデフォルト）
+- `loadLectureTeachers()` — 管理者用講師選択ドロップダウンを初期化。`getAllowedUsers()` でSupabase staffsから取得後、`getPlacementTeacherNames()` で配置表の講師も追加（メール未登録の手動追加講師は「○○（配置表）」と表示）
+- `onLecTeacherChange()` — 管理者用講師ドロップダウン変更時ハンドラー。`__placement__` プレフィックスの場合はemail・teacherIdなしで名前のみセット
 - `createLecEntry(date, startSlot)` — 選択中の教科・学年でエントリを新規作成（学年ごとのコマ時間を自動適用）
 - `createWeeklyLecEntries(date, startSlot)` — 「毎週」チェック時の一括作成：同じ曜日・時刻で count 回分のエントリを毎週作成（休校日を自動スキップ）
 - `moveLecEntry(entryId, date, startSlot)` — 選択中エントリを指定日時に移動
