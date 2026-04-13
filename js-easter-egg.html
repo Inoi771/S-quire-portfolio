@@ -29,18 +29,22 @@ function eeShowController_() {
   overlay.id = 'eeControllerOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10002;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;';
 
+  // カード（枠線・白背景）
+  var card = document.createElement('div');
+  card.style.cssText = 'position:relative;background:#fff;border:2px solid #ccc;border-radius:20px;padding:40px 48px 32px;display:flex;flex-direction:column;align-items:center;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+
   // 閉じるボタン
   var closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
   closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:none;border:none;color:#888;font-size:24px;cursor:pointer;z-index:10;';
   closeBtn.onclick = eeCloseController_;
-  overlay.appendChild(closeBtn);
+  card.appendChild(closeBtn);
 
   // ヒントテキスト
   var hint = document.createElement('div');
-  hint.style.cssText = 'color:#556;font-size:11px;letter-spacing:3px;margin-bottom:30px;text-transform:uppercase;';
+  hint.style.cssText = 'color:#888;font-size:11px;letter-spacing:3px;margin-bottom:30px;text-transform:uppercase;';
   hint.textContent = 'ENTER THE CODE';
-  overlay.appendChild(hint);
+  card.appendChild(hint);
 
   // コントローラーコンテナ
   var ctrl = document.createElement('div');
@@ -96,7 +100,7 @@ function eeShowController_() {
 
   ctrl.appendChild(dpad);
   ctrl.appendChild(abWrap);
-  overlay.appendChild(ctrl);
+  card.appendChild(ctrl);
 
   // === プログレスドット ===
   var dots = document.createElement('div');
@@ -108,8 +112,9 @@ function eeShowController_() {
     dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#222;border:1px solid #444;transition:background 0.3s,box-shadow 0.3s;';
     dots.appendChild(dot);
   }
-  overlay.appendChild(dots);
+  card.appendChild(dots);
 
+  overlay.appendChild(card);
   eeInputSeq_ = [];
   document.body.appendChild(overlay);
 }
