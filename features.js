@@ -1406,10 +1406,12 @@ function requestAIAssistant(userMessage, chatHistory) {
     var payload = {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: contents,
+      tools: [{ google_search: {} }],
       generationConfig: {
         temperature: 1.0,
-        maxOutputTokens: (gradeAnalysisContext.length > 500 || studentGradeDataContext.length > 200) ? 2500 : 1500,
-        responseMimeType: 'application/json'
+        maxOutputTokens: (gradeAnalysisContext.length > 500 || studentGradeDataContext.length > 200) ? 2500 : 1500
+        // responseMimeType: 'application/json' は google_search と同時使用不可のため除外
+        // JSON形式はシステムプロンプトで指示する
       }
     };
 
