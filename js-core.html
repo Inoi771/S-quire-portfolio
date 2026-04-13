@@ -2286,6 +2286,10 @@
             // チャットタイトルを即時更新
             var savedAiName = profileData.aiAssistantName || 'イノイマン';
             document.getElementById('aiWidgetTitle').textContent = '🤖 AI ' + savedAiName;
+            // ウェルカムメッセージが表示中なら名前・しゃべり方を即時反映
+            if (document.getElementById('aiWelcomeMessage')) {
+              showAIWelcomeMessage();
+            }
             // テーマカラーを即時適用
             applyThemeColor(profileData.themeColor);
             // プロフィール表示を更新（キャッシュをクリアしてサーバーから最新データを取得）

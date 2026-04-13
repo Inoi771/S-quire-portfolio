@@ -1959,7 +1959,21 @@
     function showAIWelcomeMessage() {
       var container = document.getElementById('aiWidgetMessages');
       if (!container) return;
+      // 既存のウェルカムメッセージを削除（重複防止）
+      var existing = document.getElementById('aiWelcomeMessage');
+      if (existing) existing.remove();
       var aiName = (document.getElementById('aiWidgetTitle').textContent || '').replace('🤖 AI ', '').trim() || 'AIアシスタント';
+      // しゃべり方に合わせた挨拶文
+      var personality = (document.getElementById('aiPersonalitySelect') || {}).value || 'polite';
+      var greetings = {
+        'polite':    'こんにちは！' + aiName + 'です😊<br>何でもお気軽にどうぞ。',
+        'friendly':  'こんにちは！' + aiName + 'だよ😊<br>何でも気軽に聞いてね！',
+        'energetic': 'やっほー！' + aiName + 'です⚡<br>何でも聞いてね！元気に答えるよ！',
+        'cool':      aiName + 'です。<br>何でもどうぞ。',
+        'kansai':    'こんにちは！' + aiName + 'やで🌸<br>なんでも聞いてや〜！',
+        'hakata':    'こんにちは！' + aiName + 'ばい🍜<br>なんでも聞いてみてよ！'
+      };
+      var greeting = greetings[personality] || greetings['polite'];
       var el = document.createElement('div');
       el.id = 'aiWelcomeMessage';
       el.style.cssText = 'margin-bottom: 12px; animation: fadeIn 0.3s ease-in;';
@@ -1975,7 +1989,7 @@
       el.innerHTML =
         '<div style="background: #f0f0f0; color: #333; padding: 10px 14px; border-radius: 12px; margin-right: 40px; word-break: break-word;">' +
           '<small style="opacity: 0.8;">' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '</small><br>' +
-          'こんにちは！' + aiName + 'です😊<br>何でもお気軽にどうぞ。' +
+          greeting +
         '</div>' +
         '<div style="margin-top: 8px; margin-right: 40px; display: flex; flex-wrap: wrap; gap: 6px;">' +
           chipHtml +
