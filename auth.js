@@ -311,7 +311,7 @@ function getAllowedUsers() {
 
     // Supabase staffs テーブルから登録スタッフを取得
     try {
-      var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name' });
+      var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name,subjects' });
       (allRows || []).forEach(function(row) {
         var staffEmail = row.email || '';
         if (!staffEmail) return;
@@ -319,7 +319,8 @@ function getAllowedUsers() {
           email: staffEmail,
           name: row.display_name || row.name || '',
           role: '登録済み',
-          teacherId: row.id || ''
+          teacherId: row.id || '',
+          subjects: row.subjects || []
         };
       });
     } catch (staffErr) {
