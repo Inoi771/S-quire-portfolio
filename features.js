@@ -718,7 +718,7 @@ function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPerson
     + personalityDesc + 'で短く返答してください。'
     + (userName ? 'ユーザーの表示名は「' + userName + '」です。' : '')
     + '\n必ず以下のJSON形式のみで返答してください（説明文・コードブロック不要）:'
-    + '\n{"type":"answer","answer":"返答内容"}';
+    + '\n{"type":"other","success":true,"response":"返答内容"}';
 
   var contents = [];
   if (chatHistory && chatHistory.length > 0) {
