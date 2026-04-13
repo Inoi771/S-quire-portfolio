@@ -391,6 +391,7 @@
         if (area) area.style.display = 'flex';
         loadLectureTeachers();
       }
+      updateLecOcrBtnState();
     }
 
     /**
@@ -504,6 +505,27 @@
         lecAdminTeacherName  = '';
         lecAdminTeacherId    = '';
         if (badge) badge.textContent = '';
+      }
+      updateLecOcrBtnState();
+    }
+
+    /**
+     * 「日程を読み込む（AI）」ボタンの有効/無効を更新する
+     * 管理者は講師を選択していること（lecAdminTeacherName が非空）を必須とする
+     */
+    function updateLecOcrBtnState() {
+      var btn = document.getElementById('lec-ocr-btn');
+      if (!btn) return;
+      if (isAdminUser && !lecAdminTeacherName) {
+        btn.disabled = true;
+        btn.style.opacity = '0.4';
+        btn.style.cursor = 'not-allowed';
+        btn.title = '先に講師を選択してください';
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.title = '';
       }
     }
 
@@ -2282,8 +2304,8 @@
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
 
-      var pref = preferredCampuses || [];
-      lecOcrCampusCodes = pref.length > 0 ? pref : Object.keys(campusData);
+      // 選択中の校舎タブ1択でAIに渡す（複数校舎の誤検出を防ぐ）
+      lecOcrCampusCodes = currentLectureCampus ? [currentLectureCampus] : (preferredCampuses && preferredCampuses.length > 0 ? preferredCampuses : Object.keys(campusData));
       lecOcrCampusNames = {};
       lecOcrCampusCodes.forEach(function(code) {
         if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
@@ -2328,9 +2350,8 @@
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
 
-      // 配属校舎情報を収集
-      var pref = preferredCampuses || [];
-      lecOcrCampusCodes = pref.length > 0 ? pref : Object.keys(campusData);
+      // 選択中の校舎タブ1択でAIに渡す（複数校舎の誤検出を防ぐ）
+      lecOcrCampusCodes = currentLectureCampus ? [currentLectureCampus] : (preferredCampuses && preferredCampuses.length > 0 ? preferredCampuses : Object.keys(campusData));
       lecOcrCampusNames = {};
       lecOcrCampusCodes.forEach(function(code) {
         if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
@@ -2455,6 +2476,20 @@
           tr.dataset.originalStartTime = entry.startTime || '';
           tr.dataset.originalGrade = entry.grade || '';
           tr.dataset.originalSubject = entry.subject || '';
+        }
+
+        // 選択科目に固定：別科目エントリはスキップ、null科目は選択科目で補完
+        if (selectedSubjectForEntry) {
+          if (displayEntry.subject && displayEntry.subject !== selectedSubjectForEntry) {
+            return; // 別科目 → このエントリは読み込まない
+          }
+          if (!displayEntry.subject) {
+            displayEntry.subject = selectedSubjectForEntry;
+          }
+        }
+        // null校舎を選択中の校舎タブで補完
+        if (!displayEntry.campusCode && currentLectureCampus) {
+          displayEntry.campusCode = currentLectureCampus;
         }
 
         var hasCampusIssue = !displayEntry.campusCode;
