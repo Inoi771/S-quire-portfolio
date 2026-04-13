@@ -1707,6 +1707,15 @@ function parseGeminiErrorMessage_(response) {
   Logger.log('❌ Gemini API Error [' + code + ']: ' + body);
 
   if (code === 429) {
+    // bodyにRPM制限のキーワードが含まれる場合は一時的なレート制限
+    var bodyLower = body.toLowerCase();
+    var isRpmLimit = bodyLower.indexOf('per 1.0m') !== -1 ||
+                     bodyLower.indexOf('per minute') !== -1 ||
+                     bodyLower.indexOf('rate limit') !== -1;
+    if (isRpmLimit) {
+      return 'AIへのリクエストが集中しています。1〜2分ほどお待ちの上、再度お試しください。';
+    }
+    // それ以外（RPD制限または不明）は1日の利用上限として扱う
     var ptOff = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'Z');
     var resetHour = (ptOff === '-0700') ? 16 : 17;
     var nowHour = parseInt(Utilities.formatDate(new Date(), 'Asia/Tokyo', 'H'), 10);
