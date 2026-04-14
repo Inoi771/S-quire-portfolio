@@ -1897,14 +1897,119 @@ function migrateLectureEntriesToCampusDocs() {
 }
 
 // ===== 【講師配置表】=====
+//
+// 年度別キー保存モデル（2027/04/01 以降の自動切替対応）：
+//   ScriptProperties: STAFF_PLACEMENT_{fiscalYear} → { campuses, teachers, supervisors, year }
+//   旧単一キー      : STAFF_PLACEMENT（初回読み込み時に現行年度キーへ移行）
+//   アーカイブキー  : STAFF_PLACEMENT_ARCHIVE_{fiscalYear}（旧年度を退避）
+//
+// 表示年度は getCurrentFiscalYear()（4月起算）で決定。
+// 1〜3月のみ、編集画面で翌年度の並行編集が可能。
+
+/**
+ * 講師配置：旧単一キー `STAFF_PLACEMENT` を現行年度キーへ移行する（1回限り）。
+ * @private
+ */
+function _placementMigrateLegacyKey(currentFY) {
+  try {
+    var legacy = PropertiesService.getScriptProperties().getProperty('STAFF_PLACEMENT');
+    if (!legacy) return;
+    var currentKey = 'STAFF_PLACEMENT_' + currentFY;
+    var existing = PropertiesService.getScriptProperties().getProperty(currentKey);
+    if (!existing) {
+      // 旧データ内の year を優先（無ければ currentFY を付与）
+      try {
+        var parsed = JSON.parse(legacy);
+        if (!parsed.year) parsed.year = currentFY;
+        PropertiesService.getScriptProperties().setProperty(currentKey, JSON.stringify(parsed));
+      } catch (e) {
+        PropertiesService.getScriptProperties().setProperty(currentKey, legacy);
+      }
+      Logger.log('✓ 講師配置: 旧 STAFF_PLACEMENT を ' + currentKey + ' へ移行');
+    }
+    PropertiesService.getScriptProperties().deleteProperty('STAFF_PLACEMENT');
+    // インメモリキャッシュも無効化
+    if (getScriptProperty._cache) {
+      delete getScriptProperty._cache['STAFF_PLACEMENT'];
+      delete getScriptProperty._cache[currentKey];
+    }
+  } catch (e) {
+    Logger.log('❌ _placementMigrateLegacyKey エラー: ' + e);
+  }
+}
+
+/**
+ * 講師配置：旧年度（currentFY 未満）のキーを STAFF_PLACEMENT_ARCHIVE_{year} に退避し、元キーを削除する。
+ * @private
+ */
+function _placementArchiveOldYears(currentFY) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var keys = props.getKeys();
+    var re = /^STAFF_PLACEMENT_(\d{4})$/;
+    keys.forEach(function(k) {
+      var m = k.match(re);
+      if (!m) return;
+      var y = parseInt(m[1], 10);
+      if (isNaN(y) || y >= currentFY) return;
+      var archiveKey = 'STAFF_PLACEMENT_ARCHIVE_' + y;
+      var val = props.getProperty(k);
+      if (val) {
+        // 既存アーカイブを上書きしないよう、未設定のときのみコピー
+        if (!props.getProperty(archiveKey)) {
+          props.setProperty(archiveKey, val);
+        }
+      }
+      // アーカイブ成功（または値無し）を確認してから現役キー削除
+      props.deleteProperty(k);
+      if (getScriptProperty._cache) delete getScriptProperty._cache[k];
+      Logger.log('✓ 講師配置: ' + y + '年度データを ' + archiveKey + ' に退避・現役キーを削除');
+    });
+  } catch (e) {
+    Logger.log('❌ _placementArchiveOldYears エラー: ' + e);
+  }
+}
+
+/**
+ * 講師配置：編集可能な年度リストを返す。
+ * - 常に現行年度
+ * - 1〜3月は翌年度（来年度の準備期間）も含める
+ * @private
+ * @param {number} currentFY 現行年度
+ * @returns {Array<{year:number, label:string, isNext:boolean}>}
+ */
+function _placementEditableYears(currentFY) {
+  var list = [{ year: currentFY, label: currentFY + '年度（現行）', isNext: false }];
+  var month = new Date().getMonth() + 1;
+  if (month >= 1 && month <= 3) {
+    list.push({ year: currentFY + 1, label: (currentFY + 1) + '年度（来年度）', isNext: true });
+  }
+  return list;
+}
 
 /**
  * 講師配置データを取得する（フロントエンド向け）
- * データは年度に関わらず1件のみ保存。年度はデータ内フィールドで管理。
+ * 現在は年度別キー（STAFF_PLACEMENT_{year}）で保存。引数なしなら現行年度。
+ * 呼び出し時に (1) 旧単一キーの移行 (2) 旧年度データの自動アーカイブ を実施する。
+ * @param {number=} requestedYear 取得したい年度（省略時は現行年度）
  */
-function getStaffPlacementForWeb() {
+function getStaffPlacementForWeb(requestedYear) {
   try {
-    var json = getScriptProperty('STAFF_PLACEMENT');
+    var currentFY = getCurrentFiscalYear();
+    // (1) 旧単一キー移行（1回限り）
+    _placementMigrateLegacyKey(currentFY);
+    // (2) 旧年度データを自動アーカイブ
+    _placementArchiveOldYears(currentFY);
+
+    var editableYears = _placementEditableYears(currentFY);
+    var year = (requestedYear && !isNaN(parseInt(requestedYear, 10))) ? parseInt(requestedYear, 10) : currentFY;
+    // 閲覧表示は現行年度のみ許可（編集中の翌年度取得はフロントから明示指定）
+    // ただし editableYears に含まれる年度なら許可
+    var allowed = editableYears.some(function(e) { return e.year === year; });
+    if (!allowed) year = currentFY;
+
+    var key = 'STAFF_PLACEMENT_' + year;
+    var json = PropertiesService.getScriptProperties().getProperty(key);
     var campusConfig = getCampusConfig() || {};
     // 校舎詳細（TEL/FAX/責任者）をデフォルト値として取得
     var campusDetails = getCampusDetailsConfig();
@@ -1934,7 +2039,18 @@ function getStaffPlacementForWeb() {
         if (!c.mobile && def.mobile) c.mobile = def.mobile;
       });
     }
-    return { success: true, data: data, campusConfig: campusConfig, campusDetailsMap: campusDetailsMap, staffList: staffList };
+    // year フィールドを確実に付与（表示ヘッダー・印刷で使用）
+    if (data && !data.year) data.year = year;
+    return {
+      success: true,
+      data: data,
+      year: year,
+      currentFiscalYear: currentFY,
+      editableYears: editableYears,
+      campusConfig: campusConfig,
+      campusDetailsMap: campusDetailsMap,
+      staffList: staffList
+    };
   } catch (e) {
     Logger.log('❌ getStaffPlacementForWeb エラー: ' + e);
     return { success: false, error: e.toString() };
@@ -1943,15 +2059,35 @@ function getStaffPlacementForWeb() {
 
 /**
  * 講師配置データを保存する（管理者のみ）
- * @param {string} dataJson - JSON文字列（年度フィールドをデータ内に含む）
+ * @param {string} dataJson - JSON文字列（campuses/teachers/supervisors を含む）
+ * @param {number=} year  - 保存先年度（省略時は現行年度）。編集可能年度のみ許可。
  */
-function saveStaffPlacementForWeb(dataJson) {
+function saveStaffPlacementForWeb(dataJson, year) {
   try {
     var email = getFirebaseEmailContext_();
     if (!isAdmin_(email)) return { success: false, error: '管理者のみ編集できます' };
-    setScriptProperty('STAFF_PLACEMENT', dataJson);
-    Logger.log('✓ saveStaffPlacementForWeb: 配置データを保存');
-    return { success: true };
+
+    var currentFY = getCurrentFiscalYear();
+    var editableYears = _placementEditableYears(currentFY);
+    var targetYear = (year && !isNaN(parseInt(year, 10))) ? parseInt(year, 10) : currentFY;
+    var allowed = editableYears.some(function(e) { return e.year === targetYear; });
+    if (!allowed) {
+      return { success: false, error: targetYear + '年度は現在編集できません（編集可能年度: ' + editableYears.map(function(e){return e.year;}).join(', ') + '）' };
+    }
+
+    // year フィールドを揃えて保存（互換のためデータ内にも保持）
+    var toSave = dataJson;
+    try {
+      var parsed = JSON.parse(dataJson);
+      parsed.year = targetYear;
+      toSave = JSON.stringify(parsed);
+    } catch (_) { /* JSON破損時はそのまま保存 */ }
+
+    var key = 'STAFF_PLACEMENT_' + targetYear;
+    PropertiesService.getScriptProperties().setProperty(key, toSave);
+    if (getScriptProperty._cache) delete getScriptProperty._cache[key];
+    Logger.log('✓ saveStaffPlacementForWeb: ' + key + ' を保存');
+    return { success: true, year: targetYear };
   } catch (e) {
     Logger.log('❌ saveStaffPlacementForWeb エラー: ' + e);
     return { success: false, error: e.toString() };
@@ -1960,11 +2096,15 @@ function saveStaffPlacementForWeb(dataJson) {
 
 /**
  * 講師配置表に登録されている講師名一覧を返す（講習管理ドロップダウン用）
+ * 現行年度のデータから取得する。
  * @returns {{ success: boolean, teachers: Array<{name: string, subject: string}> }}
  */
 function getPlacementTeacherNames() {
   try {
-    var json = getScriptProperty('STAFF_PLACEMENT');
+    var currentFY = getCurrentFiscalYear();
+    // 旧単一キーがまだ残っていれば移行（読み取り副作用を最小化するため try-catch で囲む）
+    _placementMigrateLegacyKey(currentFY);
+    var json = PropertiesService.getScriptProperties().getProperty('STAFF_PLACEMENT_' + currentFY);
     if (!json) return { success: true, teachers: [] };
     var data = JSON.parse(json);
     var teachers = (data.teachers || [])

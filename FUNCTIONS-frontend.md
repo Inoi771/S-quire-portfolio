@@ -373,13 +373,16 @@
 
 | 関数 | 説明 |
 |------|------|
-| `loadStaffPlacement(year?)` | 配置データをGASから取得して表示。年度省略時は現在年度 |
-| `renderPlacement(root)` | ヘッダー・ビュー切り替えタブ・配置ビューを描画 |
+| `loadStaffPlacement()` | 配置データをGASから取得して表示。サーバー側の `getCurrentFiscalYear()` が返す「現行年度」のデータを自動で表示（4月に自動切替） |
+| `renderPlacement(root)` | ヘッダー（年度見出し＋来年度準備期間バッジ）・ビュー切り替えタブ・配置ビューを描画 |
 | `switchPlacementView(mode)` | `'campus'`（校舎別）または `'teacher'`（講師別）に切り替え |
 | `buildCampusViewHtml(data)` | 校舎別カードビューのHTML生成（責任者+勤務講師） |
 | `buildTeacherViewHtml(data)` | 講師別横スクロールテーブルのHTML生成（科目グループ×曜日×校舎略称） |
-| `openPlacementEdit()` | 編集モーダルを開く（管理者のみ） |
-| `renderPlacementEditModal(modal)` | 編集モーダル描画（校舎情報・講師配置・責任者の3アコーディオン） |
-| `savePlacementData()` | 編集内容をGASへ保存 |
+| `openPlacementEdit()` | 編集モーダルを開く（管理者のみ）。初期年度は現行年度 |
+| `renderPlacementEditModal(modal)` | 編集モーダル描画（年度プルダウン＋校舎情報・講師配置・責任者の3アコーディオン） |
+| `switchPlacementEditYear(newYear)` | 編集モーダル内で年度を切り替える。未保存の編集内容を年度ごとにキャッシュし、別年度のデータをサーバーから取得して差し替え |
+| `savePlacementData()` | 編集内容をGASへ保存（編集中の年度を第2引数で渡す） |
 | `printPlacementPDF()` | 新ウィンドウで印刷用HTMLを開き、印刷ダイアログを起動 |
 | `buildPlacementPrintHtml(data, year)` | 横向きA4の印刷用HTML生成（左：講師×曜日表、右：校舎×曜日表） |
+| `_placementEmptyData(year)` | 内部: 空の配置データを生成（校舎マスタから初期値） |
+| `_placementCacheKey(year)` | 内部: localStorage キャッシュキー（年度別） |

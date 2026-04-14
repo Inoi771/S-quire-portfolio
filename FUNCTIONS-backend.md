@@ -465,11 +465,22 @@ Firestore → Supabase の一括データ移行。一度だけ実行。
 
 | 関数 | 説明 |
 |------|------|
-| `getStaffPlacementForWeb(fiscalYear)` | 指定年度の講師配置データをScript Propertiesから取得。校舎マスタ（campusConfig）も同時に返す。年度省略時は現在年度 |
-| `saveStaffPlacementForWeb(fiscalYear, dataJson)` | 指定年度の講師配置データをScript Propertiesに保存。管理者のみ |
-| `getPlacementTeacherNames()` | 講師配置表（STAFF_PLACEMENT）に登録されている講師名一覧を返す。講習管理ドロップダウン用。戻り値: `{ success, teachers: [{name, subject}] }` |
+| `getStaffPlacementForWeb(requestedYear?)` | 指定年度の講師配置データをScript Propertiesから取得。校舎マスタ・staffList も同時に返す。年度省略時は現行年度（`getCurrentFiscalYear()`）。呼び出し時に旧単一キーの移行と旧年度の自動アーカイブを実施。戻り値: `{ success, data, year, currentFiscalYear, editableYears, campusConfig, campusDetailsMap, staffList }` |
+| `saveStaffPlacementForWeb(dataJson, year?)` | 指定年度の講師配置データをScript Propertiesに保存。管理者のみ。年度省略時は現行年度。編集可能年度（現行年度＋1〜3月のみ翌年度）のみ許可 |
+| `getPlacementTeacherNames()` | 現行年度の講師配置データから講師名一覧を返す。講習管理ドロップダウン用。戻り値: `{ success, teachers: [{name, subject}] }` |
+| `_placementMigrateLegacyKey(currentFY)` | 内部: 旧単一キー `STAFF_PLACEMENT` を `STAFF_PLACEMENT_{currentFY}` へ移行（1回限り） |
+| `_placementArchiveOldYears(currentFY)` | 内部: `STAFF_PLACEMENT_XXXX`（XXXX<currentFY）を `STAFF_PLACEMENT_ARCHIVE_XXXX` に退避し、現役キーを削除 |
+| `_placementEditableYears(currentFY)` | 内部: 編集可能年度リスト（現行年度＋1〜3月は翌年度）を返す |
 
-保存キー: `STAFF_PLACEMENT_{year}`（例: `STAFF_PLACEMENT_2025`）
+**保存キー構造**:
+- 現役: `STAFF_PLACEMENT_{year}`（例: `STAFF_PLACEMENT_2026`）
+- アーカイブ: `STAFF_PLACEMENT_ARCHIVE_{year}`（4/1で自動退避）
+- 旧単一キー `STAFF_PLACEMENT` は初回読み込み時に現行年度キーへ自動移行
+
+**自動年度切替の挙動**:
+- 4月1日を境に `getCurrentFiscalYear()` が新年度を返す → `getStaffPlacementForWeb()` が新年度キーを参照
+- 同時に旧年度データは `STAFF_PLACEMENT_ARCHIVE_{旧年度}` に退避され、現役キーから削除される
+- 1〜3月は編集画面で翌年度の並行作成が可能
 
 ---
 

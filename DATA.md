@@ -45,6 +45,9 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `JUKU_EVENT_OVERRIDES` | 塾内部イベント上書き（JSON） | schedule.js |
 | `CLOSED_DAYS_OVERRIDES` | 休校日上書き（JSON: `{"add":[], "del":[]}`） | schedule.js, line.js |
 | `FORM_EMAIL_SENDER` | フォームメール送信元フィルター（デフォルト: `noreply@web-cms.jp`） | line.js |
+| `STAFF_PLACEMENT_{year}` | 講師配置データ（年度別キー。例: `STAFF_PLACEMENT_2026`）。JSON: `{year, campuses, teachers, supervisors}`。4月1日以降の初回アクセス時に旧年度は自動アーカイブ | admin.js |
+| `STAFF_PLACEMENT_ARCHIVE_{year}` | 旧年度の講師配置アーカイブ（自動退避先）。通常の読み書きからは参照されない | admin.js |
+| `STAFF_PLACEMENT`（旧） | 非推奨。旧単一キー。`getStaffPlacementForWeb()` 初回呼び出し時に `STAFF_PLACEMENT_{現行年度}` へ自動移行され削除される | admin.js |
 
 ---
 
