@@ -182,7 +182,7 @@ markdown# S-quire — プロジェクト設計書
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 4**
+**現在のデプロイ回数: 5**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -415,6 +415,7 @@ MyProject/
 - **成績データはSupabase**: grades・schoolAverages・testAnalysis・studentAnalysis はすべてSupabase（PostgreSQL）に保存。Firestoreのキャッシュコレクション（gradeSummaries・gradeListCache・gradeReportCache・distCache・gradesMeta）は廃止済み。SQL集計関数（get_campus_averages等）で代替。フロントエンドの成績読み取りはGAS API経由（gas-bridge）で行う
 - **AIアシスタントデータもSupabase**: aiLearnedKnowledge・aiFeedback はSupabase（`ai_learned_knowledge`・`ai_feedback` テーブル）に保存。Firestoreの読み取り回数削減のため移行
 - **スタッフデータもSupabase**: staffs コレクションは Supabase `staffs` テーブルに移行。認証時の検索は RPC関数 `find_staff_by_auth` で1クエリに統合。allowedUsers コレクション（Firestoreセキュリティルール用）のみFirestoreに残す。Firestoreに残すのは講習日程（`lectureEntries`）・スケジュール・allowedUsers等のリアルタイム性またはセキュリティルールが必要なデータのみ
+- **講師配置は年度別キー＋自動切替**: 講師配置（`STAFF_PLACEMENT_{year}`）は ScriptProperties に年度別キーで保存。`getCurrentFiscalYear()`（4月起算）に基づき表示年度を自動決定し、4月1日で新年度に切替、旧年度は `STAFF_PLACEMENT_ARCHIVE_{year}` へ自動退避される。1〜3月のみ編集画面で翌年度の並行編集が可能。詳細は `admin.js` の講師配置セクション参照
 
 ---
 

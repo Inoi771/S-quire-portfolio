@@ -10,8 +10,14 @@ var placementStaffList = [];      // スタッフ一覧 [{id, name}]
 var placementViewMode = 'campus'; // 'campus' or 'teacher'
 var placementIsAdmin = false;     // 管理者かどうか
 var placementLoaded = false;      // 読み込み済みフラグ
+var placementDisplayYear = null;  // 表示中の年度（サーバーの getCurrentFiscalYear に基づく）
+var placementEditableYears = [];  // [{year, label, isNext}] 編集可能年度
 
 var PLACEMENT_DAYS = ['月', '火', '水', '木', '金', '土'];
+
+function _placementCacheKey(year) {
+  return 's-quire-placement-' + (year || 'legacy');
+}
 
 /**
  * 講師配置データを読み込む（タブ切り替え時に呼ばれる）
@@ -23,13 +29,26 @@ function loadStaffPlacement() {
   // 既にデータを持っていれば再読み込み不要
   if (placementLoaded) return;
 
-  // キャッシュがあれば即座に表示
+  // 旧キャッシュ（年度なし）は破棄（年度自動切替時に古いデータを表示しないため）
+  try { localStorage.removeItem('s-quire-placement'); } catch (e) {}
+
+  // キャッシュがあれば即座に表示（年度別キーから探索）
   try {
-    var cached = localStorage.getItem('s-quire-placement');
+    // 直近の表示年度が分かれば優先、なければ全 s-quire-placement-* を走査して最新を採用
+    var cached = null;
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('s-quire-placement-') === 0) {
+        cached = localStorage.getItem(k);
+        break;
+      }
+    }
     if (cached) {
       var parsed = JSON.parse(cached);
       placementCampusConfig = parsed.campusConfig || {};
       placementData = parsed.data;
+      placementDisplayYear = parsed.year || null;
+      placementEditableYears = parsed.editableYears || [];
       placementIsAdmin = (typeof isAdminUser !== 'undefined') ? isAdminUser : false;
       placementLoaded = true;
       renderPlacement(root);
@@ -50,13 +69,27 @@ function loadStaffPlacement() {
         }
         return;
       }
-      try { localStorage.setItem('s-quire-placement', JSON.stringify({ data: result.data, campusConfig: result.campusConfig })); } catch (e) {}
       placementCampusConfig = result.campusConfig || {};
       placementCampusDetailsMap = result.campusDetailsMap || {};
       placementData = result.data;
       placementStaffList = result.staffList || [];
+      placementDisplayYear = result.year || result.currentFiscalYear || null;
+      placementEditableYears = result.editableYears || [];
       placementIsAdmin = (typeof isAdminUser !== 'undefined') ? isAdminUser : false;
       placementLoaded = true;
+      // 現行年度のキャッシュのみ保存し、他の年度キャッシュは破棄（自動切替時に旧年度を表示しないため）
+      try {
+        for (var i = localStorage.length - 1; i >= 0; i--) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('s-quire-placement-') === 0) localStorage.removeItem(k);
+        }
+        localStorage.setItem(_placementCacheKey(placementDisplayYear), JSON.stringify({
+          data: result.data,
+          campusConfig: result.campusConfig,
+          year: placementDisplayYear,
+          editableYears: placementEditableYears
+        }));
+      } catch (e) {}
       renderPlacement(root);
     })
     .withFailureHandler(function(err) {
@@ -72,13 +105,19 @@ function loadStaffPlacement() {
  */
 function renderPlacement(root) {
   var data = placementData;
-  var year = data ? (data.year || '') : '';
+  // 表示年度はサーバーの getCurrentFiscalYear に基づく（4月に自動切替）
+  var year = placementDisplayYear || (data ? data.year : '') || '';
 
   var html = '<div class="placement-header-bar">';
   html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
   html += '<span style="font-weight:bold;font-size:15px;">👨‍🏫 講師配置表';
   if (year) html += '（' + escHtml(String(year)) + '年度）';
   html += '</span>';
+  // 1〜3月の並行編集期間：来年度編集がアクティブであることを示すバッジ
+  if (placementIsAdmin && placementEditableYears && placementEditableYears.length > 1) {
+    var nextY = placementEditableYears[placementEditableYears.length - 1].year;
+    html += '<span title="1〜3月は翌年度の配置表を並行して作成できます" style="background:#fff3cd;color:#856404;border:1px solid #ffeaa7;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:bold;">📝 ' + nextY + '年度の準備期間</span>';
+  }
   if (placementIsAdmin) {
     html += '<button class="placement-action-btn" onclick="openPlacementEdit()" style="background:#667eea;">✏️ 編集</button>';
   }
@@ -264,25 +303,40 @@ function buildTeacherViewHtml(data) {
 // ===== 編集モーダル =====
 
 var _placementEditData = null;
+var _placementEditYear = null;              // 現在編集中の年度
+var _placementEditCache = {};               // {year: data} 年度切替時に未保存データを保持
+
+/**
+ * 空の配置データを生成する
+ */
+function _placementEmptyData(year) {
+  var d = {
+    year: year,
+    campuses: {},
+    teachers: [],
+    supervisors: {}
+  };
+  Object.keys(placementCampusConfig).forEach(function(code) {
+    var def = placementCampusDetailsMap[code] || {};
+    d.campuses[code] = { name: placementCampusConfig[code], abbr: '', tel: def.tel || '', fax: def.fax || '', principal: def.principal || '' };
+    d.supervisors[code] = { '月': '', '火': '', '水': '', '木': '', '金': '', '土': '' };
+  });
+  return d;
+}
 
 /**
  * 編集モーダルを開く
  */
 function openPlacementEdit() {
+  // 既定は「表示中の年度」＝ 現行年度
+  _placementEditYear = placementDisplayYear || (new Date().getMonth() + 1 >= 4 ? new Date().getFullYear() : new Date().getFullYear() - 1);
+  _placementEditCache = {};
+
   if (placementData) {
     _placementEditData = JSON.parse(JSON.stringify(placementData));
+    if (!_placementEditData.year) _placementEditData.year = _placementEditYear;
   } else {
-    _placementEditData = {
-      year: new Date().getFullYear(),
-      campuses: {},
-      teachers: [],
-      supervisors: {}
-    };
-    Object.keys(placementCampusConfig).forEach(function(code) {
-      var def = placementCampusDetailsMap[code] || {};
-      _placementEditData.campuses[code] = { name: placementCampusConfig[code], abbr: '', tel: def.tel || '', fax: def.fax || '', principal: def.principal || '' };
-      _placementEditData.supervisors[code] = { '月': '', '火': '', '水': '', '木': '', '金': '', '土': '' };
-    });
+    _placementEditData = _placementEmptyData(_placementEditYear);
   }
 
   var modal = document.getElementById('placement-edit-modal');
@@ -294,6 +348,57 @@ function openPlacementEdit() {
   }
   modal.style.display = 'block';
   renderPlacementEditModal(modal);
+}
+
+/**
+ * 編集モーダル内の年度を切り替える。
+ * 現在の編集内容を年度キーでキャッシュし、別年度のデータをサーバーから取得して差し替える。
+ */
+function switchPlacementEditYear(newYear) {
+  newYear = parseInt(newYear, 10);
+  if (isNaN(newYear) || newYear === _placementEditYear) return;
+
+  // 現在の編集内容をキャッシュ（未保存でも失わないように）
+  if (_placementEditData) {
+    _placementEditCache[_placementEditYear] = JSON.parse(JSON.stringify(_placementEditData));
+  }
+
+  var modal = document.getElementById('placement-edit-modal');
+
+  // キャッシュヒット時はそれを採用
+  if (_placementEditCache[newYear]) {
+    _placementEditYear = newYear;
+    _placementEditData = _placementEditCache[newYear];
+    if (modal) renderPlacementEditModal(modal);
+    return;
+  }
+
+  // サーバーから取得
+  if (modal) {
+    // 簡易ロード表示
+    var body = modal.firstChild;
+    if (body) body.style.opacity = '0.5';
+  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      _placementEditYear = newYear;
+      if (result && result.success && result.data) {
+        _placementEditData = result.data;
+        if (!_placementEditData.year) _placementEditData.year = newYear;
+      } else {
+        // 該当年度のデータがなければ空データで新規作成
+        _placementEditData = _placementEmptyData(newYear);
+      }
+      if (modal) renderPlacementEditModal(modal);
+    })
+    .withFailureHandler(function(err) {
+      showToast('年度切替に失敗しました: ' + err, 'error');
+      // 失敗時は空データで作成
+      _placementEditYear = newYear;
+      _placementEditData = _placementEmptyData(newYear);
+      if (modal) renderPlacementEditModal(modal);
+    })
+    .getStaffPlacementForWeb(newYear);
 }
 
 /**
@@ -309,11 +414,20 @@ function renderPlacementEditModal(modal) {
   html += '<button onclick="closePlacementEdit()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#666;">✕</button>';
   html += '</div>';
 
-  // 年度テキスト入力
-  html += '<div style="margin-bottom:16px;padding:12px;background:#f5f5f5;border-radius:8px;display:flex;align-items:center;gap:10px;">';
-  html += '<label style="font-size:13px;color:#555;white-space:nowrap;">表示年度：</label>';
-  html += '<input type="text" id="pe-year" value="' + escHtml(String(d.year || '')) + '" onchange="_placementEditData.year=this.value" style="font-size:14px;padding:5px 10px;border-radius:4px;border:1px solid #ddd;width:100px;" placeholder="2025">';
-  html += '<span style="font-size:13px;color:#888;">（タイトルに表示されます）</span>';
+  // 年度プルダウン（編集可能年度: 現行年度＋1〜3月のみ翌年度）
+  html += '<div style="margin-bottom:16px;padding:12px;background:#f5f5f5;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+  html += '<label style="font-size:13px;color:#555;white-space:nowrap;">編集対象年度：</label>';
+  html += '<select id="pe-year" onchange="switchPlacementEditYear(this.value)" style="font-size:14px;padding:5px 10px;border-radius:4px;border:1px solid #ddd;">';
+  var editable = placementEditableYears && placementEditableYears.length ? placementEditableYears : [{ year: _placementEditYear, label: _placementEditYear + '年度（現行）', isNext: false }];
+  editable.forEach(function(y) {
+    html += '<option value="' + y.year + '"' + (y.year === _placementEditYear ? ' selected' : '') + '>' + escHtml(y.label) + '</option>';
+  });
+  html += '</select>';
+  if (editable.length > 1) {
+    html += '<span style="font-size:12px;color:#856404;background:#fff3cd;border:1px solid #ffeaa7;border-radius:10px;padding:2px 8px;">1〜3月は来年度を並行編集できます</span>';
+  } else {
+    html += '<span style="font-size:12px;color:#888;">（年度切替は毎年1〜3月のみ）</span>';
+  }
   html += '</div>';
 
   html += buildEditAccordion('pe-sec-campus', '🏫 校舎情報（TEL/FAX/略称）', buildEditCampusSection(d, campusCodes));
@@ -569,6 +683,8 @@ function closePlacementEdit() {
   var modal = document.getElementById('placement-edit-modal');
   if (modal) modal.style.display = 'none';
   _placementEditData = null;
+  _placementEditYear = null;
+  _placementEditCache = {};
 }
 
 /**
@@ -577,9 +693,9 @@ function closePlacementEdit() {
 function savePlacementData() {
   if (!_placementEditData) return;
 
-  // 年度テキストフィールドの値を反映（onchangeが発火しない場合の保険）
-  var yearEl = document.getElementById('pe-year');
-  if (yearEl) _placementEditData.year = yearEl.value;
+  // 編集中の年度をデータに反映
+  var targetYear = _placementEditYear || (_placementEditData.year ? parseInt(_placementEditData.year, 10) : null);
+  if (targetYear) _placementEditData.year = targetYear;
 
   var btn = document.getElementById('pe-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
@@ -591,8 +707,15 @@ function savePlacementData() {
       if (btn) { btn.disabled = false; btn.textContent = '💾 保存'; }
       if (result && result.success) {
         showToast('✓ 保存しました', 'success');
-        placementData = _placementEditData;
-        placementLoaded = true;
+        // 表示中の年度と保存先年度が一致する場合のみビューに反映
+        // （例: 2027年1月に来年度「2027年度」を保存した場合は、表示は2026年度のまま）
+        if (result.year === placementDisplayYear) {
+          placementData = _placementEditData;
+          placementLoaded = true;
+        } else {
+          // 表示対象外の年度を保存した場合は、キャッシュだけ維持しビューはそのまま
+          showToast((result.year) + '年度の配置表を保存しました（4月に自動で切り替わります）', 'success');
+        }
         closePlacementEdit();
         var root = document.getElementById('placement-root');
         if (root) renderPlacement(root);
@@ -604,7 +727,7 @@ function savePlacementData() {
       if (btn) { btn.disabled = false; btn.textContent = '💾 保存'; }
       showToast('エラー: ' + err, 'error');
     })
-    .saveStaffPlacementForWeb(dataJson);
+    .saveStaffPlacementForWeb(dataJson, targetYear);
 }
 
 // ===== PDF印刷 =====
