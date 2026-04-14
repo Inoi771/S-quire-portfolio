@@ -73,6 +73,31 @@ function fetchGeminiWithRetry_(url, options) {
     }
   }
 
+  // 全リトライ失敗時: gemini-2.5-flash へモデルフォールバック
+  // gemini-3.1-flash-lite-preview が不安定な場合に自動切替
+  if (code !== 200) {
+    var fallbackModel = 'gemini-2.5-flash';
+    var fallbackUrl = url.replace(/\/models\/[^/:]+:generateContent/, '/models/' + fallbackModel + ':generateContent');
+    if (fallbackUrl !== url) {
+      Logger.log('🔄 最終フォールバック: ' + fallbackModel + ' に切り替え（元エラー: HTTP ' + code + '）');
+      res = UrlFetchApp.fetch(fallbackUrl, options);
+      code = res.getResponseCode();
+      if (code !== 200) {
+        // フォールバックモデルも失敗 → 予備キーで試行
+        var backupKeyFb = getProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP);
+        if (backupKeyFb) {
+          var fallbackBackupUrl = fallbackUrl.replace(/([?&])key=[^&]+/, '$1key=' + backupKeyFb);
+          Logger.log('🔄 フォールバック予備キーに切り替えます...');
+          res = UrlFetchApp.fetch(fallbackBackupUrl, options);
+          code = res.getResponseCode();
+          Logger.log(code === 200 ? '✓ フォールバック予備キーで成功' : '⚠ 全フォールバック失敗（HTTP ' + code + '）');
+        }
+      } else {
+        Logger.log('✓ ' + fallbackModel + ' で成功');
+      }
+    }
+  }
+
   return res;
 }
 

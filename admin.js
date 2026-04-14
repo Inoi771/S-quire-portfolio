@@ -1725,7 +1725,7 @@ function parseGeminiErrorMessage_(response) {
   if (code === 401) return 'Gemini APIキーが正しくありません。管理者に報告してご確認いただくようお願いします';
   if (code === 403) return 'Gemini APIキーに権限がありません。管理者に報告してご確認いただくようお願いします';
   if (code === 404) return 'AIモデルが見つかりません。管理者に報告してください';
-  if (code >= 500) return 'Gemini APIサーバーで一時的な障害が発生しています。しばらくお待ちください';
+  if (code >= 500) return 'Gemini API障害 (HTTP ' + code + '): ' + body.substring(0, 120) + '。しばらくお待ちください';
   return '予期しないAPIエラーが発生しました (HTTP ' + code + ')。管理者に報告してください';
 }
 
