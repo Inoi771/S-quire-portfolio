@@ -1199,7 +1199,6 @@
         '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">種別</th>' +
         '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">送信予定日時</th>' +
         '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">宛先</th>' +
-        '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">メッセージ</th>' +
         '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">状態</th>' +
         '<th style="padding:8px 10px;text-align:center;border-bottom:2px solid #ddd;">操作</th>' +
         '</tr>';
@@ -1219,20 +1218,17 @@
         }
         var recipientCount = (m.recipientCount !== undefined) ? m.recipientCount : (m.recipients || []).length;
         var recipLabel = recipientCount + '人';
-        var msgPreview = m.message ? escapeHtml_(m.message.slice(0, 30) + (m.message.length > 30 ? '…' : '')) : '（未設定）';
         var sentBadge = m.sent
           ? '<span style="padding:3px 8px;background:#e0e0e0;color:#666;border-radius:12px;font-size:11px;">✅ 送信済</span>'
           : '<span style="padding:3px 8px;background:#e8f5e9;color:#2e7d32;border-radius:12px;font-size:11px;">⏳ 未送信</span>';
         var ops = m.sent
           ? '<span style="font-size:11px;color:#aaa;">—</span>'
-          : '<button onclick="openSchedulerEditModal(\'' + m.id + '\')" style="padding:4px 8px;background:#e8f0fe;color:#3c4f8a;border:1px solid #c5d0e6;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">編集</button>' +
-            '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
-            '<button onclick="deleteScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#fce4ec;color:#c62828;border:1px solid #ffab91;border-radius:4px;cursor:pointer;font-size:11px;">削除</button>';
+          : '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
+            '<button onclick="stopScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#fce4ec;color:#c62828;border:1px solid #ffab91;border-radius:4px;cursor:pointer;font-size:11px;">送信停止</button>';
         html += '<tr style="border-bottom:1px solid #eee;">' +
           '<td style="padding:10px;">' + typeLabel + '</td>' +
           '<td style="padding:10px;white-space:nowrap;">' + dtStr + '</td>' +
           '<td style="padding:10px;text-align:center;">' + recipLabel + '</td>' +
-          '<td style="padding:10px;max-width:200px;">' + msgPreview.replace(/\n/g, '↵') + '</td>' +
           '<td style="padding:10px;text-align:center;">' + sentBadge + '</td>' +
           '<td style="padding:10px;text-align:center;white-space:nowrap;">' + ops + '</td>' +
           '</tr>';
@@ -1358,8 +1354,8 @@
     }
 
     // スケジュールを削除する
-    function deleteScheduledMsg(id) {
-      appConfirm('このスケジュールを削除しますか？').then(function(ok) {
+    function stopScheduledMsg(id) {
+      appConfirm('この月の送信を停止しますか？\nスケジュールが削除され、送信されなくなります。').then(function(ok) {
         if (!ok) return;
         google.script.run
           .withSuccessHandler(function(result) {
