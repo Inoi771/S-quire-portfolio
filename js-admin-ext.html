@@ -2204,10 +2204,10 @@
       if (role === 'user') {
         messageEl.innerHTML = '<div style="background: #4facfe; color: white; padding: 10px 14px; border-radius: 12px; margin-left: 40px; word-break: break-word;">' +
                               '<small style="opacity: 0.8;">' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '</small><br>' +
-                              message.replace(/\n/g, '<br>') +
+                              escapeHtml_(message).replace(/\n/g, '<br>') +
                               '</div>';
       } else {
-        var displayMessage = message
+        var displayMessage = escapeHtml_(message)
           .replace(/\\n/g, '<br>')
           .replace(/\n/g, '<br>');
         

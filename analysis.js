@@ -21,18 +21,24 @@ function fetchGeminiWithRetry_(url, options) {
   var res = UrlFetchApp.fetch(url, options);
   var code = res.getResponseCode();
 
-  // 503・500（高負荷・一時障害）: 1回のみリトライ（10秒待機）
+  // 503・500（高負荷・一時障害）: 1回のみリトライ（5秒待機）
   if (code === 503 || code === 500) {
-    Logger.log('⚠ Gemini API高負荷/障害(' + code + ')。10秒後に1回リトライします...');
-    Utilities.sleep(10000);
+    Logger.log('⚠ Gemini API高負荷/障害(' + code + ')。5秒後に1回リトライします...');
+    Utilities.sleep(5000);
     res = UrlFetchApp.fetch(url, options);
     code = res.getResponseCode();
   }
 
-  // 429（レート制限）: 最大3回リトライ（5秒→15秒→30秒 指数バックオフ）
-  var retryWaits = [5000, 15000, 30000];
+  // 429（レート制限）: 1回だけ短い待機でリトライし、解消しなければ即座に予備キーへ切り替え
+  // GAS実行時間制限（6分）を圧迫しないよう待機時間を最小化
+  var retryWaits = [3000, 8000, 15000];
   for (var i = 0; i < 3; i++) {
     if (code !== 429) break;
+    // 2回目以降の429は予備キー切り替えに委ねる（長時間待機しない）
+    if (i >= 1) {
+      Logger.log('⚠ Gemini API 2回目のレート制限(429)。予備キーへ早期切り替えします...');
+      break;
+    }
     var waitMs = retryWaits[i];
     Logger.log('⚠ Gemini APIレート制限(429)。' + (waitMs / 1000) + '秒後にリトライ（' + (i + 1) + '/3）...');
     Utilities.sleep(waitMs);
