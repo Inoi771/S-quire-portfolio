@@ -71,15 +71,17 @@
         }
       })
       .then(function(result) {
+        // 通信成功 — コールバックのエラーが .catch() に伝播しないよう try-catch で隔離
         if (result && result.__gasError) {
-          if (failureFn) failureFn(new Error(result.__gasError));
+          try { if (failureFn) failureFn(new Error(result.__gasError)); }
+          catch (cbErr) { console.error('[gas-bridge] failureHandler エラー:', funcName, cbErr); }
         } else {
-          if (successFn) successFn(result);
+          try { if (successFn) successFn(result); }
+          catch (cbErr) { console.error('[gas-bridge] successHandler エラー:', funcName, cbErr); }
         }
       })
       .catch(function(err) {
-        // タイムアウトはリトライしない（既に90秒待っているため）
-        // アプリケーションエラー（__gasError）はここに来ない
+        // ここに来るのは通信自体の失敗のみ（コールバックのエラーは上で隔離済み）
         var isRetryable = err.name !== 'AbortError' && (
           err.name === 'TypeError' ||
           err.message === 'PARSE_ERROR' ||
