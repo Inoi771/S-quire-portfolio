@@ -1463,13 +1463,57 @@
     }
 
     /**
-     * 変更後に呼び出す。2.5秒後にすべての未保存校舎を自動保存する。
-     * @param {string} campusCode
+     * 保存ボタンの状態を更新する
+     * @param {string} state 'dirty' | 'saving' | 'clean' | 'error'
      */
+    function updateLecSaveBtn(state) {
+      var btn = document.getElementById('lec-save-btn');
+      if (!btn) return;
+      if (state === 'dirty') {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.background = '#667eea';
+        btn.textContent = '💾 保存';
+        btn.style.cursor = 'pointer';
+      } else if (state === 'saving') {
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+        btn.textContent = '保存中...';
+        btn.style.cursor = 'not-allowed';
+      } else {
+        btn.disabled = true;
+        btn.style.opacity = '0.4';
+        btn.style.background = '#667eea';
+        btn.textContent = '💾 保存';
+        btn.style.cursor = 'not-allowed';
+      }
+    }
+
+    /**
+     * 保存ボタン押下時 — ダーティな校舎をすべて即時保存する
+     * 自動保存タイマーが動いている場合はキャンセルしてすぐに保存する
+     * フラグが不整合な場合の救済として、現在の校舎を強制保存する機能も持つ
+     */
+    function saveLecNow() {
+      var campuses = Object.keys(dirtyCampuses).filter(function(cc) { return dirtyCampuses[cc]; });
+      if (!campuses.length && currentLectureCampus && lectureEntries[currentLectureCampus]) {
+        campuses = [currentLectureCampus];
+        dirtyCampuses[currentLectureCampus] = true;
+        lectureSaveVersion[currentLectureCampus] = (lectureSaveVersion[currentLectureCampus] || 0) + 1;
+      }
+      if (!campuses.length || !currentLectureId) return;
+      if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+      updateLecSaveBtn('saving');
+      campuses.forEach(function(cc) {
+        if (lectureEntries[cc]) autoSaveCampus(cc);
+      });
+    }
+
     function scheduleAutoSave(campusCode) {
       dirtyCampuses[campusCode] = true;
       lectureSaveVersion[campusCode] = (lectureSaveVersion[campusCode] || 0) + 1;
       showLecStatusMsg('● 変更あり', '#f97316');
+      updateLecSaveBtn('dirty');
       if (autoSaveTimer) clearTimeout(autoSaveTimer);
       autoSaveTimer = setTimeout(function() {
         autoSaveTimer = null;
@@ -1490,6 +1534,7 @@
       // 保存開始時のバージョンを記憶（保存中に新たな変更があったか判定するため）
       var savedVersion = lectureSaveVersion[campusCode] || 0;
       var entries = lectureEntries[campusCode] || [];
+      updateLecSaveBtn('saving');
       fbSaveLectureScheduleEntries(currentLectureId, campusCode, entries)
         .then(function(result) {
           if (result && result.success) {
@@ -1509,15 +1554,20 @@
             if (!anyDirty) {
               showLecStatusMsg('✓ 保存しました', '#22c55e');
               showToast('✓ 保存しました', 'success');
+              updateLecSaveBtn('clean');
+            } else {
+              updateLecSaveBtn('dirty');
             }
           } else {
             showLecStatusMsg('❌ 保存失敗', '#e57373');
             showToast('❌ 保存失敗', 'error');
+            updateLecSaveBtn('error');
           }
         })
         .catch(function() {
           showLecStatusMsg('❌ 保存失敗', '#e57373');
           showToast('❌ 保存失敗', 'error');
+          updateLecSaveBtn('error');
         });
     }
 
