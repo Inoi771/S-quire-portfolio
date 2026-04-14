@@ -1226,6 +1226,145 @@ function buildShimurochoMessage_(sendYear, sendMonth, sendDay, closedDays) {
   return nextMonth + '月は' + lectureName + 'の引落があります。\n実施校舎で名簿が未提出の場合は' + sendMonth + '月' + deadlineDay + '日(' + deadlineDow + ')までに提出をお願いいたします。\n外部生で振込用紙を郵送する場合は講習申込書の提出も合わせてお願いいたします。\nなお、' + nextMonth + '月の引落データ送信は' + debitDay + '日(' + debitDow + ')です。';
 }
 
+// ---- テンプレート動的日付 ----
+
+/**
+ * report 種別の特別講習名マッピング（共通ヘルパー）
+ * @param {number} month 月
+ * @return {string} 特別講習名（該当なしは空文字）
+ */
+function getReportExtras_(month) {
+  var m = {4:'春期講習', 9:'夏期講習', 10:'第1回基礎学力テスト対策', 11:'第2回基礎学力テスト対策', 1:'冬期講習', 3:'直前講習'};
+  return m[month] || '';
+}
+
+/**
+ * shitsucho 種別の講習名マッピング（共通ヘルパー）
+ * @param {number} month 月
+ * @return {string} 講習名（該当なしは空文字）
+ */
+function getLectureNames_(month) {
+  var m = {4:'春期講習', 5:'中間テスト対策', 6:'期末テスト対策', 8:'夏期講習', 9:'第1回基礎学力テスト', 10:'第2回基礎学力テスト', 12:'冬期講習', 1:'直前講習', 2:'高校準備講座'};
+  return m[month] || '';
+}
+
+/**
+ * メッセージテンプレート内の {key} プレースホルダーを実際の値に置換する
+ * @param {string} template テンプレート文字列
+ * @param {string} type 種別 ('meeting'/'report'/'shitsucho')
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月
+ * @param {Object} closedDays computeClosedDaysForMonth_ の戻り値
+ * @return {string} 解決済みメッセージ（テンプレートが空なら空文字）
+ */
+function resolveTemplatePlaceholders_(template, type, year, month, closedDays) {
+  if (!template) return '';
+
+  var vars = {};
+
+  if (type === 'meeting') {
+    var meetingDay = getMeetingDay_(year, month);
+    if (!meetingDay) return '';
+    var mDow = getDayOfWeekJa_(year, month, meetingDay);
+    vars['日付'] = month + '月' + meetingDay + '日(' + mDow + ')';
+    vars['月'] = '' + month;
+    vars['日'] = '' + meetingDay;
+    vars['曜日'] = mDow;
+  } else if (type === 'report') {
+    var reportDay = getReportDay_(year, month);
+    if (!reportDay) return '';
+    var rDow = getDayOfWeekJa_(year, month, reportDay);
+    vars['日付'] = month + '月' + reportDay + '日(' + rDow + ')';
+    vars['月'] = '' + month;
+    vars['日'] = '' + reportDay;
+    vars['曜日'] = rDow;
+    vars['報告月'] = '' + month;
+    var extra = getReportExtras_(month);
+    vars['講習追記'] = extra ? 'と' + extra : '';
+  } else if (type === 'shitsucho') {
+    var sDay = computeShimurochoSendDate_(year, month, closedDays);
+    if (!sDay) return '';
+    var nextMonth = month === 12 ? 1 : month + 1;
+    var nextYear  = month === 12 ? year + 1 : year;
+    vars['翌月'] = '' + nextMonth;
+    vars['月'] = '' + month;
+    var debitDay = getDebitDay_(nextYear, nextMonth);
+    var debitDow = getDayOfWeekJa_(nextYear, nextMonth, debitDay);
+    vars['引落日'] = '' + debitDay;
+    vars['引落曜日'] = debitDow;
+    vars['引落日付'] = debitDay + '日(' + debitDow + ')';
+    var lastDay = new Date(year, month, 0).getDate();
+    var rawDeadline = Math.min(sDay + 5, lastDay);
+    var deadlineDay = findPrevOpenDay_(year, month, rawDeadline, closedDays) || rawDeadline;
+    var deadlineDow = getDayOfWeekJa_(year, month, deadlineDay);
+    vars['締切日'] = '' + deadlineDay;
+    vars['締切曜日'] = deadlineDow;
+    vars['締切日付'] = month + '月' + deadlineDay + '日(' + deadlineDow + ')';
+    vars['講習名'] = getLectureNames_(month);
+  }
+
+  // プレースホルダー置換
+  var result = template;
+  for (var key in vars) {
+    if (vars.hasOwnProperty(key)) {
+      result = result.split('{' + key + '}').join(vars[key] !== undefined ? '' + vars[key] : '');
+    }
+  }
+  return result;
+}
+
+/**
+ * LINE_SCHEDULER_SETTINGS のテンプレートからメッセージを生成する
+ * テンプレートが未設定の場合は空文字を返す（呼び出し元でフォールバック）
+ * @param {string} type 種別 ('meeting'/'report'/'shitsucho')
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月
+ * @param {Object} closedDays computeClosedDaysForMonth_ の戻り値
+ * @return {string} 解決済みメッセージ（テンプレート未設定なら空文字）
+ */
+function buildMessageFromTemplate_(type, year, month, closedDays) {
+  var settingsJson = getProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS);
+  var settings = safeJsonParse_(settingsJson, {});
+  var typeSettings = settings[type] || {};
+
+  if (type === 'shitsucho') {
+    var tmpl;
+    if (month === 3) {
+      tmpl = typeSettings.messageTemplate_march || '';
+    } else if (month === 7 || month === 11) {
+      tmpl = typeSettings.messageTemplate_simple || '';
+    } else {
+      tmpl = typeSettings.messageTemplate_default || '';
+    }
+    if (!tmpl) return '';
+    return resolveTemplatePlaceholders_(tmpl, type, year, month, closedDays);
+  }
+
+  var template = typeSettings.messageTemplate || '';
+  if (!template) return '';
+  return resolveTemplatePlaceholders_(template, type, year, month, closedDays);
+}
+
+/**
+ * テンプレートのプレビューを返す公開API（管理画面用）
+ * @param {string} type 種別 ('meeting'/'report'/'shitsucho')
+ * @param {string} template テンプレート文字列
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月
+ * @return {Object} { success, preview }
+ */
+function previewTemplateMessage(type, template, year, month) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var closedDays = computeClosedDaysForMonth_(year, month);
+    var resolved = resolveTemplatePlaceholders_(template, type, year, month, closedDays);
+    return { success: true, preview: resolved };
+  } catch(e) {
+    Logger.log('❌ previewTemplateMessage エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
 /**
  * Supabase staffs で line_user_id が設定されている全 teacherId を返す内部ヘルパー
  * meeting/report の全員送信用
@@ -1284,7 +1423,7 @@ function generateMonthlySchedule_(year, month) {
           firestoreSet_('lineSchedules', mId, {
             id: mId, type: 'meeting', yearMonth: yearMonth,
             recipients: ['__ALL__'], scheduledAt: mScheduledAt,
-            message: buildMeetingMessage_(year, month, meetingResult.meetingDay),
+            message: buildMessageFromTemplate_('meeting', year, month, closedDays) || buildMeetingMessage_(year, month, meetingResult.meetingDay),
             sent: false, sentAt: '', createdAt: nowIso
           });
           created++;
@@ -1308,7 +1447,7 @@ function generateMonthlySchedule_(year, month) {
           firestoreSet_('lineSchedules', rId, {
             id: rId, type: 'report', yearMonth: yearMonth,
             recipients: ['__ALL__'], scheduledAt: rScheduledAt,
-            message: buildReportMessage_(year, month, reportResult.reportDay, month),
+            message: buildMessageFromTemplate_('report', year, month, closedDays) || buildReportMessage_(year, month, reportResult.reportDay, month),
             sent: false, sentAt: '', createdAt: nowIso
           });
           created++;
@@ -1332,7 +1471,7 @@ function generateMonthlySchedule_(year, month) {
           firestoreSet_('lineSchedules', sId, {
             id: sId, type: 'shitsucho', yearMonth: yearMonth,
             recipients: sSettings.recipients || [], scheduledAt: sScheduledAt,
-            message: buildShimurochoMessage_(year, month, sDay, closedDays),
+            message: buildMessageFromTemplate_('shitsucho', year, month, closedDays) || buildShimurochoMessage_(year, month, sDay, closedDays),
             sent: false, sentAt: '', createdAt: nowIso
           });
           created++;
@@ -1365,9 +1504,9 @@ function getLineSchedulerSettings() {
       setProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS, JSON.stringify(settings));
     }
     var defaults = {
-      shitsucho: { recipients: [], messageTemplate: '', sendHour: 14 },
-      meeting:   { recipients: [], messageTemplate: '明日{date}は14時から北島校で正社員ミーティングがあります。\nよろしくお願いいたします。', sendHour: 16 },
-      report:    { recipients: [], messageTemplate: '明日{date}は{month}月分の回数報告書の提出日です。\nよろしくお願いいたします。', sendHour: 16 }
+      shitsucho: { recipients: [], messageTemplate_march: '', messageTemplate_simple: '', messageTemplate_default: '', sendHour: 14 },
+      meeting:   { recipients: [], messageTemplate: '明日{日付}は14時から北島校で正社員ミーティングがあります。\nよろしくお願いいたします。', sendHour: 16 },
+      report:    { recipients: [], messageTemplate: '明日{日付}は{報告月}月分の回数報告書{講習追記}の提出日です。\nよろしくお願いいたします。', sendHour: 16 }
     };
     ['shitsucho','meeting','report'].forEach(function(t) {
       if (!settings[t]) settings[t] = defaults[t];
