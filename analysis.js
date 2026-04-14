@@ -21,12 +21,23 @@ function fetchGeminiWithRetry_(url, options) {
   var res = UrlFetchApp.fetch(url, options);
   var code = res.getResponseCode();
 
-  // 503・500（高負荷・一時障害）: 1回のみリトライ（5秒待機）
+  // 503・500（高負荷・一時障害）: 1回リトライし、それでも続くなら予備キーへ切り替え
   if (code === 503 || code === 500) {
     Logger.log('⚠ Gemini API高負荷/障害(' + code + ')。5秒後に1回リトライします...');
     Utilities.sleep(5000);
     res = UrlFetchApp.fetch(url, options);
     code = res.getResponseCode();
+    // リトライ後もまだ500/503なら予備キーへ切り替え
+    if (code === 503 || code === 500) {
+      var backupKey500 = getProperty(PROP_KEYS.GEMINI_API_KEY_BACKUP);
+      if (backupKey500) {
+        var altUrl500 = url.replace(/([?&])key=[^&]+/, '$1key=' + backupKey500);
+        Logger.log('🔄 500/503継続のため予備キーに切り替えます...');
+        res = UrlFetchApp.fetch(altUrl500, options);
+        code = res.getResponseCode();
+        Logger.log(code < 500 ? '✓ 予備キーで回復（HTTP ' + code + '）' : '⚠ 予備キーも500/503です');
+      }
+    }
   }
 
   // 429（レート制限）: 1回だけ短い待機でリトライし、解消しなければ即座に予備キーへ切り替え
