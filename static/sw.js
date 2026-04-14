@@ -1,5 +1,5 @@
 // S-quire Service Worker — キャッシュ高速化
-var CACHE_NAME = 's-quire-cache-v1';
+var CACHE_NAME = 's-quire-cache-v2';
 var PRE_CACHE = [
   '/',
   '/index.html',
