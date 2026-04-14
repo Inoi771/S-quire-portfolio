@@ -1514,16 +1514,7 @@
       lectureSaveVersion[campusCode] = (lectureSaveVersion[campusCode] || 0) + 1;
       showLecStatusMsg('● 変更あり', '#f97316');
       updateLecSaveBtn('dirty');
-      if (autoSaveTimer) clearTimeout(autoSaveTimer);
-      autoSaveTimer = setTimeout(function() {
-        autoSaveTimer = null;
-        var campuses = Object.keys(dirtyCampuses).filter(function(cc) { return dirtyCampuses[cc]; });
-        campuses.forEach(function(cc) {
-          if (lectureEntries[cc] && currentLectureId) {
-            autoSaveCampus(cc);
-          }
-        });
-      }, AUTO_SAVE_DELAY);
+      // 自動保存タイマーは無効化。保存は「💾 保存」ボタンから手動で行う。
     }
 
     /**
