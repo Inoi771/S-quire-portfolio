@@ -364,7 +364,10 @@ function handleApiCall_(body) {
         if (authResult.uid) setFirebaseUidContext_(authResult.uid);
         Logger.log('✓ Firebase Auth 確認: ' + authResult.email + ' uid=' + (authResult.uid || ''));
       } else {
-        Logger.log('⚠ Firebase トークン検証失敗 - 匿名として処理');
+        Logger.log('⚠ Firebase トークン検証失敗 - リクエストを拒否');
+        return ContentService
+          .createTextOutput(JSON.stringify({ __gasError: 'Firebase IDトークンが無効です。再ログインしてください。' }))
+          .setMimeType(ContentService.MimeType.JSON);
       }
     }
 

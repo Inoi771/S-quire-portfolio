@@ -1650,6 +1650,13 @@ function applyConfigChange_(settings) {
  * @return {Object} 実行結果 { success, message, error }
  */
 function executeAiAction(action, paramsJson) {
+  // 認証チェック: ログイン済みユーザーのみ実行可能
+  var currentEmail = getFirebaseEmailContext_();
+  if (!currentEmail) {
+    Logger.log('⚠ executeAiAction: 未認証リクエストを拒否 action=' + action);
+    return { success: false, error: '認証情報がありません。再ログインしてください。' };
+  }
+
   try {
     var params = JSON.parse(paramsJson);
 
