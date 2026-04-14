@@ -823,32 +823,34 @@
         .withFailureHandler(function() {})
         .getCachedHolidays();
 
-      // プロフィール情報を事前取得（設定タブ切り替え時に即時表示するため）
-      google.script.run
-        .withSuccessHandler(function(result) {
-          preloadedProfile = result;
-        })
-        .withFailureHandler(function() {})
-        .getUserProfile();
+      // preloadTabData() が既に呼ばれている場合は重複GAS呼び出しをスキップ
+      // （同時リクエスト過多でGASがHTML応答を返し通信エラーになるのを防ぐ）
+      if (!tabDataPreloaded_) {
+        // フォールバックパス（getAppStartupData失敗時等）では
+        // preloadTabData() が呼ばれていないため、ここで取得する
+        google.script.run
+          .withSuccessHandler(function(result) {
+            preloadedProfile = result;
+          })
+          .withFailureHandler(function() {})
+          .getUserProfile();
 
-      // 通知設定を事前取得（設定タブ切り替え時に即時表示するため）
-      google.script.run
-        .withSuccessHandler(function(result) {
-          preloadedNotificationSettings = result;
-        })
-        .withFailureHandler(function() {})
-        .getNotificationSettings();
+        google.script.run
+          .withSuccessHandler(function(result) {
+            preloadedNotificationSettings = result;
+          })
+          .withFailureHandler(function() {})
+          .getNotificationSettings();
 
-      // LINEスケジューラー通知設定を事前取得
-      google.script.run
-        .withSuccessHandler(function(result) {
-          preloadedLineSchedulerNotifPrefs = result;
-        })
-        .withFailureHandler(function() {})
-        .getLineSchedulerNotifPrefs();
+        google.script.run
+          .withSuccessHandler(function(result) {
+            preloadedLineSchedulerNotifPrefs = result;
+          })
+          .withFailureHandler(function() {})
+          .getLineSchedulerNotifPrefs();
 
-      // 校舎・学年・テスト名ドロップダウンを事前取得（成績管理・設定タブ共通）
-      loadDropdownData();
+        loadDropdownData();
+      }
     }
 
     function openDrawer() {

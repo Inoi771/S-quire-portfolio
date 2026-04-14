@@ -380,17 +380,24 @@
 
     /**
      * 日程作成サブタブ 初期化
+     * GAS呼び出しはgetLecturePeriodsと同時に発火しないよう遅延させる
+     * （同時リクエストが多いとGASがHTML応答を返し通信エラーになるため）
      */
     function initLecturesSchedule() {
       buildLectureCampusCheckboxes();
-      // 全ユーザー：講師名マップを取得（グリッド表示名を常に最新にするため）
-      loadLecTeacherNameMap();
-      // 管理者の場合は講師選択エリアを表示してリストを読み込む
-      if (isAdminUser) {
-        var area = document.getElementById('lec-admin-teacher-area');
-        if (area) area.style.display = 'flex';
-        loadLectureTeachers();
-      }
+      // GAS呼び出しを遅延して同時リクエスト数を減らす
+      // getLecturePeriods（initLecturesTabから発火）が先に処理されるようにする
+      setTimeout(function() {
+        // 全ユーザー：講師名マップを取得（グリッド表示名を常に最新にするため）
+        loadLecTeacherNameMap();
+        // 管理者の場合は講師選択エリアを表示してリストを読み込む
+        if (isAdminUser) {
+          var area = document.getElementById('lec-admin-teacher-area');
+          if (area) area.style.display = 'flex';
+          // さらに遅延して getAllowedUsers → getPlacementTeacherNames の同時発火を避ける
+          setTimeout(function() { loadLectureTeachers(); }, 2000);
+        }
+      }, 2000);
       updateLecOcrBtnState();
     }
 
