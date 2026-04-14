@@ -2135,14 +2135,20 @@
       if (!currentLectureId) return [];
       var entries = allEntries.filter(function(e) { return e.lectureId === currentLectureId; });
 
-      // campusCode+grade+subject+classLabel でグルーピングして件数を集計
+      // campusCode+grade+subject+classLabel でグルーピングして件数・講師別件数を集計
       var groups = {};
       entries.forEach(function(e) {
         var key = e.campusCode + '_' + e.grade + '_' + e.subject + '_' + (e.classLabel || '');
         if (!groups[key]) {
-          groups[key] = { campusCode: e.campusCode, grade: e.grade, subject: e.subject, classLabel: e.classLabel || null, count: 0 };
+          groups[key] = { campusCode: e.campusCode, grade: e.grade, subject: e.subject, classLabel: e.classLabel || null, count: 0, teachers: {} };
         }
         groups[key].count++;
+        // 講師別の件数を集計
+        var tid = e.teacherId || ('__' + (e.teacherName || '?'));
+        if (!groups[key].teachers[tid]) {
+          groups[key].teachers[tid] = { name: e.teacherName || '?', count: 0 };
+        }
+        groups[key].teachers[tid].count++;
       });
 
       var issues = [];
@@ -2156,7 +2162,7 @@
         if (g.count === 0) return;
         // 過不足がある場合のみ記録
         if (g.count !== required) {
-          issues.push({ campusCode: g.campusCode, grade: g.grade, subject: g.subject, classLabel: g.classLabel, actual: g.count, required: required });
+          issues.push({ campusCode: g.campusCode, grade: g.grade, subject: g.subject, classLabel: g.classLabel, actual: g.count, required: required, teachers: g.teachers });
         }
       });
 
@@ -2253,17 +2259,27 @@
         var campusName = campusData[issue.campusCode] || issue.campusCode;
         var label = issue.grade + ' ' + issue.subject + (issue.classLabel || '');
         var diff = issue.actual - issue.required;
+        // 講師別件数の文字列を生成（名前が最新になるよう lecTeacherNameMap で上書き）
+        var teacherParts = Object.keys(issue.teachers || {}).map(function(tid) {
+          var t = issue.teachers[tid];
+          var displayName = (tid.indexOf('__') !== 0 && lecTeacherNameMap[tid])
+            ? lecTeacherNameMap[tid].name : t.name;
+          return displayName + '(' + t.count + '回)';
+        });
+        var teacherLine = teacherParts.length ? '担当: ' + teacherParts.join('、') : '';
         if (diff < 0) {
           // 不足
           html += '<div data-count-type="short" style="margin-bottom:8px; padding:8px 10px; background:#e3f2fd; border-radius:6px; border-left:3px solid #1976d2;">'
             + '<div style="font-weight:600; color:#0d47a1; margin-bottom:4px;">📉 回数不足: ' + campusName + ' ' + label + '</div>'
             + '<div style="color:#555; font-size:12px;">現在 ' + issue.actual + '回 / 規定 ' + issue.required + '回（あと' + (-diff) + '回）</div>'
+            + (teacherLine ? '<div style="color:#777; font-size:12px; margin-top:2px;">' + teacherLine + '</div>' : '')
             + '</div>';
         } else {
           // 超過
           html += '<div data-count-type="over" style="margin-bottom:8px; padding:8px 10px; background:#fff3e0; border-radius:6px; border-left:3px solid #f57c00;">'
             + '<div style="font-weight:600; color:#e65100; margin-bottom:4px;">📈 回数超過: ' + campusName + ' ' + label + '</div>'
             + '<div style="color:#555; font-size:12px;">現在 ' + issue.actual + '回 / 規定 ' + issue.required + '回（' + diff + '回超過）</div>'
+            + (teacherLine ? '<div style="color:#777; font-size:12px; margin-top:2px;">' + teacherLine + '</div>' : '')
             + '</div>';
         }
       });
