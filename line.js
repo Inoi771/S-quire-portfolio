@@ -1366,6 +1366,91 @@ function previewTemplateMessage(type, template, year, month) {
 }
 
 /**
+ * 送信日時を基にテンプレートからメッセージを再生成する公開API（編集モーダル用）
+ * meeting/report: 送信日の翌日をイベント日として {日付} 等を算出
+ * shitsucho: 送信月の業務ルールから {引落日付} {締切日付} 等を算出
+ * @param {string} type 種別 ('meeting'/'report'/'shitsucho')
+ * @param {string} sendDateStr 送信日時文字列 (datetime-local形式: 'YYYY-MM-DDTHH:mm')
+ * @return {Object} { success, message } テンプレート未設定なら message=''
+ */
+function resolveTemplateForSendDate(type, sendDateStr) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+
+    // テンプレートを取得
+    var settingsJson = getProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS);
+    var settings = safeJsonParse_(settingsJson, {});
+    var typeSettings = settings[type] || {};
+
+    var sendDate = new Date(sendDateStr);
+    var sendYear = sendDate.getFullYear();
+    var sendMonth = sendDate.getMonth() + 1;
+    var sendDay = sendDate.getDate();
+
+    var template;
+    if (type === 'shitsucho') {
+      if (sendMonth === 3) template = typeSettings.messageTemplate_march || '';
+      else if (sendMonth === 7 || sendMonth === 11) template = typeSettings.messageTemplate_simple || '';
+      else template = typeSettings.messageTemplate_default || '';
+    } else {
+      template = typeSettings.messageTemplate || '';
+    }
+    if (!template) return { success: true, message: '' };
+
+    // 送信日ベースで変数を計算
+    var DOW = ['日','月','火','水','木','金','土'];
+    var vars = {};
+
+    if (type === 'meeting' || type === 'report') {
+      // イベント日 = 送信日の翌日
+      var eventDate = new Date(sendYear, sendMonth - 1, sendDay + 1);
+      var eMonth = eventDate.getMonth() + 1;
+      var eDay = eventDate.getDate();
+      var eDow = DOW[eventDate.getDay()];
+      vars['日付'] = eMonth + '月' + eDay + '日(' + eDow + ')';
+      vars['月'] = '' + eMonth;
+      vars['日'] = '' + eDay;
+      vars['曜日'] = eDow;
+      if (type === 'report') {
+        vars['報告月'] = '' + eMonth;
+        var extra = getReportExtras_(eMonth);
+        vars['講習追記'] = extra ? 'と' + extra : '';
+      }
+    } else if (type === 'shitsucho') {
+      var closedDays = computeClosedDaysForMonth_(sendYear, sendMonth);
+      var nextMonth = sendMonth === 12 ? 1 : sendMonth + 1;
+      var nextYear  = sendMonth === 12 ? sendYear + 1 : sendYear;
+      vars['翌月'] = '' + nextMonth;
+      vars['月'] = '' + sendMonth;
+      var debitDay = getDebitDay_(nextYear, nextMonth);
+      var debitDow = getDayOfWeekJa_(nextYear, nextMonth, debitDay);
+      vars['引落日'] = '' + debitDay;
+      vars['引落曜日'] = debitDow;
+      vars['引落日付'] = debitDay + '日(' + debitDow + ')';
+      var lastDay = new Date(sendYear, sendMonth, 0).getDate();
+      var rawDeadline = Math.min(sendDay + 5, lastDay);
+      var deadlineDay = findPrevOpenDay_(sendYear, sendMonth, rawDeadline, closedDays) || rawDeadline;
+      var deadlineDow = getDayOfWeekJa_(sendYear, sendMonth, deadlineDay);
+      vars['締切日'] = '' + deadlineDay;
+      vars['締切曜日'] = deadlineDow;
+      vars['締切日付'] = sendMonth + '月' + deadlineDay + '日(' + deadlineDow + ')';
+      vars['講習名'] = getLectureNames_(sendMonth);
+    }
+
+    var result = template;
+    for (var key in vars) {
+      if (vars.hasOwnProperty(key)) {
+        result = result.split('{' + key + '}').join(vars[key] !== undefined ? '' + vars[key] : '');
+      }
+    }
+    return { success: true, message: result };
+  } catch(e) {
+    Logger.log('❌ resolveTemplateForSendDate エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Supabase staffs で line_user_id が設定されている全 teacherId を返す内部ヘルパー
  * meeting/report の全員送信用
  * @return {Array<string>} teacherId 配列
