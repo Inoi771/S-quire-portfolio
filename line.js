@@ -1589,7 +1589,7 @@ function getLineSchedulerSettings() {
       setProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS, JSON.stringify(settings));
     }
     var defaults = {
-      shitsucho: { recipients: [], messageTemplate_march: '', messageTemplate_simple: '', messageTemplate_default: '', sendHour: 14 },
+      shitsucho: { recipients: [], messageTemplate_march: '新年度の継続申込書が未提出の場合は、3月{締切日}日({締切曜日})までに提出をお願いいたします。\nなお4月の引落データ送信は{引落日付}です。', messageTemplate_simple: '{翌月}月の引落データ送信は{引落日付}です。\nよろしくお願いいたします。', messageTemplate_default: '{翌月}月は{講習名}の引落があります。\n実施校舎で名簿が未提出の場合は{締切日付}までに提出をお願いいたします。\n外部生で振込用紙を郵送する場合は講習申込書の提出も合わせてお願いいたします。\nなお、{翌月}月の引落データ送信は{引落日付}です。', sendHour: 14 },
       meeting:   { recipients: [], messageTemplate: '明日{日付}は14時から北島校で正社員ミーティングがあります。\nよろしくお願いいたします。', sendHour: 16 },
       report:    { recipients: [], messageTemplate: '明日{日付}は{報告月}月分の回数報告書{講習追記}の提出日です。\nよろしくお願いいたします。', sendHour: 16 }
     };
