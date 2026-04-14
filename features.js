@@ -1854,7 +1854,7 @@ function getAiKnowledgeBaseForPrompt_() {
 
   // Supabase自動学習エントリを取得（全件有効）
   try {
-    var autoEntries = supabaseSelect_('ai_learned_knowledge');
+    var autoEntries = supabaseSelect_('ai_learned_knowledge', null, { order: 'learned_at.desc' });
     if (autoEntries && autoEntries.length > 0) {
       autoEntries.forEach(function(e) {
         allEntries.push({ category: e.category || 'その他', content: e.content });
@@ -1873,9 +1873,9 @@ function getAiKnowledgeBaseForPrompt_() {
     categories[e.category].push(e.content);
   });
 
-  var lines = ['\n\n【塾のナレッジベース】',
-    '以下は塾の情報です（管理者登録＋AIが会話から学習した知識）。ユーザーの質問に該当する情報があればこれを元に回答してください。',
-    '該当する情報がない場合は「その件については管理者にご確認ください」と案内してください。'];
+  var lines = ['\n\n【塾のナレッジベース】★このセクションを最優先で参照すること★',
+    '以下は塾の情報です（管理者登録＋AIが会話から学習した知識）。塾固有の情報（スケジュール・ルール・連絡先等）はこのナレッジベースを必ず最初に確認し、記載があればそれを最優先で回答してください。',
+    '該当する情報がない場合のみ「その件については管理者にご確認ください」と案内してください。'];
 
   Object.keys(categories).forEach(function(cat) {
     lines.push('\n■ ' + cat);
