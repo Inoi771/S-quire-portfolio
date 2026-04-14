@@ -82,6 +82,7 @@
         // アプリケーションエラー（__gasError）はここに来ない
         var isRetryable = err.name !== 'AbortError' && (
           err.name === 'TypeError' ||
+          err.message === 'PARSE_ERROR' ||
           (err.httpStatus && err.httpStatus >= 500)
         );
 
