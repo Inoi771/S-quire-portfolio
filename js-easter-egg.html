@@ -29,51 +29,142 @@ function eeShowController_() {
   overlay.id = 'eeControllerOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10002;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;';
 
-  // ヒントラベル
-  var hint = document.createElement('div');
-  hint.style.cssText = 'color:rgba(255,255,255,0.5);font-size:10px;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;';
-  hint.textContent = 'ENTER THE CODE';
-  overlay.appendChild(hint);
-
-  // コントローラー画像ラッパー（ホットスポット配置用）
-  var wrap = document.createElement('div');
-  wrap.style.cssText = 'position:relative;width:min(90vw,380px);line-height:0;';
-
-  // コントローラー画像（透過PNG）
-  var img = document.createElement('img');
-  img.src = '/famicom-controller.png';
-  img.style.cssText = 'width:100%;height:auto;display:block;filter:drop-shadow(0 8px 24px rgba(0,0,0,0.7));';
-  wrap.appendChild(img);
+  // ── コントローラー本体（2トーン: マルーン上部＋ベージュ下部） ──
+  var card = document.createElement('div');
+  card.style.cssText = 'position:relative;width:340px;max-width:90vw;border-radius:14px 14px 18px 18px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.1);border:2px solid #3A0A10;';
 
   // 閉じるボタン
   var closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.4);border:none;color:rgba(255,255,255,0.6);font-size:16px;cursor:pointer;z-index:10;border-radius:50%;width:28px;height:28px;line-height:28px;padding:0;';
+  closeBtn.style.cssText = 'position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(255,255,255,0.35);font-size:16px;cursor:pointer;z-index:10;';
   closeBtn.onclick = eeCloseController_;
-  wrap.appendChild(closeBtn);
+  card.appendChild(closeBtn);
 
-  // ホットスポット（画像サイズに対するパーセント指定）
-  var hotspots = [
-    {key:'up',    top:'40%', left:'15%', w:'8%',  h:'10%', r:'3px'},
-    {key:'down',  top:'50%', left:'15%', w:'8%',  h:'10%', r:'3px'},
-    {key:'left',  top:'45%', left:'9%',  w:'8%',  h:'10%', r:'3px'},
-    {key:'right', top:'45%', left:'21%', w:'8%',  h:'10%', r:'3px'},
-    {key:'B',     top:'45%', left:'63%', w:'10%', h:'14%', r:'50%'},
-    {key:'A',     top:'45%', left:'74%', w:'10%', h:'14%', r:'50%'}
+  // 上部マルーンパネル（ロゴ・ヒント）
+  var topPanel = document.createElement('div');
+  topPanel.style.cssText = 'background:linear-gradient(180deg,#8B1A28 0%,#741220 100%);padding:12px 20px 8px;display:flex;align-items:center;justify-content:space-between;';
+  var logo = document.createElement('div');
+  logo.style.cssText = 'color:rgba(255,255,255,0.5);font-size:12px;font-weight:bold;letter-spacing:3px;';
+  logo.textContent = 'S-quire';
+  topPanel.appendChild(logo);
+  var hintLabel = document.createElement('div');
+  hintLabel.style.cssText = 'color:rgba(255,255,255,0.28);font-size:8px;letter-spacing:2px;';
+  hintLabel.textContent = 'ENTER THE CODE';
+  topPanel.appendChild(hintLabel);
+  card.appendChild(topPanel);
+
+  // 下部ベージュパネル（操作エリア: 十字キー ＋ SELECT/START/B/A 横並び）
+  var bottomPanel = document.createElement('div');
+  bottomPanel.style.cssText = 'background:#d4c9a8;padding:16px 14px 14px;display:flex;align-items:center;justify-content:space-between;gap:6px;';
+
+  // === 十字キー ===
+  var dpadWrap = document.createElement('div');
+  dpadWrap.style.cssText = 'position:relative;width:96px;height:96px;flex-shrink:0;';
+  var crossH = document.createElement('div');
+  crossH.style.cssText = 'position:absolute;top:32px;left:0;width:96px;height:32px;background:#252525;border-radius:4px;box-shadow:0 2px 5px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);';
+  dpadWrap.appendChild(crossH);
+  var crossV = document.createElement('div');
+  crossV.style.cssText = 'position:absolute;top:0;left:32px;width:32px;height:96px;background:#252525;border-radius:4px;box-shadow:0 2px 5px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);';
+  dpadWrap.appendChild(crossV);
+  var centerDot = document.createElement('div');
+  centerDot.style.cssText = 'position:absolute;top:36px;left:36px;width:24px;height:24px;background:#1a1a1a;border-radius:50%;z-index:1;';
+  dpadWrap.appendChild(centerDot);
+
+  var dpadDirs = [
+    {key:'up',    top:'1px',  left:'32px', w:'32px', h:'30px', label:'▲'},
+    {key:'down',  top:'65px', left:'32px', w:'32px', h:'30px', label:'▼'},
+    {key:'left',  top:'32px', left:'1px',  w:'30px', h:'32px', label:'◀'},
+    {key:'right', top:'32px', left:'65px', w:'30px', h:'32px', label:'▶'}
   ];
-  hotspots.forEach(function(h) {
-    var hs = document.createElement('div');
-    hs.style.cssText = 'position:absolute;top:'+h.top+';left:'+h.left+';width:'+h.w+';height:'+h.h+';border-radius:'+h.r+';background:transparent;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s;';
-    hs.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_(h.key); eeFlashHotspot_(hs); };
-    hs.onclick = function() { eeHandleInput_(h.key); eeFlashHotspot_(hs); };
-    wrap.appendChild(hs);
+  dpadDirs.forEach(function(d) {
+    var btn = document.createElement('div');
+    btn.textContent = d.label;
+    btn.style.cssText = 'position:absolute;top:'+d.top+';left:'+d.left+';width:'+d.w+';height:'+d.h+';display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.2);font-size:10px;cursor:pointer;user-select:none;-webkit-user-select:none;z-index:2;border-radius:2px;';
+    (function(btn, key) {
+      btn.ontouchstart = function(e) {
+        e.preventDefault();
+        eeHandleInput_(key);
+        btn.style.background = 'rgba(255,255,255,0.18)';
+        setTimeout(function() { btn.style.background = ''; }, 180);
+      };
+      btn.onclick = function() {
+        eeHandleInput_(key);
+        btn.style.background = 'rgba(255,255,255,0.18)';
+        setTimeout(function() { btn.style.background = ''; }, 180);
+      };
+    })(btn, d.key);
+    dpadWrap.appendChild(btn);
   });
 
-  overlay.appendChild(wrap);
+  // === 右側エリア（SELECT・START・B・A を横並び） ===
+  var rightArea = document.createElement('div');
+  rightArea.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex:1;gap:4px;';
 
-  // プログレスドット
+  // ── ラベル行 ──
+  var labelRow = document.createElement('div');
+  labelRow.style.cssText = 'display:flex;align-items:flex-end;gap:6px;width:100%;justify-content:center;';
+
+  // SELECT・STARTのラベル（小）
+  ['SELECT','START'].forEach(function(txt) {
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'color:#6b5a45;font-size:6px;letter-spacing:0.5px;text-align:center;width:28px;';
+    lbl.textContent = txt;
+    labelRow.appendChild(lbl);
+  });
+
+  // スペーサー
+  var sp = document.createElement('div');
+  sp.style.cssText = 'width:12px;';
+  labelRow.appendChild(sp);
+
+  // B・Aのラベル（やや大きめ）
+  ['B','A'].forEach(function(txt) {
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'color:#6b5a45;font-size:8px;font-weight:bold;text-align:center;width:44px;';
+    lbl.textContent = txt;
+    labelRow.appendChild(lbl);
+  });
+  rightArea.appendChild(labelRow);
+
+  // ── ボタン行 ──
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%;justify-content:center;';
+
+  // SELECT / START（小さい四角ボタン、赤い台座の上）
+  var ssBg = document.createElement('div');
+  ssBg.style.cssText = 'background:#8a1020;border-radius:20px;padding:8px 10px;display:flex;gap:10px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.4);flex-shrink:0;';
+  ['SELECT','START'].forEach(function() {
+    var pill = document.createElement('div');
+    pill.style.cssText = 'width:26px;height:9px;background:#1c1c1c;border-radius:5px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.04);';
+    ssBg.appendChild(pill);
+  });
+  btnRow.appendChild(ssBg);
+
+  // 仕切りスペーサー
+  var sp2 = document.createElement('div');
+  sp2.style.cssText = 'width:10px;flex-shrink:0;';
+  btnRow.appendChild(sp2);
+
+  // B・Aボタン（ダークグレーの丸ボタン、横並び）
+  ['B','A'].forEach(function(key) {
+    var btn = document.createElement('div');
+    btn.setAttribute('data-key', key);
+    btn.style.cssText = 'width:44px;height:44px;background:radial-gradient(circle at 35% 30%,#585858,#232323);border-radius:50%;box-shadow:0 3px 7px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.07);cursor:pointer;user-select:none;-webkit-user-select:none;flex-shrink:0;transition:transform 0.1s,box-shadow 0.1s;';
+    (function(btn, k) {
+      btn.ontouchstart = function(e) { e.preventDefault(); eeHandleInput_(k); eeFlashAB_(btn); };
+      btn.onclick = function() { eeHandleInput_(k); eeFlashAB_(btn); };
+    })(btn, key);
+    btnRow.appendChild(btn);
+  });
+
+  rightArea.appendChild(btnRow);
+  bottomPanel.appendChild(dpadWrap);
+  bottomPanel.appendChild(rightArea);
+  card.appendChild(bottomPanel);
+
+  // プログレスドット（マルーン帯）
   var dotsWrap = document.createElement('div');
-  dotsWrap.style.cssText = 'margin-top:12px;';
+  dotsWrap.style.cssText = 'background:#741220;padding:6px 20px 10px;';
   var dots = document.createElement('div');
   dots.id = 'eeProgressDots';
   dots.style.cssText = 'display:flex;gap:6px;justify-content:center;';
@@ -84,8 +175,9 @@ function eeShowController_() {
     dots.appendChild(dot);
   }
   dotsWrap.appendChild(dots);
-  overlay.appendChild(dotsWrap);
+  card.appendChild(dotsWrap);
 
+  overlay.appendChild(card);
   eeInputSeq_ = [];
   document.body.appendChild(overlay);
 }
