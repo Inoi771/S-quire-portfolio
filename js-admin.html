@@ -1280,9 +1280,39 @@
           document.getElementById('schedulerEditMessage2').textContent = '';
           document.getElementById('schedulerEditOverlay').style.display = 'block';
           document.getElementById('schedulerEditModal').style.display = 'block';
+          // 送信日時変更時にメッセージを自動再生成するリスナーを設定
+          var dtInput = document.getElementById('schedulerEditDatetime');
+          dtInput.onchange = function() { onSchedulerEditDateChange_(); };
         })
         .withFailureHandler(function(err) { appAlert('読み込みエラー: ' + err); })
         .getScheduledLineMessages(year, month);
+    }
+
+    // 編集モーダルの送信日時が変更されたときにテンプレートからメッセージを自動再生成する
+    function onSchedulerEditDateChange_() {
+      var dtInput = document.getElementById('schedulerEditDatetime');
+      var msgArea = document.getElementById('schedulerEditMessage');
+      var msgDiv = document.getElementById('schedulerEditMessage2');
+      var type = document.getElementById('schedulerEditTypeLabel').getAttribute('data-type');
+      if (!dtInput.value || !type) return;
+
+      msgDiv.innerHTML = '<span style="color:#999;font-size:12px;">送信日に合わせてメッセージを更新中...</span>';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success && result.message) {
+            msgArea.value = result.message;
+            msgDiv.innerHTML = '<span style="color:#2e7d32;font-size:12px;">✅ 送信日に合わせてメッセージを更新しました</span>';
+          } else if (result.success && !result.message) {
+            // テンプレート未設定 → 手動編集に任せる
+            msgDiv.innerHTML = '<span style="color:#888;font-size:12px;">テンプレート未設定のため、メッセージは手動で編集してください</span>';
+          } else {
+            msgDiv.innerHTML = '<span style="color:#c62828;font-size:12px;">❌ ' + (result.error || 'エラー') + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          msgDiv.innerHTML = '<span style="color:#c62828;font-size:12px;">❌ ' + err + '</span>';
+        })
+        .resolveTemplateForSendDate(type, dtInput.value);
     }
 
     // 編集モーダルを閉じる
