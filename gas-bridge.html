@@ -24,48 +24,93 @@
   }
 
   /**
-   * GAS 関数を fetch で呼び出す
+   * GAS 関数を fetch で呼び出す（自動リトライ付き）
    * text/plain を使い CORS プリフライトを回避（GAS exec URL の制約）
+   * ネットワークエラー・サーバーエラー時は1回だけ自動リトライする
    * @param {string} funcName  呼び出す GAS 関数名
    * @param {Array}  args      引数の配列
    * @param {Function|null} successFn
    * @param {Function|null} failureFn
    */
   function callGas_(funcName, args, successFn, failureFn) {
-    var controller = new AbortController();
-    var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
+    var MAX_RETRIES = 1;
+    var RETRY_DELAY = 2000;
 
-    getToken_().then(function(idToken) {
-      return fetch(GAS_EXEC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          type: 'gasApi',
-          function: funcName,
-          args: args,
-          idToken: idToken || ''
-        }),
-        redirect: 'follow',
-        signal: controller.signal
-      });
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(result) {
-      if (result && result.__gasError) {
-        if (failureFn) failureFn(new Error(result.__gasError));
-      } else {
-        if (successFn) successFn(result);
-      }
-    })
-    .catch(function(err) {
-      console.error('[gas-bridge] fetch エラー:', funcName, err);
-      var msg = err.name === 'AbortError'
-        ? '通信がタイムアウトしました。再度お試しください。'
-        : '通信エラーが発生しました。再度お試しください。';
-      if (typeof showToast === 'function') showToast(msg, 'error');
-      if (failureFn) failureFn(err);
-    })
-    .finally(function() { clearTimeout(timeoutId); });
+    function attempt(retryCount) {
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
+
+      getToken_().then(function(idToken) {
+        return fetch(GAS_EXEC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'gasApi',
+            function: funcName,
+            args: args,
+            idToken: idToken || ''
+          }),
+          redirect: 'follow',
+          signal: controller.signal
+        });
+      })
+      .then(function(res) {
+        if (!res.ok) {
+          var err = new Error('HTTP_' + res.status);
+          err.httpStatus = res.status;
+          throw err;
+        }
+        return res.text();
+      })
+      .then(function(text) {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          var err = new Error('PARSE_ERROR');
+          throw err;
+        }
+      })
+      .then(function(result) {
+        if (result && result.__gasError) {
+          if (failureFn) failureFn(new Error(result.__gasError));
+        } else {
+          if (successFn) successFn(result);
+        }
+      })
+      .catch(function(err) {
+        // タイムアウトはリトライしない（既に90秒待っているため）
+        // アプリケーションエラー（__gasError）はここに来ない
+        var isRetryable = err.name !== 'AbortError' && (
+          err.name === 'TypeError' ||
+          (err.httpStatus && err.httpStatus >= 500)
+        );
+
+        if (isRetryable && retryCount < MAX_RETRIES) {
+          console.warn('[gas-bridge] リトライ (' + (retryCount + 1) + '/' + MAX_RETRIES + '):', funcName, err.message);
+          setTimeout(function() { attempt(retryCount + 1); }, RETRY_DELAY);
+          return;
+        }
+
+        console.error('[gas-bridge] fetch エラー:', funcName, err);
+        var msg;
+        if (err.name === 'AbortError') {
+          msg = '通信がタイムアウトしました。再度お試しください。';
+        } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          msg = 'インターネットに接続されていません。接続を確認してください。';
+        } else if (err.httpStatus && err.httpStatus >= 500) {
+          msg = 'サーバーが一時的にエラーを返しました。しばらく待ってから再度お試しください。';
+        } else if (err.message === 'PARSE_ERROR') {
+          msg = 'サーバーからの応答が不正です。しばらく待ってから再度お試しください。';
+        } else {
+          msg = '通信エラーが発生しました。再度お試しください。';
+        }
+        if (typeof showToast === 'function') showToast(msg, 'error');
+        if (failureFn) failureFn(err);
+      })
+      .finally(function() { clearTimeout(timeoutId); });
+    }
+
+    attempt(0);
   }
 
   /**
