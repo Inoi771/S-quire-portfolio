@@ -833,7 +833,7 @@
       });
     }
 
-    // デフォルト設定をロード・描画する（選択月のスケジュールデータを表示）
+    // デフォルト設定をロード・描画する（テンプレート＋選択月のプレビュー）
     function loadSchedulerDefaultSettings() {
       var container = document.getElementById('schedulerDefaultSettings');
       if (!container) return;
@@ -844,10 +844,12 @@
       var month = defMonthSel ? parseInt(defMonthSel.value) : new Date().getMonth() + 1;
       var messagesData = null;
       var usersData = null;
+      var settingsData = null;
       function tryRender() {
-        if (messagesData === null || usersData === null) return;
+        if (messagesData === null || usersData === null || settingsData === null) return;
         schedulerLineUsers = usersData.success ? (usersData.users || []) : [];
-        renderSchedulerDefaults(messagesData.messages || [], schedulerLineUsers);
+        var tmplSettings = (settingsData && settingsData.success) ? (settingsData.settings || {}) : {};
+        renderSchedulerDefaults(messagesData.messages || [], schedulerLineUsers, tmplSettings);
       }
       google.script.run
         .withSuccessHandler(function(r) { messagesData = r; tryRender(); })
@@ -857,10 +859,50 @@
         .withSuccessHandler(function(r) { usersData = r; tryRender(); })
         .withFailureHandler(function(e) { usersData = { success: false, users: [] }; tryRender(); })
         .getLineRegisteredUsers();
+      google.script.run
+        .withSuccessHandler(function(r) { settingsData = r; tryRender(); })
+        .withFailureHandler(function(e) { settingsData = { success: false, settings: {} }; tryRender(); })
+        .getLineSchedulerSettings();
     }
 
-    // デフォルト設定UIを種別ごとに描画する（選択月の実際のスケジュールデータを表示）
-    function renderSchedulerDefaults(messages, users) {
+    // プレースホルダー定義（種別ごと）
+    var _templatePlaceholders = {
+      meeting: [
+        { key: '{日付}', desc: '○月○日(曜日)' },
+        { key: '{月}', desc: '月' },
+        { key: '{日}', desc: '日' },
+        { key: '{曜日}', desc: '曜日' }
+      ],
+      report: [
+        { key: '{日付}', desc: '○月○日(曜日)' },
+        { key: '{月}', desc: '月' },
+        { key: '{日}', desc: '日' },
+        { key: '{曜日}', desc: '曜日' },
+        { key: '{報告月}', desc: '報告対象月' },
+        { key: '{講習追記}', desc: 'と講習名（なければ空）' }
+      ],
+      shitsucho: [
+        { key: '{翌月}', desc: '翌月' },
+        { key: '{引落日付}', desc: '○日(曜日)' },
+        { key: '{引落日}', desc: '引落日' },
+        { key: '{引落曜日}', desc: '引落曜日' },
+        { key: '{締切日付}', desc: '○月○日(曜日)' },
+        { key: '{締切日}', desc: '締切日' },
+        { key: '{締切曜日}', desc: '締切曜日' },
+        { key: '{月}', desc: '送信月' },
+        { key: '{講習名}', desc: '講習名（なければ空）' }
+      ]
+    };
+
+    // shitsucho のサブテンプレートラベル
+    var _shitsuchoSubTemplates = [
+      { key: 'messageTemplate_march', label: '3月用' },
+      { key: 'messageTemplate_simple', label: '7月/11月用' },
+      { key: 'messageTemplate_default', label: 'その他（通常月）用' }
+    ];
+
+    // デフォルト設定UIを種別ごとに描画する（テンプレート＋プレビュー構成）
+    function renderSchedulerDefaults(messages, users, tmplSettings) {
       var container = document.getElementById('schedulerDefaultSettings');
       if (!container) return;
       var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡' };
@@ -871,10 +913,10 @@
       ['shitsucho', 'meeting', 'report'].forEach(function(type) {
         var m = byType[type];
         var recipientsArr = m ? (m.recipients || []) : [];
-        var msgText = m ? (m.message || '') : '';
         var existingId = m ? (m.id || '') : '';
         var isSent = m && m.sent;
         var sentBadge = isSent ? '<span style="font-size:11px;background:#e0e0e0;color:#757575;padding:2px 8px;border-radius:10px;margin-left:8px;">送信済み</span>' : '';
+        var tSettings = tmplSettings[type] || {};
         // 宛先チェックボックス
         var chkHtml = '';
         if (type === 'meeting' || type === 'report') {
@@ -888,22 +930,176 @@
             chkHtml += '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer;"><input type="checkbox" data-dtype="' + escapeHtml_(type) + '" data-teacherid="' + escapeHtml_(u.teacherId) + '" ' + checked + ' style="width:16px;height:16px;"> ' + label + '</label>';
           });
         }
+
+        // テンプレート編集エリア
+        var tmplHtml = '';
+        if (type === 'shitsucho') {
+          // shitsucho は3つのサブテンプレート
+          _shitsuchoSubTemplates.forEach(function(sub) {
+            var val = tSettings[sub.key] || '';
+            var safeVal = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            tmplHtml += '<div style="margin-bottom:8px;">' +
+              '<label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">' + sub.label + '</label>' +
+              '<textarea id="tmpl_' + type + '_' + sub.key + '" rows="3" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;">' + safeVal + '</textarea>' +
+              '</div>';
+          });
+        } else {
+          var tmplVal = tSettings.messageTemplate || '';
+          var safeTmplVal = tmplVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          tmplHtml = '<textarea id="tmpl_' + type + '" rows="3" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;">' + safeTmplVal + '</textarea>';
+        }
+
+        // プレースホルダーチップ
+        var placeholders = _templatePlaceholders[type] || [];
+        var chipHtml = '';
+        placeholders.forEach(function(p) {
+          var targetId = type === 'shitsucho' ? 'tmpl_' + type + '_messageTemplate_default' : 'tmpl_' + type;
+          chipHtml += '<span onclick="insertPlaceholder(\'' + targetId + '\', \'' + p.key + '\')" style="display:inline-block;padding:2px 8px;margin:2px;background:#e3f2fd;color:#1565c0;border-radius:12px;font-size:11px;cursor:pointer;border:1px solid #bbdefb;" title="' + escapeHtml_(p.desc) + '">' + p.key + '</span>';
+        });
+
+        // プレビューエリア
+        var defYearSel = document.getElementById('defaultYear');
+        var defMonthSel = document.getElementById('defaultMonth');
+        var previewYear = defYearSel ? parseInt(defYearSel.value) : new Date().getFullYear();
+        var previewMonth = defMonthSel ? parseInt(defMonthSel.value) : new Date().getMonth() + 1;
+
         html += '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:12px;">' +
           '<div style="font-weight:600;font-size:14px;margin-bottom:10px;">' + typeLabels[type] + sentBadge + '</div>' +
-          (m ? '' : '<p style="font-size:12px;color:#f57c00;margin:0 0 10px 0;">⚠ このメッセージは8月にはありません</p>') +
+          // 宛先
           '<div style="margin-bottom:10px;">' +
           '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">宛先</label>' +
           '<div style="max-height:100px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px;">' + chkHtml + '</div>' +
           '</div>' +
-          '<div style="margin-bottom:10px;">' +
-          '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">メッセージ本文</label>' +
-          '<textarea id="defaultMsg_' + type + '" rows="4" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;">' + msgText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>' +
+          // テンプレート編集
+          '<div style="margin-bottom:8px;">' +
+          '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">メッセージテンプレート</label>' +
+          '<p style="font-size:11px;color:#999;margin:0 0 6px 0;">{変数名} は送信時に実際の日付に置き換わります。空欄にするとシステムのデフォルトメッセージが使われます。</p>' +
+          tmplHtml +
+          '<div style="margin-top:4px;">' + chipHtml + '</div>' +
           '</div>' +
-          (m ? '<button onclick="saveDefaultCard(\'' + type + '\', \'' + existingId + '\')" style="padding:6px 14px;background:var(--theme-color);color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">💾 保存</button>' : '') +
-          '<span id="schedulerDefaultMsg_' + type + '" style="margin-left:10px;font-size:12px;"></span>' +
+          // プレビュー
+          '<div style="margin-bottom:10px;">' +
+          '<label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">プレビュー（' + previewYear + '年' + previewMonth + '月）</label>' +
+          '<div id="tmplPreview_' + type + '" style="padding:8px 10px;background:#f5f5f5;border-radius:6px;font-size:12px;color:#333;white-space:pre-wrap;min-height:30px;">読み込み中...</div>' +
+          '</div>' +
+          // ボタン
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+          '<button onclick="saveMessageTemplate(\'' + type + '\'' + (existingId ? ',\'' + existingId + '\'' : '') + ')" style="padding:6px 14px;background:var(--theme-color);color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">💾 テンプレートを保存</button>' +
+          '<button onclick="previewTemplate(\'' + type + '\')" style="padding:6px 14px;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;border-radius:6px;cursor:pointer;font-size:12px;">🔄 プレビュー更新</button>' +
+          '<span id="schedulerDefaultMsg_' + type + '" style="font-size:12px;"></span>' +
+          '</div>' +
           '</div>';
       });
       container.innerHTML = html;
+
+      // 初回プレビューを自動取得
+      ['shitsucho', 'meeting', 'report'].forEach(function(type) {
+        previewTemplate(type);
+      });
+    }
+
+    // テキストエリアのカーソル位置にプレースホルダーを挿入する
+    function insertPlaceholder(textareaId, placeholder) {
+      var ta = document.getElementById(textareaId);
+      if (!ta) return;
+      var start = ta.selectionStart;
+      var end = ta.selectionEnd;
+      var val = ta.value;
+      ta.value = val.substring(0, start) + placeholder + val.substring(end);
+      ta.selectionStart = ta.selectionEnd = start + placeholder.length;
+      ta.focus();
+    }
+
+    // テンプレートのプレビューを取得・表示する
+    function previewTemplate(type) {
+      var defYearSel = document.getElementById('defaultYear');
+      var defMonthSel = document.getElementById('defaultMonth');
+      var year = defYearSel ? parseInt(defYearSel.value) : new Date().getFullYear();
+      var month = defMonthSel ? parseInt(defMonthSel.value) : new Date().getMonth() + 1;
+      var previewDiv = document.getElementById('tmplPreview_' + type);
+      if (!previewDiv) return;
+
+      var template;
+      if (type === 'shitsucho') {
+        // 選択月に対応するサブテンプレートを使用
+        var subKey;
+        if (month === 3) subKey = 'messageTemplate_march';
+        else if (month === 7 || month === 11) subKey = 'messageTemplate_simple';
+        else subKey = 'messageTemplate_default';
+        var ta = document.getElementById('tmpl_' + type + '_' + subKey);
+        template = ta ? ta.value : '';
+      } else {
+        var ta2 = document.getElementById('tmpl_' + type);
+        template = ta2 ? ta2.value : '';
+      }
+
+      if (!template) {
+        previewDiv.textContent = '（テンプレート未設定 — システムのデフォルトメッセージが使われます）';
+        previewDiv.style.color = '#999';
+        return;
+      }
+
+      previewDiv.textContent = '読み込み中...';
+      previewDiv.style.color = '#333';
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            previewDiv.textContent = result.preview || '（プレビューなし）';
+            previewDiv.style.color = result.preview ? '#333' : '#999';
+          } else {
+            previewDiv.textContent = '❌ ' + (result.error || 'エラー');
+            previewDiv.style.color = '#c62828';
+          }
+        })
+        .withFailureHandler(function(err) {
+          previewDiv.textContent = '❌ ' + err;
+          previewDiv.style.color = '#c62828';
+        })
+        .previewTemplateMessage(type, template, year, month);
+    }
+
+    // メッセージテンプレートを保存する（LINE_SCHEDULER_SETTINGS に保存）
+    function saveMessageTemplate(type, existingId) {
+      var msgSpan = document.getElementById('schedulerDefaultMsg_' + type);
+      if (msgSpan) msgSpan.textContent = '保存中...';
+
+      // 宛先を取得（shitsucho のみ個別選択）
+      var recipients;
+      if (type === 'meeting' || type === 'report') {
+        recipients = ['__ALL__'];
+      } else {
+        var checkboxes = document.querySelectorAll('input[data-dtype="' + type + '"][data-teacherid]');
+        recipients = [];
+        checkboxes.forEach(function(cb) { if (cb.checked) recipients.push(cb.getAttribute('data-teacherid')); });
+      }
+
+      // テンプレート設定を構築
+      var newSettings = { recipients: recipients };
+      if (type === 'shitsucho') {
+        _shitsuchoSubTemplates.forEach(function(sub) {
+          var ta = document.getElementById('tmpl_' + type + '_' + sub.key);
+          newSettings[sub.key] = ta ? ta.value : '';
+        });
+      } else {
+        var ta2 = document.getElementById('tmpl_' + type);
+        newSettings.messageTemplate = ta2 ? ta2.value : '';
+      }
+
+      // LINE_SCHEDULER_SETTINGS に保存
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            if (msgSpan) msgSpan.innerHTML = '<span style="color:#2e7d32">✅ テンプレートを保存しました</span>';
+            // プレビューを更新
+            previewTemplate(type);
+          } else {
+            if (msgSpan) msgSpan.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (msgSpan) msgSpan.innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
+        })
+        .saveLineSchedulerSettings(type, newSettings);
     }
 
     // デフォルト設定カードを保存する（指定月のスケジュールを更新）
