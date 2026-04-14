@@ -1598,6 +1598,14 @@ function getLineSchedulerSettings() {
       else {
         if (settings[t].sendHour === undefined) settings[t].sendHour = defaults[t].sendHour;
         if (!settings[t].recipients) settings[t].recipients = [];
+        // テンプレートキーが未設定の場合はデフォルト値を補完
+        var dKeys = Object.keys(defaults[t]);
+        for (var i = 0; i < dKeys.length; i++) {
+          var k = dKeys[i];
+          if (k.indexOf('messageTemplate') === 0 && settings[t][k] === undefined) {
+            settings[t][k] = defaults[t][k];
+          }
+        }
       }
     });
     return { success: true, settings: settings };
@@ -1676,6 +1684,11 @@ function getScheduledLineMessages(year, month) {
         sentAt: doc.sentAt || '',
         createdAt: doc.createdAt || ''
       });
+    });
+    // 表示順: 室長用 → 全体ミーティング → 回数報告書
+    var typeOrder = { shitsucho: 0, meeting: 1, report: 2 };
+    messages.sort(function(a, b) {
+      return (typeOrder[a.type] !== undefined ? typeOrder[a.type] : 9) - (typeOrder[b.type] !== undefined ? typeOrder[b.type] : 9);
     });
     return { success: true, messages: messages };
   } catch(e) {
