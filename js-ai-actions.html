@@ -200,6 +200,11 @@
           campusCode: params.campusCode,
           operations: params.operations || []
         };
+      } else if (action === 'multi_campus_bulk_operations') {
+        execParams = {
+          lectureId: params.lectureId,
+          campusGroups: params.campusGroups || []
+        };
       }
 
       google.script.run
@@ -210,14 +215,23 @@
             addAIWidgetMessage('ai', successMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
             // 講習エントリ操作成功後、キャッシュをクリアして画面を自動更新
-            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry' || action === 'bulk_lecture_operations') {
-              var affectedCampus = String(execParams.campusCode || '').padStart(2, '0');
-              if (typeof lectureEntries !== 'undefined') {
-                delete lectureEntries[affectedCampus];
+            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry' || action === 'bulk_lecture_operations' || action === 'multi_campus_bulk_operations') {
+              var campusesToClear = [];
+              if (action === 'multi_campus_bulk_operations') {
+                (execParams.campusGroups || []).forEach(function(g) {
+                  campusesToClear.push(String(g.campusCode || '').padStart(2, '0'));
+                });
+              } else {
+                campusesToClear.push(String(execParams.campusCode || '').padStart(2, '0'));
               }
-              if (typeof dirtyCampuses !== 'undefined') {
-                dirtyCampuses[affectedCampus] = false;
-              }
+              campusesToClear.forEach(function(affectedCampus) {
+                if (typeof lectureEntries !== 'undefined') {
+                  delete lectureEntries[affectedCampus];
+                }
+                if (typeof dirtyCampuses !== 'undefined') {
+                  dirtyCampuses[affectedCampus] = false;
+                }
+              });
               if (typeof allCampusEntriesCache !== 'undefined') {
                 allCampusEntriesCache = [];
               }

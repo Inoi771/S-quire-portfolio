@@ -343,7 +343,7 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '- For questions about pricing/tuition/fees: answer directly from provided data without navigating. Same for closed days, test schedules, and operations info.\n'
     + '- For questions about instructor placement/location (配置/勤務): answer directly from provided placement data. Use the current day-of-week from [Current Date] to answer "today" questions. On Sundays (日曜), explain there are no placements. When asked about today\'s overall placement ("今日の配置", "各校舎の配置" etc.), list each campus and who is assigned there (e.g. "○○校: △△先生、□□先生 / ××校: ◇◇先生"). Group by campus, not by teacher.\n'
     + '- [CRITICAL] If the user requests a feature that does NOT exist (attendance tracking, tuition billing, parent communication, etc.), NEVER claim it exists. Politely respond: "申し訳ございませんが、現在その機能はございません。管理者へご連絡ください".\n'
-    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, edit_schedule, delete_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations, export_lecture_calendar.\n'
+    + '- For app_action responses, ONLY use these action names: navigate_schedule, navigate_tab, show_grade_analysis, navigate_lectures, show_grades_list, show_student_report, submit_grade, submit_student, add_schedule, edit_schedule, delete_schedule, create_lecture_entry, edit_lecture_entry, delete_lecture_entry, bulk_lecture_operations, multi_campus_bulk_operations, export_lecture_calendar.\n'
     + '- [Required Fields Rule] If ANY required field is unknown/unspecified, do NOT execute the action. Return type:"other" and ask ONLY for the missing field(s). NEVER fill required fields with empty strings, 0, or guessed values.\n'
     + '- [Lecture Schedule Entry Method] When user wants to add/enter lecture schedule:\n'
     + '  - If the message already contains specific date(s)/time(s) (e.g. "7/17", "14:00", "〜15:00"), proceed DIRECTLY with create_lecture_entry action. Do NOT ask for method selection.\n'
@@ -463,11 +463,11 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '\n■ delete_schedule — Schedule delete (all users): docId(R, from 【予定一覧】) → ConfirmRule\n'
     + '  Any entry can be deleted.\n'
     + '{"success":true,"type":"app_action","action":"delete_schedule","needsConfirmation":true,"docId":"id","message":"以下の予定を削除します：○○ よろしいですか？"}\n'
-    + '\n■ create_lecture_entry — Lecture creation: lectureId(R), campusCode(R), date(R,YYYY-MM-DD), startTime(R,HH:MM), subject(R), grade(R,code 07-18) → ConfirmRule\n'
+    + '\n■ create_lecture_entry — Lecture creation: lectureId(R), campusCode(R), date(R,YYYY-MM-DD), startTime(R,HH:MM), subject(R), grade(R,"小" for elementary/無学年, code 13-18 for 中1-高3) → ConfirmRule\n'
     + '  Optional: durationSlots (10-min units; use grade settings if available, default 9=90min), classLabel (A/B/C)\n'
     + '  [Smart Defaults] If current lecture entries have lectureId+campusCode → use them. 1 preferred campus → auto-set. 2+ → ask. 1 subject → auto-set. 2+ → ask. Grade → ALWAYS ask.\n'
     + '  [Weekly] If "毎週" mentioned, set weekly:true. Creates for same day/time each week, skipping closed days.\n'
-    + '{"success":true,"type":"app_action","action":"create_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","date":"YYYY-MM-DD","startTime":"HH:MM","durationSlots":9,"subject":"name","grade":"2-digit","classLabel":"optional","weekly":false,"message":"confirmation msg"}\n'
+    + '{"success":true,"type":"app_action","action":"create_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","date":"YYYY-MM-DD","startTime":"HH:MM","durationSlots":9,"subject":"name","grade":"小 or 2-digit","classLabel":"optional","weekly":false,"message":"confirmation msg"}\n'
     + '\n■ edit_lecture_entry: lectureId(R), campusCode(R), entryId(R, from current entries) → ConfirmRule\n'
     + '  Include ONLY changed fields in "changes". User can ONLY edit own entries.\n'
     + '{"success":true,"type":"app_action","action":"edit_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","entryId":"id","changes":{"field":"value"},"message":"confirmation msg"}\n'
@@ -475,13 +475,17 @@ function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName
     + '  User can ONLY delete own entries.\n'
     + '{"success":true,"type":"app_action","action":"delete_lecture_entry","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","entryId":"id","message":"confirmation msg"}\n'
     + '\n■ bulk_lecture_operations — Bulk operations (create+edit+delete mix): lectureId(R), campusCode(R), operations(R) → ConfirmRule\n'
-    + '  Use when user requests MULTIPLE lecture entries at once, or a mix of create/edit/delete.\n'
+    + '  Use when user requests MULTIPLE lecture entries for a SINGLE campus at once.\n'
     + '  operations array items:\n'
-    + '    create: {"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"name","grade":"2-digit","durationSlots":9,"classLabel":"optional"}\n'
+    + '    create: {"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"name","grade":"小 or 13-18","durationSlots":9,"classLabel":"optional"}\n'
     + '    edit:   {"op":"edit","entryId":"id","changes":{"field":"value"}}\n'
     + '    delete: {"op":"delete","entryId":"id"}\n'
     + '  Message must list ALL operations clearly.\n'
-    + '{"success":true,"type":"app_action","action":"bulk_lecture_operations","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","operations":[{"op":"create","date":"2026-07-17","startTime":"10:00","subject":"数学","grade":"15"}],"message":"confirmation msg"}\n'
+    + '{"success":true,"type":"app_action","action":"bulk_lecture_operations","needsConfirmation":true,"lectureId":"id","campusCode":"2-digit","operations":[{"op":"create","date":"2026-07-17","startTime":"10:00","subject":"数学","grade":"小"}],"message":"confirmation msg"}\n'
+    + '\n■ multi_campus_bulk_operations — Multi-campus bulk: lectureId(R), campusGroups(R) → ConfirmRule\n'
+    + '  Use when user provides entries for MULTIPLE different campuses in one message.\n'
+    + '  campusGroups: array of {campusCode:"2-digit", operations:[...same format as bulk_lecture_operations...]}\n'
+    + '{"success":true,"type":"app_action","action":"multi_campus_bulk_operations","needsConfirmation":true,"lectureId":"id","campusGroups":[{"campusCode":"01","operations":[{"op":"create","date":"2026-07-17","startTime":"14:00","subject":"数学","grade":"小"}]},{"campusCode":"02","operations":[{"op":"create","date":"2026-08-01","startTime":"13:00","subject":"数学","grade":"14"}]}],"message":"confirmation msg"}\n'
     + '\n■ export_lecture_calendar — Export user\'s lecture entries to Google Calendar: lectureId(R, from Lecture Periods List)\n'
     + '  Triggered by: "カレンダーに追加して", "講習をカレンダーにエクスポート", "Googleカレンダーに入れて" etc.\n'
     + '  Downloads ICS file of user\'s own entries and opens Google Calendar import page.\n'
@@ -1722,6 +1726,10 @@ function executeAiAction(action, paramsJson) {
 
     if (action === 'bulk_lecture_operations') {
       return bulkLectureOperationsAI_(params.lectureId, params.campusCode, params.operations || []);
+    }
+
+    if (action === 'multi_campus_bulk_operations') {
+      return multiCampusBulkOperationsAI_(params.lectureId, params.campusGroups || []);
     }
 
     return { success: false, error: '不明なアクション: ' + action };
@@ -3261,6 +3269,7 @@ function createWeeklyLectureEntriesAI_(lectureId, campusCode, date, startTime, d
     // gradeCode → gradeSettings キー変換
     var gradeToSettingsKey = {
       '07': '小', '08': '小', '09': '小', '10': '小', '11': '小', '12': '小',
+      '小': '小',
       '13': '中1', '14': '中2', '15': '中3',
       '16': '高1', '17': '高2', '18': '高3'
     };
@@ -3539,6 +3548,35 @@ function bulkLectureOperationsAI_(lectureId, campusCode, operations) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * AIアシスタントから複数校舎の講習エントリを一括登録・編集・削除する
+ * @param {string} lectureId 講習ID
+ * @param {Array} campusGroups [{campusCode, operations}] の配列
+ * @return {Object} { success, message, error }
+ */
+function multiCampusBulkOperationsAI_(lectureId, campusGroups) {
+  if (!campusGroups || campusGroups.length === 0) {
+    return { success: false, error: '校舎グループがありません' };
+  }
+  var messages = [];
+  var errors = [];
+  for (var g = 0; g < campusGroups.length; g++) {
+    var group = campusGroups[g];
+    var r = bulkLectureOperationsAI_(lectureId, group.campusCode, group.operations || []);
+    if (r && r.success) {
+      messages.push(r.message);
+    } else {
+      errors.push((group.campusCode || '?') + '校: ' + (r && r.error || 'エラー'));
+    }
+  }
+  if (errors.length > 0 && messages.length === 0) {
+    return { success: false, error: errors.join(' / ') };
+  }
+  var msg = messages.join(' / ');
+  if (errors.length > 0) msg += ' ⚠️ 一部エラー: ' + errors.join(', ');
+  return { success: true, message: msg };
 }
 
 /**
