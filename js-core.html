@@ -682,6 +682,11 @@
       preferredCampuses = data.preferredCampuses;
     }
 
+    // 最後に生成したテスト分析のメタ情報をキャッシュ（全スタッフのAIウィジェットチップに反映）
+    if (data.lastAnalysisMeta && data.lastAnalysisMeta.testName) {
+      try { localStorage.setItem('s-quire-last-analysis', JSON.stringify(data.lastAnalysisMeta)); } catch (e) {}
+    }
+
     // ヘッダーのユーザー情報を設定
     var userEl = document.getElementById('currentUser');
     if (userEl) userEl.textContent = '👤 ' + (data.displayName || '名前未設定');

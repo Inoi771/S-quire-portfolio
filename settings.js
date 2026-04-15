@@ -815,7 +815,8 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       accessFolderId: accessFolderId,
       aiAssistantName: aiAssistantName,
       aiPersonality: aiPersonality,
-      preferredCampuses: preferredCampuses
+      preferredCampuses: preferredCampuses,
+      lastAnalysisMeta: getLatestGradeAnalysisMeta()
     };
   } catch (error) {
     Logger.log('❌ getAppStartupDataエラー: ' + error);
