@@ -2321,6 +2321,10 @@
     }
 
     function closeLecOcrModal() {
+      var resultArea = document.getElementById('lec-ocr-result-area');
+      if (resultArea && resultArea.style.display !== 'none') {
+        if (!window.confirm('読み込んだ内容は保存されません。閉じてもよいですか？')) return;
+      }
       document.getElementById('lecOcrOverlay').style.display = 'none';
       document.getElementById('lecOcrModal').style.display = 'none';
     }
@@ -2754,6 +2758,7 @@
       var tbody = document.getElementById('lec-ocr-result-body');
       var rows = tbody.querySelectorAll('tr');
       if (rows.length === 0) { showToast('保存するエントリがありません', 'warning'); return; }
+      if (!window.confirm(rows.length + '件を保存します。よろしいですか？')) return;
 
       // 別講師名の確認ダイアログ（非管理者のみ）
       if (!isAdminUser) {
