@@ -2343,6 +2343,56 @@
       _appConfirmCallback = null;
     }
 
+    // AIアシスタントから日程テキストを渡されたときに読み込むエントリポイント
+    function startLecOcrFromAI_(scheduleText) {
+      if (!currentLectureId) {
+        showToast('講習を選択してください', 'warning');
+        return;
+      }
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
+      var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
+      var gradeSettingsJson = JSON.stringify((lp && lp.gradeSettings) ? lp.gradeSettings : {});
+
+      lecOcrCampusCodes = (preferredCampuses && preferredCampuses.length > 0) ? preferredCampuses : Object.keys(campusData);
+      lecOcrCampusNames = {};
+      lecOcrCampusCodes.forEach(function(code) {
+        if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
+      });
+
+      // モーダルをリセットして開く
+      openLecOcrModal();
+
+      // 読み取り中表示
+      var runBtn = document.getElementById('lec-ocr-run-btn');
+      if (runBtn) { runBtn.disabled = true; runBtn.textContent = '読み取り中...'; runBtn.style.display = 'block'; }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (runBtn) { runBtn.disabled = false; runBtn.style.display = 'none'; }
+          if (!res || !res.success) {
+            showToast('読み取りエラー: ' + (res ? res.error : '不明'), 'error');
+            return;
+          }
+          if (!res.entries || res.entries.length === 0) {
+            showToast('日程を読み取れませんでした。内容を確認してください', 'warning');
+            return;
+          }
+          renderLecOcrResult_(res.entries);
+        })
+        .withFailureHandler(function(err) {
+          if (runBtn) { runBtn.disabled = false; runBtn.style.display = 'none'; }
+          showToast('読み取りエラー: ' + (err.message || err), 'error');
+        })
+        .parseLectureScheduleFromText(
+          scheduleText,
+          lectureYear,
+          JSON.stringify(lecOcrCampusCodes),
+          JSON.stringify(lecOcrCampusNames),
+          gradeSettingsJson
+        );
+    }
+
     function closeLecOcrModalDirect_() {
       document.getElementById('lecOcrOverlay').style.display = 'none';
       document.getElementById('lecOcrModal').style.display = 'none';

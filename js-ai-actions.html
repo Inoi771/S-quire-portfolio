@@ -78,6 +78,23 @@
         addAIWidgetMessage('ai', message);
         exportLecCalendarFromAI_(result.lectureId);
         return message;
+
+      } else if (action === 'parse_lecture_schedule') {
+        var scheduleText = result.text || '';
+        if (!scheduleText) {
+          message = '日程テキストが取得できませんでした。もう一度貼り付けてください。';
+          addAIWidgetMessage('ai', message);
+          return message;
+        }
+        if (!currentLectureId) {
+          message = '講習管理タブで講習を選択してから、もう一度お送りください。';
+          addAIWidgetMessage('ai', message);
+          return message;
+        }
+        message = result.message || '📥 日程を読み込んでいます...';
+        addAIWidgetMessage('ai', message);
+        startLecOcrFromAI_(scheduleText);
+        return message;
       }
 
       // 不明なアクション
