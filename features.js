@@ -589,22 +589,79 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
     });
   }
 
-  // スペース正規化＋カタカナ→ひらがな正規化
-  // 例）「山田　太郎」「山田 太郎」→「山田太郎」、「やまだタロウ」→「やまだたろう」
+  // ひらがな→ローマ字変換ヘルパー（ヘボン式）
+  function toRomaji_(hira) {
+    var map = {
+      'きゃ':'kya','きゅ':'kyu','きょ':'kyo','しゃ':'sha','しゅ':'shu','しょ':'sho',
+      'ちゃ':'cha','ちゅ':'chu','ちょ':'cho','にゃ':'nya','にゅ':'nyu','にょ':'nyo',
+      'ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo','みゃ':'mya','みゅ':'myu','みょ':'myo',
+      'りゃ':'rya','りゅ':'ryu','りょ':'ryo','ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo',
+      'じゃ':'ja','じゅ':'ju','じょ':'jo','びゃ':'bya','びゅ':'byu','びょ':'byo',
+      'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
+      'あ':'a','い':'i','う':'u','え':'e','お':'o',
+      'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
+      'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
+      'た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to',
+      'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
+      'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
+      'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
+      'や':'ya','ゆ':'yu','よ':'yo',
+      'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
+      'わ':'wa','を':'o','ん':'n',
+      'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
+      'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
+      'だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do',
+      'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
+      'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po'
+    };
+    var result = '';
+    var i = 0;
+    while (i < hira.length) {
+      if (hira[i] === 'っ') {
+        var peek = map[hira.substring(i+1,i+3)] || map[hira[i+1]] || '';
+        if (peek) result += peek[0];
+        i++; continue;
+      }
+      var two = hira.substring(i, i+2);
+      if (map[two]) { result += map[two]; i += 2; }
+      else if (map[hira[i]]) { result += map[hira[i]]; i++; }
+      else { result += hira[i]; i++; }
+    }
+    return result;
+  }
+
+  // スペース正規化＋カタカナ→ひらがな正規化＋小文字化（ローマ字対応）
+  // 例）「山田 太郎」→「山田太郎」、「やまだタロウ」→「やまだたろう」、「Yamada Taro」→「yamada taro」
   var normalized = message
     .replace(/　/g, ' ')
     .replace(/([\u3040-\u9fff\uff00-\uffef])\s+([\u3040-\u9fff\uff00-\uffef])/g, '$1$2')
-    .replace(/[\u30a1-\u30f6]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+    .replace(/[\u30a1-\u30f6]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); })
+    .toLowerCase();
 
   // === Phase 1: フルネームマッチング ===
   var fullNameToIds = {};
   students.forEach(function(s) {
+    var seiHira = toHira_(s.seiFurigana || '');
+    var meiHira = toHira_(s.meiFurigana || '');
+    var seiR = toRomaji_(seiHira);
+    var meiR = toRomaji_(meiHira);
+    // 長音の表記ゆれ（tarou→taro, yuuki→yuki）
+    var seiRS = seiR.replace(/ou/g,'o').replace(/uu/g,'u').replace(/oo/g,'o');
+    var meiRS = meiR.replace(/ou/g,'o').replace(/uu/g,'u').replace(/oo/g,'o');
+
     var variants = [
-      (s.sei || '') + (s.mei || ''),                                    // 山田太郎
-      toHira_((s.seiFurigana || '') + (s.meiFurigana || '')),           // やまだたろう
-      (s.sei || '') + toHira_(s.meiFurigana || ''),                     // 山田たろう
-      toHira_(s.seiFurigana || '') + (s.mei || '')                      // やまだ太郎
+      (s.sei || '') + (s.mei || ''),           // 山田太郎
+      seiHira + meiHira,                        // やまだたろう
+      (s.sei || '') + meiHira,                  // 山田たろう
+      seiHira + (s.mei || '')                   // やまだ太郎
     ];
+    // ローマ字バリアント（スペースあり・なし × 長音あり・なし）
+    if (seiR && meiR) {
+      [[seiR,meiR],[seiR,meiRS],[seiRS,meiR],[seiRS,meiRS]].forEach(function(pair) {
+        variants.push(pair[0] + pair[1]);        // yamadataro
+        variants.push(pair[0] + ' ' + pair[1]); // yamada taro
+      });
+    }
     variants.forEach(function(name) {
       if (name.length < 2) return;
       if (!fullNameToIds[name]) fullNameToIds[name] = [];
