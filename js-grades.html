@@ -5,6 +5,16 @@
     var campusData = {};
     var gradeData = {};
     var testNamesData = [];
+
+    /**
+     * AIウィジェット用: 直近（リスト末尾）のテスト名を返す（なければ null）
+     */
+    function getLatestTestNameForChip_() {
+      if (testNamesData && testNamesData.length > 0) {
+        return testNamesData[testNamesData.length - 1];
+      }
+      return null;
+    }
     var selectedStudentId = null;
     var currentStudentList = [];
 

@@ -1978,9 +1978,10 @@
       el.id = 'aiWelcomeMessage';
       el.style.cssText = 'margin-bottom: 12px; animation: fadeIn 0.3s ease-in;';
       var lectureName = (typeof getUpcomingLectureNameForChip_ === 'function') ? getUpcomingLectureNameForChip_() : null;
+      var latestTestName = (typeof getLatestTestNameForChip_ === 'function') ? getLatestTestNameForChip_() : null;
       var chips = [
         { label: (lectureName ? lectureName + 'の日程を入れたい' : '講習の日程を入れたい'), action: 'openLecScheduleFromAI_()' },
-        { label: 'テスト分析を見たい', action: 'sendAIQuickReply(\'テスト分析を見たい\')' },
+        { label: (latestTestName ? latestTestName + 'の分析を見たい' : 'テスト分析を見たい'), action: 'openGradeAnalysisFromAI_()' },
         { label: '今日の各校舎の配置を教えて', action: 'sendAIQuickReply(\'今日の各校舎の配置を教えて\')' },
         { label: '何ができる？', action: 'sendAIQuickReply(\'何ができる？\')' }
       ];
@@ -2005,6 +2006,19 @@
       if (welcome) welcome.remove();
       document.getElementById('aiWidgetInput').value = text;
       sendAIWidgetMessage();
+    }
+
+    function openGradeAnalysisFromAI_() {
+      var welcome = document.getElementById('aiWelcomeMessage');
+      if (welcome) welcome.remove();
+      var testName = (typeof getLatestTestNameForChip_ === 'function') ? getLatestTestNameForChip_() : null;
+      if (testName && typeof navigateToGradeAnalysis_fromAI === 'function') {
+        addAIWidgetMessage('ai', '📈 ' + testName + 'の分析を表示します');
+        navigateToGradeAnalysis_fromAI(currentFiscalYear, testName);
+      } else {
+        document.getElementById('aiWidgetInput').value = 'テスト分析を見たい';
+        sendAIWidgetMessage();
+      }
     }
 
     function openLecScheduleFromAI_() {
