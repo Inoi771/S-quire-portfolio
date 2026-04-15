@@ -2378,8 +2378,8 @@
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
 
-      // 選択中の校舎タブ1択でAIに渡す（複数校舎の誤検出を防ぐ）
-      lecOcrCampusCodes = currentLectureCampus ? [currentLectureCampus] : (preferredCampuses && preferredCampuses.length > 0 ? preferredCampuses : Object.keys(campusData));
+      // 講師の配属校舎をAIに渡す（確認画面で校舎を修正できるようにする）
+      lecOcrCampusCodes = (preferredCampuses && preferredCampuses.length > 0) ? preferredCampuses : Object.keys(campusData);
       lecOcrCampusNames = {};
       lecOcrCampusCodes.forEach(function(code) {
         if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
@@ -2424,8 +2424,8 @@
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
 
-      // 選択中の校舎タブ1択でAIに渡す（複数校舎の誤検出を防ぐ）
-      lecOcrCampusCodes = currentLectureCampus ? [currentLectureCampus] : (preferredCampuses && preferredCampuses.length > 0 ? preferredCampuses : Object.keys(campusData));
+      // 講師の配属校舎をAIに渡す（確認画面で校舎を修正できるようにする）
+      lecOcrCampusCodes = (preferredCampuses && preferredCampuses.length > 0) ? preferredCampuses : Object.keys(campusData);
       lecOcrCampusNames = {};
       lecOcrCampusCodes.forEach(function(code) {
         if (campusData[code]) lecOcrCampusNames[code] = campusData[code];
