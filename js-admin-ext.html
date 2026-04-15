@@ -1977,14 +1977,15 @@
       var el = document.createElement('div');
       el.id = 'aiWelcomeMessage';
       el.style.cssText = 'margin-bottom: 12px; animation: fadeIn 0.3s ease-in;';
+      var lectureName = (typeof getUpcomingLectureNameForChip_ === 'function') ? getUpcomingLectureNameForChip_() : null;
       var chips = [
-        '講習の日程を入れたい',
-        'テスト分析を見たい',
-        '今日の各校舎の配置を教えて',
-        '何ができる？'
+        { label: (lectureName ? lectureName + 'の日程を入れたい' : '講習の日程を入れたい'), action: 'openLecScheduleFromAI_()' },
+        { label: 'テスト分析を見たい', action: 'sendAIQuickReply(\'テスト分析を見たい\')' },
+        { label: '今日の各校舎の配置を教えて', action: 'sendAIQuickReply(\'今日の各校舎の配置を教えて\')' },
+        { label: '何ができる？', action: 'sendAIQuickReply(\'何ができる？\')' }
       ];
       var chipHtml = chips.map(function(c) {
-        return '<button onclick="sendAIQuickReply(\'' + c + '\')" style="background: white; border: 1.5px solid #4facfe; color: #4facfe; padding: 6px 14px; border-radius: 16px; font-size: 12px; cursor: pointer; white-space: nowrap;">' + c + '</button>';
+        return '<button onclick="' + c.action + '" style="background: white; border: 1.5px solid #4facfe; color: #4facfe; padding: 6px 14px; border-radius: 16px; font-size: 12px; cursor: pointer; white-space: nowrap;">' + c.label + '</button>';
       }).join('');
       el.innerHTML =
         '<div style="background: #f0f0f0; color: #333; padding: 10px 14px; border-radius: 12px; margin-right: 40px; word-break: break-word;">' +
@@ -2002,6 +2003,19 @@
       var welcome = document.getElementById('aiWelcomeMessage');
       if (welcome) welcome.remove();
       document.getElementById('aiWidgetInput').value = text;
+      sendAIWidgetMessage();
+    }
+
+    function openLecScheduleFromAI_() {
+      var welcome = document.getElementById('aiWelcomeMessage');
+      if (welcome) welcome.remove();
+      // 講習コンテキスト（currentLectureId）を確保
+      if (typeof ensureLectureContextForAI_ === 'function') {
+        ensureLectureContextForAI_();
+      }
+      // 送信テキストを動的に決定（講習名が取得できればそれを使う）
+      var lectureName = (typeof getUpcomingLectureNameForChip_ === 'function') ? getUpcomingLectureNameForChip_() : null;
+      document.getElementById('aiWidgetInput').value = (lectureName ? lectureName : '講習') + 'の日程を入れたい';
       sendAIWidgetMessage();
     }
 
