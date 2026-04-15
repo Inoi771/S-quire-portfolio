@@ -582,25 +582,36 @@ function detectCampusFromMessage_(message, campusConfig) {
 function resolveStudentNamesInMessage_(message, students, campusConfig) {
   if (!message || !students || students.length === 0) return message;
 
-  // スペース正規化：全角スペースを半角に統一し、日本語文字間のスペースを除去
-  // 例）「山田　太郎」「山田 太郎」→「山田太郎」としてマッチングが通るようにする
+  // カタカナ→ひらがな変換ヘルパー
+  function toHira_(str) {
+    return (str || '').replace(/[\u30a1-\u30f6]/g, function(c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0x60);
+    });
+  }
+
+  // スペース正規化＋カタカナ→ひらがな正規化
+  // 例）「山田　太郎」「山田 太郎」→「山田太郎」、「やまだタロウ」→「やまだたろう」
   var normalized = message
     .replace(/　/g, ' ')
-    .replace(/([\u3040-\u9fff\uff00-\uffef])\s+([\u3040-\u9fff\uff00-\uffef])/g, '$1$2');
+    .replace(/([\u3040-\u9fff\uff00-\uffef])\s+([\u3040-\u9fff\uff00-\uffef])/g, '$1$2')
+    .replace(/[\u30a1-\u30f6]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
 
-  // === Phase 1: フルネームマッチング（既存動作） ===
+  // === Phase 1: フルネームマッチング ===
   var fullNameToIds = {};
   students.forEach(function(s) {
-    var fullName = (s.sei || '') + (s.mei || '');
-    var furigana = (s.seiFurigana || '') + (s.meiFurigana || '');
-    if (fullName.length >= 2) {
-      if (!fullNameToIds[fullName]) fullNameToIds[fullName] = [];
-      fullNameToIds[fullName].push(s.studentId);
-    }
-    if (furigana.length >= 2 && furigana !== fullName) {
-      if (!fullNameToIds[furigana]) fullNameToIds[furigana] = [];
-      fullNameToIds[furigana].push(s.studentId);
-    }
+    var variants = [
+      (s.sei || '') + (s.mei || ''),                                    // 山田太郎
+      toHira_((s.seiFurigana || '') + (s.meiFurigana || '')),           // やまだたろう
+      (s.sei || '') + toHira_(s.meiFurigana || ''),                     // 山田たろう
+      toHira_(s.seiFurigana || '') + (s.mei || '')                      // やまだ太郎
+    ];
+    variants.forEach(function(name) {
+      if (name.length < 2) return;
+      if (!fullNameToIds[name]) fullNameToIds[name] = [];
+      if (fullNameToIds[name].indexOf(s.studentId) === -1) {
+        fullNameToIds[name].push(s.studentId);
+      }
+    });
   });
 
   // 長い名前から順に処理（部分一致による誤変換を防ぐ）
@@ -616,7 +627,7 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
   // 苗字 → 生徒オブジェクト配列 のマッピングを構築
   var surnameToStudents = {};
   students.forEach(function(s) {
-    [s.sei || '', s.seiFurigana || ''].forEach(function(surname) {
+    [s.sei || '', toHira_(s.seiFurigana || '')].forEach(function(surname) {
       if (surname.length < 1) return;
       if (!surnameToStudents[surname]) surnameToStudents[surname] = [];
       var alreadyAdded = surnameToStudents[surname].some(function(x) { return x.studentId === s.studentId; });
