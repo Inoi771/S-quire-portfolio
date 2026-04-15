@@ -2393,6 +2393,56 @@
         );
     }
 
+    /**
+     * AIウィジェット用: localStorage から lecturePeriods を読み込み currentLectureId を確保する
+     * AIウィジェットからOCR操作する前に呼ぶ
+     */
+    function ensureLectureContextForAI_() {
+      if (!lecturePeriods || !lecturePeriods.length) {
+        try {
+          var cached = localStorage.getItem('s-quire-lecture-periods');
+          if (cached) lecturePeriods = JSON.parse(cached);
+        } catch (e) {}
+      }
+      if (!lecturePeriods || !lecturePeriods.length) return;
+      if (currentLectureId) return; // 既にセット済み
+      var next = getNextUpcomingLecture_();
+      if (!next) {
+        // 未来の講習がない場合は最後の講習
+        var sorted = lecturePeriods.slice().sort(function(a, b) {
+          return new Date(a.startDate) - new Date(b.startDate);
+        });
+        next = sorted[sorted.length - 1];
+      }
+      if (next) currentLectureId = next.id;
+    }
+
+    /**
+     * AIウィジェット用: 直近の未開始講習名を返す（なければ null）
+     * localStorage キャッシュも参照する
+     */
+    function getUpcomingLectureNameForChip_() {
+      var periods = lecturePeriods;
+      if (!periods || !periods.length) {
+        try {
+          var cached = localStorage.getItem('s-quire-lecture-periods');
+          if (cached) periods = JSON.parse(cached);
+        } catch (e) {}
+      }
+      if (!periods || !periods.length) return null;
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var sorted = periods.slice().sort(function(a, b) {
+        return new Date(a.startDate) - new Date(b.startDate);
+      });
+      for (var i = 0; i < sorted.length; i++) {
+        var d = new Date(sorted[i].startDate);
+        d.setHours(0, 0, 0, 0);
+        if (d >= today) return sorted[i].name;
+      }
+      return null;
+    }
+
     function closeLecOcrModalDirect_() {
       document.getElementById('lecOcrOverlay').style.display = 'none';
       document.getElementById('lecOcrModal').style.display = 'none';
