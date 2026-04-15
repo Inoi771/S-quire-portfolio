@@ -5045,13 +5045,18 @@ function translateToImagePrompt_(japanesePrompt) {
  * @param {string} campusNamesJson 校舎コード→名前マップの JSON 文字列
  * @return {Object} { success, entries:[{date,startTime,durationMinutes,subject,grade,classLabel,campusCode}], error }
  */
-function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson) {
+function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson) {
   try {
     var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
     if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
 
     var campusCodes = safeJsonParse_(campusCodesJson, []);
     var campusNames = safeJsonParse_(campusNamesJson, {});
+    var gradeSettings = safeJsonParse_(gradeSettingsJson, {});
+    var gradeDefaultText = '';
+    var gsParts = Object.keys(gradeSettings).filter(function(k) { return gradeSettings[k].duration > 0; })
+      .map(function(k) { return k + '=' + (gradeSettings[k].duration * 10) + '分'; });
+    if (gsParts.length > 0) gradeDefaultText = '学年別デフォルト授業時間: ' + gsParts.join(', ') + '。';
 
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
     var mediaLabel = mimeType === 'application/pdf'
@@ -5094,7 +5099,7 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull","changes":{"date":"YYYY-MM-DD"}}\n' +
       'deleteの場合:\n' +
       '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull"}\n\n' +
-      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。';
+      '読み取れない項目はnullとする。授業時間が不明な場合は' + (gradeDefaultText ? gradeDefaultText + 'この学年別時間をdurationMinutesに使用すること。学年不明の場合は90。' : 'durationMinutes:90とする。') + '"op"が省略された場合は"create"として扱われる。';
 
     var payload = {
       contents: [{
@@ -5143,13 +5148,18 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
  * @param {string} campusNamesJson 校舎コード→名前マップの JSON 文字列
  * @return {Object} { success, entries:[{date,startTime,durationMinutes,subject,grade,classLabel,campusCode}], error }
  */
-function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson) {
+function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson) {
   try {
     var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
     if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
     if (!scheduleText || !scheduleText.trim()) return { success: false, error: 'テキストが空です' };
 
     var campusNames = safeJsonParse_(campusNamesJson, {});
+    var gradeSettings = safeJsonParse_(gradeSettingsJson, {});
+    var gradeDefaultText = '';
+    var gsParts = Object.keys(gradeSettings).filter(function(k) { return gradeSettings[k].duration > 0; })
+      .map(function(k) { return k + '=' + (gradeSettings[k].duration * 10) + '分'; });
+    if (gsParts.length > 0) gradeDefaultText = '学年別デフォルト授業時間: ' + gsParts.join(', ') + '。';
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
 
     var campusText = '';
@@ -5187,7 +5197,7 @@ function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson
       '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull","changes":{"date":"YYYY-MM-DD"}}\n' +
       'deleteの場合:\n' +
       '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull"}\n\n' +
-      '読み取れない項目はnullとする。授業時間が不明な場合はdurationMinutes:90とする。"op"が省略された場合は"create"として扱われる。\n\n' +
+      '読み取れない項目はnullとする。授業時間が不明な場合は' + (gradeDefaultText ? gradeDefaultText + 'この学年別時間をdurationMinutesに使用すること。学年不明の場合は90。' : 'durationMinutes:90とする。') + '"op"が省略された場合は"create"として扱われる。\n\n' +
       '--- 日程テキスト ---\n' + scheduleText;
 
     var payload = {
