@@ -135,6 +135,7 @@
         addAIWidgetMessage('ai', '🚫 キャンセルしました');
         aiWidgetChatHistory.push({ role: 'user', text: trimmed });
         aiWidgetChatHistory.push({ role: 'ai', text: 'キャンセルしました' });
+        trimAIWidgetHistory_();
         return true;
       }
 
@@ -231,6 +232,7 @@
             var successMsg = '✅ ' + (result.message || '処理が完了しました');
             addAIWidgetMessage('ai', successMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
+            trimAIWidgetHistory_();
             // 講習エントリ操作成功後、キャッシュをクリアして画面を自動更新
             if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry' || action === 'bulk_lecture_operations' || action === 'multi_campus_bulk_operations') {
               var campusesToClear = [];
@@ -260,6 +262,7 @@
             var errMsg = '❌ ' + (result ? result.error || 'エラーが発生しました' : 'エラーが発生しました');
             addAIWidgetMessage('ai', errMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: errMsg });
+            trimAIWidgetHistory_();
           }
         })
         .withFailureHandler(function(err) {
@@ -267,6 +270,7 @@
           var errMsg = '❌ エラー: ' + err;
           addAIWidgetMessage('ai', errMsg);
           aiWidgetChatHistory.push({ role: 'ai', text: errMsg });
+          trimAIWidgetHistory_();
         })
         .executeAiAction(action, JSON.stringify(execParams));
     }

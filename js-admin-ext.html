@@ -2070,6 +2070,7 @@
       // 送信前の履歴（直近10件）をコピーしてからユーザーメッセージを履歴に追加
       var historyToSend = aiWidgetChatHistory.slice(-10);
       aiWidgetChatHistory.push({ role: 'user', text: message });
+      trimAIWidgetHistory_();
 
       // AI に送信（履歴も渡す）
       google.script.run
@@ -2079,6 +2080,7 @@
           // AI応答を履歴に追加
           if (aiText) {
             aiWidgetChatHistory.push({ role: 'ai', text: aiText });
+            trimAIWidgetHistory_();
           }
         })
         .withFailureHandler(function(error) {
@@ -2257,7 +2259,37 @@
         el.remove();
       }
     }
-    
+
+    var AI_WIDGET_MAX_HISTORY = 10;
+
+    function trimAIWidgetHistory_() {
+      // history 配列のトリム
+      while (aiWidgetChatHistory.length > AI_WIDGET_MAX_HISTORY) {
+        aiWidgetChatHistory.shift();
+      }
+      // DOM 側のトリム（welcome と thinking/exec 系の一時要素を除いた先頭から削除）
+      var container = document.getElementById('aiWidgetMessages');
+      if (!container) return;
+      var excludePattern = /^(thinking_|exec_)/;
+      function getCandidates() {
+        var all = container.childNodes;
+        var result = [];
+        for (var i = 0; i < all.length; i++) {
+          var node = all[i];
+          if (node.nodeType !== 1) continue;
+          if (node.id === 'aiWelcomeMessage') continue;
+          if (excludePattern.test(node.id)) continue;
+          result.push(node);
+        }
+        return result;
+      }
+      var candidates = getCandidates();
+      while (candidates.length > AI_WIDGET_MAX_HISTORY) {
+        candidates[0].remove();
+        candidates = getCandidates();
+      }
+    }
+
     function handleAIWidgetResponse(result) {
       if (!result) {
         addAIWidgetMessage('ai', '❌ レスポンスが空です');
