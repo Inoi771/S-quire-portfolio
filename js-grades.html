@@ -7,13 +7,35 @@
     var testNamesData = [];
 
     /**
-     * AIウィジェット用: 直近（リスト末尾）のテスト名を返す（なければ null）
+     * AIウィジェット用: 直近の分析のテスト名を返す（なければ null）
+     * 優先順: 一括生成で保存した値 → testNamesData の末尾
      */
     function getLatestTestNameForChip_() {
+      try {
+        var cached = localStorage.getItem('s-quire-last-analysis');
+        if (cached) {
+          var last = JSON.parse(cached);
+          if (last && last.testName) return last.testName;
+        }
+      } catch (e) {}
       if (testNamesData && testNamesData.length > 0) {
         return testNamesData[testNamesData.length - 1];
       }
       return null;
+    }
+
+    /**
+     * AIウィジェット用: 直近の分析の年度を返す（なければ currentFiscalYear）
+     */
+    function getLastAnalysisYear_() {
+      try {
+        var cached = localStorage.getItem('s-quire-last-analysis');
+        if (cached) {
+          var last = JSON.parse(cached);
+          if (last && last.year) return last.year;
+        }
+      } catch (e) {}
+      return currentFiscalYear;
     }
     var selectedStudentId = null;
     var currentStudentList = [];
