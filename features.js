@@ -589,31 +589,8 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
     });
   }
 
-  // ひらがな→ローマ字変換ヘルパー（ヘボン式）
-  function toRomaji_(hira) {
-    var map = {
-      'きゃ':'kya','きゅ':'kyu','きょ':'kyo','しゃ':'sha','しゅ':'shu','しょ':'sho',
-      'ちゃ':'cha','ちゅ':'chu','ちょ':'cho','にゃ':'nya','にゅ':'nyu','にょ':'nyo',
-      'ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo','みゃ':'mya','みゅ':'myu','みょ':'myo',
-      'りゃ':'rya','りゅ':'ryu','りょ':'ryo','ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo',
-      'じゃ':'ja','じゅ':'ju','じょ':'jo','びゃ':'bya','びゅ':'byu','びょ':'byo',
-      'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
-      'あ':'a','い':'i','う':'u','え':'e','お':'o',
-      'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
-      'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
-      'た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to',
-      'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
-      'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
-      'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
-      'や':'ya','ゆ':'yu','よ':'yo',
-      'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
-      'わ':'wa','を':'o','ん':'n',
-      'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
-      'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
-      'だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do',
-      'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
-      'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po'
-    };
+  // ひらがな→ローマ字変換（共通ロジック）
+  function convertByMap_(hira, map) {
     var result = '';
     var i = 0;
     while (i < hira.length) {
@@ -630,6 +607,52 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
     return result;
   }
 
+  // ヘボン式マップ
+  var HEPBURN_MAP_ = {
+    'きゃ':'kya','きゅ':'kyu','きょ':'kyo','しゃ':'sha','しゅ':'shu','しょ':'sho',
+    'ちゃ':'cha','ちゅ':'chu','ちょ':'cho','にゃ':'nya','にゅ':'nyu','にょ':'nyo',
+    'ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo','みゃ':'mya','みゅ':'myu','みょ':'myo',
+    'りゃ':'rya','りゅ':'ryu','りょ':'ryo','ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo',
+    'じゃ':'ja','じゅ':'ju','じょ':'jo','びゃ':'bya','びゅ':'byu','びょ':'byo',
+    'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
+    'あ':'a','い':'i','う':'u','え':'e','お':'o',
+    'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
+    'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
+    'た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to',
+    'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
+    'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
+    'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
+    'や':'ya','ゆ':'yu','よ':'yo',
+    'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
+    'わ':'wa','を':'o','ん':'n',
+    'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
+    'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
+    'だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do',
+    'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
+    'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po'
+  };
+
+  // 訓令式マップ（ヘボン式と異なる部分のみ上書き）
+  var KUNREI_MAP_ = Object.assign ? Object.assign({}, HEPBURN_MAP_, {
+    'しゃ':'sya','しゅ':'syu','しょ':'syo',
+    'ちゃ':'tya','ちゅ':'tyu','ちょ':'tyo',
+    'じゃ':'zya','じゅ':'zyu','じょ':'zyo',
+    'し':'si','ち':'ti','つ':'tu','ふ':'hu',
+    'じ':'zi','ぢ':'zi'
+  }) : (function() {
+    var m = {};
+    for (var k in HEPBURN_MAP_) m[k] = HEPBURN_MAP_[k];
+    m['しゃ']='sya'; m['しゅ']='syu'; m['しょ']='syo';
+    m['ちゃ']='tya'; m['ちゅ']='tyu'; m['ちょ']='tyo';
+    m['じゃ']='zya'; m['じゅ']='zyu'; m['じょ']='zyo';
+    m['し']='si'; m['ち']='ti'; m['つ']='tu'; m['ふ']='hu';
+    m['じ']='zi'; m['ぢ']='zi';
+    return m;
+  })();
+
+  function toRomaji_(hira)      { return convertByMap_(hira, HEPBURN_MAP_); }
+  function toRomajiKunrei_(hira){ return convertByMap_(hira, KUNREI_MAP_); }
+
   // スペース正規化＋カタカナ→ひらがな正規化＋小文字化（ローマ字対応）
   // 例）「山田 太郎」→「山田太郎」、「やまだタロウ」→「やまだたろう」、「Yamada Taro」→「yamada taro」
   var normalized = message
@@ -643,11 +666,16 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
   students.forEach(function(s) {
     var seiHira = toHira_(s.seiFurigana || '');
     var meiHira = toHira_(s.meiFurigana || '');
-    var seiR = toRomaji_(seiHira);
-    var meiR = toRomaji_(meiHira);
+    var seiR  = toRomaji_(seiHira);
+    var meiR  = toRomaji_(meiHira);
+    var seiRk = toRomajiKunrei_(seiHira);
+    var meiRk = toRomajiKunrei_(meiHira);
     // 長音の表記ゆれ（tarou→taro, yuuki→yuki）
-    var seiRS = seiR.replace(/ou/g,'o').replace(/uu/g,'u').replace(/oo/g,'o');
-    var meiRS = meiR.replace(/ou/g,'o').replace(/uu/g,'u').replace(/oo/g,'o');
+    function shortVowel_(r){ return r.replace(/ou/g,'o').replace(/uu/g,'u').replace(/oo/g,'o'); }
+    var seiRS  = shortVowel_(seiR);
+    var meiRS  = shortVowel_(meiR);
+    var seiRkS = shortVowel_(seiRk);
+    var meiRkS = shortVowel_(meiRk);
 
     var variants = [
       (s.sei || '') + (s.mei || ''),           // 山田太郎
@@ -655,13 +683,14 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
       (s.sei || '') + meiHira,                  // 山田たろう
       seiHira + (s.mei || '')                   // やまだ太郎
     ];
-    // ローマ字バリアント（スペースあり・なし × 長音あり・なし）
-    if (seiR && meiR) {
-      [[seiR,meiR],[seiR,meiRS],[seiRS,meiR],[seiRS,meiRS]].forEach(function(pair) {
-        variants.push(pair[0] + pair[1]);        // yamadataro
-        variants.push(pair[0] + ' ' + pair[1]); // yamada taro
-      });
-    }
+    // ローマ字バリアント（ヘボン式・訓令式 × スペースあり・なし × 長音あり・なし）
+    [[seiR,meiR],[seiR,meiRS],[seiRS,meiR],[seiRS,meiRS],
+     [seiRk,meiRk],[seiRk,meiRkS],[seiRkS,meiRk],[seiRkS,meiRkS]
+    ].forEach(function(pair) {
+      if (!pair[0] || !pair[1]) return;
+      variants.push(pair[0] + pair[1]);        // yamadataro / yamadatiro
+      variants.push(pair[0] + ' ' + pair[1]); // yamada taro / yamada tiro
+    });
     variants.forEach(function(name) {
       if (name.length < 2) return;
       if (!fullNameToIds[name]) fullNameToIds[name] = [];
