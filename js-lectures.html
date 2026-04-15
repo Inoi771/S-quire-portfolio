@@ -2379,6 +2379,7 @@
       var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
+      var gradeSettingsJson = JSON.stringify((lp && lp.gradeSettings) ? lp.gradeSettings : {});
 
       // 講師の配属校舎をAIに渡す（確認画面で校舎を修正できるようにする）
       lecOcrCampusCodes = (preferredCampuses && preferredCampuses.length > 0) ? preferredCampuses : Object.keys(campusData);
@@ -2414,7 +2415,8 @@
           text,
           lectureYear,
           JSON.stringify(lecOcrCampusCodes),
-          JSON.stringify(lecOcrCampusNames)
+          JSON.stringify(lecOcrCampusNames),
+          gradeSettingsJson
         );
     }
 
@@ -2425,6 +2427,7 @@
       var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
       if (!lp) { showToast('講習情報が取得できませんでした', 'error'); return; }
       var lectureYear = new Date(lp.startDate + 'T00:00:00').getFullYear();
+      var gradeSettingsJson = JSON.stringify((lp && lp.gradeSettings) ? lp.gradeSettings : {});
 
       // 講師の配属校舎をAIに渡す（確認画面で校舎を修正できるようにする）
       lecOcrCampusCodes = (preferredCampuses && preferredCampuses.length > 0) ? preferredCampuses : Object.keys(campusData);
@@ -2465,7 +2468,8 @@
             mimeType,
             lectureYear,
             JSON.stringify(lecOcrCampusCodes),
-            JSON.stringify(lecOcrCampusNames)
+            JSON.stringify(lecOcrCampusNames),
+            gradeSettingsJson
           );
       };
       reader.readAsDataURL(file);
@@ -2634,7 +2638,19 @@
 
         tr.appendChild(td(mkInput('date', displayEntry.date, 'date', 'width:110px;')));
         tr.appendChild(td(mkInput('time', displayEntry.startTime, 'startTime', 'width:72px;')));
-        tr.appendChild(td(mkInput('number', displayEntry.durationMinutes || 90, 'durationMinutes', 'width:48px;')));
+        var durMin = displayEntry.durationMinutes;
+        if (!durMin) {
+          var lpForDur = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+          if (lpForDur && lpForDur.gradeSettings && displayEntry.grade) {
+            var gs = lpForDur.gradeSettings[displayEntry.grade];
+            if (!gs) {
+              var altGrade = displayEntry.grade.indexOf('新') === 0 ? displayEntry.grade.slice(1) : '新' + displayEntry.grade;
+              gs = lpForDur.gradeSettings[altGrade];
+            }
+            durMin = gs && gs.duration ? gs.duration * 10 : 90;
+          } else { durMin = 90; }
+        }
+        tr.appendChild(td(mkInput('number', durMin, 'durationMinutes', 'width:48px;')));
 
         var subjectOpts = [{v:'', l:'未設定'}].concat(subjects.map(function(s) { return {v:s, l:s}; }));
         tr.appendChild(td(mkSelect(subjectOpts, displayEntry.subject, 'subject', hasSubjectIssue)));
