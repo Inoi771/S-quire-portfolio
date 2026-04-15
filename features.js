@@ -582,6 +582,12 @@ function detectCampusFromMessage_(message, campusConfig) {
 function resolveStudentNamesInMessage_(message, students, campusConfig) {
   if (!message || !students || students.length === 0) return message;
 
+  // スペース正規化：全角スペースを半角に統一し、日本語文字間のスペースを除去
+  // 例）「山田　太郎」「山田 太郎」→「山田太郎」としてマッチングが通るようにする
+  var normalized = message
+    .replace(/　/g, ' ')
+    .replace(/([\u3040-\u9fff\uff00-\uffef])\s+([\u3040-\u9fff\uff00-\uffef])/g, '$1$2');
+
   // === Phase 1: フルネームマッチング（既存動作） ===
   var fullNameToIds = {};
   students.forEach(function(s) {
@@ -599,7 +605,7 @@ function resolveStudentNamesInMessage_(message, students, campusConfig) {
 
   // 長い名前から順に処理（部分一致による誤変換を防ぐ）
   var fullNames = Object.keys(fullNameToIds).sort(function(a, b) { return b.length - a.length; });
-  var resolved = message;
+  var resolved = normalized;
   fullNames.forEach(function(name) {
     var ids = fullNameToIds[name];
     var replacement = '[生徒ID:' + ids.join('または生徒ID:') + ']';
