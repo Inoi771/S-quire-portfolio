@@ -143,6 +143,28 @@ function getGradeAnalysis(year, testName) {
 }
 
 /**
+ * 最後に生成されたテスト全体分析の年度・テスト名を返す（AIウィジェットチップ用）
+ * getAppStartupData から呼び出される
+ * @return {Object} { year, testName } または null
+ */
+function getLatestGradeAnalysisMeta() {
+  try {
+    var docs = supabaseSelect_('test_analysis', '', {
+      select: 'year,test_name',
+      order: 'generated_at.desc',
+      limit: 1
+    });
+    if (!docs || docs.length === 0) return null;
+    var d = docs[0];
+    if (!d.year || !d.test_name) return null;
+    return { year: d.year, testName: d.test_name };
+  } catch (e) {
+    Logger.log('⚠ getLatestGradeAnalysisMeta: ' + e);
+    return null;
+  }
+}
+
+/**
  * getYearTestAvgs_ の実行中キャッシュ（同一実行内で同じ year+testName を何度も取得しないようにする）
  * GAS は実行ごとにリセットされるため、明示的クリア不要
  */

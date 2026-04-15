@@ -27,6 +27,7 @@ var PROP_KEYS = {
   LINE_SCHEDULER_SETTINGS: 'LINE_SCHEDULER_SETTINGS',                     // JSON: LINEスケジューラーの種別ごとデフォルト設定
   AI_KNOWLEDGE_BASE: 'AI_KNOWLEDGE_BASE',                                   // JSON: [{id, category, content, updatedAt}] AIナレッジベース
   LECTURE_DEADLINE_OVERRIDES: 'LECTURE_DEADLINE_OVERRIDES',                 // JSON: { "lectureId": "YYYY-MM-DD" } 講習日程締切の手動上書き設定
+  LAST_ANALYSIS_META: 'LAST_ANALYSIS_META',                                   // JSON: { year, testName } 最後に一括生成したテスト分析（AIウィジェットチップ用）
   // Firebase / Firestore 設定
   FIREBASE_PROJECT_ID: 'FIREBASE_PROJECT_ID',       // Firebase プロジェクトID（例: fir-quire）
   FIREBASE_CLIENT_EMAIL: 'FIREBASE_CLIENT_EMAIL',   // サービスアカウントのメールアドレス

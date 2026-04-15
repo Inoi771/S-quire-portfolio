@@ -650,8 +650,6 @@
               btnSkip.disabled = false;
               btnOverwrite.disabled = false;
               if (result.success) {
-                // AIウィジェットチップ用: 最後に生成した分析の年度・テスト名を保存
-                try { localStorage.setItem('s-quire-last-analysis', JSON.stringify({ year: year, testName: testName })); } catch (e) {}
                 if (result.skipped) {
                   statusEl.innerHTML = '<span style="color:#2e7d32;">✅ すべての分析が完了しています</span>';
                   showToast('✅ すべての分析が完了しています', 'success');
