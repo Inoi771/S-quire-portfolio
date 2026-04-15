@@ -10,9 +10,10 @@ var _fbMasterDataCache = {}; // { year: Promise<Array> } — 同一年度の重�
  * キャッシュがあれば即座に返し、裏でAPIから最新データを取得してキャッシュを更新する
  * @param {string} cacheKey localStorage のキー
  * @param {Function} fetchFn データを取得する関数（Promiseを返す）
+ * @param {Function} [onRefresh] バックグラウンド取得完了時に呼ぶUI更新コールバック（省略可）
  * @return {Promise<Object>} 結果オブジェクト
  */
-function fbCachedFetch_(cacheKey, fetchFn) {
+function fbCachedFetch_(cacheKey, fetchFn, onRefresh) {
   var cached = null;
   try {
     var raw = localStorage.getItem(cacheKey);
@@ -32,7 +33,13 @@ function fbCachedFetch_(cacheKey, fetchFn) {
 
   if (cached && cached.success) {
     // キャッシュを即座に返し、裏で更新
-    fetchPromise.catch(function() {});
+    if (onRefresh) {
+      fetchPromise.then(function(result) {
+        if (result && result.success) onRefresh(result);
+      }).catch(function() {});
+    } else {
+      fetchPromise.catch(function() {});
+    }
     return Promise.resolve(cached);
   }
   return fetchPromise;
@@ -191,7 +198,7 @@ function gasApiPromise_(funcName, args) {
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, students, error }
  */
-function fbGetStudentListWithGrades(year, testName) {
+function fbGetStudentListWithGrades(year, testName, onRefresh) {
   var key = 's-quire-g-list-' + year + '-' + testName;
   return fbCachedFetch_(key, function() {
     return gasApiPromise_('getStudentListWithGrades', [parseInt(year, 10), String(testName || '').trim()])
@@ -199,7 +206,7 @@ function fbGetStudentListWithGrades(year, testName) {
         console.error('fbGetStudentListWithGradesエラー:', err);
         return { success: false, error: err.message || String(err), students: [] };
       });
-  });
+  }, onRefresh);
 }
 
 /**
@@ -249,7 +256,7 @@ function fbGetGradeDataByStudentAndTest(year, studentId, testName) {
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, students, error }
  */
-function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
+function fbGetStudentsWithGradesByTest(year, campusCode, testName, onRefresh) {
   if (!testName || !campusCode) {
     return Promise.resolve({ success: true, students: [] });
   }
@@ -260,7 +267,7 @@ function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
         console.error('fbGetStudentsWithGradesByTestエラー:', err);
         return { success: false, error: err.message || String(err), students: [] };
       });
-  });
+  }, onRefresh);
 }
 
 /**
@@ -270,7 +277,7 @@ function fbGetStudentsWithGradesByTest(year, campusCode, testName) {
  * @param {string} studentId 生徒ID
  * @return {Promise<Object>} { success, student, grades, testNames, schoolAverages, deviationValues, error }
  */
-function fbGetStudentGradeReport(year, studentId) {
+function fbGetStudentGradeReport(year, studentId, onRefresh) {
   if (!studentId) {
     return Promise.resolve({ success: false, error: '生徒IDが指定されていません' });
   }
@@ -281,7 +288,7 @@ function fbGetStudentGradeReport(year, studentId) {
         console.error('fbGetStudentGradeReportエラー:', err);
         return { success: false, error: err.message || String(err) };
       });
-  });
+  }, onRefresh);
 }
 
 /**
@@ -413,7 +420,7 @@ function fbGetGradesYearFolders() {
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, averages }
  */
-function fbGetSchoolAverages(year, testName) {
+function fbGetSchoolAverages(year, testName, onRefresh) {
   var key = 's-quire-g-savg-' + year + '-' + testName;
   return fbCachedFetch_(key, function() {
     return gasApiPromise_('getSchoolAverages', [parseInt(year, 10), testName])
@@ -421,7 +428,7 @@ function fbGetSchoolAverages(year, testName) {
         console.error('fbGetSchoolAveragesエラー:', err);
         return { success: false, error: err.message || String(err) };
       });
-  });
+  }, onRefresh);
 }
 
 /**
@@ -446,7 +453,7 @@ function fbGetGradeSummary(year, testName) {
  * @param {string} testName テスト名
  * @return {Promise<Object>} { success, campuses }
  */
-function fbGetCampusAverages(year, testName) {
+function fbGetCampusAverages(year, testName, onRefresh) {
   var key = 's-quire-g-cavg-' + year + '-' + testName;
   return fbCachedFetch_(key, function() {
     return gasApiPromise_('getCampusAverages', [parseInt(year, 10), String(testName || '').trim()])
@@ -454,7 +461,7 @@ function fbGetCampusAverages(year, testName) {
         console.error('fbGetCampusAveragesエラー:', err);
         return { success: false, error: err.message || String(err) };
       });
-  });
+  }, onRefresh);
 }
 
 /**

@@ -175,7 +175,19 @@
       container.innerHTML = '<p style="padding:16px;color:#999;font-size:14px;">読み込み中...</p>';
       document.getElementById('list-count-label').style.display = 'none';
 
-      fbGetStudentListWithGrades(year, testName)
+      var _listRefreshYear = year;
+      var _listRefreshTest = testName;
+      fbGetStudentListWithGrades(year, testName, function(freshResult) {
+        // バックグラウンド更新: 同じ年度・テストが表示中の場合のみ再描画
+        var curYear = parseInt((document.getElementById('gradesYearSelect') || {}).value, 10);
+        var curTest = (document.getElementById('list-test-select') || {}).value;
+        if (curYear !== _listRefreshYear || curTest !== _listRefreshTest) return;
+        if (!freshResult.students || freshResult.students.length === 0) return;
+        listTableData = freshResult.students;
+        listSortCol   = null;
+        listSortAsc   = true;
+        buildListCampusTabs();
+      })
         .then(function(result) {
           if (!result.success) {
             container.innerHTML = '<p style="padding:16px;color:#e53935;">エラー: ' + result.error + '</p>';
@@ -933,7 +945,16 @@
       reportStudentListData  = [];
       reportDataCache        = {}; // キャッシュをリセット
 
-      fbGetStudentsWithGradesByTest(currentFiscalYear, campusCode, testName)
+      var _reportRefreshCampus = campusCode;
+      var _reportRefreshTest   = testName;
+      fbGetStudentsWithGradesByTest(currentFiscalYear, campusCode, testName, function(freshResult) {
+        // バックグラウンド更新: 同じ校舎・テストが表示中の場合のみ再描画
+        var curCampus = (document.getElementById('report-campus') || {}).value;
+        var curTest   = (document.getElementById('report-test') || {}).value;
+        if (curCampus !== _reportRefreshCampus || curTest !== _reportRefreshTest) return;
+        reportDataCache = {}; // メモリキャッシュをリセットして最新データを使わせる
+        buildReportStudentTabs(freshResult.students || []);
+      })
         .then(function(result) {
           if (!result.success) {
             if (scrollArea) scrollArea.innerHTML = '<p style="padding:20px;color:#e53935;">エラー: ' + result.error + '</p>';
@@ -1099,7 +1120,16 @@
       }
 
       // 成績データとAI分析を並列で取得
-      fbGetStudentGradeReport(currentFiscalYear, studentId)
+      fbGetStudentGradeReport(currentFiscalYear, studentId, function(freshResult) {
+        // バックグラウンド更新: メモリキャッシュを最新データで更新し、表示中なら再描画
+        var existingAnalysis = (reportDataCache[studentId] && reportDataCache[studentId].analysis) || null;
+        reportDataCache[studentId] = { gradeResult: freshResult, analysis: existingAnalysis };
+        if (activeReportStudentId === studentId) {
+          var curTest = (document.getElementById('report-test') || {}).value || '';
+          var displayTests = getDisplayTestNames(curTest, freshResult.testNames);
+          renderReportCard(freshResult.student, freshResult.grades, displayTests, freshResult.schoolAverages, existingAnalysis, freshResult.deviationValues);
+        }
+      })
         .then(function(result) { gradeResult = result; tryRender(); })
         .catch(function(err) { gradeResult = { success: false, error: err }; tryRender(); });
 
@@ -1400,7 +1430,15 @@
       document.getElementById('averagesTableContainer').innerHTML = loading;
 
       // 塾平均（校舎別・自動計算）— Firebase SDK
-      fbGetCampusAverages(year, testName)
+      var _avgRefreshYear = year;
+      var _avgRefreshTest = testName;
+      fbGetCampusAverages(year, testName, function(freshR) {
+        // バックグラウンド更新: 同じ年度・テストが表示中の場合のみ再描画
+        var curTest = (document.getElementById('avg-test-select') || {}).value;
+        var curYear = parseInt((document.getElementById('gradesYearSelect') || {}).value, 10);
+        if (curYear !== _avgRefreshYear || curTest !== _avgRefreshTest) return;
+        if (freshR.success) renderCampusAverages(freshR.campuses);
+      })
         .then(function(r) {
           if (r.success) renderCampusAverages(r.campuses);
           else document.getElementById('campusAveragesContainer').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + r.error + '</p>';
@@ -1410,7 +1448,17 @@
         });
 
       // 学校別平均（入力データ）— Firebase SDK
-      fbGetSchoolAverages(year, testName)
+      fbGetSchoolAverages(year, testName, function(freshAvg) {
+        // バックグラウンド更新: 同じ年度・テストが表示中の場合のみ再描画
+        var curTest = (document.getElementById('avg-test-select') || {}).value;
+        var curYear = parseInt((document.getElementById('gradesYearSelect') || {}).value, 10);
+        if (curYear !== _avgRefreshYear || curTest !== _avgRefreshTest) return;
+        if (!freshAvg.success) return;
+        avgCurrentData = {};
+        (freshAvg.averages || []).forEach(function(a) { avgCurrentData[a.schoolName] = a; });
+        renderSchoolAveragesDisplay(freshAvg.averages || []);
+        renderAveragesTable();
+      })
         .then(function(avgResult) {
           if (!avgResult.success) {
             document.getElementById('schoolAveragesDisplay').innerHTML = '<p style="color:red;font-size:13px;">❌ ' + avgResult.error + '</p>';
