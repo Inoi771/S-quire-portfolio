@@ -2305,6 +2305,8 @@
       document.getElementById('lec-ocr-pdf-preview').textContent = '';
       document.getElementById('lec-ocr-result-area').style.display = 'none';
       document.getElementById('lec-ocr-result-body').innerHTML = '';
+      var classTh = document.getElementById('lec-ocr-th-class');
+      if (classTh) classTh.style.display = '';
       document.getElementById('lec-ocr-warn-msg').textContent = '';
       document.getElementById('lec-ocr-message').innerHTML = '';
       document.getElementById('lec-ocr-text-area').style.display = 'none';
@@ -2701,6 +2703,15 @@
 
       var warnEl = document.getElementById('lec-ocr-warn-msg');
       warnEl.textContent = hasIssue ? '⚠ 赤・黄色の行は未設定の項目があります。保存前に確認してください。' : '';
+
+      // クラス列：全行が未設定なら非表示
+      var hasClassLabel = entries.some(function(e) { return e.classLabel; });
+      var classTh = document.getElementById('lec-ocr-th-class');
+      if (classTh) classTh.style.display = hasClassLabel ? '' : 'none';
+      tbody.querySelectorAll('[data-field="classLabel"]').forEach(function(sel) {
+        sel.closest('td').style.display = hasClassLabel ? '' : 'none';
+      });
+
       document.getElementById('lec-ocr-result-area').style.display = 'block';
       fitToScreen();
     }
