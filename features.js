@@ -820,18 +820,28 @@ function isChitchatMessage_(message) {
  * @param {string} aiName AIアシスタント名
  * @param {string} aiPersonality 口調設定
  * @param {string} userName ユーザー表示名
+ * @param {string} kbContext ナレッジベースのプロンプト用テキスト（空文字列可）
  * @return {Object} AIレスポンス
  */
-function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPersonality, userName) {
+function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPersonality, userName, kbContext) {
   var personalityDesc = aiPersonality === 'friendly' ? 'フレンドリーで親しみやすい口調'
     : aiPersonality === 'casual' ? 'カジュアルで砕けた口調'
     : '丁寧でプロフェッショナルな口調';
 
-  var systemPrompt = 'あなたは' + aiName + 'という名前の個別指導塾スタッフ向けAIアシスタントです。'
-    + personalityDesc + 'で短く返答してください。'
-    + (userName ? 'ユーザーの表示名は「' + userName + '」です。' : '')
-    + '\n必ず以下のJSON形式のみで返答してください（説明文・コードブロック不要）:'
-    + '\n{"type":"other","success":true,"response":"返答内容"}';
+  var systemPrompt = 'あなたは「' + aiName + '」という名前の、個別指導塾「個別指導スクエア」のスタッフ向けAIアシスタントです。\n'
+    + personalityDesc + 'で、短く返答してください。\n'
+    + (userName ? 'ユーザーの表示名は「' + userName + '」です。\n' : '')
+    + '\n【最重要・マネージャー視点】\n'
+    + 'あなたは単なる雑談相手ではなく、塾運営を常に気にかけているマネージャー的存在です。\n'
+    + '雑談や日常会話にも、可能な限り「業務に絡めた一言の気づき・提案・アイデア」をさりげなく添えてください。\n'
+    + '雑談の空気は壊さず、軽いノリのまま、塾の仕事につながるヒントを一言差し込むイメージです。\n'
+    + '\n例:\n'
+    + '・「明日は晴れみたい」→「いい天気になりそうですね！学校前でチラシを配るチャンスかもしれません」\n'
+    + '・「疲れた」→「お疲れさまです。今週は講習前で忙しそうですね、無理せず休憩も取ってください」\n'
+    + '・「おはよう」→「おはようございます！今日の授業頑張りましょう」（特に絡められる要素がなければ無理に業務話を入れなくてよい）\n'
+    + '\n塾のナレッジベースに該当情報がある場合は必ず最優先で反映してください。\n'
+    + '\n必ず以下のJSON形式のみで返答してください（説明文・コードブロック不要）:\n'
+    + '{"type":"other","success":true,"response":"返答内容"}';
 
   var contents = [];
   if (chatHistory && chatHistory.length > 0) {
@@ -844,7 +854,9 @@ function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPerson
   }
 
   var now = new Date();
-  var userTurn = '[現在時刻] ' + Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') + '\n[メッセージ] ' + userMessage;
+  var userTurn = (kbContext || '')
+    + '\n[現在時刻] ' + Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')
+    + '\n[メッセージ] ' + userMessage;
   contents.push({ role: 'user', parts: [{ text: userTurn }] });
 
   var payload = {
@@ -919,10 +931,18 @@ function requestAIAssistant(userMessage, chatHistory) {
     var aiAssistantName = (profile && profile.success && profile.aiAssistantName) || 'イノイマン';
     var aiPersonality = (profile && profile.success && profile.aiPersonality) || 'polite';
 
-    // === 挨拶・雑談の早期判定（重いデータ読み込みをスキップして高速返答） ===
+    // === ナレッジベースは雑談モードでも塾マネージャー視点を保つため常に取得する ===
+    var kbContext = '';
+    try {
+      kbContext = getAiKnowledgeBaseForPrompt_();
+    } catch (e) {
+      Logger.log('⚠ ナレッジベース取得スキップ: ' + e);
+    }
+
+    // === 挨拶・雑談の早期判定（重いデータ読み込みはスキップしつつKBは引き継いで高速返答） ===
     if (isChitchatMessage_(userMessage)) {
-      Logger.log('💬 雑談モード: データ読み込みをスキップして高速返答');
-      return requestAIAssistantFast_(url, userMessage, chatHistory, aiAssistantName, aiPersonality, userDisplayName);
+      Logger.log('💬 雑談モード: KBのみ読み込み、その他データ読み込みをスキップして高速返答');
+      return requestAIAssistantFast_(url, userMessage, chatHistory, aiAssistantName, aiPersonality, userDisplayName, kbContext);
     }
 
     // 生徒マスタを取得して氏名→ID変換の準備（個人情報保護）
@@ -1009,13 +1029,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       : '\nこのユーザーは管理者ではありません。管理タブの機能について聞かれた場合は「管理者にお問い合わせください」と案内。';
 
     // === 条件付きコンテキストの取得 ===
-    // 常に取得: ナレッジベース・校舎リスト
-    var kbContext = '';
-    try {
-      kbContext = getAiKnowledgeBaseForPrompt_();
-    } catch (e) {
-      Logger.log('⚠ ナレッジベース取得スキップ: ' + e);
-    }
+    // ナレッジベース (kbContext) は雑談チェック前に既に取得済み（fast モードと共有するため）
 
     // 校舎コード一覧（常に取得: app_action で必要）
     var campusListContext = '';
