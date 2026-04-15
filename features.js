@@ -835,7 +835,7 @@ function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPerson
 
   var contents = [];
   if (chatHistory && chatHistory.length > 0) {
-    chatHistory.slice(-6).forEach(function(item) {
+    chatHistory.slice(-12).forEach(function(item) {
       contents.push({
         role: item.role === 'user' ? 'user' : 'model',
         parts: [{ text: item.text }]
@@ -958,7 +958,7 @@ function requestAIAssistant(userMessage, chatHistory) {
     // === マルチターン会話履歴の構築 ===
     var contents = [];
     if (chatHistory && chatHistory.length > 0) {
-      chatHistory.slice(-10).forEach(function(item) {
+      chatHistory.slice(-20).forEach(function(item) {
         var itemText = item.role === 'user'
           ? resolveStudentNamesInMessage_(item.text, studentMaster, campusConfig)
           : item.text;
@@ -4191,7 +4191,7 @@ function generateFlyerWithAI(params) {
     var historyText = '';
     if (chatHistory.length > 0) {
       historyText = '\n\n【直近の会話履歴】\n';
-      chatHistory.slice(-10).forEach(function(item) {
+      chatHistory.slice(-20).forEach(function(item) {
         historyText += (item.role === 'user' ? 'ユーザー: ' : 'AI: ') + item.text + '\n';
       });
     }

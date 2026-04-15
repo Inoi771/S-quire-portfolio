@@ -2068,7 +2068,7 @@
       addAIWidgetMessage('ai', '🤔 考え中...', thinkingId);
 
       // 送信前の履歴（直近10件）をコピーしてからユーザーメッセージを履歴に追加
-      var historyToSend = aiWidgetChatHistory.slice(-10);
+      var historyToSend = aiWidgetChatHistory.slice(-20);
       aiWidgetChatHistory.push({ role: 'user', text: message });
       trimAIWidgetHistory_();
 
@@ -2260,7 +2260,7 @@
       }
     }
 
-    var AI_WIDGET_MAX_HISTORY = 10;
+    var AI_WIDGET_MAX_HISTORY = 20;
 
     function trimAIWidgetHistory_() {
       // history 配列のトリム
