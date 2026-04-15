@@ -2320,13 +2320,40 @@
       fitToScreen();
     }
 
+    // ===== 汎用確認モーダル =====
+    var _appConfirmCallback = null;
+    function showAppConfirm_(msg, okLabel, okColor, onOk) {
+      document.getElementById('appConfirmMsg').textContent = msg;
+      var okBtn = document.getElementById('appConfirmOkBtn');
+      okBtn.textContent = okLabel || 'OK';
+      okBtn.style.background = okColor || '#43a047';
+      document.getElementById('appConfirmOverlay').style.display = 'block';
+      document.getElementById('appConfirmModal').style.display = 'block';
+      _appConfirmCallback = onOk;
+      fitToScreen();
+    }
+    function appConfirmOk_() {
+      document.getElementById('appConfirmOverlay').style.display = 'none';
+      document.getElementById('appConfirmModal').style.display = 'none';
+      if (_appConfirmCallback) { _appConfirmCallback(); _appConfirmCallback = null; }
+    }
+    function appConfirmCancel_() {
+      document.getElementById('appConfirmOverlay').style.display = 'none';
+      document.getElementById('appConfirmModal').style.display = 'none';
+      _appConfirmCallback = null;
+    }
+
+    function closeLecOcrModalDirect_() {
+      document.getElementById('lecOcrOverlay').style.display = 'none';
+      document.getElementById('lecOcrModal').style.display = 'none';
+    }
     function closeLecOcrModal() {
       var resultArea = document.getElementById('lec-ocr-result-area');
       if (resultArea && resultArea.style.display !== 'none') {
-        if (!window.confirm('読み込んだ内容は保存されません。閉じてもよいですか？')) return;
+        showAppConfirm_('読み込んだ内容は保存されません。\n閉じてもよいですか？', '閉じる', '#e53935', closeLecOcrModalDirect_);
+        return;
       }
-      document.getElementById('lecOcrOverlay').style.display = 'none';
-      document.getElementById('lecOcrModal').style.display = 'none';
+      closeLecOcrModalDirect_();
     }
 
     function onLecOcrFileChange() {
@@ -2758,7 +2785,12 @@
       var tbody = document.getElementById('lec-ocr-result-body');
       var rows = tbody.querySelectorAll('tr');
       if (rows.length === 0) { showToast('保存するエントリがありません', 'warning'); return; }
-      if (!window.confirm(rows.length + '件を保存します。よろしいですか？')) return;
+      showAppConfirm_(rows.length + '件を保存します。\nよろしいですか？', '保存する', '#43a047', saveLecOcrEntriesConfirmed_);
+    }
+
+    function saveLecOcrEntriesConfirmed_() {
+      var tbody = document.getElementById('lec-ocr-result-body');
+      var rows = tbody.querySelectorAll('tr');
 
       // 別講師名の確認ダイアログ（非管理者のみ）
       if (!isAdminUser) {
@@ -2944,7 +2976,7 @@
                   showToast(msg, 'success');
                   keys.forEach(function(cc) { lectureEntries[cc] = mergedByCampus[cc]; });
                   renderLecEntries(currentLectureCampus);
-                  closeLecOcrModal();
+                  closeLecOcrModalDirect_();
                 }
               }
             })
