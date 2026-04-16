@@ -3476,6 +3476,391 @@
     }
 
     /**
+     * 一覧表の1校舎ぶんのPDF/印刷用HTMLを生成する
+     * @param {string} campusCode 校舎コード
+     * @param {Array} campusEntries その校舎のエントリ配列
+     * @param {string} teacherName 講師名
+     * @param {string} lectureTitle 講習タイトル（例: "2026年度 春期講習"）
+     * @param {boolean} isFirstPage 先頭ページかどうか（タイトル有無）
+     * @return {string} 印刷用HTML文字列
+     */
+    function buildLecListPageHTML_(campusCode, campusEntries, teacherName, lectureTitle, isFirstPage) {
+      var GRADE_GROUPS = [
+        { label: '小学生', names: ['小'] },
+        { label: '中１', names: ['中1', '新中1'] },
+        { label: '中２', names: ['中2', '新中2'] },
+        { label: '中３', names: ['中3', '新中3'] },
+        { label: '高１', names: ['高1', '新高1'] },
+        { label: '高２', names: ['高2', '新高2'] },
+        { label: '高３', names: ['高3', '新高3'] }
+      ];
+      var ALL_SUBJECTS = ['英語', '数学', '算数', '国語', '理科', '社会', '物理', '化学'];
+
+      function endTimeLP_(start, slots) {
+        var parts = (start || '00:00').split(':');
+        var h = parseInt(parts[0], 10) || 0;
+        var m = parseInt(parts[1], 10) || 0;
+        var totalMin = h * 60 + m + (slots || 0) * 10;
+        var eh = Math.floor(totalMin / 60);
+        var em = totalMin % 60;
+        return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
+      }
+      function fmtDatesLP_(sortedDates) {
+        var DOW = ['日', '月', '火', '水', '木', '金', '土'];
+        var prevMonth = -1;
+        return sortedDates.map(function(d) {
+          var dt = new Date(d + 'T00:00:00');
+          var mo = dt.getMonth() + 1;
+          var day = dt.getDate();
+          var dow = DOW[dt.getDay()];
+          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          prevMonth = mo;
+          return str;
+        }).join('・');
+      }
+      function escLP_(str) {
+        var d = document.createElement('div');
+        d.textContent = str || '';
+        return d.innerHTML;
+      }
+
+      var cellBase = 'border:1px solid #333;padding:5px 8px;font-size:12px;vertical-align:middle;color:#000;';
+      var cellSubject = cellBase + 'width:70px;text-align:center;font-weight:bold;white-space:nowrap;background:#fafafa;';
+      var cellDate = cellBase + 'word-break:break-word;';
+      var cellTime = cellBase + 'width:120px;text-align:center;white-space:nowrap;';
+
+      var html = '';
+      html += '<div style="padding:16px 20px;box-sizing:border-box;font-family:\'Meiryo\',\'ヒラギノ角ゴ ProN W3\',sans-serif;color:#000;">';
+
+      if (isFirstPage) {
+        html += '<div style="margin-bottom:14px;">';
+        html += '<div style="font-size:18px;font-weight:700;">' + escLP_(lectureTitle) + ' 日程一覧</div>';
+        html += '<div style="font-size:13px;color:#333;margin-top:4px;">講師: ' + escLP_(teacherName) + '</div>';
+        html += '</div>';
+      }
+
+      var campusName = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+      html += '<div style="font-size:14px;font-weight:700;margin-bottom:8px;padding:5px 10px;background:#eee;border-radius:4px;">■ ' + escLP_(campusName) + '</div>';
+
+      ALL_SUBJECTS.forEach(function(subject) {
+        var subjectEntries = campusEntries.filter(function(e) { return (e.subject || '') === subject; });
+        if (subjectEntries.length === 0) return;
+
+        html += '<table style="width:100%;border-collapse:collapse;border:1px solid #333;margin-bottom:8px;">';
+        html += '<thead>';
+        html += '<tr><th colspan="3" style="border:1px solid #333;padding:5px 10px;font-size:13px;font-weight:bold;text-align:left;background:#f0f0f0;">' + escLP_(subject) + '</th></tr>';
+        html += '<tr>';
+        html += '<th style="' + cellSubject + 'font-weight:bold;">学年</th>';
+        html += '<th style="' + cellDate + 'text-align:center;font-weight:bold;">日付</th>';
+        html += '<th style="' + cellTime + 'font-weight:bold;">時間</th>';
+        html += '</tr></thead><tbody>';
+
+        GRADE_GROUPS.forEach(function(gg) {
+          var gradeEntries = subjectEntries.filter(function(e) { return gg.names.indexOf(e.grade || '') !== -1; });
+          if (gradeEntries.length === 0) return;
+
+          var classLabels = [];
+          var classMap = {};
+          gradeEntries.forEach(function(e) {
+            var cl = e.classLabel || '';
+            if (!classMap[cl]) { classMap[cl] = []; classLabels.push(cl); }
+            classMap[cl].push(e);
+          });
+          classLabels.sort();
+
+          classLabels.forEach(function(cl) {
+            var clEntries = classMap[cl];
+            var gradeLabel = gg.label + (cl ? ' (' + cl + ')' : '');
+            var timeGroupMap = {};
+            var timeGroupOrder = [];
+            clEntries.forEach(function(e) {
+              var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+              if (!timeGroupMap[key]) {
+                timeGroupMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] };
+                timeGroupOrder.push(key);
+              }
+              if (timeGroupMap[key].dates.indexOf(e.date) === -1) timeGroupMap[key].dates.push(e.date);
+            });
+            timeGroupOrder.forEach(function(k) { timeGroupMap[k].dates.sort(); });
+            var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
+            var rowCount = groups.length;
+
+            groups.forEach(function(grp, idx) {
+              var timeStr = (grp.startTime || '') + '～' + endTimeLP_(grp.startTime, grp.durationSlots);
+              var dateStr = fmtDatesLP_(grp.dates);
+              html += '<tr>';
+              if (idx === 0) html += '<td rowspan="' + rowCount + '" style="' + cellSubject + '">' + escLP_(gradeLabel) + '</td>';
+              html += '<td style="' + cellDate + '">' + escLP_(dateStr) + '</td>';
+              html += '<td style="' + cellTime + '">' + escLP_(timeStr) + '</td>';
+              html += '</tr>';
+            });
+          });
+        });
+
+        // 定義外の学年フォールバック
+        var allGN = [];
+        GRADE_GROUPS.forEach(function(gg) { allGN = allGN.concat(gg.names); });
+        var otherGradeEntries = subjectEntries.filter(function(e) { return allGN.indexOf(e.grade || '') === -1; });
+        if (otherGradeEntries.length > 0) {
+          var otherGrades = [];
+          var otherGradeMap = {};
+          otherGradeEntries.forEach(function(e) {
+            var g = e.grade || '(不明)';
+            if (!otherGradeMap[g]) { otherGradeMap[g] = []; otherGrades.push(g); }
+            otherGradeMap[g].push(e);
+          });
+          otherGrades.forEach(function(g) {
+            var ges = otherGradeMap[g];
+            var tgMap = {}; var tgOrder = [];
+            ges.forEach(function(e) {
+              var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+              if (!tgMap[key]) { tgMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] }; tgOrder.push(key); }
+              if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
+            });
+            tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+            var groups = tgOrder.map(function(k) { return tgMap[k]; });
+            var rowCount = groups.length;
+            groups.forEach(function(grp, idx) {
+              html += '<tr>';
+              if (idx === 0) html += '<td rowspan="' + rowCount + '" style="' + cellSubject + '">' + escLP_(g) + '</td>';
+              html += '<td style="' + cellDate + '">' + escLP_(fmtDatesLP_(grp.dates)) + '</td>';
+              html += '<td style="' + cellTime + '">' + escLP_((grp.startTime || '') + '～' + endTimeLP_(grp.startTime, grp.durationSlots)) + '</td>';
+              html += '</tr>';
+            });
+          });
+        }
+
+        html += '</tbody></table>';
+      });
+
+      // ALL_SUBJECTSに属さない教科のフォールバック
+      var knownSubjects = {};
+      ALL_SUBJECTS.forEach(function(s) { knownSubjects[s] = true; });
+      var ungroupedSubjectEntries = campusEntries.filter(function(e) { return !knownSubjects[e.subject || '']; });
+      if (ungroupedSubjectEntries.length > 0) {
+        var ugSubjects = [];
+        var ugSubMap = {};
+        ungroupedSubjectEntries.forEach(function(e) {
+          var s = e.subject || '(不明)';
+          if (!ugSubMap[s]) { ugSubMap[s] = []; ugSubjects.push(s); }
+          ugSubMap[s].push(e);
+        });
+        ugSubjects.forEach(function(subject) {
+          var ses = ugSubMap[subject];
+          html += '<table style="width:100%;border-collapse:collapse;border:1px solid #333;margin-bottom:8px;">';
+          html += '<thead><tr><th colspan="3" style="border:1px solid #333;padding:5px 10px;font-size:13px;font-weight:bold;text-align:left;background:#f0f0f0;">' + escLP_(subject) + '</th></tr>';
+          html += '<tr><th style="' + cellSubject + 'font-weight:bold;">学年</th><th style="' + cellDate + 'text-align:center;font-weight:bold;">日付</th><th style="' + cellTime + 'font-weight:bold;">時間</th></tr></thead><tbody>';
+          var allGN2 = [];
+          GRADE_GROUPS.forEach(function(gg) { allGN2 = allGN2.concat(gg.names); });
+          GRADE_GROUPS.forEach(function(gg) {
+            var gEs = ses.filter(function(e) { return gg.names.indexOf(e.grade || '') !== -1; });
+            if (gEs.length === 0) return;
+            var tgMap = {}; var tgOrder = [];
+            gEs.forEach(function(e) {
+              var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+              if (!tgMap[key]) { tgMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] }; tgOrder.push(key); }
+              if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
+            });
+            tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+            var groups = tgOrder.map(function(k) { return tgMap[k]; });
+            groups.forEach(function(grp, idx) {
+              html += '<tr>';
+              if (idx === 0) html += '<td rowspan="' + groups.length + '" style="' + cellSubject + '">' + escLP_(gg.label) + '</td>';
+              html += '<td style="' + cellDate + '">' + escLP_(fmtDatesLP_(grp.dates)) + '</td>';
+              html += '<td style="' + cellTime + '">' + escLP_((grp.startTime || '') + '～' + endTimeLP_(grp.startTime, grp.durationSlots)) + '</td>';
+              html += '</tr>';
+            });
+          });
+          var ugGEs = ses.filter(function(e) { return allGN2.indexOf(e.grade || '') === -1; });
+          if (ugGEs.length > 0) {
+            var ugGList = []; var ugGMap = {};
+            ugGEs.forEach(function(e) {
+              var g = e.grade || '(不明)';
+              if (!ugGMap[g]) { ugGMap[g] = []; ugGList.push(g); }
+              ugGMap[g].push(e);
+            });
+            ugGList.forEach(function(g) {
+              var ges = ugGMap[g];
+              var tgMap = {}; var tgOrder = [];
+              ges.forEach(function(e) {
+                var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+                if (!tgMap[key]) { tgMap[key] = { startTime: e.startTime || '', durationSlots: e.durationSlots || 0, dates: [] }; tgOrder.push(key); }
+                if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
+              });
+              tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+              var groups = tgOrder.map(function(k) { return tgMap[k]; });
+              groups.forEach(function(grp, idx) {
+                html += '<tr>';
+                if (idx === 0) html += '<td rowspan="' + groups.length + '" style="' + cellSubject + '">' + escLP_(g) + '</td>';
+                html += '<td style="' + cellDate + '">' + escLP_(fmtDatesLP_(grp.dates)) + '</td>';
+                html += '<td style="' + cellTime + '">' + escLP_((grp.startTime || '') + '～' + endTimeLP_(grp.startTime, grp.durationSlots)) + '</td>';
+                html += '</tr>';
+              });
+            });
+          }
+          html += '</tbody></table>';
+        });
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * 日程一覧をPDFダウンロード／印刷する
+     * @param {string} mode 'download' または 'print'
+     */
+    function generateLecListPDF_(mode) {
+      if (!currentLectureId) { showToast('講習を選択してください', 'error'); return; }
+
+      var pdfBtn = document.getElementById('lecListPdfBtn');
+      var printBtn = document.getElementById('lecListPrintBtn');
+      var pdfOrig = pdfBtn ? pdfBtn.textContent : '';
+      var printOrig = printBtn ? printBtn.textContent : '';
+      if (pdfBtn) { pdfBtn.textContent = '⏳ 生成中...'; pdfBtn.disabled = true; }
+      if (printBtn) { printBtn.textContent = '⏳'; printBtn.disabled = true; }
+
+      function restoreBtns() {
+        if (pdfBtn) { pdfBtn.textContent = pdfOrig; pdfBtn.disabled = false; }
+        if (printBtn) { printBtn.textContent = printOrig; printBtn.disabled = false; }
+      }
+
+      // 印刷モードはポップアップブロック回避のため同期的にウィンドウを開いておく
+      var printWindow = null;
+      if (mode === 'print') {
+        printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write('<html><body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;color:#555;font-size:16px;">⏳ 日程一覧を生成中...</body></html>');
+        }
+      }
+
+      var targetTeacherId = (typeof isAdminUser !== 'undefined' && isAdminUser && typeof lecAdminTeacherId !== 'undefined' && lecAdminTeacherId) ? lecAdminTeacherId : myTeacherId;
+      var targetTeacherName = (typeof isAdminUser !== 'undefined' && isAdminUser && typeof lecAdminTeacherId !== 'undefined' && lecAdminTeacherId) ? lecAdminTeacherName : (myTeacherName || '');
+
+      var period = (lecturePeriods || []).find(function(lp) { return lp.id === currentLectureId; });
+      var fy = parseInt((currentLectureId || '').split('-')[0], 10);
+      var lecName = period ? period.name : currentLectureId;
+      var lectureTitle = fy + '年度 ' + lecName;
+      var docTitle = fy + '年度_' + lecName + '_' + (targetTeacherName || '講師') + '_日程一覧';
+
+      fbGetAllLectureEntries(currentLectureId)
+        .then(function(allEntries) {
+          var myEntries = allEntries.filter(function(e) { return e.teacherId === targetTeacherId; });
+          if (myEntries.length === 0) {
+            restoreBtns();
+            if (printWindow) printWindow.close();
+            appAlert('登録されたコマがありません。');
+            return;
+          }
+
+          // 校舎ごとに分割
+          var campusBuckets = {};
+          myEntries.forEach(function(e) {
+            var cc = e.campusCode || '??';
+            if (!campusBuckets[cc]) campusBuckets[cc] = [];
+            campusBuckets[cc].push(e);
+          });
+          var campusCodes = Object.keys(campusBuckets).sort();
+
+          var canvases = [];
+          var pageIdx = 0;
+
+          function renderNextCampus_() {
+            if (pageIdx >= campusCodes.length) {
+              restoreBtns();
+              finalizeLecListPdf_(mode, canvases, printWindow, docTitle);
+              return;
+            }
+
+            var cc = campusCodes[pageIdx];
+            var pageHtml = buildLecListPageHTML_(cc, campusBuckets[cc], targetTeacherName, lectureTitle, pageIdx === 0);
+            pageIdx++;
+
+            var container = document.createElement('div');
+            container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;';
+            document.body.appendChild(container);
+            container.innerHTML = pageHtml;
+
+            html2canvas(container, {
+              scale: 2,
+              backgroundColor: '#ffffff',
+              windowWidth: 840,
+              useCORS: true
+            }).then(function(canvas) {
+              document.body.removeChild(container);
+              canvases.push(canvas);
+              renderNextCampus_();
+            }).catch(function(e) {
+              if (container.parentNode) document.body.removeChild(container);
+              restoreBtns();
+              if (printWindow) printWindow.close();
+              console.error('日程一覧PDF生成エラー:', e);
+              appAlert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+            });
+          }
+
+          renderNextCampus_();
+        })
+        .catch(function(err) {
+          restoreBtns();
+          if (printWindow) printWindow.close();
+          console.error('エントリ取得失敗:', err);
+          appAlert('データの取得に失敗しました。');
+        });
+    }
+
+    /**
+     * 日程一覧PDF/印刷出力を実行する
+     * @param {string} mode 'download' または 'print'
+     * @param {Array} canvases canvas配列
+     * @param {Window} printWindow 印刷ウィンドウ（printモード時）
+     * @param {string} docTitle ドキュメントタイトル（ファイル名・ウィンドウタイトル）
+     */
+    function finalizeLecListPdf_(mode, canvases, printWindow, docTitle) {
+      var safeTitle = docTitle || '日程一覧';
+
+      if (mode === 'print') {
+        var imgsHtml = '';
+        canvases.forEach(function(c, idx) {
+          var imgDataPng = c.toDataURL('image/png');
+          var pageBreak = idx < canvases.length - 1 ? 'page-break-after: always;' : '';
+          var onloadAttr = idx === canvases.length - 1 ? ' onload="window.print();"' : '';
+          imgsHtml += '<img src="' + imgDataPng + '" style="width:100%;height:auto;display:block;' + pageBreak + '"' + onloadAttr + '>';
+        });
+        if (printWindow) {
+          printWindow.document.open();
+          printWindow.document.write(
+            '<!DOCTYPE html><html><head>' +
+            '<title>' + safeTitle + '</title>' +
+            '<style>* { margin: 0; padding: 0; box-sizing: border-box; } body { background: #fff; } @page { size: A4 portrait; margin: 7mm; }</style>' +
+            '</head><body>' + imgsHtml + '</body></html>'
+          );
+          printWindow.document.close();
+        } else {
+          appAlert('ポップアップがブロックされました。\nブラウザのポップアップ許可設定を確認してください。');
+        }
+      } else {
+        var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var pageW = pdf.internal.pageSize.getWidth();
+        var pageH = pdf.internal.pageSize.getHeight();
+        var margin = 7;
+        var maxW = pageW - margin * 2;
+        var maxH = pageH - margin * 2;
+
+        canvases.forEach(function(c, idx) {
+          if (idx > 0) pdf.addPage();
+          var imgData = c.toDataURL('image/jpeg', 0.92);
+          var ratio = c.width / c.height;
+          var drawW = maxW;
+          var drawH = drawW / ratio;
+          if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
+          pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+        });
+        pdf.save(safeTitle + '.pdf');
+      }
+    }
+
+    /**
      * AIアシスタントから呼ばれるカレンダーエクスポート
      * Firestoreから直接全校舎のエントリを取得してICSダウンロード＋Googleカレンダーインポート画面を開く
      * @param {string} lectureId 講習ID

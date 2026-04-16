@@ -156,9 +156,12 @@
 - `createWeeklyLecEntries(date, startSlot)` — 「毎週」チェック時の一括作成：同じ曜日・時刻で count 回分のエントリを毎週作成（休校日を自動スキップ）
 - `moveLecEntry(entryId, date, startSlot)` — 選択中エントリを指定日時に移動
 - `deleteLecEntry()` — 選択中エントリを削除
-- `showLecScheduleListView()` — マイ日程一覧モーダルを表示。全校舎のエントリを取得し、自分のエントリを校舎→学年→教科ごとにグルーピングして表示
+- `showLecScheduleListView()` — マイ日程一覧モーダルを表示。全校舎のエントリを取得し、自分のエントリを校舎→教科→学年ごとにグルーピングして表示
 - `closeLecListViewModal()` — マイ日程一覧モーダルを閉じる
-- `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→学年→教科→時間帯で整理）
+- `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→教科→学年→時間帯で整理）
+- `generateLecListPDF_(mode)` — 日程一覧をPDFダウンロード（`'download'`）または印刷（`'print'`）。校舎ごとに1キャンバス生成し、内部配布物と同じ html2canvas＋jsPDF 方式で出力
+- `buildLecListPageHTML_(campusCode, campusEntries, teacherName, lectureTitle, isFirstPage)` — 1校舎ぶんの印刷用HTMLを生成（先頭ページのみタイトル付き）
+- `finalizeLecListPdf_(mode, canvases, printWindow, docTitle)` — キャンバス配列からPDFダウンロード/印刷ウィンドウ出力を実行（内部配布物の finalizeMaterialsPdf_ と同パターン）
 - `exportLecCalendarFromAI_(lectureId)` — AIアシスタントからのカレンダーエクスポート。Firestoreから全校舎のエントリを取得し、自分のコマをICSダウンロード＋Googleカレンダーインポート画面を開く
 - `showLecCalExportModal()` — カレンダーエクスポートモーダルを表示
 - `closeLecCalExportModal()` — カレンダーエクスポートモーダルを閉じる
