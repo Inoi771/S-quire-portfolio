@@ -20,6 +20,8 @@
   var aiWidgetConversationHistory = [];
   var aiMicRecognition = null;
   var aiMicListening = false;
+  var aiMicSilenceTimer = null;      // マイク無音検知タイマー
+  var AI_MIC_SILENCE_MS = 5000;      // 無音がこの時間続いたら自動停止（ミリ秒）
   var basicTestDateOverrides = {};    // 基礎学力テスト日程上書き設定
   var basicTestDetailsOverrides = {}; // 基礎学力テスト詳細上書き設定
   var jukuEventOverrides = {};        // 塾内部イベント（○□★△）上書き設定

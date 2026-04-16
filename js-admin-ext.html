@@ -2165,39 +2165,59 @@
       var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       aiMicRecognition = new SR();
       aiMicRecognition.lang = 'ja-JP';
-      aiMicRecognition.continuous = false;
+      aiMicRecognition.continuous = true;
       aiMicRecognition.interimResults = true;
 
       var micBtn = document.getElementById('aiMicBtn');
+      // マイク開始時点での既存入力を保持（録音中は末尾に追記する）
+      var existingText = document.getElementById('aiWidgetInput').value;
+
+      // 無音検知タイマーを(再)セットするヘルパー
+      function resetSilenceTimer() {
+        clearTimeout(aiMicSilenceTimer);
+        aiMicSilenceTimer = setTimeout(function() {
+          if (aiMicListening && aiMicRecognition) {
+            try { aiMicRecognition.stop(); } catch (e) {}
+          }
+        }, AI_MIC_SILENCE_MS);
+      }
 
       aiMicRecognition.onstart = function() {
         aiMicListening = true;
         micBtn.classList.add('recording');
         micBtn.title = 'タップして停止';
+        resetSilenceTimer();
       };
 
       aiMicRecognition.onresult = function(event) {
+        resetSilenceTimer();
         var transcript = '';
-        for (var i = event.resultIndex; i < event.results.length; i++) {
+        for (var i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        document.getElementById('aiWidgetInput').value = transcript;
+        document.getElementById('aiWidgetInput').value = existingText + transcript;
       };
 
       aiMicRecognition.onend = function() {
         aiMicListening = false;
         micBtn.classList.remove('recording');
         micBtn.title = '音声入力';
+        clearTimeout(aiMicSilenceTimer);
+        aiMicSilenceTimer = null;
       };
 
       aiMicRecognition.onerror = function(event) {
         aiMicListening = false;
         micBtn.classList.remove('recording');
         micBtn.title = '音声入力';
+        clearTimeout(aiMicSilenceTimer);
+        aiMicSilenceTimer = null;
         if (event.error === 'not-allowed') {
           showMicPermissionModal();
         } else if (event.error === 'no-speech') {
           addAIWidgetMessage('ai', '⚠️ 音声が検出されませんでした。');
+        } else if (event.error === 'aborted') {
+          // 手動停止・無音タイマー停止時は通知しない
         } else {
           addAIWidgetMessage('ai', '⚠️ 音声入力エラー: ' + event.error);
         }
