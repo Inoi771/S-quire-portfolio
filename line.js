@@ -1469,6 +1469,194 @@ function getAllLineRegisteredTeacherIds_() {
 }
 
 /**
+ * 指定日が日曜・休校日なら前の開校日まで遡った Date を返す内部ヘルパー（月をまたぐ可能性あり）
+ * @param {Date} date 起算日
+ * @return {Date} 開校日の Date
+ */
+function findPrevOpenDayDate_(date) {
+  var d = new Date(date.getTime());
+  var maxAttempts = 21; // 最大3週間分
+  while (maxAttempts-- > 0) {
+    var y = d.getFullYear();
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    var closedDays = computeClosedDaysForMonth_(y, m);
+    if (!isClosedOrSunday_(y, m, day, closedDays)) return d;
+    d.setDate(d.getDate() - 1);
+  }
+  return d;
+}
+
+/**
+ * 講習開始日から count 日前を計算し、日曜・休校日なら前営業日に繰り上げて返す内部ヘルパー
+ * （フロントエンド js-core.html の countBackLecDeadline_ と同等のバックエンド版）
+ * @param {Date} startDate 講習開始日
+ * @param {number} count 遡る日数
+ * @return {Date} 締切日
+ */
+function countBackLecDeadlineDate_(startDate, count) {
+  var d = new Date(startDate.getTime());
+  d.setDate(d.getDate() - 1);    // 開始日の前日
+  d.setDate(d.getDate() - count); // さらに count 日前
+  return findPrevOpenDayDate_(d);
+}
+
+/**
+ * 講習期間データから T日（講習日程締切日）を算出する内部ヘルパー
+ * 手動上書き（LECTURE_DEADLINE_OVERRIDES）を優先、なければ春/夏/冬=42日前、他=28日前で自動計算
+ * @param {Object} lp 講習期間オブジェクト（{id, name, startDate, ...}）
+ * @param {Object} overrides getLectureDeadlineOverrides() の戻り値
+ * @return {Date|null} T日の Date、計算不能なら null
+ */
+function computeLectureDeadlineDate_(lp, overrides) {
+  if (!lp || !lp.startDate) return null;
+  // 手動上書きがあればそれを使用
+  if (lp.id && overrides && overrides[lp.id]) {
+    var op = overrides[lp.id].split('-');
+    if (op.length === 3) {
+      return new Date(parseInt(op[0]), parseInt(op[1]) - 1, parseInt(op[2]));
+    }
+  }
+  var parts = lp.startDate.split('-');
+  if (parts.length < 3) return null;
+  var startDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  var name = lp.name || '';
+  var daysBack = (name.indexOf('春期') !== -1 || name.indexOf('夏期') !== -1 || name.indexOf('冬期') !== -1) ? 42 : 28;
+  return countBackLecDeadlineDate_(startDate, daysBack);
+}
+
+/**
+ * 日付を「M月D日(曜)」形式の文字列に整形する内部ヘルパー
+ * @param {Date} date
+ * @return {string}
+ */
+function formatMdw_(date) {
+  var days = ['日','月','火','水','木','金','土'];
+  return (date.getMonth() + 1) + '月' + date.getDate() + '日(' + days[date.getDay()] + ')';
+}
+
+/**
+ * 講習日程締切（T-7日当日）通知メッセージを生成する内部ヘルパー
+ * @param {string} lectureName 講習名
+ * @param {Date} sendDate 送信日（= T-7日）
+ * @return {string}
+ */
+function buildLecDeadline7Message_(lectureName, sendDate) {
+  return '本日 ' + formatMdw_(sendDate) + ' は' + lectureName + 'の日程締切日です。\nよろしくお願いいたします。';
+}
+
+/**
+ * 講習日程締切（T-14日=1週間前）通知メッセージを生成する内部ヘルパー
+ * @param {string} lectureName 講習名
+ * @param {Date} t7Date T-7日（理科・社会の締切日）
+ * @return {string}
+ */
+function buildLecDeadline14Message_(lectureName, t7Date) {
+  return formatMdw_(t7Date) + ' は' + lectureName + 'の理科・社会の日程締切日です。\nよろしくお願いいたします。';
+}
+
+/**
+ * 指定年月に送信予定となる講習日程締切LINE通知（lecDeadline7 / lecDeadline14）を生成する内部ヘルパー
+ * 対象は春期・夏期・冬期講習のみ。既存IDがあればスキップ、過去日時はスキップ。
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月（1〜12）
+ * @return {number} 作成件数
+ */
+function generateLectureDeadlineSchedules_(year, month) {
+  try {
+    var mm = month < 10 ? '0' + month : '' + month;
+    var yearMonth = '' + year + mm;
+
+    var lecturePeriods = [];
+    try { lecturePeriods = getLecturePeriods() || []; } catch(e) {
+      Logger.log('⚠ generateLectureDeadlineSchedules_: getLecturePeriods エラー ' + e);
+      return 0;
+    }
+    var overrides = {};
+    try { overrides = getLectureDeadlineOverrides() || {}; } catch(e) {}
+
+    var settingsJson = getProperty(PROP_KEYS.LINE_SCHEDULER_SETTINGS);
+    var settings = safeJsonParse_(settingsJson, {});
+    var d7Settings = settings.lecDeadline7 || {};
+    var d14Settings = settings.lecDeadline14 || {};
+    var d7Hour = d7Settings.sendHour !== undefined ? d7Settings.sendHour : 16;
+    var d14Hour = d14Settings.sendHour !== undefined ? d14Settings.sendHour : 16;
+
+    var now = new Date();
+    var nowIso = now.toISOString();
+    var created = 0;
+
+    lecturePeriods.forEach(function(lp) {
+      var name = lp.name || '';
+      // 対象は春期・夏期・冬期のみ
+      if (name.indexOf('春期') === -1 && name.indexOf('夏期') === -1 && name.indexOf('冬期') === -1) return;
+
+      var tDate = computeLectureDeadlineDate_(lp, overrides);
+      if (!tDate) return;
+
+      // T-7日（日曜・休校日なら前営業日に繰り上げ）= 理科・社会の締切日
+      var t7 = new Date(tDate.getTime());
+      t7.setDate(t7.getDate() - 7);
+      t7 = findPrevOpenDayDate_(t7);
+
+      // T-14日（T-7日から14日戻してさらに前営業日調整）
+      var t14 = new Date(t7.getTime());
+      t14.setDate(t14.getDate() - 14);
+      t14 = findPrevOpenDayDate_(t14);
+
+      // lecDeadline7: T-7日が該当月なら作成
+      if (t7.getFullYear() === year && t7.getMonth() + 1 === month) {
+        var id7 = 'sch_' + yearMonth + '_lecDeadline7_' + lp.id;
+        var existing7 = firestoreGet_('lineSchedules', id7);
+        if (!existing7) {
+          var mm7 = (t7.getMonth() + 1) < 10 ? '0' + (t7.getMonth() + 1) : '' + (t7.getMonth() + 1);
+          var dd7 = t7.getDate() < 10 ? '0' + t7.getDate() : '' + t7.getDate();
+          var hh7 = d7Hour < 10 ? '0' + d7Hour : '' + d7Hour;
+          var sched7 = t7.getFullYear() + '-' + mm7 + '-' + dd7 + 'T' + hh7 + ':00:00+09:00';
+          if (new Date(sched7) > now) {
+            firestoreSet_('lineSchedules', id7, {
+              id: id7, type: 'lecDeadline7', yearMonth: yearMonth,
+              lectureId: lp.id, lectureName: name,
+              recipients: ['__ALL__'], scheduledAt: sched7,
+              message: buildLecDeadline7Message_(name, t7),
+              sent: false, sentAt: '', createdAt: nowIso
+            });
+            created++;
+          }
+        }
+      }
+
+      // lecDeadline14: T-14日が該当月なら作成
+      if (t14.getFullYear() === year && t14.getMonth() + 1 === month) {
+        var id14 = 'sch_' + yearMonth + '_lecDeadline14_' + lp.id;
+        var existing14 = firestoreGet_('lineSchedules', id14);
+        if (!existing14) {
+          var mm14 = (t14.getMonth() + 1) < 10 ? '0' + (t14.getMonth() + 1) : '' + (t14.getMonth() + 1);
+          var dd14 = t14.getDate() < 10 ? '0' + t14.getDate() : '' + t14.getDate();
+          var hh14 = d14Hour < 10 ? '0' + d14Hour : '' + d14Hour;
+          var sched14 = t14.getFullYear() + '-' + mm14 + '-' + dd14 + 'T' + hh14 + ':00:00+09:00';
+          if (new Date(sched14) > now) {
+            firestoreSet_('lineSchedules', id14, {
+              id: id14, type: 'lecDeadline14', yearMonth: yearMonth,
+              lectureId: lp.id, lectureName: name,
+              recipients: ['__ALL__'], scheduledAt: sched14,
+              message: buildLecDeadline14Message_(name, t7),
+              sent: false, sentAt: '', createdAt: nowIso
+            });
+            created++;
+          }
+        }
+      }
+    });
+
+    return created;
+  } catch(e) {
+    Logger.log('❌ generateLectureDeadlineSchedules_ エラー: ' + e);
+    return 0;
+  }
+}
+
+/**
  * 指定年月のLINEスケジュール3件を自動生成する内部ヘルパー
  * 既に同じ種別のエントリが存在する場合はスキップする
  * @param {number} year カレンダー年
@@ -1656,6 +1844,7 @@ function getScheduledLineMessages(year, month) {
     var docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
     if (docs.length === 0) {
       generateMonthlySchedule_(year, month);
+      generateLectureDeadlineSchedules_(year, month);
       docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
     }
 
@@ -1885,13 +2074,15 @@ function checkAndSendDueLineMessages() {
     var cy = now.getFullYear();
     var cm = now.getMonth() + 1;
     generateMonthlySchedule_(cy, cm);
+    generateLectureDeadlineSchedules_(cy, cm);
     var ny = cm === 12 ? cy + 1 : cy;
     var nm = cm === 12 ? 1 : cm + 1;
     generateMonthlySchedule_(ny, nm);
+    generateLectureDeadlineSchedules_(ny, nm);
 
     // 未送信のドキュメントを全件取得し、送信予定日時が過ぎたものをクライアント側でフィルタ
     var docs = firestoreQuery_('lineSchedules', [fsFilter_('sent', 'EQUAL', false)]);
-    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
+    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡', lecDeadline7: '講習日程締切のお知らせ', lecDeadline14: '講習 理科・社会 日程締切のお知らせ' };
 
     var sentCount = 0;
     var errors = [];
