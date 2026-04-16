@@ -1193,7 +1193,7 @@
         container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">この月のスケジュールがありません</p>';
         return;
       }
-      var typeLabels = { shitsucho: '👔 室長用', shimurocho: '👔 室長用', meeting: '📢 全体ミーティング', report: '📝 回数報告書' };
+      var typeLabels = { shitsucho: '👔 室長用', shimurocho: '👔 室長用', meeting: '📢 全体ミーティング', report: '📝 回数報告書', lecDeadline7: '📘 講習締切(当日)', lecDeadline14: '📘 講習締切(1週前)' };
       var html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
         '<tr style="background:#f5f5f5;font-weight:600;">' +
         '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">種別</th>' +
@@ -1204,6 +1204,7 @@
         '</tr>';
       messages.forEach(function(m) {
         var typeLabel = typeLabels[m.type] || m.type;
+        if (m.lectureName) typeLabel += '<br><span style="font-size:11px;color:#666;">' + m.lectureName + '</span>';
         var dtStr = '未設定';
         if (m.scheduledAt) {
           var s = m.scheduledAt.replace('T', ' ');
@@ -1249,9 +1250,11 @@
           var m = result.messages.find(function(x) { return x.id === id; });
           if (!m) return;
           document.getElementById('schedulerEditId').value = m.id;
-          var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡' };
+          var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡', lecDeadline7: '📘 講習日程締切(当日)', lecDeadline14: '📘 講習日程締切(1週前)' };
           var msgType = m.type;
-          document.getElementById('schedulerEditTypeLabel').textContent = typeLabels[msgType] || msgType;
+          var labelText = typeLabels[msgType] || msgType;
+          if (m.lectureName) labelText += ' — ' + m.lectureName;
+          document.getElementById('schedulerEditTypeLabel').textContent = labelText;
           document.getElementById('schedulerEditTypeLabel').setAttribute('data-type', msgType);
           // 日時セット（datetime-local形式: YYYY-MM-DDTHH:mm）
           var dt = m.scheduledAt ? String(m.scheduledAt).slice(0, 16) : '';
@@ -1260,7 +1263,7 @@
           document.getElementById('schedulerEditMessage').value = m.message || '';
           // 宛先チェックボックス
           var recipDiv = document.getElementById('schedulerEditRecipients');
-          if (msgType === 'meeting' || msgType === 'report') {
+          if (msgType === 'meeting' || msgType === 'report' || msgType === 'lecDeadline7' || msgType === 'lecDeadline14') {
             recipDiv.innerHTML = '<p style="font-size:12px;color:#43a047;margin:0;padding:4px 0;">🌐 LINE登録済みユーザー全員に送信されます（変更不可）</p>';
           } else if (schedulerLineUsers.length === 0) {
             recipDiv.innerHTML = '<p style="font-size:12px;color:#bbb;margin:0;">LINE登録済みユーザーがいません</p>';
@@ -1325,13 +1328,15 @@
       if (!dt) { document.getElementById('schedulerEditMessage2').innerHTML = '<span style="color:#c62828">送信日時を設定してください</span>'; return; }
       var msgDiv = document.getElementById('schedulerEditMessage2');
       msgDiv.textContent = '保存中...';
-      // 年月・種別を id から取得
+      // 年月・種別を id から取得（種別は data-type を優先 — 講習締切はIDに lectureId が続くため正規表現で取れない）
       var yearMonth = id.replace('sch_','').slice(0,6);
-      var typeMatch = id.match(/_([a-z]+)$/);
-      var type = typeMatch ? typeMatch[1] : '';
-      var savedType = document.getElementById('schedulerEditTypeLabel').getAttribute('data-type') || type;
+      var savedType = document.getElementById('schedulerEditTypeLabel').getAttribute('data-type') || '';
+      if (!savedType) {
+        var typeMatch = id.match(/_([a-z]+)$/);
+        savedType = typeMatch ? typeMatch[1] : '';
+      }
       var recipients;
-      if (savedType === 'meeting' || savedType === 'report') {
+      if (savedType === 'meeting' || savedType === 'report' || savedType === 'lecDeadline7' || savedType === 'lecDeadline14') {
         recipients = ['__ALL__'];
       } else {
         var checkboxes = document.querySelectorAll('.scheduler-edit-recip');
@@ -1350,7 +1355,7 @@
         .withFailureHandler(function(err) {
           msgDiv.innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
         })
-        .saveScheduledLineMessage({ id: id, type: type, yearMonth: yearMonth, recipients: recipients, scheduledAt: dt, message: msg });
+        .saveScheduledLineMessage({ id: id, type: savedType, yearMonth: yearMonth, recipients: recipients, scheduledAt: dt, message: msg });
     }
 
     // スケジュールを削除する
