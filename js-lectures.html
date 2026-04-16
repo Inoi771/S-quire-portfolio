@@ -1714,14 +1714,22 @@
             + 'cursor:' + (isOwnEntry ? 'pointer' : 'default') + ';'
             + 'font-size:10px;overflow:hidden;'
             + 'box-sizing:border-box;z-index:' + (selected ? '10' : '2') + ';line-height:1.3;color:' + c.text + ';'
-            + 'white-space:nowrap;text-overflow:ellipsis;transition:transform 0.15s,box-shadow 0.15s;';
+            + 'white-space:normal;overflow:hidden;transition:transform 0.15s,box-shadow 0.15s;';
           // 表示名を teacherId → lecTeacherNameMap で動的解決（表示名変更に追従）
           var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
             ? lecTeacherNameMap[entry.teacherId].name
             : (entry.teacherName || entry.teacherEmail || '');
           var endTimeStr = slotToTimeStr(timeToSlot(entry.startTime) + (Number(entry.durationSlots) || 9));
           var campusLabel = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
-          div.textContent = entry.startTime + '-' + endTimeStr + ' ' + entry.grade + ' ' + entry.subject + (entry.classLabel || '') + ' ' + resolvedName + ' ' + campusLabel;
+          // 1行目: 時間・校舎名、2行目: 学年・教科・講師名
+          var line1 = document.createElement('div');
+          line1.style.cssText = 'font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+          line1.textContent = entry.startTime + '-' + endTimeStr + ' ' + campusLabel;
+          var line2 = document.createElement('div');
+          line2.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0.9;';
+          line2.textContent = entry.grade + ' ' + entry.subject + (entry.classLabel || '') + ' ' + resolvedName;
+          div.appendChild(line1);
+          div.appendChild(line2);
 
           if (isOwnEntry) {
             (function(eid) {
