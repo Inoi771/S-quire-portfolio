@@ -1228,9 +1228,33 @@
       if (!container) return;
       var spring = isSpringLecture();
       // code と label を一致させる（春期かどうかでコードも変える）
-      var grades = spring
+      var allGrades = spring
         ? ['小','新中1','新中2','新中3','新高1','新高2','新高3']
         : ['小','中1','中2','中3','高1','高2','高3'];
+
+      // 設定タブで選択した担当学年のみに絞る
+      var userLecGrades = (typeof lecGrades !== 'undefined' && Array.isArray(lecGrades)) ? lecGrades : [];
+      var grades;
+      if (userLecGrades.length === 0) {
+        grades = [];
+      } else if (spring) {
+        // 春期モード：「新中1」→「中1」に変換してフィルタ（「小」は例外）
+        grades = allGrades.filter(function(springGrade) {
+          if (springGrade === '小') return userLecGrades.indexOf('小') !== -1;
+          return userLecGrades.indexOf(springGrade.replace('新', '')) !== -1;
+        });
+      } else {
+        grades = allGrades.filter(function(grade) {
+          return userLecGrades.indexOf(grade) !== -1;
+        });
+      }
+
+      if (grades.length === 0) {
+        container.innerHTML = '<span style="font-size:13px;color:#999;">設定タブで講習担当学年を選択してください</span>';
+        selectedGradeForEntry = null;
+        return;
+      }
+
       var html = '';
       grades.forEach(function(grade) {
         var cfg = getLecGradeSettings(grade);
@@ -1243,13 +1267,8 @@
               + '<br><span style="font-size:10px;color:#888;">' + sub + '</span></button>';
       });
       container.innerHTML = html;
-      // 先頭の学年を自動選択
-      if (grades.length > 0) {
-        selectedGradeForEntry = null; // toggleLecGradeBtn が正しく設定できるようにリセット
-        toggleLecGradeBtn(grades[0]);
-      } else {
-        selectedGradeForEntry = null;
-      }
+      // 自動選択しない（ユーザーが明示的にタップする必要がある）
+      selectedGradeForEntry = null;
     }
 
     /**
