@@ -150,6 +150,7 @@
   };
     var googleCalendarHolidays = null; // Googleカレンダーから取得した祝日データ（取得前はnull）
     var preferredCampuses = [];        // 配属校舎コードの配列（ユーザーごとに保存）
+    var lecGrades = [];                // 講習担当学年コードの配列（ユーザーごとに保存）
     var aiWidgetChatHistory = [];      // AIアシスタントの会話履歴（{role:'user'|'ai', text:'...'}の配列）
 
     // ===== 講習管理タブ用グローバル変数 =====
@@ -423,6 +424,47 @@
       .savePreferredCampuses(codes);
   }
 
+  /**
+   * プロフィール欄の「講習担当学年」チェックボックスを描画する
+   */
+  function renderLecGradeCheckboxes() {
+    var container = document.getElementById('lecGradeContainer');
+    if (!container) return;
+    var allGrades = ['小', '中1', '中2', '中3', '高1', '高2', '高3'];
+    var html = '';
+    allGrades.forEach(function(grade) {
+      var checked = lecGrades.indexOf(grade) !== -1 ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 0;">'
+            + '<input type="checkbox" class="lec-grade-cb" value="' + grade + '"' + checked
+            + ' onchange="onLecGradeChange()" style="width:16px;height:16px;cursor:pointer;">'
+            + grade + '</label>';
+    });
+    container.innerHTML = html;
+  }
+
+  /**
+   * 講習担当学年チェックボックスの変更時に呼ばれる。即座に自動保存する。
+   */
+  function onLecGradeChange() {
+    var grades = [];
+    document.querySelectorAll('.lec-grade-cb:checked').forEach(function(cb) { grades.push(cb.value); });
+    lecGrades = grades;
+    var statusEl = document.getElementById('lecGradeSaveStatus');
+    if (statusEl) statusEl.textContent = '保存中...';
+    google.script.run
+      .withSuccessHandler(function() {
+        setTimeout(function() {
+          if (statusEl) statusEl.textContent = 'チェックするだけで自動保存されます。日程作成時に選択した学年のみ表示されます。';
+        }, 1800);
+      })
+      .withFailureHandler(function(err) {
+        showToast('❌ 担当学年の保存に失敗しました', 'error');
+        if (statusEl) statusEl.textContent = '❌ 保存失敗';
+        console.error(err);
+      })
+      .saveLecGrades(grades);
+  }
+
   // ===== セットアップウィザード関数 =====
 
   /**
@@ -680,6 +722,11 @@
     // 配属校舎を早期セット（講習管理タブなど、設定タブより先に開いた場合も正しく動くように）
     if (Array.isArray(data.preferredCampuses)) {
       preferredCampuses = data.preferredCampuses;
+    }
+
+    // 講習担当学年を早期セット（設定タブより先に講習タブが開かれても正しく動くように）
+    if (Array.isArray(data.lecGrades)) {
+      lecGrades = data.lecGrades;
     }
 
     // 最後に生成したテスト分析のメタ情報をキャッシュ（全スタッフのAIウィジェットチップに反映）
@@ -2073,6 +2120,10 @@
       preferredCampuses = profile.preferredCampuses || [];
       renderPreferredCampusCheckboxes();
       rebuildCampusDropdowns(); // 配属校舎が先頭に来るようドロップダウンを再描画
+
+      // 講習担当学年をセット → チェックボックスを描画
+      lecGrades = profile.lecGrades || [];
+      renderLecGradeCheckboxes();
 
       // 未設定項目の案内メッセージ
       var notSet = [];

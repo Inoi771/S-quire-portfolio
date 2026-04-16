@@ -431,6 +431,9 @@ function getUserProfile() {
       preferredCampuses = safeJsonParse_(preferredCampuses, []);
     }
 
+    // 講習担当学年（ScriptProperties に保存）
+    var lecGrades = safeJsonParse_(getUserProperty('LEC_GRADES'), []);
+
     // プロフィール写真の取得（Drive の assets/profile-photos/{teacherId}.jpg）
     var profilePhotoUrl = '';
     try {
@@ -469,6 +472,7 @@ function getUserProfile() {
       aiPersonality: aiPersonality,
       themeColor: themeColor,
       preferredCampuses: preferredCampuses,
+      lecGrades: lecGrades,
       lastUpdated: staff.updatedAt || staff.addedAt || new Date().toISOString(),
       profilePhotoUrl: profilePhotoUrl
     };
@@ -654,6 +658,23 @@ function savePreferredCampuses(campusCodes) {
 }
 
 /**
+ * 講習担当学年リストを保存（ユーザーごと）
+ * チェックボックス変更時に自動で呼ばれる
+ * @param {Array} grades 学年の配列（例: ['小', '中1', '高3']）
+ * @return {Object} 成功/失敗
+ */
+function saveLecGrades(grades) {
+  try {
+    var list = Array.isArray(grades) ? grades : [];
+    setUserProperty('LEC_GRADES', JSON.stringify(list));
+    return { success: true, message: '保存しました' };
+  } catch (error) {
+    Logger.log('❌ saveLecGradesエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * プロフィール写真を Drive に保存する
  * assets/profile-photos/{teacherId}.jpg として保存（既存ファイルは上書き）
  * @aiCallable
@@ -765,6 +786,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
     var aiAssistantName = 'イノイマン';
     var aiPersonality   = 'polite';
     var preferredCampuses = [];
+    var lecGrades = [];
 
     if (staff) {
       teacherId       = staff.teacherId || staff._id || '';
@@ -776,6 +798,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       if (typeof preferredCampuses === 'string') {
         preferredCampuses = safeJsonParse_(preferredCampuses, []);
       }
+      lecGrades = safeJsonParse_(getUserProperty('LEC_GRADES'), []);
     }
 
     var geminiApiKey   = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
@@ -816,6 +839,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       aiAssistantName: aiAssistantName,
       aiPersonality: aiPersonality,
       preferredCampuses: preferredCampuses,
+      lecGrades: lecGrades,
       lastAnalysisMeta: getLatestGradeAnalysisMeta()
     };
   } catch (error) {
