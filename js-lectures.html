@@ -1232,11 +1232,12 @@
         ? ['小','新中1','新中2','新中3','新高1','新高2','新高3']
         : ['小','中1','中2','中3','高1','高2','高3'];
 
-      // 設定タブで選択した担当学年のみに絞る
+      // 設定タブで選択した担当学年のみに絞る（未設定の場合は全学年を表示）
       var userLecGrades = (typeof lecGrades !== 'undefined' && Array.isArray(lecGrades)) ? lecGrades : [];
       var grades;
       if (userLecGrades.length === 0) {
-        grades = [];
+        // 未設定 → 全学年を表示（設定前でも使えるようにする）
+        grades = allGrades;
       } else if (spring) {
         // 春期モード：「新中1」→「中1」に変換してフィルタ（「小」は例外）
         grades = allGrades.filter(function(springGrade) {
@@ -1250,6 +1251,7 @@
       }
 
       if (grades.length === 0) {
+        // 設定済みだが該当なし（フィルタ結果が空）
         container.innerHTML = '<span style="font-size:13px;color:#999;">設定タブで講習担当学年を選択してください</span>';
         selectedGradeForEntry = null;
         return;
