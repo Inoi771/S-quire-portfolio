@@ -282,6 +282,13 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `buildShimurochoMessage_(sendYear, sendMonth, sendDay, closedDays)` — 室長用連絡のデフォルトメッセージを生成（月ごとの講習名・引落データ送信日・締切日を動的計算）
 - `generateMonthlySchedule_(year, month)` — 指定年月の3種別スケジュールを自動生成（既存エントリがあればスキップ）。meeting/reportは `recipients: ['__ALL__']` で全LINE登録ユーザーへ自動送信。shitsucho のみ手動選択
 - `getAllLineRegisteredTeacherIds_()` — LINE_USER_MAPPING に登録されている全 teacherId を返す（meeting/report の全員送信用）
+- `findPrevOpenDayDate_(date)` — 指定日が日曜・休校日なら前の開校日まで遡った Date を返す（月をまたぐ）。講習締切計算用内部ヘルパー
+- `countBackLecDeadlineDate_(startDate, count)` — 講習開始日から count 日前を計算し、日曜・休校日なら前営業日に繰り上げて Date を返す（フロント `countBackLecDeadline_` のバック版）
+- `computeLectureDeadlineDate_(lp, overrides)` — 講習期間データから T日（講習日程締切日）を算出。手動上書き（LECTURE_DEADLINE_OVERRIDES）優先、なければ春/夏/冬=42日前、他=28日前で自動計算
+- `formatMdw_(date)` — 日付を「M月D日(曜)」形式の文字列に整形
+- `buildLecDeadline7Message_(lectureName, sendDate)` — 講習締切当日通知（T-7日送信分）のメッセージを生成
+- `buildLecDeadline14Message_(lectureName, t7Date)` — 講習締切1週間前通知（T-14日送信分）のメッセージを生成
+- `generateLectureDeadlineSchedules_(year, month)` — 指定年月に送信予定となる講習締切LINE通知（lecDeadline7/lecDeadline14）を自動生成。対象は春期・夏期・冬期のみ。宛先 `__ALL__`・既存IDはスキップ・過去日時はスキップ
 
 #### 公開API関数（Admin のみ）
 - `getLineSchedulerSettings()` — LINEスケジューラーの種別ごとデフォルト設定取得
