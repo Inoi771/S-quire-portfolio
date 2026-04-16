@@ -144,6 +144,9 @@ function fbSaveLectureScheduleEntries(lectureId, campusCode, entries) {
       var existingEntries = (docSnap.exists && Array.isArray(docSnap.data().entries))
         ? docSnap.data().entries : [];
 
+      // 保存に使うエントリ（権限チェック内で他ユーザーのエントリをマージする場合に拡張される）
+      var entriesToSave = entries.slice();
+
       // 権限チェック: Admin以外は他人のエントリを変更・削除不可
       if (!isAdmin && myTid) {
         var existingOtherEntries = {};
@@ -178,7 +181,24 @@ function fbSaveLectureScheduleEntries(lectureId, campusCode, entries) {
         for (var m = 0; m < otherKeys.length; m++) {
           var eid = otherKeys[m];
           if (!incomingOtherIds[eid]) {
-            return Promise.resolve({ success: false, error: '他のユーザーのエントリは削除できません' });
+            // ローカルキャッシュが古く他ユーザーのエントリが含まれていない場合は
+            // Firestore の既存エントリをそのままマージして保持する（拒否しない）
+            var missingEntry = existingEntries.find(function(e2) { return (e2.entryId || '') === eid; });
+            if (missingEntry) {
+              entriesToSave.push({
+                id:            missingEntry.entryId || eid,
+                date:          missingEntry.date          || '',
+                startTime:     missingEntry.startTime     || '',
+                durationSlots: Number(missingEntry.durationSlots) || 9,
+                subject:       missingEntry.subject       || '',
+                grade:         missingEntry.grade         || '',
+                teacherName:   missingEntry.teacherName   || '',
+                teacherEmail:  missingEntry.teacherEmail  || '',
+                classLabel:    missingEntry.classLabel    || null,
+                teacherId:     missingEntry.teacherId     || ''
+              });
+            }
+            continue;
           }
           var orig = existingOtherEntries[eid];
           var inc  = incomingOtherIds[eid];
@@ -192,7 +212,7 @@ function fbSaveLectureScheduleEntries(lectureId, campusCode, entries) {
 
       // エントリIDを確定して保存データを構築
       var savedEntries = [];
-      var newEntries = entries.map(function(e) {
+      var newEntries = entriesToSave.map(function(e) {
         var entryId = e.id || ('ent_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000));
         var eData = {
           entryId:       entryId,
@@ -222,7 +242,7 @@ function fbSaveLectureScheduleEntries(lectureId, campusCode, entries) {
         entries:    newEntries,
         updatedAt:  new Date().toISOString()
       }).then(function() {
-        return { success: true, message: entries.length + '件を保存しました', entries: savedEntries };
+        return { success: true, message: entriesToSave.length + '件を保存しました', entries: savedEntries };
       });
     })
     .catch(function(err) {
