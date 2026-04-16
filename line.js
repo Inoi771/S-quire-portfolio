@@ -1850,6 +1850,7 @@ function getScheduledLineMessages(year, month) {
 
     // 種別ごとに重複がある場合は最初の1件のみ採用（重複防止）
     // __ALL__ を含むドキュメントがある場合は実際の送信人数を1回だけ取得
+    // ただし講習締切（lecDeadline7/lecDeadline14）は1月に複数講習あり得るため重複排除しない
     var hasAll = docs.some(function(doc) { return (doc.recipients || []).indexOf('__ALL__') >= 0; });
     var allLineCount = hasAll ? getAllLineRegisteredTeacherIds_().length : 0;
     var seenTypes = {};
@@ -1857,8 +1858,11 @@ function getScheduledLineMessages(year, month) {
     docs.forEach(function(doc) {
       var type = doc.type || '';
       if (type === 'shimurocho') type = 'shitsucho'; // 旧名称の後方互換
-      if (seenTypes[type]) return;
-      seenTypes[type] = true;
+      var isMultiType = (type === 'lecDeadline7' || type === 'lecDeadline14');
+      if (!isMultiType) {
+        if (seenTypes[type]) return;
+        seenTypes[type] = true;
+      }
       var recips = doc.recipients || [];
       var recipientCount = recips.indexOf('__ALL__') >= 0 ? allLineCount : recips.length;
       messages.push({
@@ -1871,13 +1875,19 @@ function getScheduledLineMessages(year, month) {
         message: doc.message || '',
         sent: doc.sent === true,
         sentAt: doc.sentAt || '',
-        createdAt: doc.createdAt || ''
+        createdAt: doc.createdAt || '',
+        lectureId: doc.lectureId || '',
+        lectureName: doc.lectureName || ''
       });
     });
     // 表示順: 室長用 → 全体ミーティング → 回数報告書
-    var typeOrder = { shitsucho: 0, meeting: 1, report: 2 };
+    var typeOrder = { shitsucho: 0, meeting: 1, report: 2, lecDeadline14: 3, lecDeadline7: 4 };
     messages.sort(function(a, b) {
-      return (typeOrder[a.type] !== undefined ? typeOrder[a.type] : 9) - (typeOrder[b.type] !== undefined ? typeOrder[b.type] : 9);
+      var ao = (typeOrder[a.type] !== undefined ? typeOrder[a.type] : 9);
+      var bo = (typeOrder[b.type] !== undefined ? typeOrder[b.type] : 9);
+      if (ao !== bo) return ao - bo;
+      // 同タイプは送信予定日時順
+      return (a.scheduledAt || '').localeCompare(b.scheduledAt || '');
     });
     return { success: true, messages: messages };
   } catch(e) {
@@ -1938,6 +1948,9 @@ function saveScheduledLineMessage(data) {
         sentAt: existing.sentAt || '',
         createdAt: existing.createdAt || now
       };
+      // 講習締切メッセージは lectureId / lectureName を維持
+      if (existing.lectureId) saveData.lectureId = existing.lectureId;
+      if (existing.lectureName) saveData.lectureName = existing.lectureName;
     } else {
       // 新規追加
       saveData = {
