@@ -60,6 +60,7 @@
 - `getBasicTestEventsForMonth(calYear, calMonth)` — 指定カレンダー月に含まれる基礎学力テスト仮想イベントを返す（上書き優先。中1・中2対象の回数なしイベントも含む・中1・中2キー: `{academicYear}-chuu12`）
 - `countBackLecDeadline_(startDate, count, closedDays)` — 開始日の前日からcount日前を出し、その日が日曜・休校日なら前の営業日に調整して返す（講習日程締切日計算用内部ヘルパー）
 - `getLectureDeadlineEventsForMonth(calYear, calMonth)` — 指定カレンダー月に含まれる講習日程締切仮想イベントを返す（`lectureDeadlineOverrides` で手動上書き優先、なければ `countBackLecDeadline_` で自動計算。春期・夏期・冬期は42日前（28+14）、その他は28日前。塾列に表示）
+- `getLectureSubjectDeadlineEventsForMonth(calYear, calMonth)` — 指定カレンダー月に含まれる「理科・社会 日程締切」仮想イベントを返す。春期・夏期・冬期講習のみ対象。T日（講習日程締切）から7日戻し、日曜・休校日なら前の開校日へ繰り上げ。予定タブ塾列にオレンジ系マーカーで表示
 
 **【5】設定管理**
 - `onSettingsLoaded(settings)` — ロゴ・ファビコン設定、ユーザー情報表示
