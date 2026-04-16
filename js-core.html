@@ -1487,6 +1487,74 @@
     }
 
     /**
+     * 指定月に含まれる「理科・社会の日程締切」（T-7日、日曜・休校日なら前営業日へ繰り上げ）の仮想イベント配列を返す
+     * 対象: 春期・夏期・冬期講習のみ
+     * @param {number} calYear 表示年
+     * @param {number} calMonth 表示月（1〜12）
+     * @return {Array} 仮想イベント配列
+     */
+    function getLectureSubjectDeadlineEventsForMonth(calYear, calMonth) {
+      var result = [];
+      scheduleLecturePeriods.forEach(function(lp) {
+        if (!lp.startDate) return;
+        var name = lp.name || '';
+        // 対象は春期・夏期・冬期のみ
+        if (name.indexOf('春期') === -1 && name.indexOf('夏期') === -1 && name.indexOf('冬期') === -1) return;
+
+        // T日（既存ロジックと同じ: 手動上書き優先、なければ自動計算）
+        var tDate;
+        if (lp.id && lectureDeadlineOverrides[lp.id]) {
+          var op = lectureDeadlineOverrides[lp.id].split('-');
+          if (op.length === 3) {
+            tDate = new Date(parseInt(op[0]), parseInt(op[1]) - 1, parseInt(op[2]));
+          }
+        }
+        var parts = lp.startDate.split('-');
+        if (parts.length < 3) return;
+        var startDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        var sm = startDate.getMonth() + 1;
+        var fy;
+        if (name.indexOf('春期') !== -1 && sm < 4) {
+          fy = startDate.getFullYear() - 1;
+        } else {
+          fy = sm >= 4 ? startDate.getFullYear() : startDate.getFullYear() - 1;
+        }
+        var closedDays = getClosedDays(fy);
+        closedDayOverrides.del.forEach(function(d) { delete closedDays[d]; });
+        closedDayOverrides.add.forEach(function(d) { closedDays[d] = true; });
+        if (!tDate) {
+          // 春期・夏期・冬期は42日前
+          tDate = countBackLecDeadline_(startDate, 42, closedDays);
+        }
+
+        // T日から7日戻し、日曜・休校日なら前営業日へ繰り上げ
+        var subj = new Date(tDate.getTime());
+        subj.setDate(subj.getDate() - 7);
+        for (var i = 0; i < 14; i++) {
+          var dow = subj.getDay();
+          var mm = subj.getMonth() + 1;
+          var dd = subj.getDate();
+          var key = subj.getFullYear() + '-' + (mm < 10 ? '0' : '') + mm + '-' + (dd < 10 ? '0' : '') + dd;
+          if (dow !== 0 && !closedDays[key]) break;
+          subj.setDate(subj.getDate() - 1);
+        }
+
+        if (subj.getFullYear() === calYear && subj.getMonth() + 1 === calMonth) {
+          result.push({
+            day: subj.getDate(),
+            school: '塾',
+            eventType: '理科・社会 日程締切',
+            details: name,
+            schedule: calYear + '年' + calMonth + '月' + subj.getDate() + '日',
+            _virtual: true,
+            _subjectDeadline: true
+          });
+        }
+      });
+      return result;
+    }
+
+    /**
      * 指定月の全日カレンダーHTMLを4列テーブル（日付|塾|中学校|高校）で生成する
      * @param {number} year 年
      * @param {number} month 月（1〜12）
@@ -1552,6 +1620,13 @@
         lecDeadlineByDay[ev.day].push(ev);
       });
 
+      // 理科・社会 日程締切（T-7日）仮想イベント
+      var subjectDeadlineByDay = {};
+      getLectureSubjectDeadlineEventsForMonth(year, month).forEach(function(ev) {
+        if (!subjectDeadlineByDay[ev.day]) subjectDeadlineByDay[ev.day] = [];
+        subjectDeadlineByDay[ev.day].push(ev);
+      });
+
       // イベント1件分のHTML生成ヘルパー
       var renderEvent = function(event, typeCls) {
         var displayDetails = event.details || '';
@@ -1559,7 +1634,7 @@
           displayDetails = reportMonthLabels[month] + (displayDetails ? '　' + displayDetails : '');
         }
         var showSchool = (typeCls !== 'juku');
-        var itemExtraCls = event._closedDay ? ' event-closed-day' : (event._virtual ? ' event-juku-virtual' : '');
+        var itemExtraCls = event._closedDay ? ' event-closed-day' : (event._subjectDeadline ? ' event-juku-virtual event-subject-deadline' : (event._virtual ? ' event-juku-virtual' : ''));
         return '<div class="event-item ' + typeCls + itemExtraCls + '" onclick=\'addToGoogleCalendar(' +
           JSON.stringify(event).replace(/'/g, "\\'") + ')\'>' +
           (showSchool ? '<div class="event-school">' + event.school + '</div>' : '') +
@@ -1639,7 +1714,7 @@
           else highEvents.push(ev);
         });
         // 仮想イベントを追加
-        jukuEvents = virtualJuku.concat(lecDeadlineByDay[day] || []).concat(jukuEvents);
+        jukuEvents = virtualJuku.concat(lecDeadlineByDay[day] || []).concat(subjectDeadlineByDay[day] || []).concat(jukuEvents);
         juniorEvents = virtualBasic.concat(pubHighExamByDay[day] || []).concat(juniorEvents);
 
         // 行を生成
