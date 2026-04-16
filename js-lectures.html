@@ -277,6 +277,11 @@
       updateLecRemainingCounter();
       // 校舎タブが表示中なら再描画
       if (currentLectureCampus) {
+        // 講習が切り替わったのでキャッシュをクリア（未保存変更がない場合のみ）
+        // → 次の renderLectureWeekGrid → refreshLecEntries で新しい講習のデータを取得させる
+        if (!dirtyCampuses[currentLectureCampus]) {
+          lectureEntries[currentLectureCampus] = undefined;
+        }
         updateLectureWeekLabel();
         renderLectureWeekGrid(currentLectureCampus);
       }
@@ -1550,15 +1555,15 @@
               updateLecSaveBtn('dirty');
             }
           } else {
-            showLecStatusMsg('❌ 保存失敗', '#e57373');
+            showLecStatusMsg('❌ 保存失敗 — もう一度お試しください', '#e57373');
             showToast('❌ 保存失敗', 'error');
-            updateLecSaveBtn('error');
+            updateLecSaveBtn('dirty');  // エラー後もボタンを有効に保ち再試行できるようにする
           }
         })
         .catch(function() {
-          showLecStatusMsg('❌ 保存失敗', '#e57373');
+          showLecStatusMsg('❌ 保存失敗 — もう一度お試しください', '#e57373');
           showToast('❌ 保存失敗', 'error');
-          updateLecSaveBtn('error');
+          updateLecSaveBtn('dirty');  // エラー後もボタンを有効に保ち再試行できるようにする
         });
     }
 
