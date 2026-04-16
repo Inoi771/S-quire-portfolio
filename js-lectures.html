@@ -1719,7 +1719,9 @@
           var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
             ? lecTeacherNameMap[entry.teacherId].name
             : (entry.teacherName || entry.teacherEmail || '');
-          div.textContent = entry.grade + ' ' + entry.subject + (entry.classLabel || '') + ' ' + resolvedName;
+          var endTimeStr = slotToTimeStr(timeToSlot(entry.startTime) + (Number(entry.durationSlots) || 9));
+          var campusLabel = (campusData && campusData[campusCode]) ? campusData[campusCode] : campusCode;
+          div.textContent = entry.startTime + '-' + endTimeStr + ' ' + entry.grade + ' ' + entry.subject + (entry.classLabel || '') + ' ' + resolvedName + ' ' + campusLabel;
 
           if (isOwnEntry) {
             (function(eid) {
