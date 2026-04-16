@@ -247,7 +247,7 @@
       if (savedCampuses && savedCampuses.length > 0) {
         pendingAutoRestoreCampuses = savedCampuses;
       }
-      currentLectureScrollLeft = 13 * 6 * 20; // 講習変更時は13:00にスクロールをリセット
+      currentLectureScrollLeft = (13 - 8) * 6 * 20; // 講習変更時は13:00にスクロールをリセット（8:00始まりのため offset 補正）
       tryAutoRestoreLectures();
     }
 
@@ -910,15 +910,15 @@
       var dayNames = ['月','火','水','木','金','土','日'];
 
       // レイアウト定数（10分刻み）
-      var START_HOUR = 0;            // 表示開始時刻（0:00から）
-      var END_HOUR   = 24;           // 表示終了時刻（24:00まで）
-      var SLOTS      = END_HOUR * 6; // 10分スロット数 = 144
-      var SLOT_W     = 20;           // 1スロット（10分）の幅 px（元の縦版と同じ比率）
-      var DAY_W      = 52;           // 曜日ラベル列の幅 px
-      var BASE_ROW_H = 56;           // 1行（1日）の基本高さ px（エントリ追加で伸びる）
-      var HEAD_H     = 36;           // ヘッダー行（時刻ラベル）の高さ px
-      var START_SLOT = 0;            // 表示開始スロット番号（0=0:00）
-      var TOTAL_W    = DAY_W + SLOTS * SLOT_W;  // 52 + 144*20 = 2932px
+      var START_HOUR = 8;                        // 表示開始時刻（8:00から）
+      var END_HOUR   = 24;                       // 表示終了時刻（24:00まで）
+      var SLOTS      = (END_HOUR - START_HOUR) * 6; // 10分スロット数 = 96
+      var SLOT_W     = 20;                       // 1スロット（10分）の幅 px
+      var DAY_W      = 52;                       // 曜日ラベル列の幅 px
+      var BASE_ROW_H = 56;                       // 1行（1日）の基本高さ px
+      var HEAD_H     = 36;                       // ヘッダー行（時刻ラベル）の高さ px
+      var START_SLOT = START_HOUR * 6;           // 表示開始スロット番号（48=8:00）
+      var TOTAL_W    = DAY_W + SLOTS * SLOT_W;  // 52 + 96*20 = 1972px
 
       // 休校日マップ（管理タブの上書き設定も反映）
       var lecFy = (function() {
@@ -1068,7 +1068,7 @@
         var rect = row.getBoundingClientRect();
         var x    = clientX - rect.left;
         var slot = Math.floor(x / (rect.width / SLOTS));
-        return Math.max(0, Math.min(slot, SLOTS - 1));
+        return START_SLOT + Math.max(0, Math.min(slot, SLOTS - 1));
       }
 
       // 既存リスナーを除去して再登録（メモリリーク防止）
@@ -1631,7 +1631,7 @@
       document.querySelectorAll('.lec-day-row .lec-entry').forEach(function(el) { el.remove(); });
 
       // レイアウト定数（renderLectureWeekGrid と揃える）
-      var START_SLOT   = 0;        // 0（0:00）
+      var START_SLOT   = 8 * 6;    // 48（8:00）
       var END_SLOT     = 24 * 6;   // 144（24:00）
       var SLOT_W       = 20;       // 10分スロット = 20px
       var BASE_ROW_H   = 56;       // エントリなし or 1レーンの基本行高さ
