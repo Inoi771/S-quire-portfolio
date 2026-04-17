@@ -15,6 +15,10 @@
     // 高校生ページを生成する講習タイプ（春期・夏期・冬期のみ）
     var MAT_HS_SEASON_TYPES_ = ['spring', 'summer', 'winter'];
 
+    // 中3追加行（多教科セット）を配布物に表示する講習タイプ（ホワイトリスト）
+    // 将来の講習追加時に誤って表示されないよう、対象を明示的に列挙する
+    var MAT_CHU3_MULTI_TYPES_ = ['summer', 'winter', 'nyushi'];
+
     // 高校生料金ページ選択（チェックボックスと連動）
     var matHsShow4Set_ = true;      // 4回セットページを含める
     var matHsShowPerCount_ = true;  // 回数別料金ページを含める
@@ -189,7 +193,7 @@
         });
         if (grpEntries.length === 0) return;
 
-        var base = { gradeGroup: grp, entries: grpEntries, campusName: campusName, campusCode: campusCode, lecName: lecName, typeData: typeData, isSpring: isSpring };
+        var base = { gradeGroup: grp, entries: grpEntries, campusName: campusName, campusCode: campusCode, lecName: lecName, typeData: typeData, isSpring: isSpring, typeId: typeId };
 
         if (grp.isHigh && isHsSeason) {
           // 高校生・HS season → 4回セット / 回数別 を別ページとして生成
@@ -258,7 +262,7 @@
       // アクティブタブの1ページ分を描画
       var activePage = gradePages.find(function(p) { return p.tabId === matActiveGradeKey_; });
       var greeting = getMatGreeting_(activePage.gradeGroup.key);
-      inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring, activePage.pricingType);
+      inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring, activePage.pricingType, activePage.typeId);
       applySchedulesInContainer_(inner);
       resizeMatPreview();
     }
@@ -667,7 +671,7 @@
      * @param {boolean} isSpring 春期講習か
      * @return {string} HTML文字列
      */
-    function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring, pricingType) {
+    function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring, pricingType, typeId) {
       // 年度を現在の講習IDから抽出（"YYYY-season-XX" 形式）
       var fy = parseInt((currentLectureId || '').split('-')[0], 10) || '';
 
@@ -695,6 +699,15 @@
         // 中学生・小学生：standard 行を gradeKey でフィルタ（なければ全行）
         gradeRows = allRows.filter(function(r) { return r.gradeKey === gradeGroup.key; });
         if (gradeRows.length === 0) gradeRows = allRows;
+        // 中3ページかつ MAT_CHU3_MULTI_TYPES_ に含まれる講習のとき、中3追加行（多教科セット等）を追加する。
+        // このラベル判定は features.js の分離ロジックと同じく「中3」文字列に依存する。
+        // ラベル表記を変更した場合（例：「中3」→「中学3年」）、この判定も必ず合わせて変更すること。
+        if (gradeGroup.key === 'chu3' && MAT_CHU3_MULTI_TYPES_.indexOf(typeId) !== -1) {
+          var chu3Custom = allRows.filter(function(r) {
+            return r.type === 'custom' && (r.label || '').indexOf('中3') !== -1;
+          });
+          gradeRows = gradeRows.concat(chu3Custom);
+        }
       }
 
       var html = '<div style="width:794px;min-height:1123px;padding:35px 45px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
