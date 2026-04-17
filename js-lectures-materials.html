@@ -741,9 +741,11 @@
         html += '</div>';
       }
 
-      // 7. 切り取り線
-      html += '<div style="margin:8px 0 4px;padding-top:4px;border-top:1px dashed #555;">';
-      html += '<div style="text-align:center;font-size:9pt;color:#444;">✄ きりとりせん ✄</div>';
+      // 7. 切り取り線（テキストを線の上に配置）
+      html += '<div style="display:flex;align-items:center;margin:8px 0 4px;font-size:9pt;color:#444;">';
+      html += '<div style="flex:1;border-top:1px dashed #555;"></div>';
+      html += '<span style="padding:0 8px;">✄ きりとりせん ✄</span>';
+      html += '<div style="flex:1;border-top:1px dashed #555;"></div>';
       html += '</div>';
 
       // 8. 申込欄
