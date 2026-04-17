@@ -1599,9 +1599,9 @@ function generateLectureDeadlineSchedules_(year, month) {
       t7.setDate(t7.getDate() - 7);
       t7 = findPrevOpenDayDate_(t7);
 
-      // T-14日（T-7日から14日戻してさらに前営業日調整）
+      // T-14日（T-7日から7日戻してさらに前営業日調整）= 締切1週間前のアラート
       var t14 = new Date(t7.getTime());
-      t14.setDate(t14.getDate() - 14);
+      t14.setDate(t14.getDate() - 7);
       t14 = findPrevOpenDayDate_(t14);
 
       // lecDeadline7: T-7日が該当月なら作成
