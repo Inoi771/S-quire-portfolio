@@ -2095,7 +2095,7 @@ function checkAndSendDueLineMessages() {
 
     // 未送信のドキュメントを全件取得し、送信予定日時が過ぎたものをクライアント側でフィルタ
     var docs = firestoreQuery_('lineSchedules', [fsFilter_('sent', 'EQUAL', false)]);
-    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡', lecDeadline7: '講習日程締切のお知らせ', lecDeadline14: '講習 理科・社会 日程締切のお知らせ' };
+    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡', lecDeadline7: '講習日程締切 1週間前のお知らせ', lecDeadline14: '講習日程締切 2週間前のお知らせ' };
 
     var sentCount = 0;
     var errors = [];
