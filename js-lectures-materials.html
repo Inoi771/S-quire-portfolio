@@ -742,7 +742,7 @@
       }
 
       // 7. 切り取り線（テキストを線の上に配置）
-      html += '<div style="display:flex;align-items:center;margin:8px 0 4px;font-size:9pt;color:#444;">';
+      html += '<div style="display:flex;align-items:center;margin:8px 0 24px;font-size:9pt;color:#444;">';
       html += '<div style="flex:1;border-top:1px dashed #555;"></div>';
       html += '<span style="padding:0 8px;">✄ きりとりせん ✄</span>';
       html += '<div style="flex:1;border-top:1px dashed #555;"></div>';
@@ -965,7 +965,7 @@
           // 縦: ヘッダー 約22px + 記入欄 約42px = 約64px → 1辺64pxの正方形
           var cellSide = 64;
           var tableWidth = cellSide * subjects.length;
-          html += '<table style="border-collapse:collapse;font-size:9.5pt;table-layout:fixed;width:' + tableWidth + 'px;">';
+          html += '<table style="border-collapse:collapse;font-size:9.5pt;table-layout:fixed;width:' + tableWidth + 'px;margin:0 auto;">';
           html += '<tr>';
           subjects.forEach(function(s) {
             html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;width:' + cellSide + 'px;">' + escapeHtmlMat_(s) + '</th>';
