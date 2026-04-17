@@ -668,6 +668,9 @@
      * @return {string} HTML文字列
      */
     function buildMatOnePage_(gradeGroup, entries, campusName, campusCode, lecName, greeting, typeData, isSpring, pricingType) {
+      // 年度を現在の講習IDから抽出（"YYYY-season-XX" 形式）
+      var fy = parseInt((currentLectureId || '').split('-')[0], 10) || '';
+
       // 科目一覧を抽出（MAT_SUBJECT_ORDER_ 順）
       var subjectSet = {};
       (entries || []).forEach(function(e) { if (e.subject) subjectSet[e.subject] = true; });
@@ -729,6 +732,12 @@
         html += '<div style="margin-bottom:6px;">';
         html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:3px;">○時間・回数・料金</div>';
         html += buildMatLecPricingTable_(gradeRows, campusCode, isSpring);
+        html += '<ul style="font-size:9pt;line-height:1.5;margin:4px 0 0;padding-left:1.2em;">';
+        html += '<li>料金はすべて税込み料金です。</li>';
+        html += '<li>講習についてはすべて集団授業方式となります。</li>';
+        html += '<li>人数や時間割の関係上、クラス編成は当塾で決めさせていただきます。</li>';
+        html += '<li>希望者は前日までに下部の用紙を提出、またはお電話にてお申し込みください。</li>';
+        html += '</ul>';
         html += '</div>';
       }
 
@@ -738,7 +747,7 @@
       html += '</div>';
 
       // 8. 申込欄
-      html += buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName);
+      html += buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName, fy);
 
       html += '</div>';
       return html;
@@ -938,28 +947,36 @@
      * @param {string} lecName 講習名
      * @return {string} HTML文字列
      */
-    function buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName) {
-      var header = escapeHtmlMat_(lecName) + '　' + escapeHtmlMat_(campusName) + '　' + escapeHtmlMat_(gradeGroup.label) + '　生徒氏名________　印';
+    function buildMatApplicationSlip_(subjects, campusName, gradeGroup, lecName, fy) {
+      // 年度 + 講習名（例：「2025年度 夏期講習」）
+      var fullLecName = (fy ? fy + '年度 ' : '') + lecName;
+      // 生徒氏名欄を長くする
+      var nameLine = '生徒氏名______________________________';
+      var header = escapeHtmlMat_(fullLecName) + '　' + escapeHtmlMat_(campusName) + '　' + escapeHtmlMat_(gradeGroup.label) + '　' + nameLine + '　印';
+
       var html = '<div style="font-size:9.5pt;">';
 
       if (!gradeGroup.isHigh) {
-        // 中学生・小学生: 科目に○をつける形式
+        // 中学生・小学生: 科目に○をつける形式（正方形化）
         html += '<div style="margin-bottom:5px;">' + header + '</div>';
         if (subjects.length > 0) {
-          html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">';
+          // 縦: ヘッダー 約22px + 記入欄 約42px = 約64px → 1辺64pxの正方形
+          var cellSide = 64;
+          var tableWidth = cellSide * subjects.length;
+          html += '<table style="border-collapse:collapse;font-size:9.5pt;table-layout:fixed;width:' + tableWidth + 'px;">';
           html += '<tr>';
           subjects.forEach(function(s) {
-            html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;">' + escapeHtmlMat_(s) + '</th>';
+            html += '<th style="border:1px solid #555;padding:4px 6px;background:#f0f0f0;text-align:center;font-weight:bold;width:' + cellSide + 'px;">' + escapeHtmlMat_(s) + '</th>';
           });
           html += '</tr><tr>';
           subjects.forEach(function() {
-            html += '<td style="border:1px solid #555;padding:14px 6px;text-align:center;">&nbsp;</td>';
+            html += '<td style="border:1px solid #555;padding:14px 6px;text-align:center;width:' + cellSide + 'px;">&nbsp;</td>';
           });
           html += '</tr></table>';
         }
         html += '<div style="margin-top:4px;font-size:9pt;">受講する科目に○をつけ、各講師にお渡しください。</div>';
       } else {
-        // 高校生: 科目・希望回数・希望日程の3列テーブル
+        // 高校生: 科目・希望回数・希望日程の3列テーブル（レイアウトは元のまま）
         html += '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:5px;">';
         html += '<tr>';
         ['科目', '希望回数', '希望日程'].forEach(function(h) {
@@ -997,10 +1014,10 @@
       var MAT_HS_KEYS = ['ko1', 'ko2', 'ko3'];
       var isShozui = (String(campusCode) === '08');
 
-      // 価格フォーマット: 0 → 「無料」、正の値 → 「税抜き (税込み)」
+      // 価格フォーマット: 0 → 「無料」、正の値 → 「税込み料金 + 円」
       function fmtPrice_(val) {
         if (val <= 0) return '無料';
-        return val.toLocaleString() + ' (' + Math.floor(val * 1.1).toLocaleString() + ')';
+        return Math.floor(val * 1.1).toLocaleString() + '円';
       }
 
       // standard 行を元の順序で取得し、実効料金（勝瑞校高校生はshozui行）に解決する
