@@ -749,9 +749,33 @@
         return '<p style="color:#888;font-size:9.5pt;margin-bottom:8px;">（日程データがありません）</p>';
       }
 
+      // HP掲載用と共通の時刻・日付フォーマット関数をローカル定義（外部スコープに無いため ReferenceError 防止）
+      function endTime_(start, slots) {
+        var parts = (start || '00:00').split(':');
+        var h = parseInt(parts[0], 10) || 0;
+        var m = parseInt(parts[1], 10) || 0;
+        var totalMin = h * 60 + m + (slots || 0) * 10;
+        var eh = Math.floor(totalMin / 60);
+        var em = totalMin % 60;
+        return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
+      }
+      function fmtDates_(sortedDates) {
+        var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
+        var prevMonth = -1;
+        return sortedDates.map(function(d) {
+          var dt = new Date(d + 'T00:00:00');
+          var mo = dt.getMonth() + 1;
+          var day = dt.getDate();
+          var dow = DOW_[dt.getDay()];
+          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          prevMonth = mo;
+          return str;
+        }).join('・');
+      }
+
       var cellBase = 'border:1px solid black;padding:3px 6px;font-size:8.5px;vertical-align:middle;';
       var cellSubj = cellBase + 'width:56px;text-align:center;font-weight:bold;white-space:nowrap;';
-      var cellDate = cellBase + 'word-break:break-word;';
+      var cellDate = cellBase + 'white-space:nowrap;';
       var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
 
       // 科目ごとに (startTime, durationSlots) → dates[] のグループを作成
@@ -778,7 +802,8 @@
 
       var html = '<div style="margin-bottom:8px;">';
       html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:4px;">○講習日時</div>';
-      html += '<table style="width:100%;border-collapse:collapse;">';
+      // width:auto（既定）で、日付列の最長行に合わせてテーブル幅が自動調整される
+      html += '<table style="border-collapse:collapse;">';
       html += '<thead><tr>';
       html += '<th style="' + cellSubj + 'background:#f0f0f0;">科目</th>';
       html += '<th style="' + cellDate + 'background:#f0f0f0;text-align:center;font-weight:bold;">日程</th>';
@@ -1442,10 +1467,46 @@
         return s;
       }
 
+      // 日付列の最大幅を事前計算：校舎内の全学年・全教科・全時刻グループで最長の日程文字列に合わせる
+      var allDateStrsForMeasure_ = [];
+      MAT_WEB_GRADE_DEF_.forEach(function(gradeDef) {
+        var gradeEntries = allEntries.filter(function(e) {
+          return gradeDef.codes.indexOf(normGrade_(e.grade)) !== -1;
+        });
+        if (gradeEntries.length === 0) return;
+        gradeDef.subjects.forEach(function(subject) {
+          var subEntries = gradeEntries.filter(function(e) { return (e.subject || '') === subject; });
+          if (subEntries.length === 0) return;
+          var tgMap = {};
+          subEntries.forEach(function(e) {
+            var key = (e.startTime || '') + '_' + (e.durationSlots || 0);
+            if (!tgMap[key]) tgMap[key] = [];
+            if (tgMap[key].indexOf(e.date) === -1) tgMap[key].push(e.date);
+          });
+          Object.keys(tgMap).forEach(function(k) {
+            allDateStrsForMeasure_.push(fmtDates_(tgMap[k].slice().sort()));
+          });
+        });
+      });
+
+      // DOM測定で最長日程文字列のピクセル幅を取得（font-size:8.5px・テーブルと同じフォントで測定）
+      var dateColWidth_ = 0;
+      if (allDateStrsForMeasure_.length > 0) {
+        var measureSpan_ = document.createElement('span');
+        measureSpan_.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-size:8.5px;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;';
+        document.body.appendChild(measureSpan_);
+        allDateStrsForMeasure_.forEach(function(s) {
+          measureSpan_.textContent = s;
+          if (measureSpan_.offsetWidth > dateColWidth_) dateColWidth_ = measureSpan_.offsetWidth;
+        });
+        document.body.removeChild(measureSpan_);
+        dateColWidth_ += 14; // padding 6px*2 + border 1px*2 の分を加算
+      }
+
       // 共通CSSスタイル
       var cellBase = 'border:1px solid black;padding:3px 6px;font-size:8.5px;vertical-align:middle;';
       var cellSubject = cellBase + 'width:56px;text-align:center;font-weight:bold;white-space:nowrap;';
-      var cellDate = cellBase + 'word-break:break-word;';
+      var cellDate = cellBase + 'white-space:nowrap;' + (dateColWidth_ > 0 ? 'width:' + dateColWidth_ + 'px;' : '');
       var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
 
       var html = '';
@@ -1465,7 +1526,8 @@
         });
         if (gradeEntries.length === 0) return; // エントリなし → スキップ
 
-        html += '<table style="width:100%;border-collapse:collapse;border:2px solid black;margin-bottom:5px;">';
+        // width:auto（既定）で、日付列幅（事前計算済み）+ 教科列56px + 時間列104px に自動調整
+        html += '<table style="border-collapse:collapse;border:2px solid black;margin-bottom:5px;">';
 
         // 学年ヘッダー行
         html += '<thead>';
