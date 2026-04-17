@@ -1846,6 +1846,13 @@ function getScheduledLineMessages(year, month) {
       generateMonthlySchedule_(year, month);
       generateLectureDeadlineSchedules_(year, month);
       docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
+    } else {
+      // 通常スケジュールはあるが講習締切スケジュールだけ欠けている場合に補完
+      var hasLecDeadline = docs.some(function(d) { return d.type === 'lecDeadline7' || d.type === 'lecDeadline14'; });
+      if (!hasLecDeadline) {
+        generateLectureDeadlineSchedules_(year, month);
+        docs = firestoreQuery_('lineSchedules', [fsFilter_('yearMonth', 'EQUAL', yearMonth)]);
+      }
     }
 
     // 種別ごとに重複がある場合は最初の1件のみ採用（重複防止）
@@ -1915,6 +1922,7 @@ function resetAndRegenerateSchedule(year, month) {
     if (delWrites.length > 0) firestoreBatchWrite_(delWrites);
     // 再生成
     var created = generateMonthlySchedule_(year, month);
+    created += generateLectureDeadlineSchedules_(year, month);
     return { success: true, created: created, message: created + '件のスケジュールを再生成しました' };
   } catch(e) {
     Logger.log('❌ resetAndRegenerateSchedule エラー: ' + e);
