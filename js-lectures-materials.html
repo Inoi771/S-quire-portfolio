@@ -259,6 +259,7 @@
       var activePage = gradePages.find(function(p) { return p.tabId === matActiveGradeKey_; });
       var greeting = getMatGreeting_(activePage.gradeGroup.key);
       inner.innerHTML = buildMatOnePage_(activePage.gradeGroup, activePage.entries, activePage.campusName, activePage.campusCode, activePage.lecName, greeting, activePage.typeData, activePage.isSpring, activePage.pricingType);
+      applySchedulesInContainer_(inner);
       resizeMatPreview();
     }
 
@@ -395,6 +396,7 @@
           container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
           document.body.appendChild(container);
           container.innerHTML = pageHtml;
+          applySchedulesInContainer_(container);
 
           html2canvas(container, {
             scale: 2,
@@ -692,7 +694,7 @@
         if (gradeRows.length === 0) gradeRows = allRows;
       }
 
-      var html = '<div style="width:794px;min-height:1122px;padding:22px 30px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
+      var html = '<div style="width:794px;min-height:1123px;padding:35px 45px;box-sizing:border-box;display:flex;flex-direction:column;background:white;color:#111;font-family:inherit;">';
 
       // 1. ヘッダー
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;font-size:10.5pt;">';
@@ -711,10 +713,13 @@
       }
 
       // 4. 敬具
-      html += '<div style="text-align:right;font-size:10pt;margin-bottom:10px;">敬具</div>';
+      html += '<div style="text-align:right;font-size:10pt;margin-bottom:6px;">敬具</div>';
 
-      // 5. 日程表
+      // 5. 日程表（固定高さ 340px のゾーンに自動フィット・中央配置）
+      html += '<div class="mat-schedule-zone" style="width:100%;height:340px;overflow:hidden;margin-bottom:8px;">';
+      html += '<div class="mat-schedule-inner">';
       html += buildMatScheduleTable_(entries);
+      html += '</div></div>';
 
       // スペーサー（日程表と料金枠の間を広げる）
       html += '<div style="flex:1;min-height:8px;"></div>';
@@ -737,6 +742,98 @@
 
       html += '</div>';
       return html;
+    }
+
+    /**
+     * 日程表の文字サイズを固定フィールドに収まるよう自動調整する
+     * @param {Element} zone 固定サイズのコンテナ
+     * @param {Element} inner zone 内のスケール対象ラッパ
+     * @param {number} baseFontPx 基準フォントサイズ（px）
+     */
+    function applyScheduleAutoFit_(zone, inner, baseFontPx) {
+      if (!zone || !inner) return;
+
+      var zoneW = zone.clientWidth;
+      var zoneH = zone.clientHeight;
+      if (zoneW === 0 || zoneH === 0) return;
+
+      var base = baseFontPx || 8.5;
+      var scale = 1.0;
+
+      // まず基準サイズで描画
+      setScheduleFontScale_(inner, base, 1.0);
+
+      var naturalW = inner.scrollWidth;
+      var naturalH = inner.scrollHeight;
+
+      // 収まっているならそのまま。はみ出していたら縮小係数を計算
+      if (naturalW > zoneW || naturalH > zoneH) {
+        var sx = zoneW / naturalW;
+        var sy = zoneH / naturalH;
+        scale = Math.min(sx, sy) * 0.98; // 誤差吸収
+        setScheduleFontScale_(inner, base, scale);
+      }
+
+      // 中央配置（固定フィールド内で上下左右中央）
+      zone.style.display = 'flex';
+      zone.style.alignItems = 'center';
+      zone.style.justifyContent = 'center';
+    }
+
+    /**
+     * inner 内の日程表要素に対し、フォントサイズ・padding を等比スケールで適用する
+     * @param {Element} inner ラッパ要素
+     * @param {number} baseFontPx 基準フォント（px）
+     * @param {number} scale スケール係数
+     */
+    function setScheduleFontScale_(inner, baseFontPx, scale) {
+      if (!inner) return;
+      var fs = baseFontPx * scale;
+      var padV = 3 * scale;
+      var padH = 6 * scale;
+      var headerPadV = 4 * scale;
+      var headerPadH = 8 * scale;
+      var headerFs = 9.5 * scale;
+      var titleLabelFs = 10 * scale;
+
+      // テーブルセル全般
+      var cells = inner.querySelectorAll('th, td');
+      cells.forEach(function(cell) {
+        if (cell.getAttribute('colspan') === '3') {
+          // HP掲載用の学年ヘッダー行
+          cell.style.fontSize = headerFs + 'px';
+          cell.style.padding = headerPadV + 'px ' + headerPadH + 'px';
+        } else {
+          cell.style.fontSize = fs + 'px';
+          cell.style.padding = padV + 'px ' + padH + 'px';
+        }
+      });
+
+      // 申込用紙の「○講習日時」ラベル
+      var labels = inner.querySelectorAll('.mat-schedule-label');
+      labels.forEach(function(el) {
+        el.style.fontSize = titleLabelFs + 'px';
+      });
+    }
+
+    /**
+     * コンテナ内のすべての日程表ゾーンに自動フィットを適用する
+     * @param {Element} containerEl 検索対象コンテナ
+     */
+    function applySchedulesInContainer_(containerEl) {
+      if (!containerEl) return;
+
+      var matZones = containerEl.querySelectorAll('.mat-schedule-zone');
+      matZones.forEach(function(zone) {
+        var inner = zone.querySelector('.mat-schedule-inner');
+        applyScheduleAutoFit_(zone, inner, 8.5 * 1.15);
+      });
+
+      var webZones = containerEl.querySelectorAll('.mat-web-schedule-zone');
+      webZones.forEach(function(zone) {
+        var inner = zone.querySelector('.mat-web-schedule-inner');
+        applyScheduleAutoFit_(zone, inner, 8.5 * 1.15);
+      });
     }
 
     /**
@@ -800,8 +897,8 @@
         return '<p style="color:#888;font-size:9.5pt;margin-bottom:8px;">（日程データがありません）</p>';
       }
 
-      var html = '<div style="margin-bottom:8px;">';
-      html += '<div style="font-weight:bold;font-size:10pt;margin-bottom:4px;">○講習日時</div>';
+      var html = '<div>';
+      html += '<div class="mat-schedule-label" style="font-weight:bold;font-size:10pt;margin-bottom:4px;">○講習日時</div>';
       // width:auto（既定）で、日付列の最長行に合わせてテーブル幅が自動調整される
       html += '<table style="border-collapse:collapse;">';
       html += '<thead><tr>';
@@ -1150,6 +1247,7 @@
           container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
           document.body.appendChild(container);
           container.innerHTML = pageHtml;
+          applySchedulesInContainer_(container);
           html2canvas(container, { scale: 2, backgroundColor: '#ffffff', windowWidth: 840, useCORS: true }).then(function(canvas) {
             document.body.removeChild(container);
             canvases.push(canvas);
@@ -1414,6 +1512,7 @@
       }
 
       inner.innerHTML = buildWebPublishDocHTML(entries, campusCode);
+      applySchedulesInContainer_(inner);
       resizeMatWebPreview();
       setMatWebBtnsEnabled(true);
     }
@@ -1510,13 +1609,17 @@
       var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
 
       var html = '';
-      html += '<div style="width:794px;height:1123px;padding:20px 24px;box-sizing:border-box;background:white;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;overflow:hidden;">';
+      html += '<div style="width:794px;height:1123px;padding:32px 36px;box-sizing:border-box;background:white;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;overflow:hidden;">';
 
       // タイトル行
       html += '<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid black;padding-bottom:5px;margin-bottom:8px;">';
       html += '<div style="font-size:13px;font-weight:bold;">' + escapeHtmlMat_(fy + '年度　' + lecName + '　日程表') + '</div>';
       html += '<div style="font-size:11px;font-weight:bold;">' + escapeHtmlMat_(campusName) + '</div>';
       html += '</div>';
+
+      // 日程テーブル群を自動フィットゾーンで包む（A4残り高さ ≈ 1019px に内接）
+      html += '<div class="mat-web-schedule-zone" style="width:100%;height:1019px;overflow:hidden;">';
+      html += '<div class="mat-web-schedule-inner">';
 
       // 学年ごとの表を縦並びで出力
       MAT_WEB_GRADE_DEF_.forEach(function(gradeDef) {
@@ -1587,6 +1690,9 @@
         html += '</tbody></table>';
       });
 
+      // 自動フィットゾーンを閉じる
+      html += '</div></div>';
+
       html += '</div>';
       return html;
     }
@@ -1644,6 +1750,7 @@
       container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:"Meiryo","ヒラギノ角ゴ ProN W3","MS Gothic",sans-serif;font-size:10pt;';
       document.body.appendChild(container);
       container.innerHTML = pageHtml;
+      applySchedulesInContainer_(container);
 
       html2canvas(container, {
         scale: 2,
