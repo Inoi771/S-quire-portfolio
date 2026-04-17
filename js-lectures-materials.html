@@ -20,14 +20,15 @@
     var matHsShowPerCount_ = true;  // 回数別料金ページを含める
 
     // 学年グループ定義（PDFページ単位・申込欄の isHigh で高校生フォームに切替）
+    // codes: 実データに存在しうる学年値をすべて列挙（手動UIのラベル + 春期「新」接頭 + AIの2桁コード）
     var MAT_GRADE_GROUPS_ = [
-      { key: 'sho',  label: '小学生', codes: ['07','08','09','10','11','12'], isHigh: false },
-      { key: 'chu1', label: '中1',    codes: ['13'], isHigh: false },
-      { key: 'chu2', label: '中2',    codes: ['14'], isHigh: false },
-      { key: 'chu3', label: '中3',    codes: ['15'], isHigh: false },
-      { key: 'ko1',  label: '高1',    codes: ['16'], isHigh: true  },
-      { key: 'ko2',  label: '高2',    codes: ['17'], isHigh: true  },
-      { key: 'ko3',  label: '高3',    codes: ['18'], isHigh: true  }
+      { key: 'sho',  label: '小学生', codes: ['小','07','08','09','10','11','12'], isHigh: false },
+      { key: 'chu1', label: '中1',    codes: ['中1','新中1','13'], isHigh: false },
+      { key: 'chu2', label: '中2',    codes: ['中2','新中2','14'], isHigh: false },
+      { key: 'chu3', label: '中3',    codes: ['中3','新中3','15'], isHigh: false },
+      { key: 'ko1',  label: '高1',    codes: ['高1','新高1','16'], isHigh: true  },
+      { key: 'ko2',  label: '高2',    codes: ['高2','新高2','17'], isHigh: true  },
+      { key: 'ko3',  label: '高3',    codes: ['高3','新高3','18'], isHigh: true  }
     ];
 
     // 日程表での科目表示順
