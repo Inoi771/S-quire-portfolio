@@ -1193,7 +1193,7 @@
         container.innerHTML = '<p style="text-align:center;color:#999;font-size:13px;padding:20px;">この月のスケジュールがありません</p>';
         return;
       }
-      var typeLabels = { shitsucho: '👔 室長用', shimurocho: '👔 室長用', meeting: '📢 全体ミーティング', report: '📝 回数報告書', lecDeadline7: '📘 講習締切(当日)', lecDeadline14: '📘 講習締切(1週前)' };
+      var typeLabels = { shitsucho: '👔 室長用', shimurocho: '👔 室長用', meeting: '📢 全体ミーティング', report: '📝 回数報告書', lecDeadline7: '📘 講習締切 1週間前', lecDeadline14: '📘 講習締切 2週間前' };
       var html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
         '<tr style="background:#f5f5f5;font-weight:600;">' +
         '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #ddd;">種別</th>' +
@@ -1250,7 +1250,7 @@
           var m = result.messages.find(function(x) { return x.id === id; });
           if (!m) return;
           document.getElementById('schedulerEditId').value = m.id;
-          var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡', lecDeadline7: '📘 講習日程締切(当日)', lecDeadline14: '📘 講習日程締切(1週前)' };
+          var typeLabels = { shitsucho: '👔 室長用連絡', meeting: '📢 全体ミーティング連絡', report: '📝 回数報告書提出日連絡', lecDeadline7: '📘 講習日程締切 1週間前', lecDeadline14: '📘 講習日程締切 2週間前' };
           var msgType = m.type;
           var labelText = typeLabels[msgType] || msgType;
           if (m.lectureName) labelText += ' — ' + m.lectureName;
