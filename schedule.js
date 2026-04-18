@@ -36,33 +36,9 @@ function getFileByName(parentFolder, fileName) {
   }
 }
 
-/**
- * スケジュール用フォルダを取得
- * 「月間スケジュール」フォルダへのアクセスポイント
- * @return {Folder|null} 月間スケジュールフォルダ
- */
+// getScheduleFolder: Drive連携削除済み（データはFirestoreで管理）
 function getScheduleFolder() {
-  try {
-    var appFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-    
-    if (!appFolderId) {
-      Logger.log('❌ APP_FOLDER_IDが設定されていません');
-      return null;
-    }
-    
-    var rootFolder = DriveApp.getFolderById(appFolderId);
-    var scheduleFolder = getFolderByName(rootFolder, '月間スケジュール');
-    
-    if (!scheduleFolder) {
-      Logger.log('❌ 月間スケジュールフォルダが見つかりません');
-      return null;
-    }
-    
-    return scheduleFolder;
-  } catch (error) {
-    Logger.log('❌ getScheduleFolderエラー: ' + error);
-    return null;
-  }
+  return null;
 }
 
 /**

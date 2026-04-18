@@ -3089,31 +3089,6 @@ function saveLectureGradeSettings(lectureId, gradeSettingsJson) {
 }
 
 /**
- * 講習スケジュールデータ用スプレッドシートを取得または作成する
- * @return {Spreadsheet|null} スプレッドシート
- */
-function getLectureScheduleSpreadsheet_() {
-  var rootId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-  if (!rootId) return null;
-  var rootFolder = DriveApp.getFolderById(rootId);
-  var lecFolderIter = rootFolder.getFoldersByName('講習管理');
-  var lecFolder = lecFolderIter.hasNext() ? lecFolderIter.next() : rootFolder.createFolder('講習管理');
-  var ssIter = lecFolder.getFilesByName('スケジュールデータ');
-  if (ssIter.hasNext()) {
-    return SpreadsheetApp.openById(ssIter.next().getId());
-  }
-  var ss = SpreadsheetApp.create('スケジュールデータ');
-  DriveApp.getFileById(ss.getId()).moveTo(lecFolder);
-  var sheet = ss.getActiveSheet();
-  sheet.setName('スケジュール一覧');
-  // 日付列（D=4）と時刻列（E=5）をテキスト形式に設定（Sheetsによる自動変換防止）
-  sheet.getRange('D:D').setNumberFormat('@');
-  sheet.getRange('E:E').setNumberFormat('@');
-  sheet.appendRow(['entryId','lectureId','campusCode','date','startTime','durationSlots','subject','grade','teacherName','teacherEmail','classLabel','teacherId']);
-  return ss;
-}
-
-/**
  * GAS が Sheets から読んだ日付値を YYYY-MM-DD 文字列に正規化する内部ヘルパー
  * Sheets は "11:20" などの時刻文字列を自動的に時刻値（Dateオブジェクト）に変換するため
  * String() するだけでは "Tue Mar 03 2026..." のような形式になってしまう

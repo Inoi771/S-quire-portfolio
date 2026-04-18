@@ -208,33 +208,6 @@ function getOrCreateTabFolder(parentFolder, folderName) {
 }
 
 /**
- * 月間スケジュールフォルダの初期化
- * 今年度のフォルダを作成。1〜3月はカレンダー年≠年度のため次年度フォルダも作成。
- * 例: 4〜12月 → 今年度のみ / 1〜3月 → 今年度＋次年度（新年度の準備）
- * @param {Folder} scheduleFolder 月間スケジュールフォルダ
- */
-function initializeScheduleFolder(scheduleFolder) {
-  try {
-
-    var fiscalYear = getCurrentFiscalYear();
-    var calendarYear = new Date().getFullYear();
-
-    // 今年度フォルダを作成
-    var yearFolder = getOrCreateYearFolder(scheduleFolder, String(fiscalYear));
-    getOrCreateSpreadsheet(yearFolder, fiscalYear);
-
-    // 1〜3月（年度とカレンダー年がずれる期間）は次年度フォルダも作成
-    if (calendarYear !== fiscalYear) {
-      var nextYearFolder = getOrCreateYearFolder(scheduleFolder, String(calendarYear));
-      getOrCreateSpreadsheet(nextYearFolder, calendarYear);
-    }
-
-  } catch (error) {
-    Logger.log('❌ initializeScheduleFolderエラー: ' + error);
-  }
-}
-
-/**
  * 成績管理フォルダの初期化
  * 今年度のフォルダを作成。1〜3月はカレンダー年≠年度のため次年度フォルダも作成。
  * 例: 4〜12月 → 今年度のみ / 1〜3月 → 今年度＋次年度（新年度の準備）
@@ -351,47 +324,6 @@ function getOrCreateYearFolder(parentFolder, year) {
     return null;
   }
 }
-
-/**
- * 予定データシートを取得または作成
- * @param {Folder} yearFolder 年度フォルダ
- * @param {number} year 年度
- * @return {Spreadsheet} スプレッドシート
- */
-function getOrCreateSpreadsheet(yearFolder, year) {
-  try {
-    var sheetName = year + '年度_予定データ';
-    var file = getFileByName(yearFolder, sheetName);
-    
-    if (file) {
-      return SpreadsheetApp.openById(file.getId());
-    } else {
-      var ss = SpreadsheetApp.create(sheetName);
-      var createdFile = DriveApp.getFileById(ss.getId());
-      
-      createdFile.moveTo(yearFolder);
-      
-      var sheet = ss.getSheets()[0];
-      sheet.setName('予定一覧');
-      sheet.appendRow(['更新日時', '学校名', '予定種類', '月日', '詳細', '情報源']);
-      sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#43e97b').setFontColor('white');
-      
-      // 列幅設定
-      sheet.setColumnWidth(1, 150);  // 更新日時
-      sheet.setColumnWidth(2, 100);  // 学校名
-      sheet.setColumnWidth(3, 100);  // 予定種類
-      sheet.setColumnWidth(4, 80);   // 月日
-      sheet.setColumnWidth(5, 150);  // 詳細
-      sheet.setColumnWidth(6, 200);  // 情報源
-      
-      return ss;
-    }
-  } catch (error) {
-    Logger.log('❌ getOrCreateSpreadsheetエラー: ' + error);
-    return null;
-  }
-}
-
 
 /**
  * 成績データシート作成
