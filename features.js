@@ -3759,24 +3759,16 @@ function getFlyerImages() {
 }
 
 /**
- * Supabase Storage から画像を取得し base64 エンコードして返す
+ * チラシ画像の署名付きURLをブラウザに返す（ブラウザが Supabase から直接ダウンロード）
  * @aiCallable
- * @param {string} storageKey Supabase Storage 内のファイルパス（例: 'image.png'）
- * @return {Object} { success, base64, mimeType } または { success: false, error }
+ * @param {string} storageKey Supabase Storage 内のファイルパス（UUID + 拡張子）
+ * @return {Object} { success, url } または { success: false, error }
  */
 function getFlyerImageBase64(storageKey) {
   try {
     if (!storageKey) return { success: false, error: 'storageKey が空です' };
-    // 署名付きURL取得（有効期限1時間）
     var signedUrl = supabaseStorageSignedUrl_('flyer-images', storageKey, 3600);
-    // 画像をフェッチして base64 変換
-    var response = UrlFetchApp.fetch(signedUrl, { muteHttpExceptions: true });
-    if (response.getResponseCode() !== 200) {
-      throw new Error('画像取得失敗 (HTTP ' + response.getResponseCode() + ')');
-    }
-    var blob = response.getBlob();
-    var base64 = Utilities.base64Encode(blob.getBytes());
-    return { success: true, base64: base64, mimeType: blob.getContentType() };
+    return { success: true, url: signedUrl };
   } catch (error) {
     Logger.log('❌ getFlyerImageBase64エラー: ' + error);
     return { success: false, error: error.toString() };
@@ -3873,37 +3865,58 @@ function uploadFlyerImage(base64, fileName, mimeType) {
     var dotIdx = fileName.lastIndexOf('.');
     if (dotIdx !== -1) ext = fileName.substring(dotIdx);
 
-    // AIで画像を解析してファイル名・タグを自動生成（失敗しても元ファイル名で継続）
-    var aiFileName = '';
-    var aiTags = '';
-    try {
-      var metadata = analyzeUploadedImageMetadata_(base64, mimeType, fileName);
-      aiFileName = metadata.fileName || '';
-      aiTags = metadata.tags || '';
-    } catch (metaErr) {
-      Logger.log('⚠ uploadFlyerImage: 画像解析スキップ: ' + metaErr);
-    }
-
-    // 表示名: AI生成の日本語名 > 元ファイル名
-    var displayName = (aiFileName ? aiFileName + ext : fileName);
-    // storageKey: UUID + 拡張子（日本語を含まない）
+    // storageKey: UUID + 拡張子（Supabase Storage は日本語パス不可）
     var storageKey = Utilities.getUuid() + ext;
 
     // Supabase Storage にアップロード
     var bytes = Utilities.base64Decode(base64);
     supabaseStorageUpload_('flyer-images', storageKey, bytes, mimeType, false);
 
-    // タグと表示名を Firestore に保存
+    // Firestore に仮登録（originalName = 元ファイル名、tags は空）
+    // AI解析タグは analyzeFlyerImageMeta() でバックグラウンド更新する
     try {
-      saveFlyerImageTags(storageKey, aiTags, displayName);
+      saveFlyerImageTags(storageKey, '', fileName);
     } catch (tagErr) {
       Logger.log('⚠ uploadFlyerImage: タグ保存スキップ: ' + tagErr);
     }
 
-    return { success: true, fileId: storageKey, fileName: displayName };
+    return { success: true, fileId: storageKey, fileName: fileName };
   } catch (error) {
     Logger.log('❌ uploadFlyerImageエラー: ' + error);
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * アップロード後バックグラウンドで画像を AI 解析してタグ・表示名を更新する
+ * uploadFlyerImage() 成功後にフロントから fire-and-forget で呼ぶ
+ * タイムアウトや失敗は無視してよい（画像は既にアップロード済み）
+ * @param {string} storageKey Supabase Storage パス（UUID + 拡張子）
+ * @param {string} base64 base64エンコードされた画像データ
+ * @param {string} mimeType MIMEタイプ
+ */
+function analyzeFlyerImageMeta(storageKey, base64, mimeType) {
+  try {
+    if (!storageKey || !base64) return;
+    var dotIdx = storageKey.lastIndexOf('.');
+    var ext = dotIdx !== -1 ? storageKey.substring(dotIdx) : '';
+    var aiFileName = '';
+    var aiTags = '';
+    try {
+      var metadata = analyzeUploadedImageMetadata_(base64, mimeType, storageKey);
+      aiFileName = metadata.fileName || '';
+      aiTags = metadata.tags || '';
+    } catch (metaErr) {
+      Logger.log('⚠ analyzeFlyerImageMeta: Gemini解析スキップ: ' + metaErr);
+      return;
+    }
+    var updateData = { updatedAt: new Date().toISOString() };
+    if (aiTags) updateData.tags = aiTags;
+    if (aiFileName) updateData.originalName = aiFileName + ext;
+    firestoreUpdateFields_('imageTags', storageKey, updateData);
+    Logger.log('✅ analyzeFlyerImageMeta: ' + storageKey + ' → ' + (aiFileName + ext) + ' / ' + aiTags);
+  } catch (error) {
+    Logger.log('❌ analyzeFlyerImageMetaエラー: ' + error);
   }
 }
 
