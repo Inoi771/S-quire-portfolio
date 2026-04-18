@@ -2141,20 +2141,6 @@
     }
 
     function displayProfileInfo(profile) {
-      // プロフィール写真の表示
-      var photoImg = document.getElementById('profilePhotoImg');
-      var defaultIcon = document.getElementById('profileDefaultIcon');
-      if (photoImg && defaultIcon) {
-        if (profile.profilePhotoUrl) {
-          photoImg.src = profile.profilePhotoUrl;
-          photoImg.style.display = 'block';
-          defaultIcon.style.display = 'none';
-        } else {
-          photoImg.style.display = 'none';
-          defaultIcon.style.display = '';
-        }
-      }
-
       // ヘッダー表示
       document.getElementById('profileDisplayName').textContent = profile.displayName;
       document.getElementById('profileRegisteredEmail').textContent = '📧 ' + profile.registeredEmail;
@@ -2210,77 +2196,6 @@
       } else {
         profileMsgEl.innerHTML = '';
       }
-    }
-
-    // ===== 【6-B】プロフィール写真 =====
-
-    /**
-     * プロフィール写真アップロード用のファイル選択ダイアログを開く
-     */
-    function triggerProfilePhotoUpload() {
-      document.getElementById('profilePhotoInput').click();
-    }
-
-    /**
-     * プロフィール写真が選択されたときの処理
-     * 画像を200×200pxに圧縮してバックエンドへ送信する
-     */
-    function handleProfilePhotoChange(event) {
-      var file = event.target.files[0];
-      if (!file) return;
-      if (!file.type.startsWith('image/')) {
-        showToast('画像ファイルを選択してください', 'error');
-        return;
-      }
-
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        var img = new Image();
-        img.onload = function() {
-          // canvas で 200×200px に正方形クロップして圧縮
-          var canvas = document.createElement('canvas');
-          var size = 200;
-          canvas.width = size;
-          canvas.height = size;
-          var ctx = canvas.getContext('2d');
-          var srcMin = Math.min(img.width, img.height);
-          var sx = (img.width - srcMin) / 2;
-          var sy = (img.height - srcMin) / 2;
-          ctx.drawImage(img, sx, sy, srcMin, srcMin, 0, 0, size, size);
-
-          var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          var base64 = dataUrl.split(',')[1];
-
-          // プレビューを即時反映
-          var photoImg = document.getElementById('profilePhotoImg');
-          var defaultIcon = document.getElementById('profileDefaultIcon');
-          if (photoImg) {
-            photoImg.src = dataUrl;
-            photoImg.style.display = 'block';
-          }
-          if (defaultIcon) defaultIcon.style.display = 'none';
-
-          // バックエンドに保存
-          showToast('写真をアップロード中...', 'success');
-          google.script.run
-            .withSuccessHandler(function(result) {
-              if (result && result.success) {
-                showToast('写真を保存しました', 'success');
-              } else {
-                showToast('保存に失敗しました: ' + (result ? result.error : '不明なエラー'), 'error');
-              }
-            })
-            .withFailureHandler(function(err) {
-              showToast('エラーが発生しました', 'error');
-              console.error('saveProfilePhoto error:', err);
-            })
-            .saveProfilePhoto(base64, 'image/jpeg');
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-      // 同じファイルを再選択できるようにリセット
-      event.target.value = '';
     }
 
     function loadSubjectCheckboxes() {

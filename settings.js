@@ -434,30 +434,6 @@ function getUserProfile() {
     // 講習担当学年（ScriptProperties に保存）
     var lecGrades = safeJsonParse_(getUserProperty('LEC_GRADES'), []);
 
-    // プロフィール写真の取得（Drive の assets/profile-photos/{teacherId}.jpg）
-    var profilePhotoUrl = '';
-    try {
-      var photoRootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-      if (photoRootFolderId) {
-        var photoRootFolder = DriveApp.getFolderById(photoRootFolderId);
-        var photoAssetsFolders = photoRootFolder.getFoldersByName('assets');
-        if (photoAssetsFolders.hasNext()) {
-          var photoAssetsFolder = photoAssetsFolders.next();
-          var pfFolders = photoAssetsFolder.getFoldersByName('profile-photos');
-          if (pfFolders.hasNext()) {
-            var pfFolder = pfFolders.next();
-            var photoFiles = pfFolder.getFilesByName(teacherId + '.jpg');
-            if (photoFiles.hasNext()) {
-              var photoBlob = photoFiles.next().getBlob();
-              profilePhotoUrl = 'data:image/jpeg;base64,' + Utilities.base64Encode(photoBlob.getBytes());
-            }
-          }
-        }
-      }
-    } catch (photoErr) {
-      Logger.log('⚠ getUserProfile: プロフィール写真読み込みエラー: ' + photoErr);
-    }
-
     return {
       success: true,
       currentEmail: currentEmail,
@@ -473,8 +449,7 @@ function getUserProfile() {
       themeColor: themeColor,
       preferredCampuses: preferredCampuses,
       lecGrades: lecGrades,
-      lastUpdated: staff.updatedAt || staff.addedAt || new Date().toISOString(),
-      profilePhotoUrl: profilePhotoUrl
+      lastUpdated: staff.updatedAt || staff.addedAt || new Date().toISOString()
     };
 
   } catch (error) {
@@ -674,51 +649,6 @@ function saveLecGrades(grades) {
   }
 }
 
-/**
- * プロフィール写真を Drive に保存する
- * assets/profile-photos/{teacherId}.jpg として保存（既存ファイルは上書き）
- * @aiCallable
- * @param {string} base64Image base64エンコードされた画像データ
- * @param {string} mimeType 画像のMIMEタイプ（例: 'image/jpeg'）
- * @return {Object} { success, message, error }
- */
-function saveProfilePhoto(base64Image, mimeType) {
-  try {
-    var teacherId = getOrCreateTeacherId();
-    var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!rootFolderId) {
-      return { success: false, error: 'アプリフォルダが設定されていません' };
-    }
-
-    var rootFolder = DriveApp.getFolderById(rootFolderId);
-
-    // assets フォルダ取得/作成
-    var assetsFolders = rootFolder.getFoldersByName('assets');
-    var assetsFolder = assetsFolders.hasNext() ? assetsFolders.next() : rootFolder.createFolder('assets');
-
-    // profile-photos フォルダ取得/作成
-    var pfFolders = assetsFolder.getFoldersByName('profile-photos');
-    var pfFolder = pfFolders.hasNext() ? pfFolders.next() : assetsFolder.createFolder('profile-photos');
-
-    // 既存ファイルをゴミ箱へ
-    var fileName = teacherId + '.jpg';
-    var existing = pfFolder.getFilesByName(fileName);
-    while (existing.hasNext()) {
-      existing.next().setTrashed(true);
-    }
-
-    // 新規保存
-    var imageBytes = Utilities.base64Decode(base64Image);
-    var blob = Utilities.newBlob(imageBytes, mimeType || 'image/jpeg', fileName);
-    pfFolder.createFile(blob);
-
-    Logger.log('✓ saveProfilePhoto: 保存完了 teacherId=' + teacherId);
-    return { success: true, message: '写真を保存しました' };
-  } catch (error) {
-    Logger.log('❌ saveProfilePhotoエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
 
 /**
  * 教科リスト（選択肢）を取得
