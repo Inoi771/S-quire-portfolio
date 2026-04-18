@@ -658,14 +658,6 @@ function addEmailToTeacher(newEmail) {
       Logger.log('⚠ addEmailToTeacher: allowedUsers 登録失敗: ' + fsErr);
     }
 
-    // Drive 共有フォルダにも追加
-    try {
-      var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-      if (folderId) DriveApp.getFolderById(folderId).addEditor(newEmail);
-    } catch (driveErr) {
-      Logger.log('⚠ addEmailToTeacher: Drive 共有追加失敗: ' + driveErr);
-    }
-
     return { success: true, message: 'メールアドレスを追加しました', emails: staff.emails.slice() };
   } catch (error) {
     Logger.log('❌ addEmailToTeacherエラー: ' + error);
@@ -711,14 +703,6 @@ function removeEmailFromTeacher(emailToRemove) {
       firestoreDelete_('allowedUsers', emailToRemove);
     } catch (fsErr) {
       Logger.log('⚠ removeEmailFromTeacher: allowedUsers 削除失敗: ' + fsErr);
-    }
-
-    // Drive 共有フォルダからも削除
-    try {
-      var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-      if (folderId) DriveApp.getFolderById(folderId).removeEditor(emailToRemove);
-    } catch (driveErr) {
-      Logger.log('⚠ removeEmailFromTeacher: Drive 共有削除失敗: ' + driveErr);
     }
 
     return { success: true, message: 'メールアドレスを削除しました', emails: staff.emails.slice() };
@@ -904,21 +888,7 @@ function initFirestoreAllowedUsers() {
       Logger.log('⚠ initFirestoreAllowedUsers: staffs 取得失敗: ' + staffErr);
     }
 
-    // 3. Drive共有フォルダのエディター一覧からも取得
-    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (folderId) {
-      try {
-        var folder = DriveApp.getFolderById(folderId);
-        folder.getEditors().forEach(function(user) {
-          var em = user.getEmail().toLowerCase();
-          if (em && emails.indexOf(em) === -1) emails.push(em);
-        });
-      } catch (e) {
-        Logger.log('⚠ initFirestoreAllowedUsers: Drive取得失敗: ' + e);
-      }
-    }
-
-    // 4. Firestoreに一括登録
+    // 3. Firestoreに一括登録
     var now = new Date().toISOString();
     var registered = 0;
     var skipped = 0;

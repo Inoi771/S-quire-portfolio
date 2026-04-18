@@ -149,138 +149,6 @@ function deleteScriptPropertyFromGUI(key) {
   }
 }
 
-/**
- * Google Drive フォルダ内を探索（Admin のみ）
- * @param {string} folderId フォルダID（未指定ならルート）
- * @return {Object} { success, folders, files, folderName, folderId, error }
- */
-function getDriveContents(folderId) {
-  try {
-    if (!isAdmin()) {
-      return { success: false, error: 'Admin のみアクセス可能' };
-    }
-    
-    if (!folderId) {
-      folderId = DriveApp.getRootFolder().getId();
-    }
-    
-    var folder = DriveApp.getFolderById(folderId);
-    var contents = {
-      folders: [],
-      files: [],
-      folderName: folder.getName(),
-      folderId: folderId
-    };
-    
-    // サブフォルダを取得
-    var subFolders = folder.getFolders();
-    while (subFolders.hasNext()) {
-      var subFolder = subFolders.next();
-      contents.folders.push({
-        name: subFolder.getName(),
-        id: subFolder.getId(),
-        type: 'folder'
-      });
-    }
-    
-    // ファイルを取得
-    var files = folder.getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      contents.files.push({
-        name: file.getName(),
-        id: file.getId(),
-        type: file.getMimeType(),
-        size: file.getSize(),
-        modifiedDate: file.getLastUpdated().toISOString(),
-        url: file.getUrl()
-      });
-    }
-    
-    Logger.log('✓ getDriveContents: ' + contents.folders.length + ' フォルダ, ' + contents.files.length + ' ファイルを取得');
-
-    return { success: true, folders: contents.folders, files: contents.files, folderName: contents.folderName, folderId: contents.folderId };
-    
-  } catch (error) {
-    Logger.log('❌ getDriveContentsエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * PDF を Google Drive にアップロード（Admin のみ）
- * @param {string} pdfBase64 Base64 エンコードされた PDF
- * @param {string} fileName ファイル名
- * @param {string} targetFolderId アップロード先フォルダID
- * @return {Object} { success, message, fileId, fileName, url, error }
- */
-function uploadPDFToFolder(pdfBase64, fileName, targetFolderId) {
-  try {
-    if (!isAdmin()) {
-      return { success: false, error: 'Admin のみアクセス可能' };
-    }
-    
-    if (!targetFolderId) {
-      targetFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID) || DriveApp.getRootFolder().getId();
-    }
-    
-    var folder = DriveApp.getFolderById(targetFolderId);
-    
-    // Base64 をデコード
-    var decodedBytes = Utilities.newBlob(Utilities.base64Decode(pdfBase64), 'application/pdf').getBytes();
-    var blob = Utilities.newBlob(decodedBytes, 'application/pdf', fileName);
-    
-    var file = folder.createFile(blob);
-    
-    logAdminAction('uploadPDFToFolder', {
-      fileName: fileName,
-      folderId: targetFolderId,
-      fileId: file.getId()
-    });
-    
-    
-    return { 
-      success: true, 
-      message: 'ファイルをアップロードしました',
-      fileId: file.getId(),
-      fileName: file.getName(),
-      url: file.getUrl()
-    };
-    
-  } catch (error) {
-    Logger.log('❌ uploadPDFToFolderエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * Google Drive のファイルを削除（ゴミ箱へ）（Admin のみ）
- * @param {string} fileId 削除するファイルID
- * @return {Object} { success, message, error }
- */
-function deleteFileFromDrive(fileId) {
-  try {
-    if (!isAdmin()) {
-      return { success: false, error: 'Admin のみアクセス可能' };
-    }
-    
-    var file = DriveApp.getFileById(fileId);
-    var fileName = file.getName();
-    
-    file.setTrashed(true);
-    
-    logAdminAction('deleteFileFromDrive', {
-      fileId: fileId,
-      fileName: fileName
-    });
-    
-    return { success: true, message: 'ファイルを削除しました' };
-    
-  } catch (error) {
-    Logger.log('❌ deleteFileFromDriveエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
 
 // ========================================
 // 【セクション11】フォルダ・シート自動初期化
@@ -336,33 +204,6 @@ function getOrCreateTabFolder(parentFolder, folderName) {
   } catch (error) {
     Logger.log('❌ getOrCreateTabFolderエラー: ' + error);
     return null;
-  }
-}
-
-/**
- * 月間スケジュールフォルダの初期化
- * 今年度のフォルダを作成。1〜3月はカレンダー年≠年度のため次年度フォルダも作成。
- * 例: 4〜12月 → 今年度のみ / 1〜3月 → 今年度＋次年度（新年度の準備）
- * @param {Folder} scheduleFolder 月間スケジュールフォルダ
- */
-function initializeScheduleFolder(scheduleFolder) {
-  try {
-
-    var fiscalYear = getCurrentFiscalYear();
-    var calendarYear = new Date().getFullYear();
-
-    // 今年度フォルダを作成
-    var yearFolder = getOrCreateYearFolder(scheduleFolder, String(fiscalYear));
-    getOrCreateSpreadsheet(yearFolder, fiscalYear);
-
-    // 1〜3月（年度とカレンダー年がずれる期間）は次年度フォルダも作成
-    if (calendarYear !== fiscalYear) {
-      var nextYearFolder = getOrCreateYearFolder(scheduleFolder, String(calendarYear));
-      getOrCreateSpreadsheet(nextYearFolder, calendarYear);
-    }
-
-  } catch (error) {
-    Logger.log('❌ initializeScheduleFolderエラー: ' + error);
   }
 }
 
@@ -483,47 +324,6 @@ function getOrCreateYearFolder(parentFolder, year) {
     return null;
   }
 }
-
-/**
- * 予定データシートを取得または作成
- * @param {Folder} yearFolder 年度フォルダ
- * @param {number} year 年度
- * @return {Spreadsheet} スプレッドシート
- */
-function getOrCreateSpreadsheet(yearFolder, year) {
-  try {
-    var sheetName = year + '年度_予定データ';
-    var file = getFileByName(yearFolder, sheetName);
-    
-    if (file) {
-      return SpreadsheetApp.openById(file.getId());
-    } else {
-      var ss = SpreadsheetApp.create(sheetName);
-      var createdFile = DriveApp.getFileById(ss.getId());
-      
-      createdFile.moveTo(yearFolder);
-      
-      var sheet = ss.getSheets()[0];
-      sheet.setName('予定一覧');
-      sheet.appendRow(['更新日時', '学校名', '予定種類', '月日', '詳細', '情報源']);
-      sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#43e97b').setFontColor('white');
-      
-      // 列幅設定
-      sheet.setColumnWidth(1, 150);  // 更新日時
-      sheet.setColumnWidth(2, 100);  // 学校名
-      sheet.setColumnWidth(3, 100);  // 予定種類
-      sheet.setColumnWidth(4, 80);   // 月日
-      sheet.setColumnWidth(5, 150);  // 詳細
-      sheet.setColumnWidth(6, 200);  // 情報源
-      
-      return ss;
-    }
-  } catch (error) {
-    Logger.log('❌ getOrCreateSpreadsheetエラー: ' + error);
-    return null;
-  }
-}
-
 
 /**
  * 成績データシート作成
@@ -1442,11 +1242,6 @@ function scheduledInitializeSheets() {
       var _ny = _cm === 12 ? _cy + 1 : _cy, _nm = _cm === 12 ? 1 : _cm + 1;
       generateMonthlySchedule_(_ny, _nm);
     } catch(e) { Logger.log('⚠ LINEスケジュール自動生成: ' + e); }
-
-    // Firestoreバックアップ（backup.js）
-    try {
-      runFirestoreBackup();
-    } catch(e) { Logger.log('⚠ Firestoreバックアップ: ' + e); }
 
     // Supabase停止防止（7日間アクセスなしで停止されるため毎日軽量クエリを実行）
     try {

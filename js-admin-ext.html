@@ -704,94 +704,6 @@
       });
     }
 
-    function exploreDriveFolder() {
-      var folderId = document.getElementById('folderIdInput').value.trim() || '';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.success) {
-            displayDriveContents(result);
-          } else {
-            showMessage('adminMessage', '❌ ' + result.error, 'error');
-          }
-        })
-        .getDriveContents(folderId);
-    }
-    
-    function displayDriveContents(result) {
-      // フォルダ表示
-      var folderContainer = document.getElementById('driveFoldersList');
-      var folderHtml = '';
-      result.folders.forEach(function(folder) {
-        folderHtml += '<div class="drive-item">' +
-                      '<div><strong>' + escapeHtml_(folder.name) + '</strong><br><small style="color: #999;">' + escapeHtml_(folder.id) + '</small></div>' +
-                      '<button onclick="openDriveFolder(\'' + escapeHtml_(folder.id) + '\')">開く</button>' +
-                      '</div>';
-      });
-      folderContainer.innerHTML = folderHtml || '<p style="text-align: center; color: #999;">フォルダなし</p>';
-
-      // ファイル表示
-      var fileContainer = document.getElementById('driveFilesList');
-      var fileHtml = '';
-      result.files.forEach(function(file) {
-        fileHtml += '<div class="drive-item">' +
-                    '<div><strong>' + escapeHtml_(file.name) + '</strong><br><small style="color: #999;">' + (file.size / 1024).toFixed(2) + ' KB</small></div>' +
-                    '<button onclick="deleteFile(\'' + escapeHtml_(file.id) + '\')">削除</button>' +
-                    '</div>';
-      });
-      fileContainer.innerHTML = fileHtml || '<p style="text-align: center; color: #999;">ファイルなし</p>';
-    }
-    
-    function openDriveFolder(folderId) {
-      document.getElementById('folderIdInput').value = folderId;
-      exploreDriveFolder();
-    }
-    
-    function deleteFile(fileId) {
-      appConfirm('ファイルを削除しますか？（ゴミ箱に移動）').then(function(ok) {
-        if (!ok) return;
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (result.success) {
-              showMessage('adminMessage', '✓ ファイルを削除しました', 'success');
-              exploreDriveFolder();
-            } else {
-              showMessage('adminMessage', '❌ ' + result.error, 'error');
-            }
-          })
-          .deleteFileFromDrive(fileId);
-      });
-    }
-    
-    function uploadPDFFile() {
-      var fileInput = document.getElementById('pdfFileInput');
-      var file = fileInput.files[0];
-      
-      if (!file) {
-        showMessage('adminMessage', '❌ ファイルを選択してください', 'error');
-        return;
-      }
-      
-      var reader = new FileReader();
-      reader.onload = function(event) {
-        var base64 = event.target.result.split(',')[1];
-        
-        google.script.run
-          .withSuccessHandler(function(result) {
-            if (result.success) {
-              showMessage('adminMessage', '✓ ファイルをアップロードしました', 'success');
-              fileInput.value = '';
-              exploreDriveFolder();
-            } else {
-              showMessage('adminMessage', '❌ ' + result.error, 'error');
-            }
-          })
-          .uploadPDFToFolder(base64, file.name, '');
-      };
-      
-      reader.readAsDataURL(file);
-    }
-
     function loadLogsTab() {
       google.script.run
         .withSuccessHandler(function(info) {
@@ -987,28 +899,6 @@
           })
           [fn]();
       });
-    }
-
-    /** 今すぐバックアップを実行する */
-    function runManualBackup() {
-      var btn = document.getElementById('backupRunBtn');
-      var msgEl = document.getElementById('backupStatusMsg');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ バックアップ中...'; }
-      if (msgEl) { msgEl.textContent = '⏳ Firestoreからデータを取得してスプレッドシートに書き込んでいます...'; msgEl.style.color = '#555'; }
-      google.script.run
-        .withSuccessHandler(function(r) {
-          if (btn) { btn.disabled = false; btn.textContent = '💾 今すぐバックアップ'; }
-          if (msgEl) {
-            msgEl.textContent = r.success ? '✅ ' + r.message : '❌ ' + (r.error || '不明なエラー');
-            msgEl.style.color = r.success ? '#2e7d32' : '#c62828';
-          }
-        })
-        .withFailureHandler(function(e) {
-          if (btn) { btn.disabled = false; btn.textContent = '💾 今すぐバックアップ'; }
-          if (msgEl) { msgEl.textContent = '❌ エラー: ' + e.message; msgEl.style.color = '#c62828'; }
-          console.error(e);
-        })
-        .runFirestoreBackup();
     }
 
     /**

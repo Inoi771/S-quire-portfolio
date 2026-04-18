@@ -2291,53 +2291,6 @@ function getStudentPlacementData(year) {
   }
 }
 
-/**
- * 生徒成績表PDFをDriveの 成績表/{year}/{校舎名}/ フォルダに保存する
- * @aiCallable
- * @param {number} year 年度
- * @param {string} campusName 校舎名（フォルダ名として使用）
- * @param {string} studentName 生徒名（ファイル名として使用）
- * @param {string} pdfBase64 PDFのbase64文字列
- * @return {Object} {success, fileId, fileName, message}
- */
-function saveGradeReportPdf(year, campusName, studentName, pdfBase64) {
-  try {
-    var rootFolderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!rootFolderId) return { success: false, error: 'APP_FOLDER_IDが未設定' };
-    var rootFolder = DriveApp.getFolderById(rootFolderId);
-    var reportsFolder = getOrCreateTabFolder(rootFolder, '成績表');
-    var yearFolder = getOrCreateYearFolder(reportsFolder, year);
-
-    // 校舎名サブフォルダを取得または作成
-    var campusFolder;
-    var subFolders = yearFolder.getFoldersByName(campusName);
-    if (subFolders.hasNext()) {
-      campusFolder = subFolders.next();
-    } else {
-      campusFolder = yearFolder.createFolder(campusName);
-    }
-
-    // 同名ファイルが既にあれば上書き（ゴミ箱へ）
-    var fileName = studentName + '.pdf';
-    var existing = campusFolder.getFilesByName(fileName);
-    while (existing.hasNext()) {
-      existing.next().setTrashed(true);
-    }
-
-    var pdfBlob = Utilities.newBlob(
-      Utilities.base64Decode(pdfBase64),
-      'application/pdf',
-      fileName
-    );
-    var file = campusFolder.createFile(pdfBlob);
-
-    return { success: true, fileId: file.getId(), fileName: fileName, message: fileName + ' を保存しました' };
-  } catch (error) {
-    Logger.log('❌ saveGradeReportPdfエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================
