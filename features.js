@@ -3724,7 +3724,9 @@ function getLectureTeachers() {
 /**
  * チラシ用画像一覧を Supabase Storage の flyer-images バケットから取得する
  * @aiCallable
- * @return {Object} { success, images: [{id, name, mimeType}] }
+ * @return {Object} { success, images: [{id, name, mimeType, tags}] }
+ *   id:   UUID（storageKey、APIやキャッシュに使用）
+ *   name: 日本語表示名（Firestoreの originalName、なければUUID）
  */
 function getFlyerImages() {
   try {
@@ -3741,9 +3743,14 @@ function getFlyerImages() {
       if (!mimeType) return;
       images.push({ id: f.name, name: f.name, mimeType: mimeType });
     });
+    // Firestore からメタ情報取得（tags と originalName）
+    var tagMap = getAllFlyerImageTags_(); // {uuid: {tags, originalName}}
+    images.forEach(function(img) {
+      var meta = tagMap[img.id] || {};
+      img.tags = meta.tags || '';
+      img.name = meta.originalName || img.id; // 日本語表示名（なければUUID）
+    });
     images.sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
-    var tagMap = getAllFlyerImageTags_();
-    images.forEach(function(img) { img.tags = tagMap[img.id] || ''; });
     return { success: true, images: images };
   } catch (error) {
     Logger.log('❌ getFlyerImagesエラー: ' + error);
@@ -3846,6 +3853,8 @@ function analyzeUploadedImageMetadata_(base64, mimeType, originalFileName) {
  * @param {string} fileName ファイル名（拡張子込み）
  * @param {string} mimeType MIMEタイプ（例: image/jpeg）
  * @return {Object} { success, fileId, fileName } または { success: false, error }
+ *   fileId:   UUID（storageKey）
+ *   fileName: 日本語表示名（AIが生成した名前 または 元ファイル名）
  */
 function uploadFlyerImage(base64, fileName, mimeType) {
   try {
@@ -3875,21 +3884,23 @@ function uploadFlyerImage(base64, fileName, mimeType) {
       Logger.log('⚠ uploadFlyerImage: 画像解析スキップ: ' + metaErr);
     }
 
-    // ファイル名を決定（AI生成 > 元ファイル名）
-    var saveFileName = (aiFileName ? aiFileName + ext : fileName);
+    // 表示名: AI生成の日本語名 > 元ファイル名
+    var displayName = (aiFileName ? aiFileName + ext : fileName);
+    // storageKey: UUID + 拡張子（日本語を含まない）
+    var storageKey = Utilities.getUuid() + ext;
 
-    // Supabase Storage にアップロード（同名ファイルは上書き）
+    // Supabase Storage にアップロード
     var bytes = Utilities.base64Decode(base64);
-    supabaseStorageUpload_('flyer-images', saveFileName, bytes, mimeType, true);
+    supabaseStorageUpload_('flyer-images', storageKey, bytes, mimeType, false);
 
-    // タグを保存（storageKey = saveFileName）
+    // タグと表示名を Firestore に保存
     try {
-      saveFlyerImageTags(saveFileName, aiTags);
+      saveFlyerImageTags(storageKey, aiTags, displayName);
     } catch (tagErr) {
       Logger.log('⚠ uploadFlyerImage: タグ保存スキップ: ' + tagErr);
     }
 
-    return { success: true, fileId: saveFileName, fileName: saveFileName };
+    return { success: true, fileId: storageKey, fileName: displayName };
   } catch (error) {
     Logger.log('❌ uploadFlyerImageエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -3940,20 +3951,31 @@ function getFlyerImageTagSheet_() {
 /**
  * チラシ画像の説明タグを保存する（upsert）
  * @aiCallable
- * @param {string} storageKey Supabase Storage パス（例: 'image.png'）
- * @param {string} tags カンマ区切りの説明タグ（例: "桜、青空、躍動感"）
+ * @param {string} storageKey Supabase Storage パス（UUID + 拡張子）
+ * @param {string} tags 読点区切りの説明タグ（例: "桜、青空、躍動感"）
+ * @param {string} [originalName] 日本語表示名（省略時はタグのみ更新。originalName は保持される）
  * @return {Object} { success, message } または { success: false, error }
  */
-function saveFlyerImageTags(storageKey, tags) {
+function saveFlyerImageTags(storageKey, tags, originalName) {
   try {
     if (!storageKey) return { success: false, error: 'storageKey が空です' };
     var tagsStr = (tags || '').trim();
-    firestoreSet_('imageTags', storageKey, {
-      fileId: storageKey,
-      fileName: storageKey,
-      tags: tagsStr,
-      updatedAt: new Date().toISOString()
-    });
+    if (originalName !== undefined) {
+      // 新規作成・移行時: originalName 含む全フィールドを書き込む
+      firestoreSet_('imageTags', storageKey, {
+        fileId: storageKey,
+        fileName: storageKey,
+        originalName: originalName,
+        tags: tagsStr,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      // タグのみ更新: originalName を消さないよう部分更新
+      firestoreUpdateFields_('imageTags', storageKey, {
+        tags: tagsStr,
+        updatedAt: new Date().toISOString()
+      });
+    }
     return { success: true, message: 'タグを保存しました' };
   } catch (error) {
     Logger.log('❌ saveFlyerImageTagsエラー: ' + error);
@@ -3962,15 +3984,15 @@ function saveFlyerImageTags(storageKey, tags) {
 }
 
 /**
- * 画像タグシートから全タグを一括取得してマップで返す内部ヘルパー
- * @return {Object} { fileId: tags, ... }
+ * Firestore imageTags を全件取得してマップで返す内部ヘルパー
+ * @return {Object} { uuid: { tags: string, originalName: string }, ... }
  */
 function getAllFlyerImageTags_() {
   var map = {};
   try {
     var docs = firestoreQuery_('imageTags', []);
     docs.forEach(function(doc) {
-      if (doc.fileId) map[doc.fileId] = doc.tags || '';
+      if (doc.fileId) map[doc.fileId] = { tags: doc.tags || '', originalName: doc.originalName || '' };
     });
   } catch (e) {
     Logger.log('⚠ getAllFlyerImageTags_: ' + e);
@@ -5416,18 +5438,21 @@ function generateImageWithImagen(japanesePrompt, aspectRatio, conversationHistor
     } catch (metaErr) {
       Logger.log('⚠ メタデータ生成スキップ: ' + metaErr);
     }
-    var fileName = (autoFileName ? autoFileName : ('AI生成_' + timestamp)) + ext;
+    // displayName: 日本語表示名（AI生成 > フォールバック）
+    var displayName = (autoFileName ? autoFileName : ('AI生成_' + timestamp)) + ext;
+    // storageKey: UUID + 拡張子（Supabase Storage は日本語パス不可）
+    var storageKey = Utilities.getUuid() + ext;
 
     var bytes = Utilities.base64Decode(base64Data);
-    supabaseStorageUpload_('flyer-images', fileName, bytes, mimeType, false);
+    supabaseStorageUpload_('flyer-images', storageKey, bytes, mimeType, false);
 
-    // 5. 画像タグを自動生成したキーワードで保存（storageKey = fileName）
-    saveFlyerImageTags(fileName, autoTags || japanesePrompt);
+    // 5. タグと表示名を Firestore に保存
+    saveFlyerImageTags(storageKey, autoTags || japanesePrompt, displayName);
 
     return {
       success: true,
-      fileId: fileName,
-      fileName: fileName,
+      fileId: storageKey,
+      fileName: displayName,
       base64: base64Data,
       mimeType: mimeType,
       englishPrompt: englishPrompt
