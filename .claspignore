@@ -15,3 +15,5 @@ scripts/**
 static/**
 public/**
 .github/**
+workers/**
+wrangler.toml
