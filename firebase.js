@@ -144,6 +144,34 @@ function firestoreSet_(collection, docId, data) {
 }
 
 /**
+ * Firestoreドキュメントの指定フィールドだけを部分更新する
+ * updateMask を使用するため、指定外フィールドは保持される
+ * @param {string} collection コレクション名
+ * @param {string} docId      ドキュメントID
+ * @param {Object} data       更新するフィールドのみを含むオブジェクト
+ */
+function firestoreUpdateFields_(collection, docId, data) {
+  var token = getFirestoreAccessToken_();
+  var fieldPaths = Object.keys(data).map(function(k) {
+    return 'updateMask.fieldPaths=' + encodeURIComponent(k);
+  }).join('&');
+  var url = firestoreBaseUrl_() + '/' + collection + '/' + encodeURIComponent(docId) + '?' + fieldPaths;
+  var response = UrlFetchApp.fetch(url, {
+    method: 'patch',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify({ fields: toFirestoreFields_(data) }),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  if (code >= 400) {
+    throw new Error('Firestore部分更新エラー(' + code + '): ' + response.getContentText());
+  }
+}
+
+/**
  * Firestoreからドキュメントを1件取得
  * @param {string} collection コレクション名
  * @param {string} docId      ドキュメントID
