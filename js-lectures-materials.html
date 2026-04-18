@@ -102,9 +102,6 @@
           .getLecturePricingConfig();
       }
 
-      // 保存済みファイル一覧を初期化
-      loadDistributionFilesList();
-
       // リサイズリスナー（1回のみ登録）
       if (!window._matResizeListenerAdded) {
         window.addEventListener('resize', resizeMatPreview);
@@ -133,9 +130,6 @@
     function updateMatPreviewOnCampusChange() {
       var lectureId = currentLectureId;
       var campusCode = document.getElementById('mat-campus-select').value;
-
-      // ファイル一覧を更新（校舎変更のたびに再取得）
-      loadDistributionFilesList();
 
       if (!lectureId || !campusCode) {
         updateMatPreview();
