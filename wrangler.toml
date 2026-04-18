@@ -1,0 +1,9 @@
+name = "s-quire-api"
+main = "workers/src/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "8dcb25efee404474a9e1f948d59bb477"
+preview_id = "8dcb25efee404474a9e1f948d59bb477"
