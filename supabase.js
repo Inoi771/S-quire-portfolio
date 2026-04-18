@@ -268,8 +268,8 @@ function supabaseStorageSignedUrl_(bucket, path, expiresIn) {
   var result = body ? JSON.parse(body) : {};
   var signedUrl = result.signedURL || result.signedUrl || '';
   if (!signedUrl) throw new Error('署名付きURLが空でした: ' + body);
-  // 相対パスの場合はベースURLを付ける
-  if (signedUrl.charAt(0) === '/') signedUrl = config.url + signedUrl;
+  // 相対パスの場合はベースURLを付ける（Supabase は /object/sign/... を返すため /storage/v1 を補う）
+  if (signedUrl.charAt(0) === '/') signedUrl = config.url + '/storage/v1' + signedUrl;
   return signedUrl;
 }
 
