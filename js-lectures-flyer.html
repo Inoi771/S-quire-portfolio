@@ -687,6 +687,8 @@
               if (result.success) {
                 lastUploadedId = result.fileId;
                 uploaded++;
+                // アップロード成功後、AI解析をバックグラウンドで実行（タグ・表示名を後から更新）
+                google.script.run.analyzeFlyerImageMeta(result.fileId, base64, file.type);
               }
               uploadNext(idx + 1);
             })
@@ -765,11 +767,10 @@
       if (preview) { preview.style.display = 'none'; }
       google.script.run
         .withSuccessHandler(function(result) {
-          if (result.success && result.base64) {
-            var dataUrl = 'data:' + result.mimeType + ';base64,' + result.base64;
-            flyerImageCache[fileId] = dataUrl;
-            flyerImageBase64 = dataUrl;
-            if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+          if (result.success && result.url) {
+            flyerImageCache[fileId] = result.url;
+            flyerImageBase64 = result.url;
+            if (preview) { preview.src = result.url; preview.style.display = 'block'; }
           }
         })
         .withFailureHandler(function(err) { console.error('画像取得失敗:', err); })
@@ -826,12 +827,11 @@
       } else {
         google.script.run
           .withSuccessHandler(function(result) {
-            if (result.success && result.base64) {
-              var dataUrl = 'data:' + result.mimeType + ';base64,' + result.base64;
-              flyerImageCache[bestId] = dataUrl;
-              flyerImageBase64 = dataUrl;
+            if (result.success && result.url) {
+              flyerImageCache[bestId] = result.url;
+              flyerImageBase64 = result.url;
               var preview = document.getElementById('flyer-image-preview');
-              if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+              if (preview) { preview.src = result.url; preview.style.display = 'block'; }
               var tagsRow = document.getElementById('flyer-tags-row');
               if (tagsRow) tagsRow.style.display = 'block';
               var tagInput = document.getElementById('flyer-image-tags');
@@ -842,7 +842,7 @@
             callback();
           })
           .withFailureHandler(function(err) {
-            console.error('画像自動選択 base64取得失敗:', err);
+            console.error('画像自動選択 URL取得失敗:', err);
             callback(); // エラーでも続行（画像なしで生成）
           })
           .getFlyerImageBase64(bestId);
