@@ -901,28 +901,6 @@
       });
     }
 
-    /** 今すぐバックアップを実行する */
-    function runManualBackup() {
-      var btn = document.getElementById('backupRunBtn');
-      var msgEl = document.getElementById('backupStatusMsg');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ バックアップ中...'; }
-      if (msgEl) { msgEl.textContent = '⏳ Firestoreからデータを取得してスプレッドシートに書き込んでいます...'; msgEl.style.color = '#555'; }
-      google.script.run
-        .withSuccessHandler(function(r) {
-          if (btn) { btn.disabled = false; btn.textContent = '💾 今すぐバックアップ'; }
-          if (msgEl) {
-            msgEl.textContent = r.success ? '✅ ' + r.message : '❌ ' + (r.error || '不明なエラー');
-            msgEl.style.color = r.success ? '#2e7d32' : '#c62828';
-          }
-        })
-        .withFailureHandler(function(e) {
-          if (btn) { btn.disabled = false; btn.textContent = '💾 今すぐバックアップ'; }
-          if (msgEl) { msgEl.textContent = '❌ エラー: ' + e.message; msgEl.style.color = '#c62828'; }
-          console.error(e);
-        })
-        .runFirestoreBackup();
-    }
-
     /**
      * 管理タブ：公立高校一般選抜日程管理セクションの初期化
      */
