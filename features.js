@@ -3722,35 +3722,26 @@ function getLectureTeachers() {
 // ========================================
 
 /**
- * チラシ用画像一覧を Drive の assets/flyer/ フォルダから取得する
+ * チラシ用画像一覧を Supabase Storage の flyer-images バケットから取得する
  * @aiCallable
  * @return {Object} { success, images: [{id, name, mimeType}] }
  */
 function getFlyerImages() {
   try {
-    var folderId = PropertiesService.getScriptProperties().getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!folderId) return { success: true, images: [] };
-
-    var rootFolder = DriveApp.getFolderById(folderId);
-    var assetsIter = rootFolder.getFoldersByName('assets');
-    if (!assetsIter.hasNext()) return { success: true, images: [] };
-    var assetsFolder = assetsIter.next();
-
-    var flyerIter = assetsFolder.getFoldersByName('flyer');
-    if (!flyerIter.hasNext()) return { success: true, images: [] };
-    var flyerFolder = flyerIter.next();
-
+    var MIME_MAP = {
+      'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+      'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'
+    };
+    var files = supabaseStorageList_('flyer-images', '');
     var images = [];
-    var MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    var files = flyerFolder.getFiles();
-    while (files.hasNext()) {
-      var f = files.next();
-      if (MIME_TYPES.indexOf(f.getMimeType()) !== -1) {
-        images.push({ id: f.getId(), name: f.getName(), mimeType: f.getMimeType() });
-      }
-    }
+    files.forEach(function(f) {
+      if (!f.name) return;
+      var ext = f.name.split('.').pop().toLowerCase();
+      var mimeType = MIME_MAP[ext];
+      if (!mimeType) return;
+      images.push({ id: f.name, name: f.name, mimeType: mimeType });
+    });
     images.sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
-    // タグ情報をマージ
     var tagMap = getAllFlyerImageTags_();
     images.forEach(function(img) { img.tags = tagMap[img.id] || ''; });
     return { success: true, images: images };
@@ -3761,16 +3752,22 @@ function getFlyerImages() {
 }
 
 /**
- * Drive ファイルIDから画像を base64 エンコードして返す
+ * Supabase Storage から画像を取得し base64 エンコードして返す
  * @aiCallable
- * @param {string} fileId DriveファイルID
+ * @param {string} storageKey Supabase Storage 内のファイルパス（例: 'image.png'）
  * @return {Object} { success, base64, mimeType } または { success: false, error }
  */
-function getFlyerImageBase64(fileId) {
+function getFlyerImageBase64(storageKey) {
   try {
-    if (!fileId) return { success: false, error: 'fileId が空です' };
-    var file = DriveApp.getFileById(fileId);
-    var blob = file.getBlob();
+    if (!storageKey) return { success: false, error: 'storageKey が空です' };
+    // 署名付きURL取得（有効期限1時間）
+    var signedUrl = supabaseStorageSignedUrl_('flyer-images', storageKey, 3600);
+    // 画像をフェッチして base64 変換
+    var response = UrlFetchApp.fetch(signedUrl, { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) {
+      throw new Error('画像取得失敗 (HTTP ' + response.getResponseCode() + ')');
+    }
+    var blob = response.getBlob();
     var base64 = Utilities.base64Encode(blob.getBytes());
     return { success: true, base64: base64, mimeType: blob.getContentType() };
   } catch (error) {
@@ -3842,9 +3839,8 @@ function analyzeUploadedImageMetadata_(base64, mimeType, originalFileName) {
 }
 
 /**
- * チラシ用画像を Drive の assets/flyer/ フォルダにアップロードする
+ * チラシ用画像を Supabase Storage の flyer-images バケットにアップロードする
  * Gemini Vision で画像を解析してファイル名とタグを自動生成する
- * フォルダが存在しない場合は自動的に作成する
  * @aiCallable
  * @param {string} base64 base64エンコードされた画像データ
  * @param {string} fileName ファイル名（拡張子込み）
@@ -3862,19 +3858,6 @@ function uploadFlyerImage(base64, fileName, mimeType) {
     if (estimatedSize > MAX_SIZE) {
       return { success: false, error: '画像のサイズが大きすぎます（上限: 2MB）。画像を圧縮してから再度お試しください。' };
     }
-
-    var folderId = PropertiesService.getScriptProperties().getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!folderId) return { success: false, error: 'APP_FOLDER_ID が設定されていません' };
-
-    var rootFolder = DriveApp.getFolderById(folderId);
-
-    // assets フォルダを取得または作成
-    var assetsIter = rootFolder.getFoldersByName('assets');
-    var assetsFolder = assetsIter.hasNext() ? assetsIter.next() : rootFolder.createFolder('assets');
-
-    // flyer フォルダを取得または作成
-    var flyerIter = assetsFolder.getFoldersByName('flyer');
-    var flyerFolder = flyerIter.hasNext() ? flyerIter.next() : assetsFolder.createFolder('flyer');
 
     // 拡張子を取得
     var ext = '';
@@ -3895,19 +3878,18 @@ function uploadFlyerImage(base64, fileName, mimeType) {
     // ファイル名を決定（AI生成 > 元ファイル名）
     var saveFileName = (aiFileName ? aiFileName + ext : fileName);
 
-    // 画像を保存
+    // Supabase Storage にアップロード（同名ファイルは上書き）
     var bytes = Utilities.base64Decode(base64);
-    var blob = Utilities.newBlob(bytes, mimeType, saveFileName);
-    var file = flyerFolder.createFile(blob);
+    supabaseStorageUpload_('flyer-images', saveFileName, bytes, mimeType, true);
 
-    // タグを保存（AI生成タグ > 空）
+    // タグを保存（storageKey = saveFileName）
     try {
-      saveFlyerImageTags(file.getId(), aiTags);
+      saveFlyerImageTags(saveFileName, aiTags);
     } catch (tagErr) {
       Logger.log('⚠ uploadFlyerImage: タグ保存スキップ: ' + tagErr);
     }
 
-    return { success: true, fileId: file.getId(), fileName: file.getName() };
+    return { success: true, fileId: saveFileName, fileName: saveFileName };
   } catch (error) {
     Logger.log('❌ uploadFlyerImageエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -3915,19 +3897,17 @@ function uploadFlyerImage(base64, fileName, mimeType) {
 }
 
 /**
- * Drive からチラシ用画像を削除する（ゴミ箱に移動）
+ * Supabase Storage からチラシ用画像を削除する
  * @aiCallable
- * @param {string} fileId 削除するファイルのDriveID
+ * @param {string} storageKey 削除するファイルの Supabase Storage パス（例: 'image.png'）
  * @return {Object} { success, message } または { success: false, error }
  */
-function deleteFlyerImage(fileId) {
+function deleteFlyerImage(storageKey) {
   try {
-    if (!fileId) return { success: false, error: 'fileId が空です' };
-    var file = DriveApp.getFileById(fileId);
-    var fileName = file.getName();
-    file.setTrashed(true);
-    deleteFlyerImageTags_(fileId);
-    return { success: true, message: '「' + fileName + '」を削除しました' };
+    if (!storageKey) return { success: false, error: 'storageKey が空です' };
+    supabaseStorageDelete_('flyer-images', [storageKey]);
+    deleteFlyerImageTags_(storageKey);
+    return { success: true, message: '「' + storageKey + '」を削除しました' };
   } catch (error) {
     Logger.log('❌ deleteFlyerImageエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -3960,19 +3940,17 @@ function getFlyerImageTagSheet_() {
 /**
  * チラシ画像の説明タグを保存する（upsert）
  * @aiCallable
- * @param {string} fileId DriveファイルID
+ * @param {string} storageKey Supabase Storage パス（例: 'image.png'）
  * @param {string} tags カンマ区切りの説明タグ（例: "桜、青空、躍動感"）
  * @return {Object} { success, message } または { success: false, error }
  */
-function saveFlyerImageTags(fileId, tags) {
+function saveFlyerImageTags(storageKey, tags) {
   try {
-    if (!fileId) return { success: false, error: 'fileId が空です' };
+    if (!storageKey) return { success: false, error: 'storageKey が空です' };
     var tagsStr = (tags || '').trim();
-    var fileName = '';
-    try { fileName = DriveApp.getFileById(fileId).getName(); } catch (e) {}
-    firestoreSet_('imageTags', fileId, {
-      fileId: fileId,
-      fileName: fileName,
+    firestoreSet_('imageTags', storageKey, {
+      fileId: storageKey,
+      fileName: storageKey,
       tags: tagsStr,
       updatedAt: new Date().toISOString()
     });
@@ -5425,17 +5403,7 @@ function generateImageWithImagen(japanesePrompt, aspectRatio, conversationHistor
       return { success: false, error: '画像データが空でした。もう一度お試しください。' };
     }
 
-    // 4. Drive の assets/flyer フォルダに保存
-    var folderId = getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!folderId) return { success: false, error: 'APP_FOLDER_ID が設定されていません' };
-
-    var rootFolder = DriveApp.getFolderById(folderId);
-    var assetsIter = rootFolder.getFoldersByName('assets');
-    var assetsFolder = assetsIter.hasNext() ? assetsIter.next() : rootFolder.createFolder('assets');
-    var flyerIter = assetsFolder.getFoldersByName('flyer');
-    var flyerFolder = flyerIter.hasNext() ? flyerIter.next() : assetsFolder.createFolder('flyer');
-
-    // 4b. ファイル名とタグをAIで自動生成（失敗してもフォールバックで継続）
+    // 4. Supabase Storage の flyer-images バケットに保存
     var now = new Date();
     var timestamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
     var ext = mimeType === 'image/jpeg' ? '.jpg' : '.png';
@@ -5451,16 +5419,14 @@ function generateImageWithImagen(japanesePrompt, aspectRatio, conversationHistor
     var fileName = (autoFileName ? autoFileName : ('AI生成_' + timestamp)) + ext;
 
     var bytes = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(bytes, mimeType, fileName);
-    var file = flyerFolder.createFile(blob);
+    supabaseStorageUpload_('flyer-images', fileName, bytes, mimeType, false);
 
-    // 5. 画像タグを自動生成したキーワードで保存（取得失敗時は日本語プロンプトをフォールバック）
-    saveFlyerImageTags(file.getId(), autoTags || japanesePrompt);
-
+    // 5. 画像タグを自動生成したキーワードで保存（storageKey = fileName）
+    saveFlyerImageTags(fileName, autoTags || japanesePrompt);
 
     return {
       success: true,
-      fileId: file.getId(),
+      fileId: fileName,
       fileName: fileName,
       base64: base64Data,
       mimeType: mimeType,
