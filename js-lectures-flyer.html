@@ -765,22 +765,15 @@
         return;
       }
       if (preview) { preview.style.display = 'none'; }
-      console.log('[DEBUG] getFlyerImageBase64 呼び出し fileId:', fileId);
       google.script.run
         .withSuccessHandler(function(result) {
-          console.log('[DEBUG] getFlyerImageBase64 result:', JSON.stringify(result));
-          console.log('[DEBUG] preview 要素:', preview ? 'あり (id=' + (preview.id || '?') + ')' : 'なし');
           if (result.success && result.url) {
-            console.log('[DEBUG] signed URL 取得成功:', result.url.substring(0, 80) + '...');
             flyerImageCache[fileId] = result.url;
             flyerImageBase64 = result.url;
             if (preview) { preview.src = result.url; preview.style.display = 'block'; }
-            console.log('[DEBUG] preview.src セット完了, display:', preview ? preview.style.display : 'N/A');
-          } else {
-            console.warn('[DEBUG] getFlyerImageBase64 失敗またはURL空:', JSON.stringify(result));
           }
         })
-        .withFailureHandler(function(err) { console.error('[DEBUG] 画像取得失敗 (withFailureHandler):', err); })
+        .withFailureHandler(function(err) { console.error('画像取得失敗:', err); })
         .getFlyerImageBase64(fileId);
     }
 
@@ -832,12 +825,9 @@
         if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.style.color = '#d32f2f'; }
         callback();
       } else {
-        console.log('[DEBUG] autoSelectFlyerImage_ getFlyerImageBase64 呼び出し bestId:', bestId);
         google.script.run
           .withSuccessHandler(function(result) {
-            console.log('[DEBUG] autoSelect result:', JSON.stringify(result));
             if (result.success && result.url) {
-              console.log('[DEBUG] autoSelect signed URL:', result.url.substring(0, 80) + '...');
               flyerImageCache[bestId] = result.url;
               flyerImageBase64 = result.url;
               var preview = document.getElementById('flyer-image-preview');
@@ -848,13 +838,11 @@
               if (tagInput) tagInput.value = flyerImageTags[bestId] || '';
               var deleteBtn = document.getElementById('flyer-delete-btn');
               if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.style.color = '#d32f2f'; }
-            } else {
-              console.warn('[DEBUG] autoSelect 失敗またはURL空:', JSON.stringify(result));
             }
             callback();
           })
           .withFailureHandler(function(err) {
-            console.error('[DEBUG] 画像自動選択 URL取得失敗 (withFailureHandler):', err);
+            console.error('画像自動選択 URL取得失敗:', err);
             callback(); // エラーでも続行（画像なしで生成）
           })
           .getFlyerImageBase64(bestId);
