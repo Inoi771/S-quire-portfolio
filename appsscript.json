@@ -1,14 +1,6 @@
 {
   "timeZone": "Asia/Tokyo",
-  "dependencies": {
-    "enabledAdvancedServices": [
-      {
-        "userSymbol": "Drive",
-        "serviceId": "drive",
-        "version": "v2"
-      }
-    ]
-  },
+  "dependencies": {},
   "oauthScopes": [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
