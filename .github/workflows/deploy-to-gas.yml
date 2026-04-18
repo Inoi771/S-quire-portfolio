@@ -9,7 +9,7 @@ on:
       - '*.js'
       - '*.html'
       - 'appsscript.json'
-      - '.github/workflows/*.yml'
+      - '.github/workflows/deploy-to-gas.yml'
   workflow_dispatch:
 
 permissions:
