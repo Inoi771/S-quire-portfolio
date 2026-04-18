@@ -179,6 +179,127 @@ function supabaseRpc_(functionName, params) {
 // バッチ操作
 // ========================================
 
+// ========================================
+// Supabase Storage API
+// ========================================
+
+/**
+ * Supabase Storage にファイルをアップロードする
+ * @param {string} bucket バケット名
+ * @param {string} path ファイルパス（バケット内、例: 'image.png'）
+ * @param {byte[]} bytes バイト配列（Utilities.base64Decode の戻り値）
+ * @param {string} mimeType MIMEタイプ（例: 'image/png'）
+ * @param {boolean} [upsert=false] 同名ファイルを上書きするか
+ */
+function supabaseStorageUpload_(bucket, path, bytes, mimeType, upsert) {
+  var config = getSupabaseConfig_();
+  var url = config.url + '/storage/v1/object/' + encodeURIComponent(bucket) + '/' + path;
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: {
+      'Authorization': 'Bearer ' + config.serviceKey,
+      'x-upsert': upsert ? 'true' : 'false'
+    },
+    contentType: mimeType,
+    payload: bytes,
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  if (code >= 400) {
+    throw new Error('Supabase Storage アップロードエラー(' + code + '): ' + response.getContentText());
+  }
+}
+
+/**
+ * Supabase Storage のファイル一覧を取得する
+ * @param {string} bucket バケット名
+ * @param {string} [prefix=''] フォルダプレフィックス
+ * @return {Array} ファイル情報の配列 [{name, id, metadata, ...}]
+ */
+function supabaseStorageList_(bucket, prefix) {
+  var config = getSupabaseConfig_();
+  var url = config.url + '/storage/v1/object/list/' + encodeURIComponent(bucket);
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: {
+      'Authorization': 'Bearer ' + config.serviceKey
+    },
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      prefix: prefix || '',
+      limit: 1000,
+      offset: 0,
+      sortBy: { column: 'name', order: 'asc' }
+    }),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code >= 400) {
+    throw new Error('Supabase Storage 一覧エラー(' + code + '): ' + body);
+  }
+  return body ? JSON.parse(body) : [];
+}
+
+/**
+ * Supabase Storage の署名付きURL（有効期限付き）を取得する
+ * @param {string} bucket バケット名
+ * @param {string} path ファイルパス（バケット内）
+ * @param {number} [expiresIn=3600] 有効期限（秒）
+ * @return {string} 署名付き完全URL
+ */
+function supabaseStorageSignedUrl_(bucket, path, expiresIn) {
+  var config = getSupabaseConfig_();
+  var url = config.url + '/storage/v1/object/sign/' + encodeURIComponent(bucket) + '/' + path;
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: {
+      'Authorization': 'Bearer ' + config.serviceKey
+    },
+    contentType: 'application/json',
+    payload: JSON.stringify({ expiresIn: expiresIn || 3600 }),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code >= 400) {
+    throw new Error('Supabase Storage 署名付きURLエラー(' + code + '): ' + body);
+  }
+  var result = body ? JSON.parse(body) : {};
+  var signedUrl = result.signedURL || result.signedUrl || '';
+  if (!signedUrl) throw new Error('署名付きURLが空でした: ' + body);
+  // 相対パスの場合はベースURLを付ける
+  if (signedUrl.charAt(0) === '/') signedUrl = config.url + signedUrl;
+  return signedUrl;
+}
+
+/**
+ * Supabase Storage からファイルを削除する
+ * @param {string} bucket バケット名
+ * @param {string[]} paths 削除するファイルパスの配列
+ */
+function supabaseStorageDelete_(bucket, paths) {
+  var config = getSupabaseConfig_();
+  var url = config.url + '/storage/v1/object/' + encodeURIComponent(bucket);
+  var response = UrlFetchApp.fetch(url, {
+    method: 'delete',
+    headers: {
+      'Authorization': 'Bearer ' + config.serviceKey
+    },
+    contentType: 'application/json',
+    payload: JSON.stringify({ prefixes: paths }),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  if (code >= 400) {
+    throw new Error('Supabase Storage 削除エラー(' + code + '): ' + response.getContentText());
+  }
+}
+
+// ========================================
+// バッチ操作
+// ========================================
+
 /**
  * 大量データを一括UPSERT（チャンク分割）
  * Supabaseのリクエストサイズ制限に対応して500件ずつ分割
