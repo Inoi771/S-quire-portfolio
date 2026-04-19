@@ -1,0 +1,33 @@
+import { verifyFirebaseIdToken } from './auth.js';
+import { ping } from './functions/ping.js';
+
+// 認証不要の関数
+const PUBLIC_FUNCTIONS = new Set(['ping']);
+
+// functionName → handler マップ
+const HANDLERS = {
+  ping
+};
+
+export async function handleApiCall(body, env) {
+  const { functionName, args = [], idToken } = body;
+
+  if (!functionName) {
+    throw new Error('functionName が指定されていません');
+  }
+
+  const handler = HANDLERS[functionName];
+  if (!handler) {
+    throw new Error(`未知の関数: ${functionName}`);
+  }
+
+  // 認証チェック（PUBLIC_FUNCTIONS 以外は必須）
+  let user = null;
+  if (!PUBLIC_FUNCTIONS.has(functionName)) {
+    if (!idToken) throw new Error('認証トークンがありません');
+    user = await verifyFirebaseIdToken(idToken, env);
+    if (!user) throw new Error('認証失敗');
+  }
+
+  return handler(args, env, user);
+}

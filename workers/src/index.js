@@ -1,8 +1,29 @@
+import { handleApiCall } from './router.js';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': 'https://fir-quire.web.app',
+  'Content-Type': 'application/json'
+};
+
 export default {
   async fetch(request, env) {
-    return new Response(
-      JSON.stringify({ status: 'ok', message: 'S-quire API Phase 4 stub' }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Not Found' }), {
+        status: 404,
+        headers: CORS_HEADERS
+      });
+    }
+
+    try {
+      const body = await request.json();
+      const result = await handleApiCall(body, env);
+      return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
+    } catch (e) {
+      console.error('handleApiCall error:', e.message);
+      return new Response(JSON.stringify({ __gasError: e.message }), {
+        status: 500,
+        headers: CORS_HEADERS
+      });
+    }
   }
 };
