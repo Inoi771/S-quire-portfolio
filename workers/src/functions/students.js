@@ -1,5 +1,20 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
-import { supabaseSelect } from '../supabase.js';
+import { supabaseSelect, supabaseRpc } from '../supabase.js';
+
+// GAS getCurrentFiscalYear() と同一ロジック（4月起算）
+// GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
+function getCurrentFiscalYearJST() {
+  const jstDate = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const year  = jstDate.getUTCFullYear();
+  const month = jstDate.getUTCMonth() + 1; // 1-12
+  return month >= 4 ? year : year - 1;
+}
+
+// GAS makeSchoolAveDocId_() と同一ロジック
+function makeSchoolAveDocId(year, testName) {
+  const safe = String(testName).replace(/[^a-zA-Z0-9\u3040-\u9fff\u30A0-\u30FF]/g, '_');
+  return String(year) + '_' + safe;
+}
 
 // GAS toStudentCamel_() と同一マッピング（snake_case → camelCase）
 function studentFromSupabase(row) {
@@ -78,5 +93,49 @@ export async function getMasterData(args, env, user) {
   } catch (error) {
     console.error('getMasterData error:', error);
     return [];
+  }
+}
+
+/**
+ * getGradesYearFolders — GAS getGradesYearFolders() の Workers 版
+ * GAS 版との差分: getCurrentFiscalYear() を JST 補正版に置き換え
+ */
+export async function getGradesYearFolders(args, env, user) {
+  try {
+    const currentFy = getCurrentFiscalYearJST();
+    const dbYears = await supabaseRpc(env, 'get_grades_years');
+    const yearSet = {};
+    if (Array.isArray(dbYears)) {
+      dbYears.forEach(y => { yearSet[String(y)] = true; });
+    }
+    yearSet[String(currentFy)] = true;
+    const years = Object.keys(yearSet)
+      .filter(y => /^\d{4}$/.test(y))
+      .sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
+    return { success: true, years };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * getSchoolAverages — GAS getSchoolAverages(year, testName) の Workers 版
+ * GAS 版との差分: なし（完全同一ロジック）
+ */
+export async function getSchoolAverages(args, env, user) {
+  const year     = parseInt(args && args[0], 10);
+  const testName = String((args && args[1]) || '').trim();
+  try {
+    const docId = makeSchoolAveDocId(year, testName);
+    const rows = await supabaseSelect(env, 'school_averages',
+      'id=eq.' + encodeURIComponent(docId));
+    if (!rows || rows.length === 0 || !rows[0].averages) {
+      return { success: true, averages: [] };
+    }
+    let averages = rows[0].averages;
+    if (typeof averages === 'string') averages = JSON.parse(averages);
+    return { success: true, averages };
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
 }

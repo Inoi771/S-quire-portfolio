@@ -2,7 +2,8 @@ import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
 import { getUserProfile, getAppStartupData } from './functions/settings.js';
-import { getMasterData } from './functions/students.js';
+import { getMasterData, getGradesYearFolders, getSchoolAverages } from './functions/students.js';
+import { getGradeAnalysis } from './functions/analysis.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -13,7 +14,10 @@ const HANDLERS = {
   getAdminEmails,
   getUserProfile,
   getAppStartupData,
-  getMasterData
+  getMasterData,
+  getGradesYearFolders,
+  getSchoolAverages,
+  getGradeAnalysis
 };
 
 export async function handleApiCall(body, env) {
