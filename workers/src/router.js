@@ -2,6 +2,7 @@ import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
 import { getUserProfile, getAppStartupData } from './functions/settings.js';
+import { getMasterData } from './functions/students.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -11,7 +12,8 @@ const HANDLERS = {
   ping,
   getAdminEmails,
   getUserProfile,
-  getAppStartupData
+  getAppStartupData,
+  getMasterData
 };
 
 export async function handleApiCall(body, env) {
