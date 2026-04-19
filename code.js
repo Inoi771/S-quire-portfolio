@@ -285,18 +285,7 @@ function doPost(e) {
           var sent = sendLineMessage(lineUserId, replyMsg);
           Logger.log('sendLineMessage 結果: ' + sent);
 
-          // 返信後に時間のかかる処理（Drive権限付与・管理者メール）を実行
-          var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-          Logger.log('Driveフォルダ付与: folderId=' + (folderId || 'なし'));
-          if (folderId) {
-            try {
-              DriveApp.getFolderById(folderId).addEditor(text);
-              Logger.log('✓ Drive Editor 権限付与完了');
-            } catch (folderErr) {
-              Logger.log('⚠ doPost: addEditor 失敗: ' + folderErr);
-            }
-          }
-
+          // 返信後に時間のかかる処理（管理者メール）を実行
           try {
             var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
             if (adminEmails.length > 0) {
