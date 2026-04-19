@@ -10,7 +10,9 @@ const HANDLERS = {
 };
 
 export async function handleApiCall(body, env) {
-  const { functionName, args = [], idToken } = body;
+  // gas-bridge は { function: ... } 形式で送信するため両方受け付ける
+  const functionName = body.functionName || body.function;
+  const { args = [], idToken } = body;
 
   if (!functionName) {
     throw new Error('functionName が指定されていません');

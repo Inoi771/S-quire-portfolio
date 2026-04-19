@@ -15,7 +15,8 @@ export default {
     }
 
     try {
-      const body = await request.json();
+      const text = await request.text();
+      const body = JSON.parse(text);
       const result = await handleApiCall(body, env);
       return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
     } catch (e) {
