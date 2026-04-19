@@ -88,7 +88,8 @@ function staffFromSupabase_(row) {
     schedulerNotifPrefs: row.scheduler_notif_prefs || {},
     lineUserId: row.line_user_id || null,
     addedAt: row.added_at || '',
-    updatedAt: row.updated_at || ''
+    updatedAt: row.updated_at || '',
+    lecGrades: row.lec_grades || []
   };
 }
 
@@ -431,8 +432,7 @@ function getUserProfile() {
       preferredCampuses = safeJsonParse_(preferredCampuses, []);
     }
 
-    // 講習担当学年（ScriptProperties に保存）
-    var lecGrades = safeJsonParse_(getUserProperty('LEC_GRADES'), []);
+    var lecGrades = staff.lecGrades || [];
 
     return {
       success: true,
@@ -640,8 +640,11 @@ function savePreferredCampuses(campusCodes) {
  */
 function saveLecGrades(grades) {
   try {
+    var staff = getCurrentStaff_();
+    if (!staff) return { success: false, error: 'スタッフ情報が取得できません' };
+    var staffId = staff.teacherId || staff._id;
     var list = Array.isArray(grades) ? grades : [];
-    setUserProperty('LEC_GRADES', JSON.stringify(list));
+    supabaseUpsert_('staffs', { id: staffId, lec_grades: list }, 'id');
     return { success: true, message: '保存しました' };
   } catch (error) {
     Logger.log('❌ saveLecGradesエラー: ' + error);
@@ -728,7 +731,7 @@ function getAppStartupData(firebaseEmail, firebaseUid) {
       if (typeof preferredCampuses === 'string') {
         preferredCampuses = safeJsonParse_(preferredCampuses, []);
       }
-      lecGrades = safeJsonParse_(getUserProperty('LEC_GRADES'), []);
+      lecGrades = staff.lecGrades || [];
     }
 
     var geminiApiKey   = getProperty(PROP_KEYS.GEMINI_API_KEY) ? '***設定済み***' : '未設定';
