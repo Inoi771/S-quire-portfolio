@@ -315,3 +315,118 @@ export async function getStudentsWithGradesByTest(args, env, user) {
     return { success: false, error: error.toString(), students: [] };
   }
 }
+
+// GAS getDataSheetData(year) 相当: Supabase grades テーブルから年度データを取得・変換
+// 非公開ヘルパー（getStudentListWithGrades 専用）
+async function getDataSheetData(year, env) {
+  const docs = await supabaseSelect(env, 'grades', 'fiscal_year=eq.' + parseInt(year, 10));
+  return docs.map(doc => {
+    let sid = String(doc.student_id || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+    return {
+      studentId:      sid,
+      testName:       String(doc.test_name || '').trim(),
+      kokugo:         doc.kokugo  != null ? doc.kokugo  : '',
+      shakai:         doc.shakai  != null ? doc.shakai  : '',
+      sugaku:         doc.sugaku  != null ? doc.sugaku  : '',
+      rika:           doc.rika    != null ? doc.rika    : '',
+      eigo:           doc.eigo    != null ? doc.eigo    : '',
+      total:          doc.total   != null ? doc.total   : '',
+      average:        doc.average != null ? doc.average : '',
+      shogaku1:       String(doc.shogaku1       || ''),
+      shogaku1_gakka: String(doc.shogaku1_gakka || ''),
+      shogaku2:       String(doc.shogaku2       || ''),
+      shogaku2_gakka: String(doc.shogaku2_gakka || '')
+    };
+  });
+}
+
+/**
+ * getStudentListWithGrades — GAS getStudentListWithGrades(year, testName) の Workers 版
+ * 一覧表タブ用: 生徒マスタ×成績データ×合格可能性を結合して返す
+ * GAS 版との差分: 3クエリを Promise.all で並列実行（GAS 版は逐次）
+ */
+export async function getStudentListWithGrades(args, env, user) {
+  const year     = parseInt(args && args[0], 10);
+  const testName = String((args && args[1]) || '').trim();
+
+  try {
+    // 3クエリ並列実行（GAS版は逐次だが、Workers では並列化して高速化）
+    const [masterData, gradeRows, aDocs] = await Promise.all([
+      getMasterData([year], env, user),
+      getDataSheetData(year, env),
+      supabaseSelect(env, 'student_analysis',
+        'test_name=eq.' + encodeURIComponent(testName) +
+        '&year=eq.' + parseInt(year, 10)
+      ).catch(() => [])  // 失敗してもスキップ（GAS版 try-catch と同一挙動）
+    ]);
+
+    // テスト名でフィルタして studentId → 成績のマップを作成
+    // 最初の一致行を保持し、後続の重複行で上書きしない（GAS版 L286-290 と同一）
+    const gradeMap = {};
+    gradeRows.forEach(row => {
+      if (String(row.testName || '').trim() === testName) {
+        const sid = String(row.studentId);
+        if (!gradeMap[sid]) gradeMap[sid] = row;
+      }
+    });
+
+    // 合格可能性マップ: {sid|testName → {schoolName: percent}}
+    const analysisPassMap = {};
+    aDocs.forEach(doc => {
+      let sid = String(doc.student_id || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      const tname = String(doc.test_name || '').trim();
+      if (!sid || !tname) return;
+      const raw = doc.analysis_json;
+      let data = raw;
+      if (typeof raw === 'string') {
+        try { data = JSON.parse(raw); } catch(e) { data = null; }
+      }
+      if (!data || !Array.isArray(data.passAssessment)) return;
+      const m = {};
+      data.passAssessment.forEach(pa => {
+        if (pa.schoolName && pa.probability && pa.probability.percent != null) {
+          m[pa.schoolName] = pa.probability.percent;
+        }
+      });
+      analysisPassMap[sid + '|' + tname] = m;
+    });
+
+    // 生徒マスタと成績を結合（GAS版 L324-352 と同一構造）
+    // ソートなし: getMasterData がふりがな順で返すのでそのまま使う
+    const students = masterData.map(student => {
+      const g = gradeMap[String(student.studentId)] || null;
+      const aKey = String(student.studentId) + '|' + testName;
+      const aEntry = analysisPassMap[aKey] || {};
+      return {
+        studentId:      student.studentId,
+        name:           student.name,
+        furigana:       student.furigana,
+        seiFurigana:    student.seiFurigana,
+        meiFurigana:    student.meiFurigana,
+        campus:         student.campus,
+        grade:          student.grade,
+        schoolName:     student.schoolName,
+        kokugo:         g ? g.kokugo  : '',
+        shakai:         g ? g.shakai  : '',
+        sugaku:         g ? g.sugaku  : '',
+        rika:           g ? g.rika    : '',
+        eigo:           g ? g.eigo    : '',
+        total:          g ? g.total   : '',
+        average:        g ? g.average : '',
+        shogaku1:       g ? (g.shogaku1 || '')       : '',
+        shogaku1_gakka: g ? (g.shogaku1_gakka || '') : '',
+        shogaku2:       g ? (g.shogaku2 || '')       : '',
+        shogaku2_gakka: g ? (g.shogaku2_gakka || '') : '',
+        hasGrade:       g !== null,
+        passPercent1:   (g && g.shogaku1 && aEntry[g.shogaku1] != null) ? aEntry[g.shogaku1] : null,
+        passPercent2:   (g && g.shogaku2 && aEntry[g.shogaku2] != null) ? aEntry[g.shogaku2] : null
+      };
+    });
+
+    return { success: true, students };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
