@@ -7,3 +7,11 @@ compatibility_flags = ["nodejs_compat"]
 binding = "KV"
 id = "8dcb25efee404474a9e1f948d59bb477"
 preview_id = "8dcb25efee404474a9e1f948d59bb477"
+
+# 公開値（Firebase Web API Key はフロントエンド HTML にも記載済みの非秘密情報）
+[vars]
+FIREBASE_WEB_API_KEY = "AIzaSyDGxhgsCbpgJuXm6PzY1WcR8a4QOtfJBiU"
+
+# Secrets はCloudflare Dashboardで登録済み（wrangler.tomlには値を書かない）
+# 登録済み: FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY
+#           SUPABASE_URL / SUPABASE_SERVICE_KEY
