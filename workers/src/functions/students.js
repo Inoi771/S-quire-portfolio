@@ -254,3 +254,64 @@ export async function getDeletedStudents(args, env, user) {
     return { success: false, error: error.toString(), students: [] };
   }
 }
+
+/**
+ * getStudentsWithGradesByTest — GAS getStudentsWithGradesByTest(year, campusCode, testName) の Workers 版
+ * GAS 版との差分: なし（完全同一ロジック・順序）
+ * args: [year, campusCode, testName]
+ *
+ * 内部呼び出し戦略:
+ *   - grades 側: supabaseSelect で直接取得（GAS getDataSheetData 相当）
+ *   - students 側: 既存 Workers getMasterData() を内部呼び出し（B-⑧で実装済み）
+ *
+ * 戻り値（GAS 版とバイト単位で一致）:
+ *   通常: { success: true, students: [{studentId, name, furigana, schoolName}, ...] }
+ *   早期/該当なし: { success: true, students: [] }
+ *   エラー: { success: false, error: "...", students: [] }
+ */
+export async function getStudentsWithGradesByTest(args, env, user) {
+  const year       = parseInt(args && args[0], 10);
+  const campusCode = args && args[1];
+  const testName   = args && args[2];
+  const targetTest = String(testName || '').trim();
+
+  // 早期リターン（GAS students.js:1208-1211 と完全同一）
+  if (!targetTest || !campusCode) {
+    return { success: true, students: [] };
+  }
+
+  try {
+    // 1. 成績データから該当テストの生徒IDセットを収集
+    //    GAS getDataSheetData(year) 相当: SELECT grades WHERE fiscal_year = year
+    const gradeRows = await supabaseSelect(env, 'grades', 'fiscal_year=eq.' + year);
+    const studentIdSet = {};
+    gradeRows.forEach(row => {
+      // studentId 正規化（先頭ゼロ消失バグ対策・GAS getDataSheetData:234-235 と同一）
+      let sid = String(row.student_id || '').trim();
+      if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+      if (String(row.test_name || '').trim() === targetTest) {
+        studentIdSet[sid] = true;
+      }
+    });
+
+    // 2. 生徒マスタから校舎フィルタ＋成績あり生徒のみ抽出
+    //    既存の Workers getMasterData() を内部呼び出し（B-⑧実装を再利用）
+    //    ※ campusCode は padStart しない（GAS students.js:1225 と完全同一挙動）
+    const masterData = await getMasterData([year], env, user);
+    const students = masterData
+      .filter(s => s.campus === String(campusCode) && studentIdSet[String(s.studentId)])
+      .map(s => ({
+        studentId:  s.studentId,
+        name:       s.name,
+        furigana:   s.furigana,
+        schoolName: s.schoolName
+      }));
+
+    // 3. ふりがな順ソート（'ja' ロケール）
+    students.sort((a, b) => (a.furigana || '').localeCompare(b.furigana || '', 'ja'));
+
+    return { success: true, students };
+  } catch (error) {
+    return { success: false, error: error.toString(), students: [] };
+  }
+}
