@@ -12,6 +12,13 @@
   var GAS_EXEC_URL = 'https://script.google.com/macros/s/' +
     'AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw/exec';
 
+  // Cloudflare Workers URL（段階的移行用）
+  var WORKERS_URL = 'https://s-quire-api.square1995square.workers.dev';
+  // Workers に移行済みの関数名をここに追加していく（それ以外は GAS_EXEC_URL へ）
+  var WORKERS_FUNCTIONS = new Set([
+    'ping'
+  ]);
+
   /**
    * Firebase ID トークンを取得する（firebase-auth.html の fbGetIdToken を使用）
    * @return {Promise<string>}
@@ -35,13 +42,14 @@
   function callGas_(funcName, args, successFn, failureFn) {
     var MAX_RETRIES = 1;
     var RETRY_DELAY = 2000;
+    var targetUrl = WORKERS_FUNCTIONS.has(funcName) ? WORKERS_URL : GAS_EXEC_URL;
 
     function attempt(retryCount) {
       var controller = new AbortController();
       var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
 
       getToken_().then(function(idToken) {
-        return fetch(GAS_EXEC_URL, {
+        return fetch(targetUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
