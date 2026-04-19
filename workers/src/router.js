@@ -1,12 +1,14 @@
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
+import { getAdminEmails } from './functions/admin.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
 
 // functionName → handler マップ
 const HANDLERS = {
-  ping
+  ping,
+  getAdminEmails
 };
 
 export async function handleApiCall(body, env) {
