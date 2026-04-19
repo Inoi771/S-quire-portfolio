@@ -501,31 +501,9 @@ function getLineRegisteredUsers() {
     // Supabase staffs から全スタッフを取得
     var allRows = supabaseSelect_('staffs', null, { select: 'id,email,display_name,name,notification_method,line_user_id' });
 
-    // 現在アクセス権があるユーザーのメールを収集
-    var allowedEmails = {};
-    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (folderId) {
-      var folder = DriveApp.getFolderById(folderId);
-      var owner = folder.getOwner();
-      if (owner) allowedEmails[owner.getEmail().toLowerCase()] = true;
-      var editors = folder.getEditors();
-      for (var i = 0; i < editors.length; i++) {
-        allowedEmails[editors[i].getEmail().toLowerCase()] = true;
-      }
-      var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
-      adminRaw.split(',').forEach(function(e) {
-        e = e.trim().toLowerCase();
-        if (e) allowedEmails[e] = true;
-      });
-    }
-
     // staffs ベースでイテレート（LINE未登録ユーザーも候補に含める）
     var seenEmails = {};
     var users = (allRows || [])
-      .filter(function(row) {
-        if (!folderId) return true;
-        return row.email && allowedEmails[row.email.toLowerCase()];
-      })
       .filter(function(row) {
         var emailKey = (row.email || '').toLowerCase();
         if (!emailKey || seenEmails[emailKey]) return false;
@@ -883,26 +861,8 @@ function getFormEmailTriggerStatus() {
  * @return {Sheet|null} スプレッドシートのシートオブジェクト
  */
 function getLineSchedulerSheet_() {
-  // Firestore移行済み。このヘルパーはマイグレーション用に残す（通常処理では使用しない）
-  var settingsFolder = getSettingsFolder();
-  if (!settingsFolder) return null;
-  var sheetName = 'システム設定';
-  var file = getFileByName(settingsFolder, sheetName);
-  var ss;
-  if (file) {
-    ss = SpreadsheetApp.openById(file.getId());
-  } else {
-    return null;
-  }
-  var sheet = ss.getSheetByName('LINEスケジューラー');
-  if (!sheet) {
-    sheet = ss.insertSheet('LINEスケジューラー');
-    var headers = ['ID', '種別', '年月', '宛先(JSON)', '送信予定日時', 'メッセージ本文', '送信済み', '送信日時', '作成日時'];
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#43e97b').setFontColor('white');
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
+  // Firestore移行済み。migrate.js の migrateLineSchedulesToFirestore 用に残すが常に null を返す
+  return null;
 }
 
 /**
