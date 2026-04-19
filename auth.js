@@ -278,19 +278,6 @@ function isAllowedUser() {
       Logger.log('⚠ isAllowedUser: staffs チェックエラー（スキップ）: ' + staffErr);
     }
 
-    // 5. Driveフォルダのオーナー・編集者チェック（管理者が手動追加したユーザーの対応）
-    try {
-      var folder = DriveApp.getFolderById(folderId);
-      var owner = folder.getOwner();
-      if (owner && owner.getEmail().toLowerCase() === email) return true;
-      var editors = folder.getEditors();
-      for (var i = 0; i < editors.length; i++) {
-        if (editors[i].getEmail().toLowerCase() === email) return true;
-      }
-    } catch (driveErr) {
-      Logger.log('⚠ isAllowedUser: Drive チェックエラー（スキップ）: ' + driveErr);
-    }
-
     return false;
   } catch (error) {
     Logger.log('❌ isAllowedUserエラー: ' + error);
@@ -350,7 +337,6 @@ function getAllowedUsers() {
 
 /**
  * ユーザーにアプリアクセスを付与する（Admin のみ）
- * DriveフォルダにEditorとして追加する（Drive共有通知メールが相手に届きます）
  * @param {string} email 追加するメールアドレス
  * @return {Object} { success, message, error }
  */
@@ -361,14 +347,6 @@ function addUserAccess(email) {
     if (!email.includes('@')) {
       return { success: false, error: '有効なメールアドレスではありません' };
     }
-
-    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!folderId) {
-      return { success: false, error: 'ACCESS_FOLDER_ID・APP_FOLDER_IDともに未設定です。先に管理タブの設定で入力してください' };
-    }
-
-    var folder = DriveApp.getFolderById(folderId);
-    folder.addEditor(email);
 
     // Supabase staffs に新規スタッフを作成
     try {
@@ -407,7 +385,7 @@ function addUserAccess(email) {
     }
 
     logAdminAction('addUserAccess', { email: email });
-    return { success: true, message: email + ' にアクセスを許可しました（Drive共有通知が届きます）' };
+    return { success: true, message: email + ' にアクセスを許可しました' };
   } catch (error) {
     Logger.log('❌ addUserAccessエラー: ' + error);
     return { success: false, error: error.toString() };
@@ -416,7 +394,7 @@ function addUserAccess(email) {
 
 /**
  * ユーザーのアプリアクセスを削除する（Admin のみ）
- * DriveフォルダのEditor権限を削除する（オーナーと自分自身は削除不可）
+ * 自分自身は削除不可
  * @param {string} email 削除するメールアドレス
  * @return {Object} { success, message, error }
  */
@@ -428,19 +406,6 @@ function removeUserAccess(email) {
     var currentUser = getCurrentUserEmail().toLowerCase();
     if (email === currentUser) {
       return { success: false, error: '自分自身のアクセスは削除できません' };
-    }
-
-    var folderId = getProperty(PROP_KEYS.ACCESS_FOLDER_ID) || getProperty(PROP_KEYS.APP_FOLDER_ID);
-    if (!folderId) {
-      return { success: false, error: 'ACCESS_FOLDER_ID・APP_FOLDER_IDともに未設定です' };
-    }
-
-    var folder = DriveApp.getFolderById(folderId);
-
-    // オーナーは削除不可
-    var owner = folder.getOwner();
-    if (owner && owner.getEmail().toLowerCase() === email) {
-      return { success: false, error: 'フォルダのオーナーは削除できません' };
     }
 
     // Supabase staffs からスタッフを検索
@@ -460,14 +425,6 @@ function removeUserAccess(email) {
         if (e && allEmails.indexOf(e) === -1) allEmails.push(e);
       });
     }
-
-    // Drive 共有から全メールを解除
-    var ownerEmail = folder.getOwner() ? folder.getOwner().getEmail().toLowerCase() : '';
-    allEmails.forEach(function(em) {
-      if (em !== ownerEmail) {
-        try { folder.removeEditor(em); } catch (e) { Logger.log('⚠ removeEditor スキップ: ' + em + ' / ' + e); }
-      }
-    });
 
     // Supabase staffs レコードを削除
     if (staff) {
@@ -520,7 +477,7 @@ function removeUserAccess(email) {
     }
 
     logAdminAction('removeUserAccess', { email: email, allEmails: allEmails });
-    return { success: true, message: email + ' のアクセスを削除しました（全メール・Drive共有・通知設定も解除されました）' };
+    return { success: true, message: email + ' のアクセスを削除しました（全メール・通知設定も解除されました）' };
   } catch (error) {
     Logger.log('❌ removeUserAccessエラー: ' + error);
     return { success: false, error: error.toString() };
