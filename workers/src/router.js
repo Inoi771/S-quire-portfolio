@@ -1,6 +1,7 @@
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
+import { getUserProfile } from './functions/settings.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -8,7 +9,8 @@ const PUBLIC_FUNCTIONS = new Set(['ping']);
 // functionName → handler マップ
 const HANDLERS = {
   ping,
-  getAdminEmails
+  getAdminEmails,
+  getUserProfile
 };
 
 export async function handleApiCall(body, env) {

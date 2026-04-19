@@ -1,5 +1,35 @@
 // Supabase REST API クライアント（GAS supabase.js をポート）
 
+// ── staffFromSupabase（GAS settings.js staffFromSupabase_ と同一マッピング）────────
+
+export function staffFromSupabase(row) {
+  if (!row) return null;
+  return {
+    _id: row.id,
+    teacherId: row.id,
+    email: row.email || '',
+    emails: row.emails || [],
+    firebaseUid: row.firebase_uid || null,
+    firebaseUids: row.firebase_uids || [],
+    name: row.name || '',
+    displayName: row.display_name || '',
+    subjects: row.subjects || [],
+    preferredCampuses: row.preferred_campuses || [],
+    aiAssistantName: row.ai_assistant_name || '',
+    aiPersonality: row.ai_personality || '',
+    themeColor: row.theme_color || '',
+    notificationMethod: row.notification_method || 'gmail',
+    notificationEmail: row.notification_email || '',
+    notificationEmails: row.notification_emails || [],
+    schedulerNotifEmails: row.scheduler_notif_emails || [],
+    schedulerNotifPrefs: row.scheduler_notif_prefs || {},
+    lineUserId: row.line_user_id || null,
+    addedAt: row.added_at || '',
+    updatedAt: row.updated_at || '',
+    lecGrades: row.lec_grades || []
+  };
+}
+
 function supabaseHeaders(env) {
   return {
     'apikey': env.SUPABASE_SERVICE_KEY,
