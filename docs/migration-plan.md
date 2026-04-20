@@ -2466,4 +2466,59 @@ Step B 動作確認中、以下の挙動を確認：
 - **Phase 5-E（ScriptProperties 移行）へ進める状態**
 - `writeStaffToSupabase_` の 14 箇所はガードレール不足だが現状安全。Workers 個別移行時に PATCH 化を再検討
 
+---
+
+# 次セッション引き継ぎ：Phase 5-B 残関数棚卸し
+
+## 次フェーズ
+
+**Phase 5-B 残関数棚卸し** — 未移行の GAS 公開関数を全量把握し、Phase 5-E（ScriptProperties 移行）の設計材料を揃える。
+
+## 成果物
+
+- **新規作成**: `docs/remaining-functions-inventory.md`
+- **書式**: 本ファイル（`docs/migration-plan.md`）と同じ体裁で作成
+- **列構成**: 関数名 / 種別 / 対象テーブル・データ / 呼出元 / ScriptProperties 依存 / 分類（A/B/C/D） / 優先度 / 備考
+- **サマリ**: 総数・A/B/C/D 内訳・ScriptProperties キー一覧（重複排除）・削除候補
+
+## 分類ルール（合意済み）
+
+| 分類 | 定義 |
+|------|------|
+| **A** | Workers 移行可能（ScriptProperties 依存なし・GAS 専用 API なし・Supabase/Firestore のみ） |
+| **B** | Phase 5-E 後に移行可能（ScriptProperties 依存あり → KV or Supabase 移行後に解除） |
+| **C** | GAS 残し（GmailApp / ScriptApp / DriveApp / HtmlService / 長時間バッチ等の GAS 専用機能） |
+| **D** | 削除候補（migrate 系一回限りスクリプト / 呼出元なし死コード / テスト用） |
+
+## 作業順序（合意済み）
+
+**B → D の順で進める。C は Phase 5 完全移行後に判断。**
+
+| ステップ | 対象 | 目的 |
+|---------|------|------|
+| 1 | **分類 B の洗い出し** | Phase 5-E（ScriptProperties 移行）の対象 key を全量把握 |
+| 2 | **分類 D の削除** | 棚卸し時点で削除可能な死コード・旧 migrate を整理 |
+| 3 | （Phase 5-E 終了後） | 分類 C の個別判断（GAS 残し確定 or Workers 代替設計） |
+
+### A 分類の扱い
+
+分類 A（Workers 即移行可能）は棚卸し文書で把握のみ行い、個別の B-⑲ 以降として従来通り進める（B-⑮〜⑰ と同パターン）。
+
+## 調査済み事実（次セッションで再利用）
+
+前セッションで以下を確認済み（`Explore` Agent 実行結果より）：
+
+- GAS 公開関数（`_` サフィックスなし）の全量を収集済み
+- Workers 移行済み 19 関数の除外済み
+- 各関数の ScriptProperties 依存・呼出元（google.script.run / gasApiPromise_）を特定済み
+- 概算: A 約 40 / B 約 70 / C 約 30 / D 約 25 関数（合計 ≈ 165 関数）
+
+## 次セッションでの着手方法
+
+```
+指示例: 「docs/remaining-functions-inventory.md を作成して」
+```
+
+前セッションの調査データから文書生成のみ実施する（追加調査は不要）。
+
 
