@@ -2187,4 +2187,112 @@ Workers 版では以下を省略してもロジック同等になることを確
 - `saveExamResult`: 受験結果を `students` テーブルに部分 UPSERT する関数。B-⑭ と同じ NOT NULL 違反リスクあり → **PATCH 方式で実装**する必要あり。合わせて LockService 依存の除去も必要。
 - 書込関数を追加する前に必ず対象テーブルの NOT NULL カラム一覧を確認し、payload が全てを満たすかで UPSERT／PATCH を選ぶ。
 
+---
+
+# B-⑯ saveExamResult 移行（2026-04-20 完了）
+
+## 対象・方針
+
+| 項目 | 内容 |
+|------|------|
+| 対象関数 | `saveExamResult`（中3 受験結果保存・UI ボタン / `@aiCallable`） |
+| 対象テーブル | Supabase `students` |
+| 実装方式 | **UPSERT → PATCH 切替**（B-⑭ と同型） |
+| フロント変更 | なし（`gas-bridge.html` の `WORKERS_FUNCTIONS` 追加のみ） |
+
+## 判断根拠
+
+| 項目 | 内容 |
+|------|------|
+| `students` テーブルの NOT NULL | `student_id` / `sei` / `mei` / `campus` 等が NOT NULL（B-⑭ で確認済み） |
+| payload 構成 | 7 カラムのみ（`jukoukou1` 系 3 + `ikusei` + `jukoukou2` 系 3） |
+| UPSERT 時のリスク | INSERT 路で NOT NULL 違反（B-⑭ と同一メカニズム） |
+| 結論 | **PATCH 方式を採用** |
+
+## 事前 SELECT の扱い
+
+Workers 側・GAS 側とも **維持**。PostgREST の PATCH は WHERE 句に一致する行がなくても 204 で成功を返すため、存在しない id に対するサイレント成功を防ぐ目的で事前チェックを行う。
+
+## LockService の扱い
+
+Workers 側・GAS 側ともに **削除**。理由：
+
+- 同一生徒の受験結果を複数ユーザーが同時保存するシナリオは現実的にゼロ
+- payload は last-write-wins で安全（7 カラム全体を一括上書き）
+- Workers には LockService 相当が無く、追加実装の価値がない
+
+## GAS 側関数は PATCH 化して維持（Option C 採用）
+
+gas-bridge.html の `WORKERS_FUNCTIONS` から `'saveExamResult'` を 1 行削除するだけで即 GAS 経路に戻せるよう、GAS 側の関数も PATCH 化して残した。B-⑭ の `updateStudentInfo` / `deleteStudent` / `restoreStudent` と同じフォールバック構造。
+
+## コミット
+
+| コミット | 内容 |
+|---------|------|
+| 0b23e95 | Workers 側実装（`workers/src/functions/students.js` + `router.js` 登録） |
+| d748813 | `gas-bridge.html` の `WORKERS_FUNCTIONS` に `'saveExamResult'` 追加（切替） |
+| 2f03594 | GAS 側 `saveExamResult` を PATCH 化（`supabaseUpdate_` + 事前 SELECT 維持 + LockService 削除） |
+
+## 動作確認結果
+
+Workers 経由で正常保存を確認。
+
+## 事件記録：Step A で NOT NULL 違反を発見
+
+B-⑯ 着手前は「潜在バグ」として認識されていたが、実装中の Step A（gas-bridge OFF = GAS 経由）動作確認で実際にエラーが顕在化した。
+これは B-⑯ 実装前から潜在していた既存バグで、今回の PATCH 化で解決。
+
+### 履歴調査結果
+
+| コミット | 日付 | 事象 |
+|---------|------|------|
+| `836874a` | 2026-04-01 | saveExamResult に LockService 追加（Firestore 時代） |
+| **`7998955`** | **2026-04-07** | **バグ混入**。Supabase 移行で `firestoreGet_` → 全フィールド書き戻し RMW が `supabaseUpsert_` 部分 payload に単純置換された |
+| `67ac633` | 2026-04-20 | B-⑭ 修正。このとき saveExamResult も「潜在バグ」として migration-plan に明記されていたが、意図的に先送り（B-⑮以降で対応の方針） |
+| `2f03594` | 2026-04-20 | **解決（B-⑯）** |
+
+**潜伏期間**: 約 13 日（04-07 → 04-20）。中3 の受験結果入力は年数回〜数十回と低頻度のため、この期間内に本機能が使用されなかった可能性が高い。
+
+**B-⑭ 時に気付けた機会**:
+1. B-⑭ 修正ドキュメントの「潜在バグ」節に `saveExamResult` が明記されていた
+2. `students.js` 内の `supabaseUpsert_('students', ...)` が 5 箇所あり、4 箇所が部分 payload の更新用途（B-⑭ で修正された L521/L553/L634 と同型の L1876）
+3. 「NOT NULL カラム全充足かで UPSERT/PATCH を選ぶ」という B-⑭ の判断基準を全 UPSERT 呼び出しに横展開すれば自動的に発見できた
+
+### 類似バグが他にないかの横断調査
+
+`grep supabaseUpsert_\\(` の全数調査結果：
+
+| 場所 | 判定 |
+|------|------|
+| `students.js:474` submitStudentInfo | ✅ 全カラム指定・INSERT 路想定 |
+| `students.js:1160` submitGradeData | ✅ 全カラム指定（B-⑮ で Workers 側移行済み） |
+| `students.js:1503` school_averages | ✅ 全カラム指定想定（要確認） |
+| `analysis.js:663` test_analysis | ✅ 生成時全書き換え想定 |
+| `auth.js:356` / `auth.js:787` / `code.js:259` staffs 新規作成 | ✅ 全カラム指定・INSERT 用途 |
+| **`settings.js:647` saveLecGrades** | **⚠️ 潜在バグ**。staffs に `{id, lec_grades}` のみの部分 UPSERT。既存行更新時に email/display_name の NOT NULL 違反リスク。**実運用で発火しうる最右翼候補**（設定タブの講習担当学年保存時） |
+| **`settings.js:202` writeStaffToSupabase_**（15 箇所から呼び出し） | **⚠️ 条件付き潜在バグ**。`staffToSupabase_` が `!== undefined` でフィールド抽出するため、呼び出し側が partial staff を渡すと同型バグ発生 |
+| `features.js:1716` / `:2051` / `:2194` / `:2266` ai_feedback / ai_learned_knowledge | ❓ 要確認（テーブル NOT NULL 制約次第） |
+| `minutes.js:70` meeting_minutes | ❓ 要確認 |
+| `migrate-lec-grades.js:61` staffs（一回限り） | ⚠️ 同型だが実行済みで再発火なし |
+
+**後続タスクの優先候補**: `settings.js:647 saveLecGrades` の PATCH 化。講師が設定タブで講習担当学年を保存するたびに発火する可能性があるため、B-⑰ で修正を検討。
+
+## 現時点の Workers 経由関数数：18 個
+
+| 種別 | 関数 |
+|------|------|
+| ヘルスチェック | `ping` |
+| 読取（12 個） | `getAdminEmails`, `getUserProfile`, `getAppStartupData`, `getMasterData`, `getGradesYearFolders`, `getSchoolAverages`, `getGradeAnalysis`, `getStudentAnalysis`, `getGradeDataByStudentAndTest`, `getDeletedStudents`, `getStudentsWithGradesByTest`, `getStudentListWithGrades` |
+| 書込（5 個） | `updateStudentInfo`, `deleteStudent`, `restoreStudent`, `submitGradeData`, **`saveExamResult`** |
+
+## 横断的な観測事実（別件・別タスクで扱う）
+
+Step B（Workers 経由）動作確認中に以下の間欠的現象が発生：
+
+- 保存成功直後、同条件で再保存するとエラー
+- エラー内容は Step A で見た NOT NULL 違反（GAS 側 UPSERT 由来）
+- ハードリロードで解消
+
+これは `saveExamResult` 固有の問題ではなく、**gas-bridge.html の切替機構または Firebase Hosting のキャッシュ**に起因する横断的現象と推測。B-⑯ 完了扱いとし、別タスクで扱う。
+
 
