@@ -518,15 +518,14 @@ function updateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFuri
     var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
     if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    supabaseUpsert_('students', {
-      id:           sid,
+    supabaseUpdate_('students', {
       campus:       String(campusCode).padStart(2, '0'),
       sei:          sei.trim(),
       mei:          mei.trim() || '',
       sei_furigana: seiFurigana.trim(),
       mei_furigana: meiFurigana.trim() || '',
       school_name:  schoolName.trim() || ''
-    });
+    }, 'id=eq.' + encodeURIComponent(sid));
 
     Logger.log('✓ updateStudentInfo: 更新完了 ' + sid);
     return { success: true, message: '生徒情報を更新しました' };
@@ -550,7 +549,7 @@ function deleteStudent(studentId) {
     var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
     if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    supabaseUpsert_('students', { id: sid, is_deleted: true });
+    supabaseUpdate_('students', { is_deleted: true }, 'id=eq.' + encodeURIComponent(sid));
 
     Logger.log('✓ deleteStudent: 削除完了 ' + sid);
     return { success: true, message: '生徒を削除しました' };
@@ -631,7 +630,7 @@ function restoreStudent(studentId) {
     var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
     if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません' };
 
-    supabaseUpsert_('students', { id: sid, is_deleted: false });
+    supabaseUpdate_('students', { is_deleted: false }, 'id=eq.' + encodeURIComponent(sid));
 
     Logger.log('✓ restoreStudent: 復元完了 ' + sid);
     return { success: true, message: '生徒情報を復元しました' };

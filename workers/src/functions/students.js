@@ -1,5 +1,5 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
-import { supabaseSelect, supabaseRpc, supabaseUpsert } from '../supabase.js';
+import { supabaseSelect, supabaseRpc, supabaseUpdate } from '../supabase.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -450,16 +450,15 @@ export async function updateStudentInfo(args, env, user) {
       return { success: false, error: '生徒が見つかりません' };
     }
 
-    // UPSERT（第4引数 'id' 明示必須 — GAS 版は supabaseUpsert_ デフォルト 'id' と同等）
-    await supabaseUpsert(env, 'students', {
-      id:           sid,
+    // PATCH（UPSERT だと ON CONFLICT より先に NOT NULL 違反が発火するため UPDATE に変更）
+    await supabaseUpdate(env, 'students', {
       campus:       String(campusCode).padStart(2, '0'),
       sei:          String(sei || '').trim(),
       mei:          String(mei || '').trim() || '',
       sei_furigana: String(seiFurigana || '').trim(),
       mei_furigana: String(meiFurigana || '').trim() || '',
       school_name:  String(schoolName || '').trim() || ''
-    }, 'id');
+    }, 'id=eq.' + encodeURIComponent(sid));
 
     return { success: true, message: '生徒情報を更新しました' };
   } catch (error) {
@@ -486,11 +485,8 @@ export async function deleteStudent(args, env, user) {
       return { success: false, error: '生徒が見つかりません' };
     }
 
-    // is_deleted=true のみ更新（他フィールド含めない・GAS 版 L553 と同一）
-    await supabaseUpsert(env, 'students', {
-      id: sid,
-      is_deleted: true
-    }, 'id');
+    // is_deleted=true のみ更新（PATCH で未指定カラムの既存値を保持）
+    await supabaseUpdate(env, 'students', { is_deleted: true }, 'id=eq.' + encodeURIComponent(sid));
 
     return { success: true, message: '生徒を削除しました' };
   } catch (error) {
@@ -517,11 +513,8 @@ export async function restoreStudent(args, env, user) {
       return { success: false, error: '生徒が見つかりません' };
     }
 
-    // is_deleted=false のみ更新（他フィールド含めない・GAS 版 L633 と同一）
-    await supabaseUpsert(env, 'students', {
-      id: sid,
-      is_deleted: false
-    }, 'id');
+    // is_deleted=false のみ更新（PATCH で未指定カラムの既存値を保持）
+    await supabaseUpdate(env, 'students', { is_deleted: false }, 'id=eq.' + encodeURIComponent(sid));
 
     return { success: true, message: '生徒情報を復元しました' };
   } catch (error) {
