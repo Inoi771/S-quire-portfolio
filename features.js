@@ -2262,11 +2262,10 @@ function resolveAiFeedback(docId) {
   try {
     var rows = supabaseSelect_('ai_feedback', 'id=eq.' + docId);
     if (!rows || rows.length === 0) return { success: false, error: 'エントリが見つかりません' };
-    supabaseUpsert_('ai_feedback', {
-      id: docId,
+    supabaseUpdate_('ai_feedback', {
       resolved: true,
       resolved_at: new Date().toISOString()
-    }, 'id');
+    }, 'id=eq.' + encodeURIComponent(docId));
     return { success: true, message: '解決済みにしました' };
   } catch (error) {
     Logger.log('❌ resolveAiFeedbackエラー: ' + error);
