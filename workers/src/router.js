@@ -2,7 +2,7 @@ import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
 import { getUserProfile, getAppStartupData } from './functions/settings.js';
-import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData } from './functions/students.js';
+import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 
 // 認証不要の関数
@@ -26,7 +26,8 @@ const HANDLERS = {
   updateStudentInfo,
   deleteStudent,
   restoreStudent,
-  submitGradeData
+  submitGradeData,
+  saveExamResult
 };
 
 export async function handleApiCall(body, env) {

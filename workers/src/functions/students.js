@@ -594,3 +594,42 @@ export async function submitGradeData(args, env, user) {
     return { success: false, error: error.toString() };
   }
 }
+
+// saveExamResult: 中3生徒の受験結果を students テーブルに保存
+// GAS students.js L1857-1894 のポート。B-⑭ と同型の NOT NULL 違反を避けるため PATCH 方式で実装。
+// LockService は省略（last-write-wins で並行書き込みリスク極小）
+export async function saveExamResult(args, env, user) {
+  const [studentId, examDataJson] = args || [];
+  try {
+    let sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+    if (!sid) return { success: false, error: '生徒IDが指定されていません' };
+
+    let examData = {};
+    try {
+      examData = typeof examDataJson === 'string' ? JSON.parse(examDataJson) : (examDataJson || {});
+    } catch (_) {
+      examData = {};
+    }
+
+    // 事前 SELECT で存在確認（存在しない id の PATCH がサイレント成功するのを防ぐ）
+    const check = await supabaseSelect(env, 'students', 'id=eq.' + encodeURIComponent(sid) + '&select=id');
+    if (!check || check.length === 0) {
+      return { success: false, error: '生徒が見つかりません: ' + sid };
+    }
+
+    await supabaseUpdate(env, 'students', {
+      jukoukou1:        examData.jukoukou1        || '',
+      jukoukou1_gakka:  examData.jukoukou1_gakka  || '',
+      jukoukou1_gokaku: examData.jukoukou1_gokaku || '',
+      ikusei:           examData.ikusei           || '',
+      jukoukou2:        examData.jukoukou2        || '',
+      jukoukou2_gakka:  examData.jukoukou2_gakka  || '',
+      jukoukou2_gokaku: examData.jukoukou2_gokaku || ''
+    }, 'id=eq.' + encodeURIComponent(sid));
+
+    return { success: true, message: '受験情報を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
