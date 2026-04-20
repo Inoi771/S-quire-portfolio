@@ -1,5 +1,5 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
-import { supabaseSelect, supabaseRpc, supabaseUpdate } from '../supabase.js';
+import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -517,6 +517,79 @@ export async function restoreStudent(args, env, user) {
     await supabaseUpdate(env, 'students', { is_deleted: false }, 'id=eq.' + encodeURIComponent(sid));
 
     return { success: true, message: '生徒情報を復元しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * submitGradeData — GAS submitGradeData(year, studentId, testName, scores, skipCacheUpdate) の Workers 版
+ * 成績データを Supabase grades テーブルに UPSERT（新規INSERT・既存UPDATE両用）
+ * GAS 版 students.js L1120-1194 と同一挙動
+ *
+ * frontend からの引数（gas-bridge 経由）:
+ *   args[0] year         — 年度
+ *   args[1] studentId    — 生徒ID
+ *   args[2] testName     — テスト名
+ *   args[3] scores       — { kokugo, shakai, sugaku, rika, eigo, gokei,
+ *                            shogaku1, shogaku1_gakka, shogaku2, shogaku2_gakka, studentName }
+ *   args[4] skipCacheUpdate — Workers では無視（インメモリキャッシュが存在しない）
+ *
+ * GAS 版との差分:
+ *   - getMasterData 呼び出しを省略（campus は sid.substring(0,2) で代替 — GAS 版フォールバック路と同一）
+ *   - getStudentNameById 呼び出しを省略（studentName は常に scores.studentName が渡される）
+ *   - skipCacheUpdate フラグは未使用（Workers はリクエスト間メモリ共有なし）
+ */
+export async function submitGradeData(args, env, user) {
+  const [year, studentId, testName, scores] = args || [];
+  try {
+    if (!studentId || !testName) {
+      return { success: false, error: '生徒IDとテスト名は必須です' };
+    }
+
+    let sid = String(studentId).trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    const s = scores || {};
+
+    // スコア値を数値に変換（0 が有効値なので isNaN チェックを使う — GAS 版 L1130-1134 と同一）
+    let kokugo = parseInt(s.kokugo, 10); if (isNaN(kokugo)) kokugo = 0;
+    let shakai = parseInt(s.shakai, 10); if (isNaN(shakai)) shakai = 0;
+    let sugaku = parseInt(s.sugaku, 10); if (isNaN(sugaku)) sugaku = 0;
+    let rika   = parseInt(s.rika,   10); if (isNaN(rika))   rika   = 0;
+    let eigo   = parseInt(s.eigo,   10); if (isNaN(eigo))   eigo   = 0;
+    const calcTotal = kokugo + shakai + sugaku + rika + eigo;
+    const gokei = parseInt(s.gokei, 10);
+    const total   = (!isNaN(gokei) && gokei > 0) ? gokei : calcTotal;
+    const average = total > 0 ? parseFloat((total / 5).toFixed(1)) : 0;
+
+    const studentName = s.studentName || '';
+    const campus = sid.substring(0, 2);  // 生徒IDの先頭2桁（設計上 campus と一致）
+    const docId = makeGradeDocId(sid, testName, year);
+
+    // grades テーブルへ UPSERT（on_conflict=id、全カラム指定のため NOT NULL 違反なし）
+    await supabaseUpsert(env, 'grades', {
+      id:             docId,
+      student_id:     sid,
+      test_name:      String(testName).trim(),
+      fiscal_year:    parseInt(year, 10),
+      kokugo:         kokugo,
+      shakai:         shakai,
+      sugaku:         sugaku,
+      rika:           rika,
+      eigo:           eigo,
+      total:          total,
+      average:        average,
+      shogaku1:       s.shogaku1       || '',
+      shogaku1_gakka: s.shogaku1_gakka || '',
+      shogaku2:       s.shogaku2       || '',
+      shogaku2_gakka: s.shogaku2_gakka || '',
+      recorded_at:    new Date().toISOString(),
+      student_name:   studentName,
+      campus:         campus
+    }, 'id');
+
+    return { success: true, message: '成績データを保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
