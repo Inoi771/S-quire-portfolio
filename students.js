@@ -1861,32 +1861,22 @@ function saveExamResult(studentId, examDataJson) {
 
     var examData = safeJsonParse_(examDataJson, {});
 
-    var lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(10000);
-    } catch (lockErr) {
-      return { success: false, error: '同時操作による競合が発生しました。時間をおいて再試行してください。' };
-    }
+    // 存在確認（サイレント成功防止）
+    var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません: ' + sid };
 
-    try {
-      var check = supabaseSelect_('students', 'id=eq.' + encodeURIComponent(sid), { select: 'id' });
-      if (!check || check.length === 0) return { success: false, error: '生徒が見つかりません: ' + sid };
+    supabaseUpdate_('students', {
+      jukoukou1:        examData.jukoukou1        || '',
+      jukoukou1_gakka:  examData.jukoukou1_gakka  || '',
+      jukoukou1_gokaku: examData.jukoukou1_gokaku || '',
+      ikusei:           examData.ikusei           || '',
+      jukoukou2:        examData.jukoukou2        || '',
+      jukoukou2_gakka:  examData.jukoukou2_gakka  || '',
+      jukoukou2_gokaku: examData.jukoukou2_gokaku || ''
+    }, 'id=eq.' + encodeURIComponent(sid));
 
-      supabaseUpsert_('students', {
-        id:                sid,
-        jukoukou1:         examData.jukoukou1        || '',
-        jukoukou1_gakka:   examData.jukoukou1_gakka  || '',
-        jukoukou1_gokaku:  examData.jukoukou1_gokaku || '',
-        ikusei:            examData.ikusei            || '',
-        jukoukou2:         examData.jukoukou2        || '',
-        jukoukou2_gakka:   examData.jukoukou2_gakka  || '',
-        jukoukou2_gokaku:  examData.jukoukou2_gokaku || ''
-      });
-      Logger.log('✓ saveExamResult: 保存完了 ' + sid);
-      return { success: true, message: '受験情報を保存しました' };
-    } finally {
-      lock.releaseLock();
-    }
+    Logger.log('✓ saveExamResult: 保存完了 ' + sid);
+    return { success: true, message: '受験情報を保存しました' };
   } catch (error) {
     Logger.log('❌ saveExamResultエラー: ' + error);
     return { success: false, error: error.toString() };
