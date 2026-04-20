@@ -94,8 +94,21 @@ function staffFromSupabase_(row) {
 }
 
 /**
- * camelCase スタッフオブジェクト → Supabase staffs 行に変換
- * @param {Object} staff camelCaseオブジェクト
+ * staff オブジェクトを Supabase staffs テーブル用の payload に変換する。
+ *
+ * ⚠️ 重要: 呼び出し側は必ず staffFromSupabase_ 由来の完全な staff
+ * オブジェクトを渡すこと。partial staff（例: {teacherId, name} のみ）を
+ * 渡すと、writeStaffToSupabase_ 経由で NOT NULL 違反エラーが発生する
+ * 恐れがある。
+ *
+ * 過去のバグ事例:
+ * - B-⑭: updateStudentInfo の partial payload UPSERT
+ * - B-⑯: saveExamResult の partial payload UPSERT
+ * - B-⑰: saveLecGrades の partial payload UPSERT
+ *
+ * 部分更新が必要な場合は supabaseUpdate_ を直接使うこと。
+ *
+ * @param {Object} staff camelCaseオブジェクト（staffFromSupabase_ の戻り値）
  * @return {Object} Supabase行（snake_case）
  */
 function staffToSupabase_(staff) {
@@ -644,7 +657,12 @@ function saveLecGrades(grades) {
     if (!staff) return { success: false, error: 'スタッフ情報が取得できません' };
     var staffId = staff.teacherId || staff._id;
     var list = Array.isArray(grades) ? grades : [];
-    supabaseUpsert_('staffs', { id: staffId, lec_grades: list }, 'id');
+
+    // 存在確認（サイレント成功防止）
+    var check = supabaseSelect_('staffs', 'id=eq.' + encodeURIComponent(staffId), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: 'スタッフ情報が取得できません' };
+
+    supabaseUpdate_('staffs', { lec_grades: list }, 'id=eq.' + encodeURIComponent(staffId));
     return { success: true, message: '保存しました' };
   } catch (error) {
     Logger.log('❌ saveLecGradesエラー: ' + error);
