@@ -2014,7 +2014,107 @@ var WORKERS_FUNCTIONS = new Set([
 
 | コミット | 内容 | 状態 |
 |---------|------|------|
-| B-⑭a | `workers/src/functions/students.js` に3関数追加 + `supabaseUpsert` import 追加 + `router.js` 更新 | 未実施 |
-| B-⑭b | `gas-bridge.html` の `WORKERS_FUNCTIONS` に3関数追加 | 未実施 |
+| B-⑭a | `workers/src/functions/students.js` に3関数追加 + `supabaseUpsert` import 追加 + `router.js` 更新 | ✅ 完了（499b0d6） |
+| B-⑭b（初回） | `gas-bridge.html` の `WORKERS_FUNCTIONS` に3関数追加 | ✅ 完了（76e9bfb）→ 不具合で即切り戻し |
+| 切り戻し | `gas-bridge.html` から3関数を一時削除 | ✅ 完了（31266d7 + 785e469） |
+| fix | UPSERT → PATCH 修正（Workers/GAS 両方）+ `supabaseUpdate_` 新規追加 | ✅ 完了（67ac633） |
+| B-⑭b（再） | `gas-bridge.html` の `WORKERS_FUNCTIONS` に3関数を再追加 | ✅ 完了（584586d） |
+
+---
+
+## 不具合発覚と修正（B-⑭ 実施中）
+
+### 発覚した不具合
+
+B-⑭b（初回）デプロイ直後、`updateStudentInfo` で以下のエラーが発生：
+
+```
+Supabase UPSERT エラー(400): {
+  "code": "23502",
+  "details": "Failing row contains (0420261501, null, 04, null, null, ***, ***, ...)",
+  "message": "null value in column \"student_id\" of relation \"students\" violates not-null constraint"
+}
+```
+
+### 原因
+
+**PostgreSQL の NOT NULL 制約チェックは、ON CONFLICT より先に発火する。**
+
+PostgREST の UPSERT（`INSERT ... ON CONFLICT (id) DO UPDATE`）では、
+まず INSERT 用のタプルが構築される。このとき `student_id` が payload に含まれておらず NULL 扱いになる。
+PostgreSQL は ON CONFLICT 分岐へ移る前に NOT NULL チェックを実施するため、
+既存行（`id = '0420261501'` の行は実際に存在する）であっても エラーが発生する。
+
+`students` テーブルの `student_id` カラムは `is_nullable = NO`（NOT NULL 制約あり）。
+このカラムは `id`（PK）と同値が前提だが、更新系では省略されていた。
+
+### 事前調査と確認
+
+- Supabase で `SELECT COUNT(*) FROM students WHERE student_id IS NULL` → **0件**
+  - データ異常ではなく、PostgREST の挙動が原因と確定
+- `toStudentCamel_`（students.js:21）に `row.student_id || row.id` のフォールバックが存在
+  - 実装当初から `student_id = null` ケースを想定していた可能性あり
+
+### 修正方針: UPSERT → PATCH
+
+| 観点 | 理由 |
+|------|------|
+| 意味的に正しい | `updateStudentInfo` は純粋な「更新」操作。INSERT は不要 |
+| NOT NULL 安全 | PATCH（HTTP PATCH）は指定カラムのみ更新し、他の既存値を保持する |
+| 存在確認済み | `supabaseSelect_` で行の存在を確認済みのため UPSERT の INSERT 路は不要 |
+
+### 修正内容（コミット 67ac633）
+
+1. **`supabase.js`（GAS）に `supabaseUpdate_` を新規追加**
+   - `method: 'patch'`、`Prefer: return=representation`
+   - 未指定カラムの既存値を保持
+
+2. **`students.js`（GAS）3関数を修正**
+   - `updateStudentInfo`、`deleteStudent`、`restoreStudent`
+   - `supabaseUpsert_({id, ...})` → `supabaseUpdate_({...}, 'id=eq.{sid}')`
+   - payload から `id` を除去（WHERE フィルタに移動）
+
+3. **`workers/src/functions/students.js`（Workers）3関数を修正**
+   - import を `supabaseUpsert` → `supabaseUpdate` に変更
+   - 同様に PATCH 方式へ変更
+
+### 潜在バグ: saveExamResult（未対応）
+
+`students.js:1876` の `saveExamResult` も同じパターン（`supabaseUpsert_` で `student_id` を省略）。
+未移行関数だが同じ NOT NULL 違反が発生しうる。
+**B-⑮ 以降で Workers 移行時に合わせて修正予定。**
+
+---
+
+## 動作確認結果
+
+### GAS 経由（切り戻し中）— コミット 67ac633 後
+
+| 操作 | 結果 |
+|------|------|
+| `updateStudentInfo` | ✅ 成功トースト表示・Supabase 実データ更新確認 |
+| `deleteStudent` | ✅ 成功 |
+| `restoreStudent` | ✅ 成功 |
+
+### Workers 経由（584586d で再切り替え後）
+
+| 操作 | 結果 |
+|------|------|
+| `updateStudentInfo` | ✅ `workers.dev` への POST 200 OK・`success:true`・Supabase 実データ更新確認 |
+| `deleteStudent` | 未確認（実装は `updateStudentInfo` と同型。後日自然に検証される想定） |
+| `restoreStudent` | 未確認（同上） |
+
+### 動作確認中に発見した一時的現象
+
+`updateStudentInfo` 直後に campus 欄が「00」と表示される現象を1回確認。
+再確認では正常値に戻っており、通信タイミングの問題と推測。
+Supabase のデータは常に正常。
+
+### 既知バグ: UI 即時反映問題（別タスク）
+
+更新操作後、画面上の表示が変更前のまま残る（ハードリロードで解消）。
+**GAS 経由でも同症状が発生** → Workers 移行以前からの既存バグ。
+キャッシュクリアまたはフロントの状態更新処理の問題と推測。
+B-⑭ の範囲外として、**Phase 5-B 完了後に別タスクとして対応予定**。
 
 
