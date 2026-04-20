@@ -2295,4 +2295,95 @@ Step B（Workers 経由）動作確認中に以下の間欠的現象が発生：
 
 これは `saveExamResult` 固有の問題ではなく、**gas-bridge.html の切替機構または Firebase Hosting のキャッシュ**に起因する横断的現象と推測。B-⑯ 完了扱いとし、別タスクで扱う。
 
+---
+
+# B-⑰ saveLecGrades 移行（2026-04-20 完了）
+
+## 対象・方針
+
+| 項目 | 内容 |
+|------|------|
+| 対象関数 | `saveLecGrades`（設定タブ → 講習担当学年チェックボックス保存） |
+| 対象テーブル | Supabase `staffs` |
+| 実装方式 | **UPSERT → PATCH 切替**（B-⑭/⑯ と同型） |
+| フロント変更 | なし（`gas-bridge.html` の `WORKERS_FUNCTIONS` 追加のみ） |
+| 呼び出し頻度 | **高頻度**（チェックボックス変更ごとに発火） |
+
+## 判断根拠
+
+| 項目 | 内容 |
+|------|------|
+| payload 構成 | `{id, lec_grades}` の 2 フィールドのみ（部分 payload） |
+| 実運用での発火 | **Step A（GAS 経由）でも保存は成功**。`staffs` テーブルの NOT NULL 制約が `students` より緩く、部分 payload UPSERT でも通ってしまっていた |
+| 予防的改修の理由 | 将来 NOT NULL 制約が追加される可能性への備え・ポリシー統一（B-⑭/⑯ と同じ PATCH 方式で全書込関数を揃える） |
+| 結論 | **PATCH 方式を採用**（予防的） |
+
+## 事前 SELECT の扱い
+
+| 実装 | 方式 |
+|------|------|
+| Workers 側 | `find_staff_by_auth` RPC の結果が空配列のときにエラー返却（RPC が存在確認を兼ねる。B-⑥/⑦ と同パターン） |
+| GAS 側 | 明示的に `supabaseSelect_('staffs', 'id=eq.{staffId}')` で存在確認 |
+
+## 横断調査で判明した事実（B-⑰ の契機）
+
+B-⑯ 完了時、`grep supabaseUpsert_\(` で全箇所を横断調査し、`writeStaffToSupabase_`（14 箇所）と `saveLecGrades`（1 箇所）が候補として浮上。詳細調査の結果：
+
+| 分類 | 件数 | 詳細 |
+|------|------|------|
+| 同型バグ確定 | **0** 件 | — |
+| 条件付きリスク（将来的な予防対象） | **14** 件 | `writeStaffToSupabase_` の呼び出し全 14 箇所。いずれも `staffFromSupabase_` 由来の完全な staff を渡しているため現状安全。将来 partial staff を直接渡すコードが書かれた瞬間に破綻 |
+| 安全な実装済み書込 | — | `submitStudentInfo` (L474), `submitGradeData` (L1160, B-⑮ 済), `school_averages` (L1503), `test_analysis` (L663), staffs 新規作成 3 箇所 |
+| B-⑰ 対象 | **1** 件 | `saveLecGrades`（部分 payload 直接 UPSERT） |
+
+## 予防策（コミット 4 で実施）
+
+`staffToSupabase_` の JSDoc に警告コメントを追加：
+
+- 呼び出し側は **必ず `staffFromSupabase_` 由来の完全な staff** を渡すよう明記
+- 過去のバグ事例（B-⑭/B-⑯/B-⑰）を列挙
+- 部分更新が必要な場合は `supabaseUpdate_` を直接使うよう誘導
+
+`writeStaffToSupabase_` の 14 箇所は現状安全のため変更せず、将来のリファクタ機会（Phase 5-C 以降の Workers 個別移行時）で再精査する方針。
+
+## コミット
+
+| コミット | 内容 |
+|---------|------|
+| `45e7e63` | Workers 側実装（`workers/src/functions/settings.js` + `router.js` 登録） |
+| `7e51d84` | `gas-bridge.html` の `WORKERS_FUNCTIONS` に `'saveLecGrades'` 追加（切替） |
+| `ee5c048` | GAS 側 `saveLecGrades` を PATCH 化（`supabaseUpdate_` + 事前 SELECT 維持） |
+| `32b9fee` | `staffToSupabase_` に partial payload 警告 JSDoc を追加 |
+
+## 動作確認結果
+
+| ステップ | 経路 | 結果 |
+|---------|------|------|
+| Step A | GAS 経由 | **想定外に成功**（`staffs` の NOT NULL 制約が `students` より緩いため。他カラム破損もなし） |
+| Step B | Workers 経由 | **全項目 OK**（チェックボックス単発・連続操作・空配列・状態保持すべて正常） |
+
+## 観測された既存横断バグ（B-⑰ 派生ではない）
+
+Step B 動作確認中、以下の挙動を確認：
+
+- 読み込み中に操作した場合の race condition
+- 画面表示と DB の不整合、読み込み失敗時のエラー
+
+これは `saveLecGrades` 固有ではなく、`updateStudentInfo` 等でも発生する横断的な既存問題。**Phase 5 完全移行後に横断的に対応予定**。
+
+## 現時点の Workers 経由関数数：19 個
+
+| 種別 | 関数 |
+|------|------|
+| ヘルスチェック | `ping` |
+| 読取（12 個） | `getAdminEmails`, `getUserProfile`, `getAppStartupData`, `getMasterData`, `getGradesYearFolders`, `getSchoolAverages`, `getGradeAnalysis`, `getStudentAnalysis`, `getGradeDataByStudentAndTest`, `getDeletedStudents`, `getStudentsWithGradesByTest`, `getStudentListWithGrades` |
+| 書込（6 個） | `updateStudentInfo`, `deleteStudent`, `restoreStudent`, `submitGradeData`, `saveExamResult`, **`saveLecGrades`** |
+
+## B-⑱ 以降への引き継ぎメモ
+
+- 書込関数を追加する前に `grep supabaseUpsert_\\(` で全数調査を習慣化する
+- 「NOT NULL カラム全充足か」で UPSERT / PATCH を選ぶ判断基準を維持
+- `writeStaffToSupabase_` の 14 箇所はガードレール不足だが現状安全。Workers 個別移行時に PATCH 化を再検討
+- `features.js` の `ai_feedback` / `ai_learned_knowledge` UPSERT（4 箇所）と `minutes.js` の `meeting_minutes` UPSERT は未調査
+
 
