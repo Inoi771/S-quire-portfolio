@@ -94,8 +94,21 @@ function staffFromSupabase_(row) {
 }
 
 /**
- * camelCase スタッフオブジェクト → Supabase staffs 行に変換
- * @param {Object} staff camelCaseオブジェクト
+ * staff オブジェクトを Supabase staffs テーブル用の payload に変換する。
+ *
+ * ⚠️ 重要: 呼び出し側は必ず staffFromSupabase_ 由来の完全な staff
+ * オブジェクトを渡すこと。partial staff（例: {teacherId, name} のみ）を
+ * 渡すと、writeStaffToSupabase_ 経由で NOT NULL 違反エラーが発生する
+ * 恐れがある。
+ *
+ * 過去のバグ事例:
+ * - B-⑭: updateStudentInfo の partial payload UPSERT
+ * - B-⑯: saveExamResult の partial payload UPSERT
+ * - B-⑰: saveLecGrades の partial payload UPSERT
+ *
+ * 部分更新が必要な場合は supabaseUpdate_ を直接使うこと。
+ *
+ * @param {Object} staff camelCaseオブジェクト（staffFromSupabase_ の戻り値）
  * @return {Object} Supabase行（snake_case）
  */
 function staffToSupabase_(staff) {
