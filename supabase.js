@@ -124,6 +124,37 @@ function supabaseUpsert_(table, data, onConflict) {
 }
 
 /**
+ * テーブルのレコードを更新（UPDATE / PATCH）
+ * PATCH は未指定カラムの既存値を保持するため、NOT NULL 違反を起こさない
+ * （UPSERT は ON CONFLICT より先に NOT NULL チェックが発火するため要注意）
+ * @param {string} table テーブル名
+ * @param {Object} data 更新するフィールドのオブジェクト
+ * @param {string} query PostgRESTフィルター（例: 'id=eq.xxx'）
+ * @return {Array} 更新されたレコードの配列
+ */
+function supabaseUpdate_(table, data, query) {
+  var config = getSupabaseConfig_();
+  var url = config.url + '/rest/v1/' + encodeURIComponent(table);
+  if (query) url += '?' + query;
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'patch',
+    headers: supabaseHeaders_(config, {
+      'Prefer': 'return=representation'
+    }),
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code >= 400) {
+    throw new Error('Supabase UPDATE エラー(' + code + '): ' + body);
+  }
+  return body ? JSON.parse(body) : [];
+}
+
+/**
  * テーブルからデータを削除（DELETE）
  * @param {string} table テーブル名
  * @param {string} query PostgRESTフィルター（例: 'id=eq.xxx'）
