@@ -1,7 +1,7 @@
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
-import { getUserProfile, getAppStartupData } from './functions/settings.js';
+import { getUserProfile, getAppStartupData, saveLecGrades } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 
@@ -27,7 +27,8 @@ const HANDLERS = {
   deleteStudent,
   restoreStudent,
   submitGradeData,
-  saveExamResult
+  saveExamResult,
+  saveLecGrades
 };
 
 export async function handleApiCall(body, env) {

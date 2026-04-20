@@ -1,5 +1,5 @@
 // settings 関連ハンドラー（GAS settings.js の Workers ポート）
-import { supabaseRpc, supabaseSelect, supabaseUpsert, staffFromSupabase } from '../supabase.js';
+import { supabaseRpc, supabaseSelect, supabaseUpsert, supabaseUpdate, staffFromSupabase } from '../supabase.js';
 import { firestoreSet } from '../firebase.js';
 
 /**
@@ -159,6 +159,39 @@ export async function getAppStartupData(args, env, user) {
       lecGrades,
       lastAnalysisMeta
     };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * saveLecGrades — GAS saveLecGrades() の Workers 版
+ * 講習担当学年の配列を staffs.lec_grades に保存。
+ * B-⑭/⑯ と同型の NOT NULL 違反を避けるため PATCH 方式で実装。
+ * staffId は frontend から受けず、認証済み user から find_staff_by_auth で導出する。
+ */
+export async function saveLecGrades(args, env, user) {
+  try {
+    const [grades] = args || [];
+    const list = Array.isArray(grades) ? grades : [];
+
+    // 認証済みユーザーから staffId を導出
+    const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+      p_uid: user.uid || null,
+      p_email: user.email ? user.email.toLowerCase() : null
+    });
+    if (!rows || rows.length === 0) {
+      return { success: false, error: 'スタッフ情報が取得できません' };
+    }
+    const staffId = rows[0].id;
+    if (!staffId) {
+      return { success: false, error: 'スタッフ情報が取得できません' };
+    }
+
+    // 事前 SELECT は RPC が既に存在確認を兼ねているため省略
+    await supabaseUpdate(env, 'staffs', { lec_grades: list }, 'id=eq.' + encodeURIComponent(staffId));
+
+    return { success: true, message: '保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
