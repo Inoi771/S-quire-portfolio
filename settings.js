@@ -644,7 +644,12 @@ function saveLecGrades(grades) {
     if (!staff) return { success: false, error: 'スタッフ情報が取得できません' };
     var staffId = staff.teacherId || staff._id;
     var list = Array.isArray(grades) ? grades : [];
-    supabaseUpsert_('staffs', { id: staffId, lec_grades: list }, 'id');
+
+    // 存在確認（サイレント成功防止）
+    var check = supabaseSelect_('staffs', 'id=eq.' + encodeURIComponent(staffId), { select: 'id' });
+    if (!check || check.length === 0) return { success: false, error: 'スタッフ情報が取得できません' };
+
+    supabaseUpdate_('staffs', { lec_grades: list }, 'id=eq.' + encodeURIComponent(staffId));
     return { success: true, message: '保存しました' };
   } catch (error) {
     Logger.log('❌ saveLecGradesエラー: ' + error);
