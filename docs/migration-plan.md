@@ -2117,4 +2117,74 @@ Supabase のデータは常に正常。
 キャッシュクリアまたはフロントの状態更新処理の問題と推測。
 B-⑭ の範囲外として、**Phase 5-B 完了後に別タスクとして対応予定**。
 
+---
+
+# B-⑮ submitGradeData 移行（2026-04-20 完了）
+
+## 対象・方針
+
+| 項目 | 内容 |
+|------|------|
+| 対象関数 | `submitGradeData`（成績入力の保存処理） |
+| 対象テーブル | Supabase `grades` |
+| 実装方式 | **UPSERT 維持**（B-⑭ の PATCH 切替とは異なる） |
+| フロント変更 | なし（`gas-bridge.html` の `WORKERS_FUNCTIONS` 追加のみ） |
+
+## 判断根拠：なぜ UPSERT で良かったか
+
+B-⑭ で発覚した NOT NULL 違反（PostgreSQL は ON CONFLICT 判定より前に NOT NULL チェックを行う）の再発リスクは、B-⑮ では存在しない。理由：
+
+| 項目 | B-⑭（students） | B-⑮（grades） |
+|------|----------------|---------------|
+| payload 構成 | 一部カラムのみ（更新対象だけ） | 全カラム指定（初回保存と再保存で同一構造） |
+| NOT NULL カラム充足 | ❌ 欠落あり（`student_id` 等） | ✅ 全て送信 |
+| INSERT 路 | 通らない想定（既存行前提） | 初回保存で通る必要あり |
+| UPDATE 路 | 常にこちら | 再保存で通る必要あり |
+| 結論 | **PATCH へ切替** | **UPSERT 維持で安全** |
+
+→ **判断基準**: 「payload に NOT NULL カラムが全て含まれているか」を確認する。B-⑯ 以降もこの基準で UPSERT／PATCH を選択する。
+
+## 省略した GAS 側内部処理
+
+Workers 版では以下を省略してもロジック同等になることを確認：
+
+| GAS 処理 | Workers 側の対応 |
+|---------|---------------|
+| `getStudentNameById(sid)` | `scores.studentName` から取得（フロントが必ず注入している） |
+| `getMasterData(year)` → campus 引き当て | `sid.substring(0, 2)` で取得（studentId フォーマットが `{campus2}{year4}{grade2}{seq2}` のため決定論的） |
+| `skipCacheUpdate` フラグ | 削除（Workers にリクエスト間共有のインメモリキャッシュが無い） |
+
+→ 1件の UPSERT だけでリクエスト完結。不要な読取クエリがない分、GAS 版より高速。
+
+## コミット
+
+| コミット | 内容 |
+|---------|------|
+| 414fd19 | Workers 側実装（`workers/src/functions/students.js` に `submitGradeData` 追加＋`router.js` 登録） |
+| c2424bc | `gas-bridge.html` の `WORKERS_FUNCTIONS` に `'submitGradeData'` 追加（切替） |
+
+## 動作確認結果
+
+4 ケース × 2 段階（GAS 経由 → Workers 経由）で全て成功：
+
+| ケース | 内容 | GAS 経由 | Workers 経由 |
+|--------|------|---------|--------------|
+| ① INSERT | 新規テスト名で初回保存 | ✅ | ✅ |
+| ② UPDATE | 既存レコードの点数を書き換え | ✅ | ✅ |
+| ③ 別テスト名 | 同一生徒×別テストで追加行 | ✅ | ✅ |
+| ④ 空欄0点 | 全科目未入力（合計 0） | ✅ | ✅ |
+
+## 現時点の Workers 経由関数数：17 個
+
+| 種別 | 関数 |
+|------|------|
+| ヘルスチェック | `ping` |
+| 読取（12 個） | `getAdminEmails`, `getUserProfile`, `getAppStartupData`, `getMasterData`, `getGradesYearFolders`, `getSchoolAverages`, `getGradeAnalysis`, `getStudentAnalysis`, `getGradeDataByStudentAndTest`, `getDeletedStudents`, `getStudentsWithGradesByTest`, `getStudentListWithGrades` |
+| 書込（4 個） | `updateStudentInfo`, `deleteStudent`, `restoreStudent`, **`submitGradeData`** |
+
+## B-⑯ 以降への引き継ぎメモ
+
+- `saveExamResult`: 受験結果を `students` テーブルに部分 UPSERT する関数。B-⑭ と同じ NOT NULL 違反リスクあり → **PATCH 方式で実装**する必要あり。合わせて LockService 依存の除去も必要。
+- 書込関数を追加する前に必ず対象テーブルの NOT NULL カラム一覧を確認し、payload が全てを満たすかで UPSERT／PATCH を選ぶ。
+
 
