@@ -2384,6 +2384,86 @@ Step B 動作確認中、以下の挙動を確認：
 - 書込関数を追加する前に `grep supabaseUpsert_\\(` で全数調査を習慣化する
 - 「NOT NULL カラム全充足か」で UPSERT / PATCH を選ぶ判断基準を維持
 - `writeStaffToSupabase_` の 14 箇所はガードレール不足だが現状安全。Workers 個別移行時に PATCH 化を再検討
-- `features.js` の `ai_feedback` / `ai_learned_knowledge` UPSERT（4 箇所）と `minutes.js` の `meeting_minutes` UPSERT は未調査
+
+---
+
+# B-⑱ AI 管理系 UPSERT の PATCH 化（2026-04-20 完了）
+
+## 対象・方針
+
+| 項目 | 内容 |
+|------|------|
+| 対象関数 | `editAutoLearnedKnowledge`, `resolveAiFeedback`（Admin 機能・`js-admin-chatbot.html` から呼び出し） |
+| 対象テーブル | `ai_learned_knowledge`, `ai_feedback` |
+| 実装方式 | **UPSERT → PATCH 切替**（予防的改修・B-⑭/⑯/⑰ と同型） |
+| Workers 移行 | **スコープ外**（Admin 機能・低頻度・成績業務に関与しないため） |
+| フロント変更 | なし |
+
+## 判断根拠
+
+| 項目 | 内容 |
+|------|------|
+| payload 構成 | `editAutoLearnedKnowledge`: 4 フィールド（部分）<br>`resolveAiFeedback`: 3 フィールド（部分） |
+| UPSERT 意図 | 両関数とも **UPDATE 路のみ**（事前 SELECT でガード） |
+| 潜在リスク | `ai_learned_knowledge.source` / `learned_at` や `ai_feedback.type` / `summary` / `created_at` が NOT NULL なら B-⑭ 同型バグ発生 |
+| 実害 | 未観測（SQL 未確認・両機能とも低頻度のため発火事例なし） |
+| 対応方針 | **予防的改修**（B-⑰ と同じポリシー：NOT NULL がゆるくても PATCH 化で統一） |
+
+## 横断調査で判明した事実（B-⑱ の契機）
+
+`features.js` / `minutes.js` の UPSERT 5 箇所を精査：
+
+| # | 場所 | 関数 | テーブル | 意図 | 判定 |
+|---|------|------|----------|------|------|
+| 1 | `features.js:1716` | `requestAIAssistant`（feedback 保存） | `ai_feedback` | INSERT のみ | ✅ 安全 |
+| 2 | `features.js:2051` | `saveAutoLearnedKnowledge_` | `ai_learned_knowledge` | INSERT のみ | ✅ 安全 |
+| 3 | `features.js:2194` | `editAutoLearnedKnowledge` | `ai_learned_knowledge` | UPDATE のみ | ⚠️ 条件付きリスク → **B-⑱ 対応** |
+| 4 | `features.js:2266` | `resolveAiFeedback` | `ai_feedback` | UPDATE のみ | ⚠️ 条件付きリスク → **B-⑱ 対応** |
+| 5 | `minutes.js:70` | `saveMinutes` | `meeting_minutes` | INSERT/UPDATE 両対応 | ✅ 安全（全 8 カラム指定） |
+
+### 集計
+
+| 分類 | 件数 |
+|------|------|
+| 同型バグ確定 | **0** 件 |
+| 条件付きリスク（本件対応） | **2** 件 |
+| 安全 | **3** 件 |
+
+### 安全と判定された 3 件の詳細
+
+- **`requestAIAssistant` の feedback 保存** (L1716): docId が毎回 `fb_${Date.now()}` で新規。INSERT 路専用で payload 全 6 フィールド指定
+- **`saveAutoLearnedKnowledge_`** (L2051): docId が毎回 `lk_${Date.now()}` で新規。INSERT 路専用で payload 全 6 フィールド指定
+- **`saveMinutes`** (minutes.js:70): `data.id` 有無で INSERT / UPDATE 分岐するが、両路とも payload 全 8 カラム（`id`, `fiscal_year`, `month`, `title`, `summary`, `created_by`, `created_at`, `updated_at`）を指定。更新時も `created_at \|\| now` fallback で NOT NULL 違反を回避
+
+## コミット
+
+| コミット | 内容 |
+|---------|------|
+| `7149a89` | `editAutoLearnedKnowledge` を PATCH 化（`ai_learned_knowledge`） |
+| `6ee9499` | `resolveAiFeedback` を PATCH 化（`ai_feedback`） |
+| （本コミット） | `docs/migration-plan.md` B-⑱ セクション追記 |
+
+## 動作確認
+
+**不要**（予防的改修・Admin 機能・低頻度）。次回 Admin が以下を操作した際に動作確認される：
+- チャットボット管理タブで自動学習エントリを編集
+- AI フィードバック管理画面で「解決済み」ボタン
+
+## Phase 5 書込系の現状
+
+| 項目 | 状態 |
+|------|------|
+| Workers 経由関数数 | **19 個**（変更なし） |
+| Workers 経由の書込（6 関数） | 全て PATCH + 事前 SELECT |
+| GAS 内部完結の書込（本件 2 関数） | 全て PATCH + 事前 SELECT |
+| **書込系のポリシー統一** | **✅ 完全達成** |
+| UPSERT 系の潜在バグ精査 | **✅ 全件完了** |
+
+## Phase 5 の次フェーズへの引き継ぎ
+
+- **UPSERT 系の技術的負債は完全解消**
+- 既存横断バグ（gas-bridge キャッシュ問題 / 読み込み中の race condition）は Phase 5 完全移行後に横断的に対応
+- **Phase 5-E（ScriptProperties 移行）へ進める状態**
+- `writeStaffToSupabase_` の 14 箇所はガードレール不足だが現状安全。Workers 個別移行時に PATCH 化を再検討
 
 
