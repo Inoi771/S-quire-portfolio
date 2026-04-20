@@ -2191,12 +2191,11 @@ function editAutoLearnedKnowledge(docId, entryJson) {
     if (!rows || rows.length === 0) {
       return { success: false, error: '指定されたエントリが見つかりません' };
     }
-    supabaseUpsert_('ai_learned_knowledge', {
-      id: docId,
+    supabaseUpdate_('ai_learned_knowledge', {
       category: entry.category,
       content: entry.content,
       updated_at: new Date().toISOString()
-    }, 'id');
+    }, 'id=eq.' + encodeURIComponent(docId));
     return { success: true, message: '更新しました' };
   } catch (error) {
     Logger.log('❌ editAutoLearnedKnowledgeエラー: ' + error);
