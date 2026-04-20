@@ -1,5 +1,5 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
-import { supabaseSelect, supabaseRpc } from '../supabase.js';
+import { supabaseSelect, supabaseRpc, supabaseUpsert } from '../supabase.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -426,6 +426,104 @@ export async function getStudentListWithGrades(args, env, user) {
     });
 
     return { success: true, students };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * updateStudentInfo — GAS updateStudentInfo(...) の Workers 版
+ * 生徒情報を更新する（成績管理タブ → 生徒入力フォーム → 「更新」ボタン）
+ * GAS 版 students.js L512-537 と完全同一挙動
+ * args: [studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName]
+ */
+export async function updateStudentInfo(args, env, user) {
+  const [studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName] = args || [];
+  try {
+    let sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    // 存在確認（GAS 版 L518-519 と同一）
+    const check = await supabaseSelect(env, 'students',
+      'id=eq.' + encodeURIComponent(sid) + '&select=id');
+    if (!check || check.length === 0) {
+      return { success: false, error: '生徒が見つかりません' };
+    }
+
+    // UPSERT（第4引数 'id' 明示必須 — GAS 版は supabaseUpsert_ デフォルト 'id' と同等）
+    await supabaseUpsert(env, 'students', {
+      id:           sid,
+      campus:       String(campusCode).padStart(2, '0'),
+      sei:          String(sei || '').trim(),
+      mei:          String(mei || '').trim() || '',
+      sei_furigana: String(seiFurigana || '').trim(),
+      mei_furigana: String(meiFurigana || '').trim() || '',
+      school_name:  String(schoolName || '').trim() || ''
+    }, 'id');
+
+    return { success: true, message: '生徒情報を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * deleteStudent — GAS deleteStudent(studentId) の Workers 版
+ * 生徒をソフトデリート（is_deleted=true）する
+ * GAS 版 students.js L545-561 と完全同一挙動
+ * args: [studentId]
+ */
+export async function deleteStudent(args, env, user) {
+  const studentId = args && args[0];
+  try {
+    let sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    // 存在確認
+    const check = await supabaseSelect(env, 'students',
+      'id=eq.' + encodeURIComponent(sid) + '&select=id');
+    if (!check || check.length === 0) {
+      return { success: false, error: '生徒が見つかりません' };
+    }
+
+    // is_deleted=true のみ更新（他フィールド含めない・GAS 版 L553 と同一）
+    await supabaseUpsert(env, 'students', {
+      id: sid,
+      is_deleted: true
+    }, 'id');
+
+    return { success: true, message: '生徒を削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * restoreStudent — GAS restoreStudent(studentId) の Workers 版
+ * 削除済み生徒を復元（is_deleted=false）する
+ * GAS 版 students.js L626-642 と完全同一挙動
+ * args: [studentId]
+ */
+export async function restoreStudent(args, env, user) {
+  const studentId = args && args[0];
+  try {
+    let sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    // 存在確認
+    const check = await supabaseSelect(env, 'students',
+      'id=eq.' + encodeURIComponent(sid) + '&select=id');
+    if (!check || check.length === 0) {
+      return { success: false, error: '生徒が見つかりません' };
+    }
+
+    // is_deleted=false のみ更新（他フィールド含めない・GAS 版 L633 と同一）
+    await supabaseUpsert(env, 'students', {
+      id: sid,
+      is_deleted: false
+    }, 'id');
+
+    return { success: true, message: '生徒情報を復元しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
