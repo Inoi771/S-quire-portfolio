@@ -21,8 +21,9 @@ export default {
       return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
     } catch (e) {
       console.error('handleApiCall error:', e.message);
+      const status = (typeof e.status === 'number') ? e.status : 500;
       return new Response(JSON.stringify({ __gasError: e.message }), {
-        status: 500,
+        status,
         headers: CORS_HEADERS
       });
     }
