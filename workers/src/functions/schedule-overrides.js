@@ -25,8 +25,44 @@
 // 戻り値・エラーメッセージは GAS 側 `schedule.js` と完全一致させる。
 
 import { isAdminUser } from './auth.js';
+import { firestoreSet, firestoreDelete } from '../firebase.js';
 
 const PROP_PREFIX = 'prop:';
+
+/**
+ * Firestore DocId 用に文字列を安全なコンポーネントへ変換する（GAS makeScheduleSafeId_ 相当）。
+ * 英数字・ひらがな・カタカナ・漢字以外を `_` に置換し、最大40文字に切り詰める。
+ * @private
+ */
+function makeScheduleSafeId_(s) {
+  return String(s || '').replace(/[^a-zA-Z0-9぀-鿿゠-ヿ]/g, '_').substring(0, 40);
+}
+
+/**
+ * Firestore `operationLogs` コレクションへ監査ログを1件書き込む。
+ * GAS admin.js:90 `logAdminAction` の Workers 版（スプレッドシート記録は省略）。
+ * 失敗時はスローせずログ出力のみ（監査ログ失敗でメイン処理を止めない）。
+ * @private
+ * @param {Object} env Workers 環境
+ * @param {string} action 操作種別（例: '講習日程締切上書き'）
+ * @param {string} details 詳細文字列
+ */
+async function logAdminActionToFirestore(env, action, details) {
+  try {
+    const now = new Date();
+    const timestampMs = now.getTime();
+    const docId = timestampMs + '_' + makeScheduleSafeId_(action);
+    await firestoreSet(env, 'operationLogs', docId, {
+      action: action || '',
+      details: details || '',
+      result: '成功',
+      timestamp: now.toISOString(),
+      operator: 'Workers'
+    });
+  } catch (error) {
+    console.log('logAdminActionToFirestore エラー: ' + (error && error.toString ? error.toString() : error));
+  }
+}
 
 /**
  * 指定 KV キーから JSON を読み、オブジェクトとして返す。
@@ -356,6 +392,7 @@ export async function setLectureDeadlineOverride(args, env, user) {
     const overrides = await readKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES');
     overrides[lectureId] = dateStr;
     await writeKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES', overrides);
+    await logAdminActionToFirestore(env, '講習日程締切上書き', 'lectureId=' + lectureId + ', date=' + dateStr);
     return { success: true, message: '締切日を上書きしました' };
   } catch (error) {
     return { success: false, error: error.toString() };
@@ -375,7 +412,80 @@ export async function deleteLectureDeadlineOverride(args, env, user) {
     const overrides = await readKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES');
     delete overrides[lectureId];
     await writeKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES', overrides);
+    await logAdminActionToFirestore(env, '講習日程締切上書き削除', 'lectureId=' + lectureId);
     return { success: true, message: '自動計算に戻しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// schedules コレクション（Admin 手動追加のカスタムイベント）
+// ─────────────────────────────────────────────────────────────
+//
+// Phase 5-E-10：GAS schedule.js:198 `addCustomScheduleEntry` および
+// schedule.js:488 `deleteCustomScheduleEntry` の Workers 版。
+// Firestore `schedules` コレクションに直接書き込む／削除する。
+// DocId は GAS 側 `saveScheduleEntryToFirestore_` と同じ
+// `{safe(fiscalYear)}_admin_{timestampMs}` 形式で合成する。
+
+/**
+ * 管理者が自由に追加したカスタムイベントを Firestore に保存する（Admin のみ）
+ * GAS schedule.js:198 の Workers 版。
+ * 日付から年度を自動判定して `schedules` コレクションに書き込む。
+ * @param {Array} args [schoolName, eventName, dateYear, dateMonth, dateDay, details]
+ */
+export async function addCustomScheduleEntry(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [schoolName, eventName, dateYear, dateMonth, dateDay, details] = args || [];
+    if (!schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
+      return { success: false, error: '学校名・イベント名・日付は必須です' };
+    }
+    const fiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
+    const dateStr = dateMonth + '月' + dateDay + '日';
+    const scheduleDisplay = dateMonth + '月' + dateDay + '日 ' + eventName;
+    const now = new Date();
+    const timestampMs = now.getTime();
+    const docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
+    await firestoreSet(env, 'schedules', docId, {
+      fiscalYear: parseInt(fiscalYear, 10),
+      schoolName: schoolName || '',
+      eventName: eventName || '',
+      dateStr: dateStr,
+      details: details || '',
+      source: 'Admin 直接入力',
+      timestamp: now.toISOString(),
+      scheduleDisplay: scheduleDisplay
+    });
+    return {
+      success: true,
+      message: '追加しました',
+      timestamp: now.toISOString(),
+      fiscalYear: fiscalYear
+    };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 管理者が追加したカスタムイベントを削除する（Admin のみ）
+ * GAS schedule.js:488 の Workers 版。
+ * timestampStr から docId を逆算し `schedules` コレクションから1件削除する。
+ * @param {Array} args [fiscalYear, timestampStr]
+ */
+export async function deleteCustomScheduleEntry(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [fiscalYear, timestampStr] = args || [];
+    const timestampMs = new Date(timestampStr).getTime();
+    if (isNaN(timestampMs)) return { success: false, message: '無効なtimestamp' };
+    const docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
+    await firestoreDelete(env, 'schedules', docId);
+    return { success: true, message: '削除しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

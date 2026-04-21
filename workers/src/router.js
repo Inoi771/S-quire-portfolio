@@ -18,7 +18,9 @@ import {
   removeComputedClosedDay,
   deleteClosedDayOverride,
   setLectureDeadlineOverride,
-  deleteLectureDeadlineOverride
+  deleteLectureDeadlineOverride,
+  addCustomScheduleEntry,
+  deleteCustomScheduleEntry
 } from './functions/schedule-overrides.js';
 import {
   getCampusConfigForWeb,
@@ -102,6 +104,8 @@ const HANDLERS = {
   deleteClosedDayOverride,
   setLectureDeadlineOverride,
   deleteLectureDeadlineOverride,
+  addCustomScheduleEntry,
+  deleteCustomScheduleEntry,
   getCampusConfigForWeb,
   getGradeAnalysisSigmaConfig,
   updateGradeAnalysisSigmaConfig,
