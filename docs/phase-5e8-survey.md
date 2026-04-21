@@ -80,3 +80,81 @@ Firestore `schedules` コレクション書き込みの 9 関数（`updateSchedu
 7. `deleteScheduleEntryAI_`
 8. `editScheduleEntryAI_Extended_`
 9. `deleteScheduleEntryAI_Extended_`
+
+---
+
+## 前半 13 関数 詳細調査（Phase 5-E-8a-2）
+
+### 共通前提
+
+- **KV キー名規約**: GAS 側の `getProperty()` / `setProperty()` は `kv-props.js` 経由で `prop:<KEY>` に書き込む。Workers 側で直接アクセスする場合も `PROP_PREFIX = 'prop:'` を付与する（`workers/src/functions/kv.js` / `workers/src/functions/settings.js` と一致）。
+- **認証要件**: 13 関数すべてフロントエンド（`js-admin-ext` / `js-admin-lec-deadline`）から呼ばれる公開関数。Workers 化した場合は router.js の既定ルート（`PUBLIC_FUNCTIONS` にも `INTERNAL_FUNCTIONS` にも属さない）となるため、**Firebase ID トークン必須**（`verifyFirebaseIdToken`）。5-E-7 `getSettings` / `updateSettings` と同じ認証経路。
+- **Admin 判定規約**: GAS 側は `isAdmin()`（`auth.js`）。Workers 側では 5-E-7 で導入した `isAdminUser_(env, user)`（`workers/src/functions/settings.js` 内 private ヘルパー）と同じパターンで `env.KV.get('prop:ADMIN_EMAILS')` → `env.ADMIN_EMAILS` フォールバックを利用できる。
+- **共通依存**: `isAdmin()`（`auth.js:99`）, `getProperty()` / `setProperty()`（`auth.js:64,77` → `kv-props.js:125,163`）。
+
+### 調査結果表
+
+| # | 関数名 | KV キー | 認証 | Admin 判定 | 追加依存 | 5-E-7 同質 |
+|---|--------|---------|------|-----------|---------|-----------|
+| 1 | `setBasicTestDateOverride` | `prop:BASIC_TEST_DATES` | Firebase IDトークン必須 | 必要 | なし（JSON.parse / stringify のみ） | **yes** |
+| 2 | `deleteBasicTestDateOverride` | `prop:BASIC_TEST_DATES` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 3 | `setBasicTestDetails` | `prop:BASIC_TEST_DETAILS` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 4 | `deleteBasicTestDetails` | `prop:BASIC_TEST_DETAILS` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 5 | `setPublicHighExamDateOverride` | `prop:PUBLIC_HIGH_EXAM_DATES` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 6 | `deletePublicHighExamDateOverride` | `prop:PUBLIC_HIGH_EXAM_DATES` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 7 | `setJukuEventOverride` | `prop:JUKU_EVENT_OVERRIDES` | Firebase IDトークン必須 | 必要 | なし（`'none'` 分岐で `false` を格納する特殊ロジック内包） | **条件付き yes** |
+| 8 | `deleteJukuEventOverride` | `prop:JUKU_EVENT_OVERRIDES` | Firebase IDトークン必須 | 必要 | なし | **yes** |
+| 9 | `addClosedDayExtra` | `prop:CLOSED_DAYS_OVERRIDES` | Firebase IDトークン必須 | 必要 | なし（`add`/`del` デュアルリスト管理） | **条件付き yes** |
+| 10 | `removeComputedClosedDay` | `prop:CLOSED_DAYS_OVERRIDES` | Firebase IDトークン必須 | 必要 | なし（`add`/`del` デュアルリスト管理） | **条件付き yes** |
+| 11 | `deleteClosedDayOverride` | `prop:CLOSED_DAYS_OVERRIDES` | Firebase IDトークン必須 | 必要 | なし（`add`/`del` 両方から filter 除去） | **条件付き yes** |
+| 12 | `setLectureDeadlineOverride` | `prop:LECTURE_DEADLINE_OVERRIDES` | Firebase IDトークン必須 | 必要 | `PROP_KEYS`（`code.js:29`）, `safeJsonParse_`（`code.js:121`）, **`logAdminAction`（`admin.js:90` → Firestore `operationLogs` 書込）** | **条件付き no** |
+| 13 | `deleteLectureDeadlineOverride` | `prop:LECTURE_DEADLINE_OVERRIDES` | Firebase IDトークン必須 | 必要 | `PROP_KEYS`, `safeJsonParse_`, **`logAdminAction`** | **条件付き no** |
+
+### 同質性判定の根拠
+
+#### yes（完全同質・7 件）
+
+`#1`, `#2`, `#3`, `#4`, `#5`, `#6`, `#8` は `updateSettings` と同じ 4 手順で Workers 化できる：
+
+1. `isAdminUser_(env, user)` で Admin 判定
+2. `await env.KV.get(PROP_PREFIX + KEY)` で現在値を取得
+3. `JSON.parse` → プロパティ更新（add/delete by composite key）→ `JSON.stringify`
+4. `await env.KV.put(PROP_PREFIX + KEY, ...)` で書き戻し
+
+戻り値形状（`{ success, message?, error? }`）も既存 GAS 関数と `updateSettings` で一致。
+
+#### 条件付き yes（軽微な特殊ロジック・4 件）
+
+`#7`, `#9`, `#10`, `#11` は KV I/O 自体は単純だが、値の構造に特殊ロジックがある：
+
+- **`#7 setJukuEventOverride`**: `dateStr === 'none'` のとき値を `false`（無効化フラグ）で格納、それ以外は `{ date, details }` オブジェクト。→ Workers 側で同じ分岐をそのまま移植すれば OK。
+- **`#9 addClosedDayExtra`**: `add` 配列に追加しつつ `del` 配列から同じ日付を除外（両リストを同期）。
+- **`#10 removeComputedClosedDay`**: `del` 配列に追加しつつ `add` 配列から除外（`#9` の対称）。
+- **`#11 deleteClosedDayOverride`**: `add`/`del` 両方から filter 除去。
+
+いずれも KV 読込 → JavaScript で配列操作 → KV 書込、という settings パターンの素直な拡張。Workers 移行時に特殊ロジックをそのまま移植できる。
+
+#### 条件付き no（Firestore 副作用あり・2 件）
+
+`#12 setLectureDeadlineOverride` / `#13 deleteLectureDeadlineOverride` は KV 書込後に `logAdminAction()` を呼ぶ。`logAdminAction` は `recordOperationLog` 経由で **Firestore `operationLogs` コレクションへの書き込み**を行うため、settings パターンの単純 KV 書込だけでは完結しない。
+
+対応方針の選択肢（実装は 5-E-8b で決定）：
+
+- **A**: Workers 側でも `firestoreSet` を呼んで `operationLogs` に書き込む（既存 `workers/src/firebase.js` の `firestoreSet` を利用可能）。
+- **B**: 今回の Workers 移行では `logAdminAction` 相当の副作用をスキップし、GAS フォールバックに残す（Admin 操作の監査ログ粒度が下がる点に注意）。
+- **C**: `operationLogs` 書込を Workers 共通の Admin 書込ラッパーに切り出す（5-E-8b 以降で新規ヘルパー化）。
+
+### 備考
+
+- `PROP_KEYS.LECTURE_DEADLINE_OVERRIDES` は `code.js:29` で `'LECTURE_DEADLINE_OVERRIDES'` に展開されるため、Workers 側では即値 `'LECTURE_DEADLINE_OVERRIDES'` を使えば十分。`PROP_KEYS` 定数を Workers 側に持ち込む必要はない。
+- `safeJsonParse_` は失敗時のみデフォルト値を返す防御的ラッパー。Workers 側では `try/catch` で代替可能（5-E-7 `updateSettings` も明示 try/catch）。
+- 13 関数すべて **Admin 判定必須**（一般ユーザーはアクセス不可）。`isAdminUser_` の呼び出しは 13 回発生するため、5-E-7 と同様 lazy evaluation（`ensureAdmin()` クロージャ）で 1 回に絞る最適化は不要（各関数は Admin 判定 1 回で完結するため）。
+
+### 集計
+
+| 分類 | 件数 | 関数 |
+|------|------|------|
+| 5-E-7 完全同質（yes） | **7** | `#1` `#2` `#3` `#4` `#5` `#6` `#8` |
+| 条件付き同質（軽微な特殊ロジック） | **4** | `#7` `#9` `#10` `#11` |
+| 条件付き非同質（Firestore 副作用） | **2** | `#12` `#13` |
+| Admin 判定必須 | **13**（全件） | ─ |
