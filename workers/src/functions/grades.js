@@ -21,7 +21,7 @@
 //       getSchoolConfig_（private）           (G19 相当)
 //       countGradesBySchool_（private）       (Supabase shogaku1/shogaku2 OR・α 方式)
 //       parseDepartments_（private）          (G7/G9 共用の学科文字列パーサ)
-//   セッション 4（本コミット）:
+//   セッション 4（コミット 3e7aac1）:
 //       G10 addCampus                         (書込・校舎)
 //       G11 deleteCampus                      (書込・校舎 + Supabase count guard)
 //       G12 updateCampusDetails               (書込・校舎・部分更新)
@@ -29,9 +29,10 @@
 //       getCampusDetailsConfig_（private）    (G21 相当・将来の getStaffPlacementForWeb 用の備え)
 //       countStudentsByCampus_（private）     (Supabase `students` count guard・α 方式)
 //       readCampusConfigArray_（private）     (G10/G11/G12 共用の配列読取)
+//   セッション 5（本コミット・grades.js Workers 化クローズ）:
+//       G17 getGradesConfigForWeb             (読取・KV 4 キー合成 + Supabase `staffs`)
 //
-// 以降のサブセッションで追加予定（残り 1 件）：
-//   G17     getGradesConfigForWeb  （Supabase `staffs` 併用・KV 4 キー合成）
+// これで 5-E-9b-1（grades.js）の Workers 化対象 20 件はすべて完了。
 //
 // インライン展開/定数化（Workers では独立定義しない）:
 //   G1  getScriptProperty         → `env.KV.get('prop:' + key) ?? ''`
@@ -617,6 +618,73 @@ export async function updateVisibleGrades(args, env, user) {
     }
     await writeJson_(env, KEY_GRADE_VISIBLE, visibleCodes);
     return { success: true, message: '表示学年を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 成績管理設定を取得（G17 getGradesConfigForWeb の Workers 版）
+ * 成績管理タブで使用するドロップダウンデータを返す（GAS grades.js:442 相当）。
+ *
+ * 読み取り対象:
+ *   - KV `prop:GRADES_TEST_NAMES_CONFIG`   （`getTestNamesConfig_` 経由）
+ *   - KV `prop:GRADES_CAMPUS_CODES_CONFIG` （`readCampusConfigArray_` 経由・配列のまま）
+ *   - KV `prop:GRADES_VISIBLE_CONFIG`      （表示学年フィルター・未設定時は全学年）
+ *   - モジュール定数 `GRADES`                 （全 12 学年の code→name マップ）
+ *   - Supabase `staffs` テーブルの `display_name` / `name`（校舎責任者選択用）
+ *
+ * 副作用: 冒頭で `ensureGradesConfigInit_` を呼ぶ defensive init（GAS と同じ）。
+ * マイグレーション書込は持たない。
+ *
+ * Supabase エラー時は GAS 版と同じく外側 catch に伝播させ
+ * `{ success: false, error }` を返す（静かなフォールバックは行わない）。
+ */
+export async function getGradesConfigForWeb(args, env, user) {
+  try {
+    await ensureGradesConfigInit_(env);
+
+    // テスト名
+    const testNames = await getTestNamesConfig_(env);
+
+    // 校舎（GAS と同じく dict 化せず配列のまま返す）
+    const campusConfig = await readCampusConfigArray_(env);
+
+    // 学年（GRADES 定数から全 12 学年を数値順でソート）
+    const allGrades = Object.keys(GRADES)
+      .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+      .map((code) => ({ code, name: GRADES[code] }));
+
+    // 表示学年フィルター（未設定時は全学年を表示・初回デプロイ互換）
+    const visibleRaw = await readKv_(env, KEY_GRADE_VISIBLE);
+    let visibleCodes = null;
+    if (visibleRaw) {
+      try { visibleCodes = JSON.parse(visibleRaw); } catch (e) { visibleCodes = null; }
+    }
+    const grades = visibleCodes
+      ? allGrades.filter((g) => visibleCodes.indexOf(g.code) !== -1)
+      : allGrades;
+
+    // スタッフ一覧（校舎責任者選択用）
+    const staffRows = await supabaseSelect(env, 'staffs', 'select=display_name,name') || [];
+    const staffNames = staffRows
+      .map((r) => r.display_name || r.name || '')
+      .filter((n) => n)
+      .sort((a, b) => a.localeCompare(b, 'ja'));
+
+    // 志望校
+    const schools = await getSchoolConfig_(env);
+
+    return {
+      success: true,
+      testNames,
+      campuses: campusConfig,
+      grades,
+      allGrades,
+      visibleGradeCodes: visibleCodes || allGrades.map((g) => g.code),
+      schools,
+      staffNames
+    };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

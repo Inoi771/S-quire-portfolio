@@ -34,7 +34,8 @@ import {
   addCampus,
   deleteCampus,
   updateCampusDetails,
-  updateVisibleGrades
+  updateVisibleGrades,
+  getGradesConfigForWeb
 } from './functions/grades.js';
 
 // 認証不要の関数
@@ -97,7 +98,8 @@ const HANDLERS = {
   addCampus,
   deleteCampus,
   updateCampusDetails,
-  updateVisibleGrades
+  updateVisibleGrades,
+  getGradesConfigForWeb
 };
 
 export async function handleApiCall(body, env) {
