@@ -445,14 +445,15 @@ export async function addCustomScheduleEntry(args, env, user) {
     }
     const fiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
     const dateStr = dateMonth + '月' + dateDay + '日';
-    const scheduleDisplay = dateMonth + '月' + dateDay + '日 ' + eventName;
+    const actualYear = (dateMonth >= 1 && dateMonth <= 3) ? fiscalYear + 1 : fiscalYear;
+    const scheduleDisplay = actualYear + '年' + dateMonth + '月' + dateDay + '日';
     const now = new Date();
     const timestampMs = now.getTime();
     const docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
     await firestoreSet(env, 'schedules', docId, {
       fiscalYear: parseInt(fiscalYear, 10),
       schoolName: schoolName || '',
-      eventName: eventName || '',
+      eventType: eventName || '',
       dateStr: dateStr,
       details: details || '',
       source: 'Admin 直接入力',
