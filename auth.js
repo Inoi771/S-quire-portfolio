@@ -56,28 +56,26 @@ function verifyFirebaseIdToken_(idToken) {
 
 /**
  * スクリプトプロパティから値を取得
+ * Phase 5-E-4 以降は Workers 経由の Cloudflare KV から取得する（失敗時は
+ * ScriptProperties にフォールバック）。キャッシュは getProperty_ 内で実施。
  * @param {string} key プロパティキー
  * @return {string} 値（存在しない場合は空文字列）
  */
 function getProperty(key) {
-  // 同一実行内のインメモリキャッシュ（PropertiesServiceへの冗長アクセスを防止）
-  if (!getProperty._cache) getProperty._cache = {};
-  if (getProperty._cache[key] !== undefined) return getProperty._cache[key];
-  var val = PropertiesService.getScriptProperties().getProperty(key) || '';
-  getProperty._cache[key] = val;
-  return val;
+  var val = getProperty_(key);
+  return val == null ? '' : val;
 }
 
 /**
  * スクリプトプロパティに値を設定
+ * Phase 5-E-4 以降は Workers 経由の Cloudflare KV に書き込みつつ、
+ * ScriptProperties にも同期する（Dual-write・移行期間中の安全網）。
  * @param {string} key プロパティキー
  * @param {string} value 設定する値
  * @return {boolean} 常に true
  */
 function setProperty(key, value) {
-  PropertiesService.getScriptProperties().setProperty(key, value);
-  // インメモリキャッシュも更新
-  if (getProperty._cache) getProperty._cache[key] = value;
+  setProperty_(key, value);
   return true;
 }
 

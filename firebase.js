@@ -31,10 +31,9 @@ function getFirestoreAccessToken_() {
   var cached = cache.get(FIRESTORE_TOKEN_CACHE_KEY_);
   if (cached) return cached;
 
-  var props = PropertiesService.getScriptProperties();
-  var projectId  = props.getProperty('FIREBASE_PROJECT_ID');
-  var clientEmail = props.getProperty('FIREBASE_CLIENT_EMAIL');
-  var privateKey  = props.getProperty('FIREBASE_PRIVATE_KEY');
+  var projectId  = getProperty_('FIREBASE_PROJECT_ID');
+  var clientEmail = getProperty_('FIREBASE_CLIENT_EMAIL');
+  var privateKey  = getProperty_('FIREBASE_PRIVATE_KEY');
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
@@ -96,7 +95,7 @@ function getFirestoreAccessToken_() {
  * @return {string} ベースURL
  */
 function firestoreBaseUrl_() {
-  var projectId = PropertiesService.getScriptProperties().getProperty('FIREBASE_PROJECT_ID');
+  var projectId = getProperty_('FIREBASE_PROJECT_ID');
   return 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/(default)/documents';
 }
 
@@ -105,7 +104,7 @@ function firestoreBaseUrl_() {
  * @return {string} ベースパス（v1/projects/...）
  */
 function firestoreBasePath_() {
-  var projectId = PropertiesService.getScriptProperties().getProperty('FIREBASE_PROJECT_ID');
+  var projectId = getProperty_('FIREBASE_PROJECT_ID');
   return 'projects/' + projectId + '/databases/(default)/documents';
 }
 
@@ -222,7 +221,7 @@ function firestoreDelete_(collection, docId) {
  */
 function firestoreQuery_(collection, filters, limit) {
   var token = getFirestoreAccessToken_();
-  var projectId = PropertiesService.getScriptProperties().getProperty('FIREBASE_PROJECT_ID');
+  var projectId = getProperty_('FIREBASE_PROJECT_ID');
   var url = 'https://firestore.googleapis.com/v1/projects/' + projectId +
             '/databases/(default)/documents:runQuery';
 

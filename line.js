@@ -763,12 +763,11 @@ function saveFormEmailFilterSettings(sender) {
     return { success: false, error: 'Admin のみアクセス可能' };
   }
   try {
-    var props = PropertiesService.getScriptProperties();
     sender = (sender || '').trim();
     if (sender) {
-      props.setProperty('FORM_EMAIL_SENDER', sender);
+      setProperty_('FORM_EMAIL_SENDER', sender);
     } else {
-      props.deleteProperty('FORM_EMAIL_SENDER');
+      deleteProperty_('FORM_EMAIL_SENDER');
     }
     return { success: true, message: 'フィルター設定を保存しました' };
   } catch (error) {

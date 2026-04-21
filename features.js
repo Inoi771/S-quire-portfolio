@@ -2592,7 +2592,7 @@ var holidayCacheLec_ = null;
 function isHolidayLec_(dateStr) {
   try {
     if (holidayCacheLec_ === null) {
-      var raw = PropertiesService.getScriptProperties().getProperty('HOLIDAY_CACHE');
+      var raw = getProperty_('HOLIDAY_CACHE');
       holidayCacheLec_ = raw ? JSON.parse(raw) : {};
     }
     return !!(holidayCacheLec_[dateStr]);
@@ -2641,7 +2641,7 @@ function getFirstWedOnOrAfterLec_(date) {
 function computeBasicTestDateLec_(fiscalYear, testNum) {
   var key = fiscalYear + '-' + testNum;
   try {
-    var raw = PropertiesService.getScriptProperties().getProperty('BASIC_TEST_DATES');
+    var raw = getProperty_('BASIC_TEST_DATES');
     if (raw) {
       var ov = JSON.parse(raw);
       if (ov[key]) {
@@ -2673,7 +2673,7 @@ function computeBasicTestDateLec_(fiscalYear, testNum) {
 function getPublicHighSchoolExamDateLec_(fiscalYear) {
   // オーバーライド確認
   try {
-    var raw = PropertiesService.getScriptProperties().getProperty('PUBLIC_HIGH_EXAM_DATES');
+    var raw = getProperty_('PUBLIC_HIGH_EXAM_DATES');
     if (raw) {
       var ov = JSON.parse(raw);
       var key = String(fiscalYear);
@@ -4231,8 +4231,7 @@ function migrateLecturePricingData_(oldData) {
  */
 function getLecturePricingConfig() {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
+    var json = getProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
     var data;
     if (json) {
       var raw = JSON.parse(json);
@@ -4243,13 +4242,13 @@ function getLecturePricingConfig() {
       });
       if (needsMigration) {
         data = migrateLecturePricingData_(raw);
-        props.setProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(data));
+        setProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(data));
       } else {
         data = raw;
       }
     } else {
       data = getDefaultLecturePricing_();
-      props.setProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(data));
+      setProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(data));
     }
     return { success: true, data: data };
   } catch (error) {
@@ -4274,8 +4273,7 @@ function saveLecturePricing(typeId, lectureDataJson) {
       return { success: false, error: '料金データの形式が不正です（{rows:[...]}形式が必要）' };
     }
 
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
+    var json = getProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
     var all = json ? JSON.parse(json) : getDefaultLecturePricing_();
 
     // 旧フォーマットが残っていれば移行
@@ -4286,7 +4284,7 @@ function saveLecturePricing(typeId, lectureDataJson) {
     if (needsMigration) all = migrateLecturePricingData_(all);
 
     all[typeId] = lectureData;
-    props.setProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(all));
+    setProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(all));
 
     // 料金表（PRICING_TABLE_CONFIG）の講習セクションを自動更新
     syncLecturePricingToTable_(all);
@@ -4310,8 +4308,7 @@ function saveUnifiedLecturePricing(payloadJson) {
     var payload = JSON.parse(payloadJson);
     if (!payload || !payload.allTypes) return { success: false, error: 'データ形式が不正です' };
 
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
+    var json = getProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG);
     var all = json ? JSON.parse(json) : getDefaultLecturePricing_();
 
     // 旧フォーマット移行
@@ -4329,7 +4326,7 @@ function saveUnifiedLecturePricing(payloadJson) {
       }
     });
 
-    props.setProperty(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(all));
+    setProperty_(CONFIG_PROP_KEYS.LECTURE_PRICING_CONFIG, JSON.stringify(all));
     syncLecturePricingToTable_(all);
 
     return { success: true, message: '全講習の料金設定を保存しました' };
@@ -4346,8 +4343,7 @@ function saveUnifiedLecturePricing(payloadJson) {
  */
 function getLectureGreetings() {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG);
+    var json = getProperty_(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG);
     var data = json ? JSON.parse(json) : {};
     Logger.log('✓ getLectureGreetings: 取得完了');
     return { success: true, data: data };
@@ -4369,8 +4365,7 @@ function saveLectureGreetings(dataJson) {
     if (!data || typeof data !== 'object') {
       return { success: false, error: 'データ形式が不正です' };
     }
-    var props = PropertiesService.getScriptProperties();
-    props.setProperty(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG, JSON.stringify(data));
+    setProperty_(CONFIG_PROP_KEYS.LECTURE_GREETINGS_CONFIG, JSON.stringify(data));
     Logger.log('✓ saveLectureGreetings: 保存完了');
     return { success: true, message: '挨拶文を保存しました' };
   } catch (error) {
@@ -4386,8 +4381,7 @@ function saveLectureGreetings(dataJson) {
  */
 function syncLecturePricingToTable_(pricingData) {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var tableJson = props.getProperty(CONFIG_PROP_KEYS.PRICING_CONFIG);
+    var tableJson = getProperty_(CONFIG_PROP_KEYS.PRICING_CONFIG);
     if (!tableJson) {
       Logger.log('⚠ syncLecturePricingToTable_: PRICING_CONFIG 未設定のためスキップ');
       return;
@@ -4492,7 +4486,7 @@ function syncLecturePricingToTable_(pricingData) {
       }
     });
 
-    props.setProperty(CONFIG_PROP_KEYS.PRICING_CONFIG, JSON.stringify(tableData));
+    setProperty_(CONFIG_PROP_KEYS.PRICING_CONFIG, JSON.stringify(tableData));
   } catch (e) {
     Logger.log('❌ syncLecturePricingToTable_エラー: ' + e);
   }
@@ -4613,20 +4607,19 @@ function migrateNormalClassConfig_(oldRows) {
  */
 function getNormalClassConfig() {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var json = props.getProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG);
+    var json = getProperty_(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG);
     var data;
     if (json) {
       data = JSON.parse(json);
       // 旧形式（配列）→ 新形式へマイグレーション
       if (Array.isArray(data)) {
-        props.setProperty('NORMAL_CLASS_CONFIG_LEGACY', json); // 旧データを退避
+        setProperty_('NORMAL_CLASS_CONFIG_LEGACY', json); // 旧データを退避
         data = migrateNormalClassConfig_(data);
-        props.setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
+        setProperty_(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
       }
     } else {
       data = getDefaultNormalClassConfig_();
-      props.setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
+      setProperty_(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
     }
     return { success: true, data: data };
   } catch (error) {
@@ -4647,7 +4640,7 @@ function saveNormalClassConfig(jsonData) {
     var data = JSON.parse(jsonData);
     if (!data || !Array.isArray(data.sections)) return { success: false, error: 'データの形式が不正です' };
     data.version = 2;
-    PropertiesService.getScriptProperties().setProperty(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
+    setProperty_(CONFIG_PROP_KEYS.NORMAL_CLASS_CONFIG, JSON.stringify(data));
     // 料金表タブへ自動同期
     syncNormalConfigToPricingTable_(data);
     return { success: true, message: '通常授業設定を保存しました' };
@@ -4664,8 +4657,7 @@ function saveNormalClassConfig(jsonData) {
  */
 function syncNormalConfigToPricingTable_(normalData) {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var tableJson = props.getProperty(CONFIG_PROP_KEYS.PRICING_CONFIG);
+    var tableJson = getProperty_(CONFIG_PROP_KEYS.PRICING_CONFIG);
     if (!tableJson) {
       Logger.log('⚠ syncNormalConfigToPricingTable_: PRICING_CONFIG 未設定のためスキップ');
       return;
@@ -4708,7 +4700,7 @@ function syncNormalConfigToPricingTable_(normalData) {
     var otherSections = tableData.sections.filter(function(s) { return s.tab !== '通常授業'; });
     tableData.sections = newSections.concat(otherSections);
 
-    props.setProperty(CONFIG_PROP_KEYS.PRICING_CONFIG, JSON.stringify(tableData));
+    setProperty_(CONFIG_PROP_KEYS.PRICING_CONFIG, JSON.stringify(tableData));
     Logger.log('✅ 通常設定 → 料金表 同期完了: ' + newSections.length + ' セクション');
   } catch (e) {
     Logger.log('❌ syncNormalConfigToPricingTable_エラー: ' + e);
