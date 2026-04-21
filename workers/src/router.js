@@ -20,6 +20,12 @@ import {
   setLectureDeadlineOverride,
   deleteLectureDeadlineOverride
 } from './functions/schedule-overrides.js';
+import {
+  getCampusConfigForWeb,
+  getGradeAnalysisSigmaConfig,
+  updateGradeAnalysisSigmaConfig,
+  resetGradeAnalysisSigmaConfig
+} from './functions/grades.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -67,7 +73,11 @@ const HANDLERS = {
   removeComputedClosedDay,
   deleteClosedDayOverride,
   setLectureDeadlineOverride,
-  deleteLectureDeadlineOverride
+  deleteLectureDeadlineOverride,
+  getCampusConfigForWeb,
+  getGradeAnalysisSigmaConfig,
+  updateGradeAnalysisSigmaConfig,
+  resetGradeAnalysisSigmaConfig
 };
 
 export async function handleApiCall(body, env) {
