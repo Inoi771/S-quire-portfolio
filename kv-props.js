@@ -303,3 +303,78 @@ function getAllProperties_() {
 
   return merged;
 }
+
+/**
+ * 【Phase 5-E-6 診断用】ScriptProperties 凍結が有効かを検証する診断関数。
+ * GAS エディタから手動実行することで、setProperty_ / deleteProperty_ が
+ * SP に書き込んでいないことを確認できる。
+ *
+ * 手順:
+ *   1) 実行前の SP に TEST キーが無いことを確認
+ *   2) setProperty_(TEST, テスト値) を実行
+ *   3) PropertiesService.getScriptProperties().getProperty(TEST) が null なら OK
+ *   4) deleteProperty_(TEST) を実行して KV 側も掃除
+ *
+ * 注意: 事前に KV から残骸を消すため、最初にも deleteProperty_ を呼ぶ。
+ * @return {Object} 診断結果
+ */
+function _testSpFrozen_() {
+  var TEST_KEY = '__TEST_SP_FROZEN_' + Date.now();
+  var TEST_VALUE = 'canary-' + Math.random().toString(36).slice(2, 10);
+  var result = { key: TEST_KEY, steps: [], passed: false };
+
+  // 前提: SP に TEST_KEY が無いことを確認（タイムスタンプ付きキーなので衝突しない想定）
+  var spBefore = PropertiesService.getScriptProperties().getProperty(TEST_KEY);
+  result.steps.push({ step: 'sp_before', value: spBefore, expected: null });
+
+  // setProperty_ を実行（KV のみに書く想定）
+  var setOk = setProperty_(TEST_KEY, TEST_VALUE);
+  result.steps.push({ step: 'setProperty_', returned: setOk });
+
+  // 【最重要】SP 側に書き込まれていないことを確認
+  var spAfterSet = PropertiesService.getScriptProperties().getProperty(TEST_KEY);
+  result.steps.push({
+    step: 'sp_after_setProperty_',
+    value: spAfterSet,
+    expected: null,
+    violation: spAfterSet !== null
+  });
+
+  // KV 側には書き込まれていることを確認（getProperty_ 経由）
+  var kvAfterSet = getProperty_(TEST_KEY);
+  result.steps.push({ step: 'kv_after_setProperty_', value: kvAfterSet, expected: TEST_VALUE });
+
+  // deleteProperty_ を実行（KV のみから消す想定）
+  var delOk = deleteProperty_(TEST_KEY);
+  result.steps.push({ step: 'deleteProperty_', returned: delOk });
+
+  // 【最重要】削除後も SP に痕跡が無いこと
+  var spAfterDel = PropertiesService.getScriptProperties().getProperty(TEST_KEY);
+  result.steps.push({
+    step: 'sp_after_deleteProperty_',
+    value: spAfterDel,
+    expected: null,
+    violation: spAfterDel !== null
+  });
+
+  // KV 側から消えていることを確認
+  delete _kvPropsCache_[TEST_KEY];
+  var kvAfterDel = getProperty_(TEST_KEY);
+  result.steps.push({ step: 'kv_after_deleteProperty_', value: kvAfterDel, expected: null });
+
+  // 合否判定: 「SP に書かれていない」かつ「KV は期待値」なら pass
+  result.passed =
+    spAfterSet === null &&
+    spAfterDel === null &&
+    kvAfterSet === TEST_VALUE &&
+    kvAfterDel === null;
+
+  Logger.log('=== _testSpFrozen_ 結果 ===');
+  Logger.log(JSON.stringify(result, null, 2));
+  if (result.passed) {
+    Logger.log('✓ Phase 5-E-6 凍結 OK: SP は書かれず、KV のみが更新された');
+  } else {
+    Logger.log('❌ Phase 5-E-6 凍結 NG: SP に書込が残っている（デプロイ未反映の可能性あり）');
+  }
+  return result;
+}
