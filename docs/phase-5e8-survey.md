@@ -314,3 +314,45 @@ Workers 経由での講習締切上書き／削除操作は監査ログに記録
 - GAS 側 `schedule.js` の `setLectureDeadlineOverride` / `deleteLectureDeadlineOverride`
   は `logAdminAction` を保持したまま残存しているため、フォールバック経路
   では監査ログが引き続き残る。この二重実装は 5-E-10 で解消する。
+
+---
+
+## Phase 5-E-8 完了記録
+
+### 完了日
+
+2026-04-21
+
+### Workers 化の進捗
+
+| 分類 | 件数 | 対応状況 | 実装コミット |
+|------|------|---------|------------|
+| グループ A（settings パターン完全同質） | **7** | ✅ Workers 化完了 | `8e24a9d` |
+| グループ B（条件付き同質・特殊ロジックあり） | **4** | ✅ Workers 化完了 | `5a6c7ad` |
+| グループ C（Firestore 副作用あり・KV 部分のみ） | **2** | ✅ Workers 化完了（`operationLogs` 書込は保留） | `0e73679` |
+| **小計（5-E-8 で Workers 化）** | **13** | — | — |
+| グループ D（Firestore/Supabase 主軸） | 4（うち `updateSchedules` は対象外扱い） | ⏭️ **5-E-10 に持ち越し** | — |
+| グループ E（AI 系 `_` ヘルパー） | 5 | ⏭️ **5-E-10 に持ち越し** | — |
+
+### 持ち越し理由（グループ D・E）
+
+- **グループ D**（`addCustomScheduleEntry` / `deleteCustomScheduleEntry` / `saveScheduleEntryToFirestore_` / `updateSchedules`）は Firestore `schedules` コレクションへの書込が本体。docId 合成・source 分岐・fiscalYear 算出など、Firestore REST 認証基盤とのセットで設計すべきロジックを多く含む。
+- **グループ E**（AI 系 `_` ヘルパー 5 件）は `executeAiAction`（`features.js`）から呼ばれる内部関数。AI アシスタント本体がまだ Workers 化されていないため、単独で先行移行しても呼び出し経路が整合しない。
+- よって、両グループは Phase 5-E-10（Firestore 系 Workers 化）の Firestore REST 認証基盤設計と統合して扱うのが自然。
+
+### 新規資産
+
+| ファイル | 役割 |
+|---------|------|
+| `workers/src/functions/auth.js` | `isAdminUser(env, user)` を共通ヘルパーとして公開。`verifyFirebaseIdToken`（`workers/src/auth.js`）と棲み分け、今後の B→A 昇格関数全般から再利用される |
+| `workers/src/functions/schedule-overrides.js` | schedule.js 上書き系 13 関数の Workers ポート（グループ A+B+C）。内部ヘルパー `readKvJson_` / `writeKvJson_` / `denyIfNotAdmin_` / `readClosedDays_` を提供 |
+
+### 既存宿題
+
+- **グループ C の `operationLogs` 書込欠落** — Workers 経由では監査ログが残らない。GAS フォールバック経路では残る。詳細は本ドキュメント「5-E-10 への宿題」セクション参照。Phase 5-E-10 で `firestoreSet` 直呼び or 共通 `logAdminAction` 相当 Workers ヘルパーを新設する形で解消する。
+
+### GAS 側の扱い
+
+- 13 関数すべての GAS 実装（`schedule.js`）はフォールバック保険として保持。5-E-8 では 1 行も削除していない。
+- 削除判断は 5-E-10 完了後、Workers ルートが十分に成熟してから別フェーズで行う。
+
