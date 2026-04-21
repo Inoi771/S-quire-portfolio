@@ -439,8 +439,8 @@ export async function addCustomScheduleEntry(args, env, user) {
   try {
     const denied = await denyIfNotAdmin_(env, user);
     if (denied) return denied;
-    const [schoolName, eventName, dateYear, dateMonth, dateDay, details] = args || [];
-    if (!schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
+    const [schoolName, eventType, dateYear, dateMonth, dateDay, details] = args || [];
+    if (!schoolName || !eventType || !dateYear || !dateMonth || !dateDay) {
       return { success: false, error: '学校名・イベント名・日付は必須です' };
     }
     const fiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
@@ -453,7 +453,7 @@ export async function addCustomScheduleEntry(args, env, user) {
     await firestoreSet(env, 'schedules', docId, {
       fiscalYear: parseInt(fiscalYear, 10),
       schoolName: schoolName || '',
-      eventType: eventName || '',
+      eventType: eventType || '',
       dateStr: dateStr,
       details: details || '',
       source: 'Admin 直接入力',
