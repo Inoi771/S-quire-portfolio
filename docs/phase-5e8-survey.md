@@ -158,3 +158,115 @@ Firestore `schedules` コレクション書き込みの 9 関数（`updateSchedu
 | 条件付き同質（軽微な特殊ロジック） | **4** | `#7` `#9` `#10` `#11` |
 | 条件付き非同質（Firestore 副作用） | **2** | `#12` `#13` |
 | Admin 判定必須 | **13**（全件） | ─ |
+
+---
+
+## 後半 9 関数 詳細調査（Phase 5-E-8a-3）
+
+### 共通前提
+
+- 調査対象は Firestore `schedules` コレクションに書き込みを行う関数群 + Drive 系の `updateSchedules` + 内部ヘルパー `saveScheduleEntryToFirestore_`。
+- Workers 側の Firestore 書込は `workers/src/firebase.js` の `firestoreSet` を利用可能（既存実装）。
+- `firestoreGet_` / `firestoreDelete_` / `firestoreQuery_` / `fsFilter_` の Workers 版は `workers/src/firebase.js` にある `firestoreGet` / `firestoreDelete` / `firestoreQuery` / `fsFilter` に相当。
+- 認証経路は 13 関数と同じく `verifyFirebaseIdToken`（router.js 既定）。
+- 呼び出し元の確認（`features.js` 内 grep）:
+  - `addScheduleEntryAI_` → `features.js:1808`
+  - `editScheduleEntryAI_Extended_` → `features.js:1820`
+  - `deleteScheduleEntryAI_Extended_` → `features.js:1824`
+  - `getAllScheduleEntriesForAI_`（読取・対象外）→ `features.js:1352`
+  - `editScheduleEntryAI_` / `deleteScheduleEntryAI_`（非 Extended）は現状呼び出し元なし（参考情報・本調査では 5-E-0 D 分類削除後の定義ファイルを信頼しそのまま扱う）
+
+### 調査結果表
+
+| # | 関数名 | データソース | 認証 | Admin 判定 | 主な依存 | Workers 化難易度 | 5-E-7 乖離度 |
+|---|--------|-------------|------|-----------|---------|------------------|------------|
+| 14 | `addCustomScheduleEntry` | Firestore `schedules` コレクション | Firebase IDトークン必須 | 必要 | `isAdmin()`, `saveScheduleEntryToFirestore_` → `firestoreSet_` | **中** | **大**（KV でなく Firestore、docId 合成・source 分岐） |
+| 15 | `deleteCustomScheduleEntry` | Firestore `schedules` コレクション | Firebase IDトークン必須 | 必要 | `isAdmin()`, `makeScheduleSafeId_`（内部）, `firestoreDelete_` | **易** | **中** |
+| 16 | `updateSchedules` | 実質 no-op（`getScheduleFolder()` が `null` を返すため早期 return）。仮想的には Drive + Firestore + Gemini API | Firebase IDトークン必須 | 不要 | `getScheduleFolder()`（常に null）, `autoImportAllSchedules`（Drive/Gemini 依存） | **Workers 化対象外**（DriveApp 必須・実質デッドコード） | **最大** |
+| 17 | `saveScheduleEntryToFirestore_` | Firestore `schedules` コレクション | 内部ヘルパー（呼出元の権限に従う） | 不要（ヘルパー内判定なし） | `makeScheduleSafeId_`, `firestoreSet_` | **中** | **大**（docId 合成ロジックの移植要） |
+| 18 | `addScheduleEntryAI_` | Firestore `schedules` コレクション（source='AI入力'） | `_` サフィックスだが `executeAiAction` 経由で全ユーザー呼出 | 不要（AI 経由・全ユーザー） | `saveScheduleEntryToFirestore_` | **中** | **大** |
+| 19 | `editScheduleEntryAI_` | Firestore `schedules` コレクション | `_` ヘルパー | 不要（source='Admin 直接入力'/'AI入力' のみ許可するフィールドチェック） | `firestoreGet_`, `firestoreSet_` | **中** | **大** |
+| 20 | `deleteScheduleEntryAI_` | Firestore `schedules` コレクション | `_` ヘルパー | 不要（同上・source チェックのみ） | `firestoreGet_`, `firestoreDelete_` | **易** | **大** |
+| 21 | `editScheduleEntryAI_Extended_` | Firestore `schedules` コレクション | `_` ヘルパー | 不要（source 制限なし） | `firestoreGet_`, `firestoreSet_`, `firestoreDelete_`, `makeScheduleSafeId_`（import 系は新 docId 合成 + 旧 docId 削除） | **中〜難**（2 操作の順次実行・弱整合） | **最大** |
+| 22 | `deleteScheduleEntryAI_Extended_` | Firestore `schedules` コレクション | `_` ヘルパー | 不要 | `firestoreGet_`（存在確認）, `firestoreDelete_` | **易** | **大** |
+
+### 難易度の根拠
+
+- **易（#15, #20, #22）**: 単一の Firestore read + delete。Workers 側に既存 helper あり、ロジックは 10 行以内。
+- **中（#14, #17, #18, #19）**: `saveScheduleEntryToFirestore_` 相当の共通ヘルパー（docId 合成・source 別ルール・fiscalYear 算出）を Workers 側に 1 本追加する必要あり。本体は ±30 行程度。
+- **中〜難（#21）**: import 系エントリの「旧 docId 削除 + 新 docId 作成」のシーケンス。Firestore には真のトランザクションがないため、片側成功・片側失敗のケアが必要（ただし既存 GAS コードもベストエフォート運用なので、Workers 側でも同じ順序で実行すれば挙動は同等）。
+- **Workers 化対象外（#16）**: `updateSchedules` は DriveApp 依存の `getScheduleFolder` が常に `null` を返し、実質 no-op。Workers 化は不要。GAS 残し確定扱い。
+
+---
+
+## 全 22 関数 最終分類
+
+| グループ | 定義 | 件数 | 対象関数 |
+|---------|------|------|---------|
+| **A** | settings パターン完全同質（KV 純粋・副作用なし） | **7** | `setBasicTestDateOverride`, `deleteBasicTestDateOverride`, `setBasicTestDetails`, `deleteBasicTestDetails`, `setPublicHighExamDateOverride`, `deletePublicHighExamDateOverride`, `deleteJukuEventOverride` |
+| **B** | 条件付き同質（軽微な特殊ロジック・KV 中心） | **4** | `setJukuEventOverride`（`'none'` 分岐）, `addClosedDayExtra`, `removeComputedClosedDay`, `deleteClosedDayOverride`（いずれも `add`/`del` デュアルリスト管理） |
+| **C** | Firestore 副作用あり（ログ書込など従属的・KV 書込が主） | **2** | `setLectureDeadlineOverride`, `deleteLectureDeadlineOverride`（いずれも `logAdminAction` → Firestore `operationLogs`） |
+| **D** | Firestore/Supabase 主軸（本丸・KV でない） | **4** | `addCustomScheduleEntry`, `deleteCustomScheduleEntry`, `saveScheduleEntryToFirestore_`（内部ヘルパー）, `updateSchedules`（Workers 化対象外・GAS 残し） |
+| **E** | AI 系（Workers 化に特殊考慮が要る） | **5** | `addScheduleEntryAI_`, `editScheduleEntryAI_`, `deleteScheduleEntryAI_`, `editScheduleEntryAI_Extended_`, `deleteScheduleEntryAI_Extended_` |
+
+合計: 7 + 4 + 2 + 4 + 5 = **22 件**（一致）
+
+### グループ別の Admin 判定内訳
+
+| グループ | Admin 判定必須 | Admin 判定不要 |
+|---------|-------------|---------------|
+| A | 7 | 0 |
+| B | 4 | 0 |
+| C | 2 | 0 |
+| D | 2（`addCustomScheduleEntry`, `deleteCustomScheduleEntry`）| 2（`saveScheduleEntryToFirestore_` 内部, `updateSchedules` 判定なし）|
+| E | 0（AI 経由・全ユーザー） | 5 |
+| **合計** | **15** | **7** |
+
+---
+
+## auth.js 昇格判断
+
+### 推奨: **yes**（`workers/src/auth.js` への昇格を推奨）
+
+### 理由
+
+1. **対象範囲が広い**: Admin 判定を必要とする関数は 22 関数中 **15 件**（68%）。settings 系以外の schedule 系 Workers ファイル（5-E-8b 以降の新規 `schedule-overrides.js` 等）からも再利用されることが確定している。
+2. **既存の 5-E-7 `isAdminUser_` は `workers/src/functions/settings.js` の private ヘルパー**（settings.js:14-23）。現状のまま import すると双方向依存を生みやすく、schedule 系専用の別実装を書くのも重複コードを生む。
+3. **既存 `workers/src/auth.js` には `verifyFirebaseIdToken` が既にある**。Admin 判定は本質的に「認証済みユーザーが特権を持つか」の判定であり、認証関連ヘルパーとして同じファイルに置くのが意味論的に自然。
+4. **他の B→A 昇格候補（講師配置・料金表・成績マスタ等）でも再利用見込み**。5-E-8 以降の Phase 全体に効く汎用化。
+
+### 具体的な昇格手順（5-E-8b-1 で実施提案）
+
+- `workers/src/auth.js` に `isAdminUser(env, user)` を新設（`settings.js` の `isAdminUser_` とシグネチャ・挙動は完全互換）。
+- `workers/src/functions/settings.js` の `isAdminUser_` を削除し、`auth.js` から `import { isAdminUser }` に差し替え。
+- 既存の `updateSettings` / `getSettings` の挙動に差分が出ないことを回帰テスト（手動・Admin 判定分岐）。
+- 以降の schedule 系 Workers ファイルは `auth.js` の `isAdminUser` を使う。
+
+> 昇格と同時にリネーム（`_` サフィックス撤廃）することで、Workers 内部ヘルパーからファイル間公開ヘルパーへの意味変更を名前にも反映させる。
+
+---
+
+## 5-E-8b 実装フェーズの分割提案
+
+### 推奨: **4 サブフェーズに分割**
+
+段階的リリースでリグレッションリスクを抑え、各サブフェーズを「動く最小単位」として main に独立デプロイ可能にする。グループ C 以降は前サブフェーズの基盤（auth.js 昇格 / Firestore ヘルパー）に乗るため、順序依存あり。
+
+| サブフェーズ | 扱うグループ | 件数 | 主な成果物 | 備考 |
+|------------|-------------|------|-----------|------|
+| **5-E-8b-1** | **A + B** | **11** | `workers/src/auth.js` に `isAdminUser` 昇格 / `workers/src/functions/schedule-overrides.js` を新設（A の 7 関数 + B の 4 関数）/ `gas-bridge.html` に 11 関数分のルート追加 | settings パターン直適用。KV I/O のみ。リスク最小。**auth.js 昇格もここで実施** |
+| **5-E-8b-2** | **C** | **2** | `schedule-overrides.js` に `setLectureDeadlineOverride` / `deleteLectureDeadlineOverride` を追加。`workers/src/firebase.js` 等に `operationLogs` 書込ヘルパーを（必要なら）整備 | Firestore 副作用の扱いを確立する小さめの回。`logAdminAction` 相当の Workers ヘルパー設計も兼ねる |
+| **5-E-8b-3** | **D**（`updateSchedules` 除く） | **3** | `workers/src/functions/schedule-entries.js`（仮）を新設し `addCustomScheduleEntry` / `deleteCustomScheduleEntry` を Workers 化 / 内部ヘルパー `saveScheduleEntryToFirestore` を Workers 側に用意 / docId 合成・source 分岐ロジック移植 | `updateSchedules` は Workers 化対象外として明示的に GAS 残し宣言。Firestore 主軸の回でテスト観点が変わる |
+| **5-E-8b-4** | **E** | **5** | `schedule-entries.js` に AI 系 5 関数を追加。`features.js` 側の呼出経路との整合性確認 | AI アシスタント本体（`requestAIAssistant` / `executeAiAction`）がまだ Workers 化されていないため、**「Workers 化しない」判断の余地もあり**（5-E-8b-4 を保留して 5-E-9 以降に回す選択肢を検討推奨） |
+
+### 代替案（3 サブフェーズ）
+
+D と E をまとめて **5-E-8b-3 + 5-E-8b-4** を統合する案もあるが、E の扱いに未確定要素（AI 経由呼出の Workers 化全体設計）があるため、切り離した 4 分割を推奨する。
+
+### 件数まとめ
+
+- 5-E-8b-1: 11 件（A7 + B4）
+- 5-E-8b-2: 2 件（C）
+- 5-E-8b-3: 3 件（D から `updateSchedules` を除く）
+- 5-E-8b-4: 5 件（E・保留可）
+- 小計: 21 件（`updateSchedules` は対象外）
