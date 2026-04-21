@@ -14,18 +14,24 @@
 //       G6  updateTestName                    (書込・テスト名)
 //       getTestNamesConfig_（private）        (G18 相当)
 //       countGradesByTestName_（private）     (Supabase count guard・α 方式)
-//   セッション 3（本コミット）:
+//   セッション 3（コミット 4408ad7）:
 //       G7  addSchool                         (書込・志望校)
 //       G8  deleteSchool                      (書込・志望校 + Supabase OR count guard)
 //       G9  updateSchool                      (書込・志望校)
 //       getSchoolConfig_（private）           (G19 相当)
 //       countGradesBySchool_（private）       (Supabase shogaku1/shogaku2 OR・α 方式)
 //       parseDepartments_（private）          (G7/G9 共用の学科文字列パーサ)
+//   セッション 4（本コミット）:
+//       G10 addCampus                         (書込・校舎)
+//       G11 deleteCampus                      (書込・校舎 + Supabase count guard)
+//       G12 updateCampusDetails               (書込・校舎・部分更新)
+//       G13 updateVisibleGrades               (書込・表示学年)
+//       getCampusDetailsConfig_（private）    (G21 相当・将来の getStaffPlacementForWeb 用の備え)
+//       countStudentsByCampus_（private）     (Supabase `students` count guard・α 方式)
+//       readCampusConfigArray_（private）     (G10/G11/G12 共用の配列読取)
 //
-// 以降のサブセッションで追加予定（残り 9 件）：
-//   G10-G13 校舎書込 + 表示学年（4 件）
-//   G17     getGradesConfigForWeb  （Supabase 併用）
-//   G21     getCampusDetailsConfig_（private）
+// 以降のサブセッションで追加予定（残り 1 件）：
+//   G17     getGradesConfigForWeb  （Supabase `staffs` 併用・KV 4 キー合成）
 //
 // インライン展開/定数化（Workers では独立定義しない）:
 //   G1  getScriptProperty         → `env.KV.get('prop:' + key) ?? ''`
@@ -437,6 +443,180 @@ export async function updateSchool(args, env, user) {
     schools[idx] = { name: newName, departments };
     await writeJson_(env, KEY_SCHOOL, schools);
     return { success: true, message: '志望校を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─── 校舎 CRUD 共用の配列読取（G10/G11/G12 は GAS 版と同じく dict 変換せず配列を扱う） ───
+// GAS 現行の addCampus/deleteCampus/updateCampusDetails は getCampusConfig（dict 化）を
+// 使わず、`getScriptProperty` で生配列を取得してから操作している。同じ意味論を維持する。
+async function readCampusConfigArray_(env) {
+  const raw = await readKv_(env, KEY_CAMPUS_CODES);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch (e) { return []; }
+}
+
+// ─── Workers 内部 private reader: G21 getCampusDetailsConfig 相当 ───
+// GAS grades.js:545 と同じ。現時点で Workers の他関数から参照はないが、
+// 将来の getStaffPlacementForWeb（admin.js）Workers 化時の備えとして定義。
+// ensureGradesConfigInit_ 呼出は GAS 版と同じく冒頭で行う。
+async function getCampusDetailsConfig_(env) {
+  try {
+    await ensureGradesConfigInit_(env);
+    const config = await readCampusConfigArray_(env);
+    return config.map((item) => ({
+      code:      item.code,
+      name:      item.name      || '',
+      tel:       item.tel       || '',
+      fax:       item.fax       || '',
+      principal: item.principal || '',
+      mobile:    item.mobile    || ''
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// ─── Supabase count guard（GAS countStudentsByCampus_ 相当・選択肢α） ───
+// 指定校舎コードに在籍する削除済みでない生徒の件数を返す（エラー時は 0）。
+// コードは 2 桁ゼロ埋め正規化（GAS 側と一致）。
+async function countStudentsByCampus_(env, campusCode) {
+  try {
+    const targetCode = String(campusCode).padStart(2, '0');
+    const rows = await supabaseSelect(
+      env,
+      'students',
+      'select=id&campus=eq.' + encodeURIComponent(targetCode) + '&is_deleted=eq.false'
+    );
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * 校舎を追加（G10 の Workers 版）
+ * GAS grades.js:281 と同じ。コード正規化（upper）・長さ制限・重複チェック付き。
+ * @param {Array} args [campusCode, campusName, tel, fax, principal, mobile]
+ */
+export async function addCampus(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [campusCode, campusName, tel, fax, principal, mobile] = args || [];
+    if (!campusCode || !campusName) {
+      return { success: false, error: 'コードと名前を入力してください' };
+    }
+    campusCode = campusCode.trim().toUpperCase();
+    campusName = campusName.trim();
+    const campusConfig = await readCampusConfigArray_(env);
+    if (campusConfig.some((c) => c.code === campusCode)) {
+      return { success: false, error: 'このコードは既に使用されています' };
+    }
+    if (campusCode.length > 10 || campusName.length > 30) {
+      return { success: false, error: 'コードは10文字、名前は30文字以下にしてください' };
+    }
+    const newCampus = {
+      code:      campusCode,
+      name:      campusName,
+      tel:       (tel       || '').trim(),
+      fax:       (fax       || '').trim(),
+      principal: (principal || '').trim(),
+      mobile:    (mobile    || '').trim()
+    };
+    campusConfig.push(newCampus);
+    await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
+    return { success: true, message: '校舎を追加しました', campus: newCampus };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 校舎を削除（G11 の Workers 版）
+ * GAS grades.js:323 と同じ。filter で存在確認 → 在籍生徒が 1 名以上なら拒否（α 方式）。
+ * GAS の順序どおり「存在チェック → Supabase count → 書込」で実装し、
+ * filter 後の length 比較で「見つからない」を判定する挙動も踏襲。
+ * @param {Array} args [campusCode]
+ */
+export async function deleteCampus(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [campusCode] = args || [];
+    campusCode = (campusCode || '').trim();
+    let campusConfig = await readCampusConfigArray_(env);
+    const beforeCount = campusConfig.length;
+    campusConfig = campusConfig.filter((c) => c.code !== campusCode);
+    if (beforeCount === campusConfig.length) {
+      return { success: false, error: '校舎が見つかりません' };
+    }
+    const studentCount = await countStudentsByCampus_(env, campusCode);
+    if (studentCount > 0) {
+      return { success: false, error: 'この校舎には ' + studentCount + ' 名の生徒が登録されているため削除できません' };
+    }
+    await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
+    return { success: true, message: '校舎を削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 校舎詳細を変更（G12 の Workers 版）
+ * GAS grades.js:368 と同じ。`tel/fax/principal/mobile` は `null` 指定で変更スキップ
+ * （部分更新）。コードは変更不可。
+ * @param {Array} args [campusCode, name, tel, fax, principal, mobile]
+ */
+export async function updateCampusDetails(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [campusCode, name, tel, fax, principal, mobile] = args || [];
+    name = (name || '').trim();
+    if (!name) {
+      return { success: false, error: '校舎名を入力してください' };
+    }
+    const campusConfig = await readCampusConfigArray_(env);
+    const idx = campusConfig.findIndex((c) => c.code === campusCode);
+    if (idx === -1) {
+      return { success: false, error: '校舎が見つかりません' };
+    }
+    campusConfig[idx].name = name;
+    if (tel       !== null) campusConfig[idx].tel       = (tel       || '').trim();
+    if (fax       !== null) campusConfig[idx].fax       = (fax       || '').trim();
+    if (principal !== null) campusConfig[idx].principal = (principal || '').trim();
+    if (mobile    !== null) campusConfig[idx].mobile    = (mobile    || '').trim();
+    await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
+    return { success: true, message: '校舎情報を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 表示する学年を更新する（G13 の Workers 版）
+ * GAS grades.js:397 と同じ。ドロップダウンに表示する学年コード配列を KV に保存。
+ * 全コードが GRADES 定数に存在することをバリデーション。
+ * @param {Array} args [visibleCodes]
+ */
+export async function updateVisibleGrades(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    const [visibleCodes] = args || [];
+    if (!Array.isArray(visibleCodes) || visibleCodes.length === 0) {
+      return { success: false, error: '少なくとも1つの学年を選択してください' };
+    }
+    for (let i = 0; i < visibleCodes.length; i++) {
+      const code = String(visibleCodes[i]);
+      if (!GRADES[code]) {
+        return { success: false, error: '無効な学年コードです: ' + code };
+      }
+    }
+    await writeJson_(env, KEY_GRADE_VISIBLE, visibleCodes);
+    return { success: true, message: '表示学年を更新しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

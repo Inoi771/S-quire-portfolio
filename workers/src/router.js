@@ -30,7 +30,11 @@ import {
   updateTestName,
   addSchool,
   deleteSchool,
-  updateSchool
+  updateSchool,
+  addCampus,
+  deleteCampus,
+  updateCampusDetails,
+  updateVisibleGrades
 } from './functions/grades.js';
 
 // 認証不要の関数
@@ -89,7 +93,11 @@ const HANDLERS = {
   updateTestName,
   addSchool,
   deleteSchool,
-  updateSchool
+  updateSchool,
+  addCampus,
+  deleteCampus,
+  updateCampusDetails,
+  updateVisibleGrades
 };
 
 export async function handleApiCall(body, env) {
