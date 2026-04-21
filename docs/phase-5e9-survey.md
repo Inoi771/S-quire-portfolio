@@ -484,4 +484,31 @@ consistent）を含み、単純 KV とテスト観点が異なるため、切り
 - **G11 `deleteCampus`**（セッション 4 で同じ α を適用する推奨）: `students` テーブルを
   `campus=eq.<code2桁>&is_deleted=eq.false` で count。
 
+### features.js 講習期間系（F5/F6/F7）のタイムゾーン扱い（5-E-9b-2a-2）
+
+#### 差異の発生条件
+
+- GAS の実行環境は Asia/Tokyo（スクリプトタイムゾーン設定による・本アプリは JST 固定）。
+- Cloudflare Workers のデフォルトは UTC。
+- `new Date(y, m-1, d)` 構築時はローカル時刻の 00:00 を表すため、Y/M/D を読み直すと同値となり**タイムゾーン非依存**。`getDay()` も同様に Y/M/D が同じなら同じ曜日を返すため、曜日計算・休校日判定等の結果は **両環境で完全一致**する。
+- **唯一差異が出る経路**は `new Date()`（現在時刻）を使って「いまの月」「いまの年度」を判定する箇所。F5 `getLecturePeriods` のみ該当。日本時間 00:00〜09:00 の間、Workers は前日の年月を返してしまう。
+
+#### 対応
+
+`getJstNow_()` ヘルパーを新設し、`Date.now() + 9h` を UTC ゲッタ経由で読むことで JST 壁時計時刻を取得。F5 で `currentFy` 決定時に使用。
+
+```js
+function getJstNow_() {
+  const nowJst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return { year: nowJst.getUTCFullYear(), month: nowJst.getUTCMonth() + 1 };
+}
+```
+
+F6/F7 は引数で `fiscalYear` を受け取るため現在時刻に依存せず、この調整は不要。
+
+#### 備考
+
+- `isHolidayLec_` 等の休校日判定はすべて特定日付（Y/M/D）に対する判定で、タイムゾーン非依存。
+- `isHolidayLec_` の実装内キャッシュ（`holidayCacheLec_`）はモジュール変数。Workers のインスタンス再利用で状態が持ち越される可能性があるため、F5/F7 の先頭で `holidayCacheLec_ = null` にリセットして最新 KV 値を確実に反映する（GAS の「同一実行内キャッシュ」と同じ挙動を再現）。
+
 

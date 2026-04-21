@@ -42,7 +42,10 @@ import {
   saveAiKnowledgeEntry,
   deleteAiKnowledgeEntry,
   getLectureGreetings,
-  saveLectureGreetings
+  saveLectureGreetings,
+  getLecturePeriods,
+  saveLectureDates,
+  resetLectureDates
 } from './functions/features.js';
 
 // 認証不要の関数
@@ -111,7 +114,10 @@ const HANDLERS = {
   saveAiKnowledgeEntry,
   deleteAiKnowledgeEntry,
   getLectureGreetings,
-  saveLectureGreetings
+  saveLectureGreetings,
+  getLecturePeriods,
+  saveLectureDates,
+  resetLectureDates
 };
 
 export async function handleApiCall(body, env) {
