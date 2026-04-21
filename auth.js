@@ -68,8 +68,8 @@ function getProperty(key) {
 
 /**
  * スクリプトプロパティに値を設定
- * Phase 5-E-4 以降は Workers 経由の Cloudflare KV に書き込みつつ、
- * ScriptProperties にも同期する（Dual-write・移行期間中の安全網）。
+ * Phase 5-E-6 以降は Cloudflare KV のみに書き込む（ScriptProperties への
+ * Dual-write は凍結済・KV が唯一の正）。
  * @param {string} key プロパティキー
  * @param {string} value 設定する値
  * @return {boolean} 常に true
@@ -81,10 +81,12 @@ function setProperty(key, value) {
 
 /**
  * すべてのスクリプトプロパティを取得
+ * Phase 5-E-5 以降は Cloudflare KV を一次ソースとし、SP-only キー（INTERNAL_API_KEY 等）は
+ * ScriptProperties からユニオンで補完する。KV 失敗時は SP 直読にフォールバック。
  * @return {Object} キーと値のペア
  */
 function getAllProperties() {
-  return PropertiesService.getScriptProperties().getProperties();
+  return getAllProperties_();
 }
 
 

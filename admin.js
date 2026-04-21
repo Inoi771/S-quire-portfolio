@@ -102,9 +102,8 @@ function logAdminAction(action, details) {
 
 /**
  * スクリプトプロパティを更新（GUI経由）
- * Phase 5-E-4 以降：getProperty / setProperty は auth.js 側で
- * getProperty_ / setProperty_ ラッパー経由に置換済みのため、本関数の書込は
- * Workers KV を一次ソースとして更新され、ScriptProperties にも Dual-write される。
+ * Phase 5-E-6 以降：setProperty_ ラッパーは Cloudflare KV のみに書き込む
+ * （ScriptProperties への Dual-write は凍結済・KV が唯一の正）。
  * @param {string} key プロパティキー
  * @param {string} newValue 新しい値
  * @return {Object} { success, message, error }
@@ -134,8 +133,8 @@ function updateScriptPropertyFromGUI(key, newValue) {
 
 /**
  * スクリプトプロパティを削除（GUI経由）
- * Phase 5-E-4 以降：deleteProperty_ ラッパーで Workers KV と ScriptProperties の
- * 両方から削除される（Dual-delete）。
+ * Phase 5-E-6 以降：deleteProperty_ ラッパーは Cloudflare KV のみから削除する
+ * （ScriptProperties への Dual-delete は凍結済・KV が唯一の正）。
  * @param {string} key 削除するプロパティキー
  * @return {Object} { success, message, error }
  */
@@ -1258,11 +1257,6 @@ function _placementMigrateLegacyKey(currentFY) {
       Logger.log('✓ 講師配置: 旧 STAFF_PLACEMENT を ' + currentKey + ' へ移行');
     }
     deleteProperty_('STAFF_PLACEMENT');
-    // インメモリキャッシュも無効化
-    if (getScriptProperty._cache) {
-      delete getScriptProperty._cache['STAFF_PLACEMENT'];
-      delete getScriptProperty._cache[currentKey];
-    }
   } catch (e) {
     Logger.log('❌ _placementMigrateLegacyKey エラー: ' + e);
   }
@@ -1274,17 +1268,17 @@ function _placementMigrateLegacyKey(currentFY) {
  */
 function _placementArchiveOldYears(currentFY) {
   try {
-    // getKeys() は Workers 側に対応 API がないため ScriptProperties を直接参照。
-    // Dual-write で SP も同期済みのため現役年度キーはすべてここから列挙できる。
-    var keys = PropertiesService.getScriptProperties().getKeys();
+    // Phase 5-E-6: KV を一次ソースとして列挙（SP はフォールバック）。
+    // getAllProperties_() は kv_list + fetchAll(kv_get) + SP ユニオンで全キーを返す。
+    var all = getAllProperties_();
     var re = /^STAFF_PLACEMENT_(\d{4})$/;
-    keys.forEach(function(k) {
+    Object.keys(all).forEach(function(k) {
       var m = k.match(re);
       if (!m) return;
       var y = parseInt(m[1], 10);
       if (isNaN(y) || y >= currentFY) return;
       var archiveKey = 'STAFF_PLACEMENT_ARCHIVE_' + y;
-      var val = getProperty_(k);
+      var val = all[k];
       if (val) {
         // 既存アーカイブを上書きしないよう、未設定のときのみコピー
         if (!getProperty_(archiveKey)) {
@@ -1293,7 +1287,6 @@ function _placementArchiveOldYears(currentFY) {
       }
       // アーカイブ成功（または値無し）を確認してから現役キー削除
       deleteProperty_(k);
-      if (getScriptProperty._cache) delete getScriptProperty._cache[k];
       Logger.log('✓ 講師配置: ' + y + '年度データを ' + archiveKey + ' に退避・現役キーを削除');
     });
   } catch (e) {
@@ -1416,7 +1409,6 @@ function saveStaffPlacementForWeb(dataJson, year) {
 
     var key = 'STAFF_PLACEMENT_' + targetYear;
     setProperty_(key, toSave);
-    if (getScriptProperty._cache) delete getScriptProperty._cache[key];
     Logger.log('✓ saveStaffPlacementForWeb: ' + key + ' を保存');
     return { success: true, year: targetYear };
   } catch (e) {
