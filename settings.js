@@ -488,52 +488,6 @@ function getOrCreateTeacherId() {
 }
 
 /**
- * メールアドレスを変更
- * @aiCallable
- * @param {string} newEmail 新しいメールアドレス
- * @return {Object} { success, message, oldEmail, newEmail, note, error }
- */
-function updateEmailAddress(newEmail) {
-  try {
-    newEmail = (newEmail || '').trim().toLowerCase();
-    
-    // バリデーション
-    if (!newEmail) {
-      return { success: false, error: 'メールアドレスを入力してください' };
-    }
-    
-    // メール形式チェック
-    var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newEmail)) {
-      return { success: false, error: '有効なメールアドレスを入力してください' };
-    }
-    
-    var oldEmail = getRegisteredEmail();
-    
-    if (newEmail === oldEmail) {
-      return { success: false, error: 'このメールアドレスは既に登録されています' };
-    }
-    
-    // メール変更を保存
-    setUserProperty('REGISTERED_EMAIL', newEmail);
-    setUserProperty('EMAIL_UPDATED', new Date().toISOString());
-    
-    
-    return {
-      success: true,
-      message: 'メールアドレスを変更しました',
-      oldEmail: oldEmail,
-      newEmail: newEmail,
-      note: '※ 新しいメールアドレスでログインすることで機能します'
-    };
-    
-  } catch (error) {
-    Logger.log('❌ updateEmailAddressエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
  * プロフィール情報を更新
  * Firestore staffs/{teacherId} に直接書き込む
  * @aiCallable

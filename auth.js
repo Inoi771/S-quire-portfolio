@@ -485,71 +485,6 @@ function removeUserAccess(email) {
 }
 
 /**
- * 講師IDで Firestore staffs を検索し、見つかれば現在のユーザーに紐付ける
- * 初回アクセス時の講師ID入力認証に使用。紐付け時に firebaseUid を staffs に書き込む
- * @aiCallable
- * @param {string} inputId 入力された講師ID（例: T1707123456789_abc123def）
- * @return {Object} { success, found, teacherId, displayName, isAdmin, error }
- */
-function linkUserById(inputId) {
-  try {
-    inputId = (inputId || '').trim();
-    if (!inputId) return { success: false, found: false, error: '講師IDを入力してください' };
-
-    // Supabase staffs から講師IDでレコードを取得
-    var staffRows = supabaseSelect_('staffs', 'id=eq.' + inputId, { limit: 1 });
-    if (!staffRows || staffRows.length === 0) {
-      return { success: true, found: false };
-    }
-    var staff = staffFromSupabase_(staffRows[0]);
-
-    // 配列フィールドの初期化（レガシードキュメント対応）
-    var updated = false;
-    if (!Array.isArray(staff.emails)) { staff.emails = staff.email ? [staff.email] : []; updated = true; }
-    if (!Array.isArray(staff.firebaseUids)) { staff.firebaseUids = staff.firebaseUid ? [staff.firebaseUid] : []; updated = true; }
-
-    // 現在のメールアドレスを staffs に反映
-    var currentEmail = getCurrentUserEmail();
-    if (currentEmail && currentEmail !== 'unknown@example.com') {
-      var emailLower = currentEmail.toLowerCase();
-      if (staff.emails.indexOf(emailLower) === -1) { staff.emails.push(emailLower); updated = true; }
-      staff.email = emailLower;
-      try {
-        firestoreSet_('allowedUsers', emailLower, { email: emailLower, addedAt: new Date().toISOString() });
-      } catch (fsErr) {
-        Logger.log('⚠ linkUserById: allowedUsers 登録失敗: ' + fsErr);
-      }
-    }
-
-    // firebaseUid をコンテキストから取得して配列に追加
-    if (_firebaseUidContext_) {
-      if (staff.firebaseUids.indexOf(_firebaseUidContext_) === -1) { staff.firebaseUids.push(_firebaseUidContext_); updated = true; }
-      staff.firebaseUid = _firebaseUidContext_;
-      updated = true;
-    }
-
-    if (updated) {
-      writeStaffToSupabase_(staff);
-      Logger.log('✓ linkUserById: staffs/' + inputId + ' を更新');
-    }
-
-    // Admin かどうか確認
-    var adminEmails = (getProperty(PROP_KEYS.ADMIN_EMAILS) || '').split(',')
-      .map(function(e) { return e.trim().toLowerCase(); })
-      .filter(function(e) { return e.length > 0; });
-    var isAdminUser = currentEmail && adminEmails.indexOf(currentEmail.toLowerCase()) !== -1;
-
-    var displayName = staff.displayName || staff.name || '';
-    Logger.log('✓ linkUserById: ' + inputId + ' に紐付け完了（名前: ' + displayName + '）');
-    return { success: true, found: true, teacherId: inputId, displayName: displayName, isAdmin: isAdminUser };
-
-  } catch (error) {
-    Logger.log('❌ linkUserByIdエラー: ' + error);
-    return { success: false, found: false, error: error.toString() };
-  }
-}
-
-/**
  * 現在の講師のメールアドレスを取得する
  * 設定タブのメールアドレス管理UIで使用
  * @aiCallable
@@ -721,24 +656,6 @@ function removeAdminEmail(emailToRemove) {
 }
 
 /**
- * 初回セットアップが必要かどうかを確認する
- * ADMIN_EMAILS が空の場合、初回セットアップが必要と判断する
- * @return {Object} { isFirstSetup, currentUserEmail, hasAppFolder }
- */
-function getSetupStatus() {
-  try {
-    return {
-      isFirstSetup: !getProperty(PROP_KEYS.ADMIN_EMAILS),
-      currentUserEmail: getCurrentUserEmail(),
-      hasAppFolder: !!getProperty(PROP_KEYS.APP_FOLDER_ID)
-    };
-  } catch (error) {
-    Logger.log('❌ getSetupStatusエラー: ' + error);
-    return { isFirstSetup: false, currentUserEmail: '', hasAppFolder: false };
-  }
-}
-
-/**
  * 最初の管理者を登録する
  * ADMIN_EMAILS が空の場合のみ実行可能（2回目以降は拒否される）
  * staffs コレクションにドキュメントを作成し、firebaseUid も保存する
@@ -811,60 +728,6 @@ function initializeFirstAdmin(displayName) {
     return { success: true, message: emailLower + ' を管理者として登録しました' };
   } catch (error) {
     Logger.log('❌ initializeFirstAdminエラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * 既存の許可ユーザー全員を Firestore allowedUsers コレクションに一括登録する
- * Firestoreセキュリティルール強化前に一度だけ実行する（Admin のみ）
- * 登録対象: ADMIN_EMAILS / Firestore staffs の全メール / Drive共有フォルダのエディター
- * @aiCallable
- * @return {Object} { success, registered, skipped, message, error }
- */
-function initFirestoreAllowedUsers() {
-  if (!isAdmin()) return { success: false, error: 'Admin のみ実行可能' };
-  try {
-    var emails = [];
-
-    // 1. ADMIN_EMAILS から取得
-    var adminRaw = getProperty(PROP_KEYS.ADMIN_EMAILS) || '';
-    adminRaw.split(',').forEach(function(e) {
-      var em = e.trim().toLowerCase();
-      if (em && emails.indexOf(em) === -1) emails.push(em);
-    });
-
-    // 2. Supabase staffs テーブルから全メールアドレスを取得
-    try {
-      var allRows = supabaseSelect_('staffs', null, { select: 'email' });
-      (allRows || []).forEach(function(row) {
-        var em = (row.email || '').toLowerCase();
-        if (em && emails.indexOf(em) === -1) emails.push(em);
-      });
-    } catch (staffErr) {
-      Logger.log('⚠ initFirestoreAllowedUsers: staffs 取得失敗: ' + staffErr);
-    }
-
-    // 3. Firestoreに一括登録
-    var now = new Date().toISOString();
-    var registered = 0;
-    var skipped = 0;
-    emails.forEach(function(email) {
-      try {
-        firestoreSet_('allowedUsers', email, { email: email, addedAt: now });
-        registered++;
-      } catch (e) {
-        Logger.log('⚠ initFirestoreAllowedUsers: ' + email + ' 登録失敗: ' + e);
-        skipped++;
-      }
-    });
-
-    var msg = registered + '人をFirestoreに登録しました' + (skipped > 0 ? '（' + skipped + '人失敗）' : '');
-    Logger.log('✓ initFirestoreAllowedUsers: ' + msg);
-    logAdminAction('initFirestoreAllowedUsers', { registered: registered, skipped: skipped });
-    return { success: true, registered: registered, skipped: skipped, message: msg };
-  } catch (error) {
-    Logger.log('❌ initFirestoreAllowedUsersエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }
