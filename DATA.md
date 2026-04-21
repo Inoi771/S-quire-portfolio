@@ -9,6 +9,13 @@ markdown# DATA.md — データ構造・プロパティ一覧
 
 ## スクリプトプロパティ（ScriptProperties）
 
+> **Phase 5-E-4 以降のアクセス方針（kv-props.js）**
+> GAS コードから単一キーを読み書き／削除する場合は `getProperty_()` / `setProperty_()` / `deleteProperty_()` ラッパー（`kv-props.js`）を経由する。内部で Workers 経由の Cloudflare KV（`kv_get` / `kv_set` / `kv_delete`）にアクセスし、失敗時は ScriptProperties にフォールバックする。書込は KV と SP の Dual-write で 5-E-6 までの移行期間の整合性を維持。
+> `PropertiesService.getScriptProperties().getProperty(...)` の新規追加は禁止。
+> 例外:
+> 1. `INTERNAL_API_KEY` の取得 — ラッパー経由にすると無限ループになるため ScriptProperties から直接取得（`kv-props.js` 内で一度だけ実施）
+> 2. enumerate 系（`.getProperties()` / `.getKeys()`）— Workers 側に対応 API がないため SP を直接参照（Dual-write 済のため動作問題なし。使用箇所は `admin.js` の GEMINI_TEAM_ クリーンアップ・STAFF_PLACEMENT_ アーカイブ、`settings.js` の _UP_ クリーンアップ、`auth.js` の `getAllProperties()`）
+
 ### PROP_KEYS（code.js で定数定義）
 
 | キー | 内容 |

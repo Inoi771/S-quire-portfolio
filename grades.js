@@ -6,28 +6,26 @@
 
 /**
  * スクリプトプロパティから設定を取得
+ * Phase 5-E-4 以降は Workers 経由の Cloudflare KV から取得する（失敗時は
+ * ScriptProperties にフォールバック）。キャッシュは getProperty_ 内で実施。
  * @param {string} key プロパティキー
  * @return {string} 設定値
  */
 function getScriptProperty(key) {
-  // 同一実行内のインメモリキャッシュ（PropertiesServiceへの冗長アクセスを防止）
-  if (!getScriptProperty._cache) getScriptProperty._cache = {};
-  if (getScriptProperty._cache[key] !== undefined) return getScriptProperty._cache[key];
-  var val = PropertiesService.getScriptProperties().getProperty(key) || '';
-  getScriptProperty._cache[key] = val;
-  return val;
+  var val = getProperty_(key);
+  return val == null ? '' : val;
 }
 
 /**
  * スクリプトプロパティに設定を保存
+ * Phase 5-E-4 以降は Workers 経由の Cloudflare KV に書き込みつつ、
+ * ScriptProperties にも同期する（Dual-write・移行期間中の安全網）。
  * @param {string} key プロパティキー
  * @param {string} value 設定値
  * @return {boolean} 常に true
  */
 function setScriptProperty(key, value) {
-  PropertiesService.getScriptProperties().setProperty(key, value);
-  // インメモリキャッシュも更新
-  if (getScriptProperty._cache) getScriptProperty._cache[key] = value;
+  setProperty_(key, value);
   return true;
 }
 
@@ -631,7 +629,7 @@ function resetGradeAnalysisSigmaConfig() {
   try {
     if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
     // プロパティを削除することでデフォルト値が使われるようにする
-    PropertiesService.getScriptProperties().deleteProperty(CONFIG_PROP_KEYS.SIGMA_CONFIG);
+    deleteProperty_(CONFIG_PROP_KEYS.SIGMA_CONFIG);
     return { success: true, message: 'σ設定をデフォルト値に戻しました', sigma: DEFAULT_SIGMA };
   } catch (error) {
     Logger.log('❌ resetGradeAnalysisSigmaConfigエラー: ' + error);

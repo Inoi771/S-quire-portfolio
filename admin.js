@@ -26,15 +26,15 @@ function getAllScriptPropertiesForGUI() {
       'CAMPUS_NOTIFICATION_ROUTING',
       'GRADES_GRADE_CODES_CONFIG'   // 定義のみで未使用
     ];
-    var scriptProps = PropertiesService.getScriptProperties();
     DEPRECATED_KEYS.forEach(function(k) {
-      try { scriptProps.deleteProperty(k); } catch(e) {}
+      try { deleteProperty_(k); } catch(e) {}
     });
     // GEMINI_TEAM_* はチーム全体使用量追跡の廃止機能 → プレフィックスで一括削除
-    var allPropsForCleanup = scriptProps.getProperties();
+    // getProperties() は Workers に対応 API がないため SP を直接参照（Dual-write 済）
+    var allPropsForCleanup = PropertiesService.getScriptProperties().getProperties();
     Object.keys(allPropsForCleanup).forEach(function(k) {
       if (k.indexOf('GEMINI_TEAM_') === 0) {
-        try { scriptProps.deleteProperty(k); } catch(e) {}
+        try { deleteProperty_(k); } catch(e) {}
       }
     });
 
@@ -137,8 +137,8 @@ function deleteScriptPropertyFromGUI(key) {
       return { success: false, error: 'Admin のみアクセス可能' };
     }
     
-    PropertiesService.getScriptProperties().deleteProperty(key);
-    
+    deleteProperty_(key);
+
     logAdminAction('deleteScriptProperty', { key: key });
     
     return { success: true, message: 'プロパティを削除しました' };
@@ -1234,22 +1234,22 @@ if (typeof module !== 'undefined') {
  */
 function _placementMigrateLegacyKey(currentFY) {
   try {
-    var legacy = PropertiesService.getScriptProperties().getProperty('STAFF_PLACEMENT');
+    var legacy = getProperty_('STAFF_PLACEMENT');
     if (!legacy) return;
     var currentKey = 'STAFF_PLACEMENT_' + currentFY;
-    var existing = PropertiesService.getScriptProperties().getProperty(currentKey);
+    var existing = getProperty_(currentKey);
     if (!existing) {
       // 旧データ内の year を優先（無ければ currentFY を付与）
       try {
         var parsed = JSON.parse(legacy);
         if (!parsed.year) parsed.year = currentFY;
-        PropertiesService.getScriptProperties().setProperty(currentKey, JSON.stringify(parsed));
+        setProperty_(currentKey, JSON.stringify(parsed));
       } catch (e) {
-        PropertiesService.getScriptProperties().setProperty(currentKey, legacy);
+        setProperty_(currentKey, legacy);
       }
       Logger.log('✓ 講師配置: 旧 STAFF_PLACEMENT を ' + currentKey + ' へ移行');
     }
-    PropertiesService.getScriptProperties().deleteProperty('STAFF_PLACEMENT');
+    deleteProperty_('STAFF_PLACEMENT');
     // インメモリキャッシュも無効化
     if (getScriptProperty._cache) {
       delete getScriptProperty._cache['STAFF_PLACEMENT'];
@@ -1266,8 +1266,9 @@ function _placementMigrateLegacyKey(currentFY) {
  */
 function _placementArchiveOldYears(currentFY) {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var keys = props.getKeys();
+    // getKeys() は Workers 側に対応 API がないため ScriptProperties を直接参照。
+    // Dual-write で SP も同期済みのため現役年度キーはすべてここから列挙できる。
+    var keys = PropertiesService.getScriptProperties().getKeys();
     var re = /^STAFF_PLACEMENT_(\d{4})$/;
     keys.forEach(function(k) {
       var m = k.match(re);
@@ -1275,15 +1276,15 @@ function _placementArchiveOldYears(currentFY) {
       var y = parseInt(m[1], 10);
       if (isNaN(y) || y >= currentFY) return;
       var archiveKey = 'STAFF_PLACEMENT_ARCHIVE_' + y;
-      var val = props.getProperty(k);
+      var val = getProperty_(k);
       if (val) {
         // 既存アーカイブを上書きしないよう、未設定のときのみコピー
-        if (!props.getProperty(archiveKey)) {
-          props.setProperty(archiveKey, val);
+        if (!getProperty_(archiveKey)) {
+          setProperty_(archiveKey, val);
         }
       }
       // アーカイブ成功（または値無し）を確認してから現役キー削除
-      props.deleteProperty(k);
+      deleteProperty_(k);
       if (getScriptProperty._cache) delete getScriptProperty._cache[k];
       Logger.log('✓ 講師配置: ' + y + '年度データを ' + archiveKey + ' に退避・現役キーを削除');
     });
@@ -1331,7 +1332,7 @@ function getStaffPlacementForWeb(requestedYear) {
     if (!allowed) year = currentFY;
 
     var key = 'STAFF_PLACEMENT_' + year;
-    var json = PropertiesService.getScriptProperties().getProperty(key);
+    var json = getProperty_(key);
     var campusConfig = getCampusConfig() || {};
     // 校舎詳細（TEL/FAX/責任者）をデフォルト値として取得
     var campusDetails = getCampusDetailsConfig();
@@ -1406,7 +1407,7 @@ function saveStaffPlacementForWeb(dataJson, year) {
     } catch (_) { /* JSON破損時はそのまま保存 */ }
 
     var key = 'STAFF_PLACEMENT_' + targetYear;
-    PropertiesService.getScriptProperties().setProperty(key, toSave);
+    setProperty_(key, toSave);
     if (getScriptProperty._cache) delete getScriptProperty._cache[key];
     Logger.log('✓ saveStaffPlacementForWeb: ' + key + ' を保存');
     return { success: true, year: targetYear };
@@ -1426,7 +1427,7 @@ function getPlacementTeacherNames() {
     var currentFY = getCurrentFiscalYear();
     // 旧単一キーがまだ残っていれば移行（読み取り副作用を最小化するため try-catch で囲む）
     _placementMigrateLegacyKey(currentFY);
-    var json = PropertiesService.getScriptProperties().getProperty('STAFF_PLACEMENT_' + currentFY);
+    var json = getProperty_('STAFF_PLACEMENT_' + currentFY);
     if (!json) return { success: true, teachers: [] };
     var data = JSON.parse(json);
     var teachers = (data.teachers || [])

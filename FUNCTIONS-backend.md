@@ -8,10 +8,17 @@
 ---
 ## 10. 全関数リスト（code.js）
 
+### ScriptProperties ラッパー（kv-props.js・Phase 5-E-4〜）
+- `getProperty_(key)` — Workers 経由の Cloudflare KV から値を取得。失敗時は ScriptProperties にフォールバック。同一実行内キャッシュ付き。戻り値は未設定時 `null`、存在時は文字列
+- `setProperty_(key, value)` — Workers KV と ScriptProperties の両方に値を書き込む（Dual-write）。どちらか片方が成功すれば true を返す
+- `deleteProperty_(key)` — Workers KV と ScriptProperties の両方から値を削除（best-effort）
+- `_getInternalApiKey_()` — 内部ヘルパー。Workers 認証用の `INTERNAL_API_KEY` を ScriptProperties から直接取得（無限ループ回避）
+- `_postToKvProxy_(functionName, args)` — 内部ヘルパー。Workers の KV プロキシ API（`kv_get`/`kv_set`/`kv_delete`）を呼び出す
+
 ### セクション2: 認証・ロール管理
-- `getProperty(key)` — スクリプトプロパティ取得
-- `setProperty(key, value)` — スクリプトプロパティ設定
-- `getAllProperties()` — 全プロパティ取得
+- `getProperty(key)` — スクリプトプロパティ取得（内部で `getProperty_()` を呼ぶ薄いラッパー・文字列化＋未設定時は空文字を返す）
+- `setProperty(key, value)` — スクリプトプロパティ設定（内部で `setProperty_()` を呼ぶ薄いラッパー）
+- `getAllProperties()` — 全プロパティ取得（Workers KV に enumerate 系 API が無いため ScriptProperties を直接参照・Dual-write で同期済）
 - `isAdmin()` — Admin 判定（ADMIN_EMAILS または隠し管理者モードのキャッシュを確認）
 - `activateHiddenAdminMode(password)` — 隠し管理者モード有効化（CacheService に6時間フラグ保存）
 - `verifyFirebaseIdToken_(idToken)` — Firebase IDトークンを検証し `{ email, uid }` を返す。検証失敗時は null（内部ヘルパー）
@@ -66,7 +73,7 @@
 - `getAppStartupData(firebaseEmail, firebaseUid)` — アプリ起動時に必要なデータを一括取得（isAdmin・isFirstSetup・staff情報・設定・校舎マスタ等）。allowedUsers に自動登録（スタッフまたはAdminの場合）。`cleanupMigratedUserProperties_()` も起動時に呼び出す
 
 ### セクション7: 成績管理（マスター設定）
-- `getScriptProperty(key)` / `setScriptProperty(key, value)` — セクション7専用のプロパティラッパー
+- `getScriptProperty(key)` / `setScriptProperty(key, value)` — セクション7専用のプロパティラッパー（内部で `getProperty_()` / `setProperty_()` を呼ぶ・成績管理の `CONFIG_PROP_KEYS` 系で利用）
 - `initializeGradesConfig()` — 初回のデフォルト値設定
 - `addTestName(newTestName)` / `deleteTestName(testNameToDelete)` — テスト名 CRUD（Admin のみ。削除時は成績データの参照チェックあり）
 - `addSchool(schoolName, departmentsStr)` / `deleteSchool(schoolName)` — 志望校 CRUD（Admin のみ。削除時は成績データの参照チェックあり）

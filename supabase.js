@@ -18,9 +18,8 @@
  * @return {{url: string, serviceKey: string}}
  */
 function getSupabaseConfig_() {
-  var props = PropertiesService.getScriptProperties();
-  var url = props.getProperty('SUPABASE_URL');
-  var serviceKey = props.getProperty('SUPABASE_SERVICE_KEY');
+  var url = getProperty_('SUPABASE_URL');
+  var serviceKey = getProperty_('SUPABASE_SERVICE_KEY');
   if (!url || !serviceKey) {
     throw new Error(
       'Supabase設定が不完全です。Script Properties に SUPABASE_URL / SUPABASE_SERVICE_KEY を設定してください。'

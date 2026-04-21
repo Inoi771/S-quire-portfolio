@@ -324,7 +324,7 @@ function getUserProperty(key) {
     return '';
   }
   // staffs にマッピングされないキーは従来の _UP_ から取得
-  return PropertiesService.getScriptProperties().getProperty(getSafeUserKey_() + key) || '';
+  return getProperty_(getSafeUserKey_() + key) || '';
 }
 
 /**
@@ -348,15 +348,14 @@ function setUserProperty(key, value) {
       writeStaffToSupabase_(staff);
       // 古い _UP_ スクリプトプロパティを削除（移行クリーンアップ）
       try {
-        var sp = PropertiesService.getScriptProperties();
-        sp.deleteProperty(getSafeUserKey_() + key);
-        sp.deleteProperty('_UP_anonymous_' + key);
+        deleteProperty_(getSafeUserKey_() + key);
+        deleteProperty_('_UP_anonymous_' + key);
       } catch(e) {}
       return true;
     }
   }
   // staffs にマッピングされないキーは従来の _UP_ へ保存
-  PropertiesService.getScriptProperties().setProperty(getSafeUserKey_() + key, value);
+  setProperty_(getSafeUserKey_() + key, value);
   return true;
 }
 
@@ -367,8 +366,8 @@ function setUserProperty(key, value) {
  */
 function cleanupMigratedUserProperties_() {
   try {
-    var sp = PropertiesService.getScriptProperties();
-    var all = sp.getProperties();
+    // getProperties() は Workers に対応 API がないため SP を直接参照（Dual-write 済）
+    var all = PropertiesService.getScriptProperties().getProperties();
     var migratedKeys = Object.keys(STAFF_FIELD_MAP_);
     // 廃止済みの _UP_ キー（コードから削除済みで使われていないもの）
     var obsoleteKeys = [
@@ -388,7 +387,7 @@ function cleanupMigratedUserProperties_() {
       });
     });
     toDelete.forEach(function(k) {
-      try { sp.deleteProperty(k); } catch(e) {}
+      try { deleteProperty_(k); } catch(e) {}
     });
     if (toDelete.length > 0) {
       Logger.log('✓ cleanupMigratedUserProperties_: ' + toDelete.length + ' 件の古い _UP_ キーを削除');
