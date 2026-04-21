@@ -185,7 +185,7 @@ markdown# S-quire — プロジェクト設計書
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 14**
+**現在のデプロイ回数: 15**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -263,6 +263,7 @@ MyProject/
 ├── minutes.js           議事録管理・AI文字起こし＋要約（約250行）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
 ├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
+├── migrate-props-to-kv.js Phase 5-E-3: ScriptProperties→Cloudflare KV 一括コピー（一度だけ実行）
 └── CLAUDE.md            この設計書
 ```
 

@@ -30,6 +30,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `SUPABASE_URL` | Supabase プロジェクトURL（例: `https://xxxxx.supabase.co`）— 成績データ用 |
 | `SUPABASE_ANON_KEY` | Supabase anon（公開）キー — 成績データ用 |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー — 成績データ用 |
+| `INTERNAL_API_KEY` | Workers KV プロキシ API（`kv_get`/`kv_set` 等）認証用の共有シークレット。Cloudflare Dashboard 側の Worker Secret と同一値。Phase 5-E-3 の移行スクリプト `migrate-props-to-kv.js` が参照するために ScriptProperties に登録しておく。5-E-6 で ScriptProperties 凍結後も GAS 側ラッパー `getProperty_`/`setProperty_` 経由で Workers を叩く際に使用する |
 
 > **Firestore に移行済み（PROP_KEYS から削除）:**
 > `TEACHER_ID_MAP` → `staffs` コレクション / `LINE_USER_MAPPING` → `staffs.lineUserId` / `NOTIFICATION_METHODS` → `staffs.notificationMethod` / `NOTIFICATION_EMAILS` → `staffs.notificationEmail` / `LINE_SCHEDULER_NOTIF_PREFS` → `staffs.schedulerNotifPrefs` / `CAMPUS_NOTIFICATION_ROUTING` → `config/notification_routing`
