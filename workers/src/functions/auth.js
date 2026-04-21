@@ -7,6 +7,30 @@
 const PROP_PREFIX = 'prop:';
 
 /**
+ * Admin メール一覧を取得する（Phase 5-E-11 で isAdminUser から共通化）。
+ *
+ * 取得順序:
+ *   1. KV `prop:ADMIN_EMAILS` を試行
+ *   2. 空 / null / 取得失敗なら `env.ADMIN_EMAILS` にフォールバック
+ *
+ * @param {Object} env Cloudflare Workers 環境（KV バインディング必須）
+ * @param {{lowercase?: boolean}} [opts] 返却値を全て小文字化するか（既定: true）
+ * @return {Promise<string[]>} カンマ区切りを trim／空要素除去した配列
+ */
+export async function getAdminEmailList(env, opts) {
+  const lowercase = !opts || opts.lowercase !== false;
+  let raw = '';
+  try {
+    raw = (await env.KV.get(PROP_PREFIX + 'ADMIN_EMAILS')) || '';
+  } catch (e) { /* KV エラー時は env にフォールバック */ }
+  if (!raw) raw = env.ADMIN_EMAILS || '';
+  return raw
+    .split(',')
+    .map((e) => (lowercase ? e.trim().toLowerCase() : e.trim()))
+    .filter(Boolean);
+}
+
+/**
  * 認証済みユーザーが Admin かを判定する。
  *
  * Phase 5-E-6 で ScriptProperties は凍結され KV が唯一の正になったため、
@@ -21,11 +45,6 @@ const PROP_PREFIX = 'prop:';
  */
 export async function isAdminUser(env, user) {
   if (!user || !user.email) return false;
-  let adminEmailsRaw = '';
-  try {
-    adminEmailsRaw = (await env.KV.get(PROP_PREFIX + 'ADMIN_EMAILS')) || '';
-  } catch (e) { /* KV エラー時は env にフォールバック */ }
-  if (!adminEmailsRaw) adminEmailsRaw = env.ADMIN_EMAILS || '';
-  const list = adminEmailsRaw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const list = await getAdminEmailList(env, { lowercase: true });
   return list.includes(user.email.toLowerCase());
 }

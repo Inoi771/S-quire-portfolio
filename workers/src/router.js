@@ -1,6 +1,11 @@
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
-import { getAdminEmails } from './functions/admin.js';
+import {
+  getAdminEmails,
+  getAllScriptPropertiesForGUI,
+  updateScriptPropertyFromGUI,
+  deleteScriptPropertyFromGUI
+} from './functions/admin.js';
 import { getUserProfile, getAppStartupData, saveLecGrades, getSettings, updateSettings } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
@@ -68,6 +73,9 @@ const INTERNAL_FUNCTIONS = new Set(['kv_get', 'kv_set', 'kv_delete', 'kv_list'])
 const HANDLERS = {
   ping,
   getAdminEmails,
+  getAllScriptPropertiesForGUI,
+  updateScriptPropertyFromGUI,
+  deleteScriptPropertyFromGUI,
   getUserProfile,
   getAppStartupData,
   getMasterData,
@@ -169,9 +177,19 @@ export async function handleApiCall(body, env) {
     }
   } else if (!PUBLIC_FUNCTIONS.has(functionName)) {
     // Firebase ID トークン方式（既存パス）
-    if (!idToken) throw new Error('認証トークンがありません');
+    // Phase 5-E-11: 未認証・検証失敗は HTTP 401 を返す（index.js:24 の
+    // `(typeof e.status === 'number') ? e.status : 500` でそのまま伝播する）
+    if (!idToken) {
+      const err = new Error('認証トークンがありません');
+      err.status = 401;
+      throw err;
+    }
     user = await verifyFirebaseIdToken(idToken, env);
-    if (!user) throw new Error('認証失敗');
+    if (!user) {
+      const err = new Error('認証失敗');
+      err.status = 401;
+      throw err;
+    }
   }
 
   return handler(args, env, user);
