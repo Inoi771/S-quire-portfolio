@@ -2,6 +2,26 @@
 import { supabaseRpc, supabaseSelect, supabaseUpsert, supabaseUpdate, staffFromSupabase } from '../supabase.js';
 import { firestoreSet } from '../firebase.js';
 
+// Phase 5-E-7: KV 直接アクセス用プレフィックス（kv.js の PROP_PREFIX と一致）
+const PROP_PREFIX = 'prop:';
+
+/**
+ * 認証済みユーザーが Admin かを判定する内部ヘルパー。
+ * KV（prop:ADMIN_EMAILS）を優先し、未設定時は env.ADMIN_EMAILS にフォールバック。
+ * GAS の isAdmin() と同じく、値はカンマ区切りのメールアドレス文字列。
+ * @private
+ */
+async function isAdminUser_(env, user) {
+  if (!user || !user.email) return false;
+  let adminEmailsRaw = '';
+  try {
+    adminEmailsRaw = (await env.KV.get(PROP_PREFIX + 'ADMIN_EMAILS')) || '';
+  } catch (e) { /* KV エラー時は env にフォールバック */ }
+  if (!adminEmailsRaw) adminEmailsRaw = env.ADMIN_EMAILS || '';
+  const list = adminEmailsRaw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return list.includes(user.email.toLowerCase());
+}
+
 /**
  * getUserProfile — GAS getUserProfile() の Workers 版
  * GAS 版との差分：
@@ -192,6 +212,150 @@ export async function saveLecGrades(args, env, user) {
     await supabaseUpdate(env, 'staffs', { lec_grades: list }, 'id=eq.' + encodeURIComponent(staffId));
 
     return { success: true, message: '保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 5-E-7】getSettings — GAS settings.js getSettings() の Workers 版
+ *
+ * 設定画面・初期化フロー向けに、現在のユーザーが見られる設定をまとめて返す。
+ * ScriptProperties 由来のキー（GEMINI_API_KEY / GEMINI_API_KEY_BACKUP /
+ * APP_FOLDER_ID / THEME_COLOR）は Cloudflare KV から直接読み取る（Phase
+ * 5-E-6 以降 KV が唯一の一次ソース）。
+ *
+ * GAS 版との差分:
+ *   - KV I/O は `env.KV.get('prop:...')` で並列化（kv-props.js 不使用）
+ *   - themeColor / displayName はユーザーの staffs 行から取得
+ *     （GAS は getUserProperty → staffs or 旧 _UP_ の経路。Workers 側は
+ *      staffs のみ参照し、staff が無い場合は KV の THEME_COLOR fallback）
+ *   - API キー本体は返さず、存在有無のみを '***設定済み***' / '未設定' で示す
+ *   - logoUrl は GAS 版に合わせて常に空文字列を返す（将来拡張用）
+ *
+ * @param {Array} args 未使用
+ * @param {Object} env Cloudflare Workers 環境（KV バインディング含む）
+ * @param {Object} user 認証済みユーザー { email, uid }
+ * @return {Object} 設定オブジェクト（GAS 版と同じキー形状）
+ */
+export async function getSettings(args, env, user) {
+  try {
+    const [geminiKey, geminiBackupKey, appFolderId, themeColorProp] = await Promise.all([
+      env.KV.get(PROP_PREFIX + 'GEMINI_API_KEY'),
+      env.KV.get(PROP_PREFIX + 'GEMINI_API_KEY_BACKUP'),
+      env.KV.get(PROP_PREFIX + 'APP_FOLDER_ID'),
+      env.KV.get(PROP_PREFIX + 'THEME_COLOR')
+    ]);
+
+    // staffs からユーザー個別のテーマカラー / 表示名を取得
+    let userThemeColor = '';
+    let displayName = '';
+    try {
+      const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+        p_uid: user.uid || null,
+        p_email: user.email ? user.email.toLowerCase() : null
+      });
+      if (rows && rows.length > 0) {
+        const staff = staffFromSupabase(rows[0]);
+        userThemeColor = staff.themeColor || '';
+        displayName    = staff.displayName || '';
+      }
+    } catch (e) { /* staff 解決失敗時は fallback で継続 */ }
+
+    return {
+      geminiApiKey:        geminiKey       ? '***設定済み***' : '未設定',
+      geminiApiKeyBackup:  geminiBackupKey ? '***設定済み***' : '未設定',
+      appFolderId:         appFolderId || '',
+      themeColor:          userThemeColor || themeColorProp || '#43e97b',
+      currentUser:         user.email || '',
+      displayName:         displayName || '',
+      logoUrl:             ''
+    };
+  } catch (error) {
+    return { error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 5-E-7】updateSettings — GAS settings.js updateSettings() の Workers 版
+ *
+ * 設定保存フローの保存先。ScriptProperties 互換キー（API キー・フォルダ ID・
+ * テーマカラー）はすべて KV（prop:...）にのみ書き込む。
+ *
+ * 権限チェック:
+ *   Admin 限定項目は isAdminUser_() を使って KV(prop:ADMIN_EMAILS) で判定。
+ *   GAS isAdmin() と同じ粒度・同じエラーメッセージを返す。
+ *
+ * GAS 版との差分:
+ *   - setProperty_ 経由ではなく `env.KV.put('prop:...')` で直接書込
+ *   - geminiApiKeyBackup の空文字指定による削除（GAS は setProperty に空文字
+ *     書込）と同じ挙動を KV.put('') で再現
+ *   - バリデーションと戻り値形状は GAS 版と完全一致
+ *
+ * @param {Array<Object>} args [settingsData]
+ * @param {Object} env Cloudflare Workers 環境（KV バインディング含む）
+ * @param {Object} user 認証済みユーザー { email, uid }
+ * @return {Object} { success, message? , error? }
+ */
+export async function updateSettings(args, env, user) {
+  try {
+    const [settingsData = {}] = args || [];
+
+    // Admin 判定は必要時のみ評価（キャッシュ）
+    let _adminChecked = false;
+    let _isAdmin = false;
+    async function ensureAdmin() {
+      if (!_adminChecked) {
+        _isAdmin = await isAdminUser_(env, user);
+        _adminChecked = true;
+      }
+      return _isAdmin;
+    }
+
+    // GEMINI_API_KEY（Admin のみ）
+    if (settingsData.geminiApiKey && settingsData.geminiApiKey !== '***設定済み***') {
+      if (!(await ensureAdmin())) {
+        return { success: false, error: 'APIキーの更新は Admin のみ可能です' };
+      }
+      await env.KV.put(PROP_PREFIX + 'GEMINI_API_KEY', String(settingsData.geminiApiKey));
+    }
+
+    // GEMINI_API_KEY_BACKUP（Admin のみ）
+    if (settingsData.geminiApiKeyBackup && settingsData.geminiApiKeyBackup !== '***設定済み***') {
+      if (!(await ensureAdmin())) {
+        return { success: false, error: '予備APIキーの更新は Admin のみ可能です' };
+      }
+      await env.KV.put(PROP_PREFIX + 'GEMINI_API_KEY_BACKUP', String(settingsData.geminiApiKeyBackup));
+    }
+    // 予備APIキーの削除（空文字送信時・Admin のみ適用）
+    if (settingsData.geminiApiKeyBackup === '') {
+      if (await ensureAdmin()) {
+        await env.KV.put(PROP_PREFIX + 'GEMINI_API_KEY_BACKUP', '');
+      }
+    }
+
+    // APP_FOLDER_ID（Admin のみ）
+    if (settingsData.appFolderId) {
+      if (!(await ensureAdmin())) {
+        return { success: false, error: 'フォルダIDの更新は Admin のみ可能です' };
+      }
+      await env.KV.put(PROP_PREFIX + 'APP_FOLDER_ID', String(settingsData.appFolderId));
+    }
+
+    // ACCESS_FOLDER_ID（Admin のみ）
+    if (settingsData.accessFolderId) {
+      if (!(await ensureAdmin())) {
+        return { success: false, error: 'アクセスフォルダIDの更新は Admin のみ可能です' };
+      }
+      await env.KV.put(PROP_PREFIX + 'ACCESS_FOLDER_ID', String(settingsData.accessFolderId));
+    }
+
+    // THEME_COLOR（非 Admin 可・ScriptProperties グローバル）
+    if (settingsData.themeColor) {
+      await env.KV.put(PROP_PREFIX + 'THEME_COLOR', String(settingsData.themeColor));
+    }
+
+    return { success: true, message: '設定を更新しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

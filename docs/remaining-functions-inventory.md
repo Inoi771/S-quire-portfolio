@@ -52,8 +52,8 @@
 
 | 関数名 | 種別 | 対象テーブル/データ | 呼出元 | ScriptProperties依存 | 分類 | 優先度 | 備考 |
 |--------|------|-------------------|--------|-------------------|------|--------|------|
-| getSettings | 読取 | ScriptProperties | フロント: 設定/管理 | GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, APP_FOLDER_ID, THEME_COLOR | B | | Admin 設定表示用・5-E 後 |
-| updateSettings | 書込 | ScriptProperties | フロント: 設定画面 | GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, APP_FOLDER_ID, ACCESS_FOLDER_ID, THEME_COLOR | B | | Admin 操作・5-E 後 |
+| getSettings | 読取 | Cloudflare KV（`prop:...`）＋ Supabase staffs | フロント: 設定/管理 | GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, APP_FOLDER_ID, THEME_COLOR | **Workers 化済み** | | **Phase 5-E-7 で Workers 経由化**。GAS 実装はフォールバック保持 |
+| updateSettings | 書込 | Cloudflare KV（`prop:...`） | フロント: 設定画面 | GEMINI_API_KEY, GEMINI_API_KEY_BACKUP, APP_FOLDER_ID, ACCESS_FOLDER_ID, THEME_COLOR | **Workers 化済み** | | **Phase 5-E-7 で Workers 経由化**。GAS 実装はフォールバック保持 |
 | getUserProperty | 読取 | UserProperties / staffs | GAS 内部のみ | なし | C | | UserProperties 依存・GAS 固有 |
 | setUserProperty | 書込 | UserProperties / staffs | GAS 内部のみ | なし | C | | UserProperties 依存・GAS 固有 |
 | getRegisteredEmail | 読取 | staffs(Supabase) | GAS 内部のみ | なし | C | | 内部ヘルパーのみ |

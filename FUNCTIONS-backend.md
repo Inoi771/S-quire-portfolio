@@ -54,8 +54,8 @@
 - `deleteScheduleEntryAI_Extended_(docId)` — AIアシスタント経由で任意のスケジュールエントリを削除（source制限なし）
 
 ### セクション5: 設定管理
-- `getSettings()` — `@aiCallable` 設定取得（ロゴ・ファビコンを base64 で返す）
-- `updateSettings(settingsData)` — 設定更新（APIキー・フォルダIDは Admin のみ）。受け付けるキー: `geminiApiKey`, `appFolderId`, `accessFolderId`, `themeColor`
+- `getSettings()` — `@aiCallable` 設定取得（ロゴ・ファビコンを base64 で返す）。**Phase 5-E-7 で Workers 経由化**（`workers/src/functions/settings.js#getSettings`）。GAS 実装は Workers 未到達時のフォールバックとして保持
+- `updateSettings(settingsData)` — 設定更新（APIキー・フォルダIDは Admin のみ）。受け付けるキー: `geminiApiKey`, `appFolderId`, `accessFolderId`, `themeColor`。**Phase 5-E-7 で Workers 経由化**（`workers/src/functions/settings.js#updateSettings`）。書込先は Cloudflare KV（`prop:...`）。GAS 実装は Workers 未到達時のフォールバックとして保持
 - `getAppStartupData(firebaseEmail, firebaseUid)` — アプリ起動時の一括データ取得。スタッフ照合・テーマカラー・Admin判定等を返す。スタッフまたはAdminの場合は `allowedUsers` に自動登録
 
 ### セクション6: プロフィール管理

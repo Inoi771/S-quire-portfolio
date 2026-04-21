@@ -1,7 +1,7 @@
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import { getAdminEmails } from './functions/admin.js';
-import { getUserProfile, getAppStartupData, saveLecGrades } from './functions/settings.js';
+import { getUserProfile, getAppStartupData, saveLecGrades, getSettings, updateSettings } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
@@ -34,6 +34,8 @@ const HANDLERS = {
   submitGradeData,
   saveExamResult,
   saveLecGrades,
+  getSettings,
+  updateSettings,
   kv_get,
   kv_set,
   kv_delete,

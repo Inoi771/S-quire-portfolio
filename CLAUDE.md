@@ -185,7 +185,7 @@ markdown# S-quire — プロジェクト設計書
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 18**
+**現在のデプロイ回数: 19**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -422,6 +422,7 @@ MyProject/
 - **スタッフデータもSupabase**: staffs コレクションは Supabase `staffs` テーブルに移行。認証時の検索は RPC関数 `find_staff_by_auth` で1クエリに統合。allowedUsers コレクション（Firestoreセキュリティルール用）のみFirestoreに残す。Firestoreに残すのは講習日程（`lectureEntries`）・スケジュール・allowedUsers等のリアルタイム性またはセキュリティルールが必要なデータのみ
 - **講師配置は年度別キー＋自動切替**: 講師配置（`STAFF_PLACEMENT_{year}`）は ScriptProperties に年度別キーで保存。`getCurrentFiscalYear()`（4月起算）に基づき表示年度を自動決定し、4月1日で新年度に切替、旧年度は `STAFF_PLACEMENT_ARCHIVE_{year}` へ自動退避される。1〜3月のみ編集画面で翌年度の並行編集が可能。詳細は `admin.js` の講師配置セクション参照
 - **ScriptProperties アクセスはラッパー経由（Phase 5-E-4〜6）**: GAS コード内の単一キー get/set/delete は `getProperty_()` / `setProperty_()` / `deleteProperty_()`（`kv-props.js`）経由で行うこと。Phase 5-E-6 で ScriptProperties は凍結され、書込・削除は Cloudflare KV のみに行う（SP への Dual-write は停止済）。読み取りのみ、KV 一時障害時の可用性保険として SP 直読へフォールバックする。`INTERNAL_API_KEY` のみ無限ループ回避のため ScriptProperties から直接取得する（KV 認証に必要なため SP に残置）。enumerate 系は `getAllProperties_()`（`kv_list` + `UrlFetchApp.fetchAll(kv_get)` + SP ユニオン・Phase 5-E-5 実装）を使うこと。`.getKeys()` / `.getProperties()` の新規直読は禁止。凍結後の SP は古い値のまま残るが、KV が唯一の正。`PropertiesService.getScriptProperties().getProperty(...)` の新規追加も禁止（既存ラッパーを使う）
+- **Workers 直 KV アクセス（Phase 5-E-7〜）**: Workers 関数内の単一キー get/set/delete は `env.KV.get('prop:...')` / `env.KV.put('prop:...', value)` / `env.KV.delete('prop:...')` のように KV バインディングを直接使うこと（kv-props.js / kv_get / kv_set プロキシ経由は GAS 側専用）。キー名は必ず `'prop:'` プレフィックスを付ける（`workers/src/functions/kv.js` の `PROP_PREFIX` と一致）。Admin 判定は `prop:ADMIN_EMAILS` を優先し、未設定時のみ `env.ADMIN_EMAILS` にフォールバックすること。B 分類関数の Workers 化時はこのパターンに従う（`workers/src/functions/settings.js` の `getSettings` / `updateSettings` が参考実装）
 
 ---
 
