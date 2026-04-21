@@ -386,28 +386,6 @@ function handleApiCall_(body) {
   }
 }
 
-/**
- * Web App のタイトルを取得（メタ情報用）
- * ブックマーク表示時に使用される情報を返す
- * @return {Object} { appName, version, description }
- */
-function getAppMetadata() {
-  return {
-    appName: 'S-quire',
-    version: '1.0.0',
-    description: '教育機関向けダッシュボード',
-    lastUpdated: new Date().toISOString()
-  };
-}
-
-/**
- * APIエンドポイント疎通確認用（認証なしで呼べることを確認）
- * @return {Object} 疎通確認結果
- */
-function testApiEndpoint() {
-  return { ok: true, timestamp: new Date().toISOString() };
-}
-
 // ========================================
 // テスト用エクスポート（GAS環境では無視される）
 // ========================================

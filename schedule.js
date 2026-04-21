@@ -184,31 +184,6 @@ function getScheduleDropdownData() {
 }
 
 /**
- * 新しい予定を Firestore に追加
- * Admin フォームから呼び出される
- * @aiCallable
- * @param {string} schoolName 学校名
- * @param {string} eventName イベント名
- * @param {string} dateStr 日付（例：7月19日（土））
- * @param {string} details 詳細（省略可）
- * @return {Object} { success, message, error }
- */
-function addScheduleEntry(schoolName, eventName, dateStr, details) {
-  try {
-    if (!schoolName || !eventName || !dateStr) {
-      return { success: false, error: '学校名、イベント名、日付は必須です' };
-    }
-    var year = getCurrentFiscalYear();
-    saveScheduleEntryToFirestore_(year, schoolName, eventName, dateStr, details, 'Admin 直接入力', null);
-    Logger.log('✓ addScheduleEntry: ' + schoolName + ' ' + dateStr);
-    return { success: true, message: '予定を追加しました' };
-  } catch (error) {
-    Logger.log('❌ addScheduleEntry エラー: ' + error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
  * 管理者が自由に追加したカスタムイベントを Firestore に保存する（Admin のみ）
  * 日付から年度を自動判定して schedules コレクションに書き込む
  * @aiCallable
@@ -966,53 +941,6 @@ function deleteLectureDeadlineOverride(lectureId) {
 // 【セクション14】公立平均点データ取得
 // ========================================
 // 外部サイトから基礎学力テストの公立平均点を取得し、スプレッドシートに保存する機能
-
-/**
- * 【テスト用】外部サイトから公立平均点ページを取得できるか確認する
- * GASエディタから手動実行して、ログで結果を確認してください
- */
-function testFetchPublicAverageScorePage() {
-  var url = 'https://tokushima-tsubasa.com/ace-striker/\u57FA\u790E\u5B66\u529B\u30C6\u30B9\u30C8\u60C5\u5831\u30DA\u30FC\u30B8/';
-
-  try {
-
-    // まずデフォルトのリクエストで試す
-    var response = UrlFetchApp.fetch(url, {
-      muteHttpExceptions: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
-    var statusCode = response.getResponseCode();
-
-    if (statusCode !== 200) {
-      Logger.log('❌ ページ取得失敗。ステータスコード: ' + statusCode);
-      return;
-    }
-
-    var html = response.getContentText('UTF-8');
-
-    // 取得したHTMLの先頭500文字を確認
-    Logger.log(html.substring(0, 500));
-
-    // 「平均」「点」などのキーワードが含まれるか確認
-    var hasAvgKeyword = html.indexOf('平均') !== -1;
-    var hasScoreKeyword = html.indexOf('点') !== -1;
-    var hasTableKeyword = html.indexOf('<table') !== -1 || html.indexOf('<td') !== -1;
-
-
-    // 「平均」の周辺テキストを抽出してサンプル表示
-    if (hasAvgKeyword) {
-      var idx = html.indexOf('平均');
-      Logger.log(html.substring(Math.max(0, idx - 100), idx + 200));
-    }
-
-
-  } catch (error) {
-    Logger.log('❌ エラー発生: ' + error);
-  }
-}
 
 // ========================================
 // S14-B: オーバーライド一括取得

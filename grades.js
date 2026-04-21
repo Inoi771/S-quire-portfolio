@@ -357,17 +357,6 @@ function deleteCampus(campusCode) {
 }
 
 /**
- * 校舎名を変更（管理者専用）
- * ※コードは生徒IDに紐付いているため変更不可。名前のみ変更可能
- * @param {string} campusCode 校舎コード（変更不可）
- * @param {string} newName 新しい校舎名
- * @return {Object} { success, message, error }
- */
-function updateCampusName(campusCode, newName) {
-  return updateCampusDetails(campusCode, newName, null, null, null);
-}
-
-/**
  * 校舎詳細を変更（管理者専用）
  * ※コードは変更不可
  * @param {string} campusCode 校舎コード（変更不可）
