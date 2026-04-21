@@ -448,4 +448,40 @@
 あるが、PRICING シンク群は特殊ロジック（2 キー同時・マーカー置換・eventually
 consistent）を含み、単純 KV とテスト観点が異なるため、切り離した 3 分割を推奨する。
 
+---
+
+## 実装上の決定記録
+
+### G5 `deleteTestName` / G8 `deleteSchool` / G11 `deleteCampus` の Supabase ガード扱い（5-E-9b-1 セッション 2）
+
+#### 選択肢
+
+- **α**: Workers 側で Supabase REST API を直接叩いて count を発行
+- **β**: Supabase 依存部分は GAS 側に残し、Workers 経由ではガード未実装・GAS フォールバック経由のみ守る（5-E-10 で解消する宿題化）
+- **γ**: ガード処理は Workers 側だが Supabase 呼出は新設せず既存パターン踏襲
+
+#### 決定：**α（Workers 側で直接 supabaseSelect 呼出）**
+
+#### 理由
+
+1. **Workers 側の Supabase REST アクセスは既に確立済み**:
+   `workers/src/supabase.js` の `supabaseSelect(env, table, query)` は 5-E-7 `settings.js`
+   および 5-E-8 の `students.js` で既に利用実績あり（`students.js:63 / 137 / 172` など）。
+2. **count guard は単純な SELECT のみ**: フィルタ式（例: `test_name=eq.<val>`）で
+   `select=id` すれば `.length` でカウント可能。新規インフラ・RPC・ビュー等は不要。
+3. **β（ガード先送り）は運用リスクが大きい**: Workers 経由の削除でガードが外れると、
+   使用中のテスト名／志望校／校舎コードを誤削除し、後続の成績・生徒データ参照で
+   整合性不正が発生する恐れがある。フォールバック経路だけに依存するのは脆弱。
+4. **γ（既存パターン踏襲）は α と実質同じ**: 既に `supabaseSelect` が確立パターンなので
+   γ は α と区別する意味がない。
+
+#### 適用範囲
+
+- **G5 `deleteTestName`**（本セッションで実装）: Supabase `grades` テーブルの
+  `test_name=eq.<name>` で count。
+- **G8 `deleteSchool`**（セッション 3 で同じ α を適用する推奨）: `shogaku1` / `shogaku2`
+  の両カラムで count し、`id` でユニーク化してから合計件数を算出。
+- **G11 `deleteCampus`**（セッション 4 で同じ α を適用する推奨）: `students` テーブルを
+  `campus=eq.<code2桁>&is_deleted=eq.false` で count。
+
 

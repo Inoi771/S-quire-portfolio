@@ -1,20 +1,26 @@
 // grades.js 成績マスタ設定の Workers ポート
 //
-// Phase 5-E-9b-1（分割実行・その1）
-//   - 実装済み：
+// Phase 5-E-9b-1（分割実行）
+//   セッション 1（コミット 01d2b23）:
 //       G14 updateGradeAnalysisSigmaConfig    (書込・σ)
 //       G15 resetGradeAnalysisSigmaConfig     (書込・σ)
 //       G23 getGradeAnalysisSigmaConfig       (読取・σ)
 //       G16 getCampusConfigForWeb             (読取・校舎)
 //       getCampusConfig_（private）           (G20 相当)
 //       ensureGradesConfigInit_（private）    (G3 相当)
+//   セッション 2（本コミット）:
+//       G4  addTestName                       (書込・テスト名)
+//       G5  deleteTestName                    (書込・テスト名 + Supabase count guard)
+//       G6  updateTestName                    (書込・テスト名)
+//       getTestNamesConfig_（private）        (G18 相当)
+//       countGradesByTestName_（private）     (Supabase count guard・α 方式)
 //
-// 以降のサブセッションで追加予定（残り 15 件）：
-//   G4-G13 grades CRUD（テスト名・志望校・校舎の 10 件）
-//   G17    getGradesConfigForWeb  （Supabase 併用）
-//   G18    getTestNamesConfig_    （private）
-//   G19    getSchoolConfig_       （private）
-//   G21    getCampusDetailsConfig_（private）
+// 以降のサブセッションで追加予定（残り 12 件）：
+//   G7-G9   志望校 CRUD（3 件）
+//   G10-G13 校舎書込 + 表示学年（4 件）
+//   G17     getGradesConfigForWeb  （Supabase 併用）
+//   G19     getSchoolConfig_       （private）
+//   G21     getCampusDetailsConfig_（private）
 //
 // インライン展開/定数化（Workers では独立定義しない）:
 //   G1  getScriptProperty         → `env.KV.get('prop:' + key) ?? ''`
@@ -23,6 +29,7 @@
 //   G22 getGradeConfig            → モジュール定数 `GRADES`
 
 import { isAdminUser } from './auth.js';
+import { supabaseSelect } from '../supabase.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -170,6 +177,122 @@ export async function resetGradeAnalysisSigmaConfig(args, env, user) {
     if (denied) return denied;
     await deleteKv_(env, KEY_SIGMA);
     return { success: true, message: 'σ設定をデフォルト値に戻しました', sigma: DEFAULT_SIGMA };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─── Workers 内部 private reader: G18 getTestNamesConfig 相当 ───
+// GAS 版は JSON.parse 失敗時に `TEST_NAMES` デフォルト定数を返す（defensive）。
+async function getTestNamesConfig_(env) {
+  await ensureGradesConfigInit_(env);
+  const raw = await readKv_(env, KEY_TEST_NAMES);
+  try {
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [...TEST_NAMES];
+  }
+}
+
+// ─── Supabase count guard（GAS countGradesByTestName_ 相当・選択肢α） ───
+// 指定テスト名を使用している Supabase `grades` 件数を返す（エラー時は 0）。
+// α 方式の決定理由は docs/phase-5e9-survey.md の「実装上の決定記録」参照。
+async function countGradesByTestName_(env, testName) {
+  try {
+    const rows = await supabaseSelect(
+      env,
+      'grades',
+      'select=id&test_name=eq.' + encodeURIComponent(testName)
+    );
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * テスト名を追加（G4 の Workers 版）
+ * GAS grades.js:68 と同じバリデーション・エラーメッセージ・戻り値形状。
+ * @param {Array} args [newTestName]
+ */
+export async function addTestName(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [newTestName] = args || [];
+    if (!newTestName || newTestName.trim().length === 0) {
+      return { success: false, error: 'テスト名を入力してください' };
+    }
+    newTestName = newTestName.trim();
+    const testNames = await getTestNamesConfig_(env);
+    if (testNames.includes(newTestName)) {
+      return { success: false, error: 'このテスト名は既に存在します' };
+    }
+    if (newTestName.length > 50) {
+      return { success: false, error: 'テスト名は50文字以下にしてください' };
+    }
+    testNames.push(newTestName);
+    await writeJson_(env, KEY_TEST_NAMES, testNames);
+    return { success: true, message: 'テスト名を追加しました', testName: newTestName };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * テスト名を削除（G5 の Workers 版）
+ * GAS grades.js:102 と同じ。削除前に Supabase `grades` 使用件数を count し、
+ * 1 件でも使われていれば削除を拒否する（α 方式）。
+ * @param {Array} args [testNameToDelete]
+ */
+export async function deleteTestName(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [testNameToDelete] = args || [];
+    testNameToDelete = (testNameToDelete || '').trim();
+    const testNames = await getTestNamesConfig_(env);
+    const index = testNames.indexOf(testNameToDelete);
+    if (index === -1) {
+      return { success: false, error: 'テスト名が見つかりません' };
+    }
+    const gradeCount = await countGradesByTestName_(env, testNameToDelete);
+    if (gradeCount > 0) {
+      return { success: false, error: 'このテスト名は ' + gradeCount + ' 件の成績データで使用されているため削除できません' };
+    }
+    testNames.splice(index, 1);
+    await writeJson_(env, KEY_TEST_NAMES, testNames);
+    return { success: true, message: 'テスト名を削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * テスト名を変更（G6 の Workers 版）
+ * GAS grades.js:136 と同じ。リネーム時は重複チェック（自分自身へのリネームは許容）。
+ * @param {Array} args [oldName, newName]
+ */
+export async function updateTestName(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [oldName, newName] = args || [];
+    newName = (newName || '').trim();
+    if (!newName) {
+      return { success: false, error: '新しいテスト名を入力してください' };
+    }
+    const testNames = await getTestNamesConfig_(env);
+    const idx = testNames.indexOf(oldName);
+    if (idx === -1) {
+      return { success: false, error: 'テスト名が見つかりません' };
+    }
+    if (newName !== oldName && testNames.indexOf(newName) !== -1) {
+      return { success: false, error: 'このテスト名は既に登録されています' };
+    }
+    testNames[idx] = newName;
+    await writeJson_(env, KEY_TEST_NAMES, testNames);
+    return { success: true, message: 'テスト名を変更しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
