@@ -29,16 +29,19 @@ function getAllScriptPropertiesForGUI() {
     DEPRECATED_KEYS.forEach(function(k) {
       try { deleteProperty_(k); } catch(e) {}
     });
+
+    // Phase 5-E-5: Workers KV を一次ソースとして全プロパティを取得
+    // （KV 失敗時は SP 直読にフォールバック・SP-only キーはユニオンで補完）
+    var props = getAllProperties_();
+
     // GEMINI_TEAM_* はチーム全体使用量追跡の廃止機能 → プレフィックスで一括削除
-    // getProperties() は Workers に対応 API がないため SP を直接参照（Dual-write 済）
-    var allPropsForCleanup = PropertiesService.getScriptProperties().getProperties();
-    Object.keys(allPropsForCleanup).forEach(function(k) {
+    Object.keys(props).forEach(function(k) {
       if (k.indexOf('GEMINI_TEAM_') === 0) {
         try { deleteProperty_(k); } catch(e) {}
+        delete props[k];
       }
     });
 
-    var props = getAllProperties();
     var safProps = [];
 
     for (var key in props) {
@@ -99,6 +102,9 @@ function logAdminAction(action, details) {
 
 /**
  * スクリプトプロパティを更新（GUI経由）
+ * Phase 5-E-4 以降：getProperty / setProperty は auth.js 側で
+ * getProperty_ / setProperty_ ラッパー経由に置換済みのため、本関数の書込は
+ * Workers KV を一次ソースとして更新され、ScriptProperties にも Dual-write される。
  * @param {string} key プロパティキー
  * @param {string} newValue 新しい値
  * @return {Object} { success, message, error }
@@ -108,7 +114,7 @@ function updateScriptPropertyFromGUI(key, newValue) {
     if (!isAdmin()) {
       return { success: false, error: 'Admin のみアクセス可能' };
     }
-    
+
     var oldValue = getProperty(key);
     setProperty(key, newValue);
     
@@ -128,6 +134,8 @@ function updateScriptPropertyFromGUI(key, newValue) {
 
 /**
  * スクリプトプロパティを削除（GUI経由）
+ * Phase 5-E-4 以降：deleteProperty_ ラッパーで Workers KV と ScriptProperties の
+ * 両方から削除される（Dual-delete）。
  * @param {string} key 削除するプロパティキー
  * @return {Object} { success, message, error }
  */
@@ -136,7 +144,7 @@ function deleteScriptPropertyFromGUI(key) {
     if (!isAdmin()) {
       return { success: false, error: 'Admin のみアクセス可能' };
     }
-    
+
     deleteProperty_(key);
 
     logAdminAction('deleteScriptProperty', { key: key });

@@ -185,7 +185,7 @@ markdown# S-quire — プロジェクト設計書
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 16**
+**現在のデプロイ回数: 17**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -261,7 +261,7 @@ MyProject/
 ├── firebase-schedule.html Firebase スケジュール・講習クライアント関数
 ├── firebase-students.html Firebase 生徒データクライアント関数（成績関連はGAS API経由）
 ├── minutes.js           議事録管理・AI文字起こし＋要約（約250行）
-├── kv-props.js          Phase 5-E-4: ScriptProperties ラッパー（getProperty_/setProperty_/deleteProperty_）— Workers KV 経由に切替え・SP フォールバック付き（約210行）
+├── kv-props.js          Phase 5-E-4/5: ScriptProperties ラッパー（getProperty_/setProperty_/deleteProperty_ + 5-E-5 で getAllProperties_ 追加）— Workers KV 経由に切替え・SP フォールバック付き（約330行）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
 ├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
 ├── migrate-props-to-kv.js Phase 5-E-3: ScriptProperties→Cloudflare KV 一括コピー（一度だけ実行）
@@ -421,7 +421,7 @@ MyProject/
 - **AIアシスタントデータもSupabase**: aiLearnedKnowledge・aiFeedback はSupabase（`ai_learned_knowledge`・`ai_feedback` テーブル）に保存。Firestoreの読み取り回数削減のため移行
 - **スタッフデータもSupabase**: staffs コレクションは Supabase `staffs` テーブルに移行。認証時の検索は RPC関数 `find_staff_by_auth` で1クエリに統合。allowedUsers コレクション（Firestoreセキュリティルール用）のみFirestoreに残す。Firestoreに残すのは講習日程（`lectureEntries`）・スケジュール・allowedUsers等のリアルタイム性またはセキュリティルールが必要なデータのみ
 - **講師配置は年度別キー＋自動切替**: 講師配置（`STAFF_PLACEMENT_{year}`）は ScriptProperties に年度別キーで保存。`getCurrentFiscalYear()`（4月起算）に基づき表示年度を自動決定し、4月1日で新年度に切替、旧年度は `STAFF_PLACEMENT_ARCHIVE_{year}` へ自動退避される。1〜3月のみ編集画面で翌年度の並行編集が可能。詳細は `admin.js` の講師配置セクション参照
-- **ScriptProperties アクセスはラッパー経由（Phase 5-E-4〜）**: GAS コード内の単一キー get/set/delete は `getProperty_()` / `setProperty_()` / `deleteProperty_()`（`kv-props.js`）経由で行うこと。内部で Workers 経由の Cloudflare KV（`kv_get` / `kv_set` / `kv_delete`）に読み書きし、失敗時は ScriptProperties にフォールバックする。書込は KV と SP の Dual-write で整合性を維持（5-E-6 で SP を凍結するまで）。`INTERNAL_API_KEY` のみ無限ループ回避のため ScriptProperties から直接取得する。enumerate 系（`.getProperties()` / `.getKeys()`）は Workers 側に対応 API がないため SP を直接参照するが、Dual-write で同期済みのため動作に問題はない。`PropertiesService.getScriptProperties().getProperty(...)` の新規追加は禁止（既存ラッパーを使う）
+- **ScriptProperties アクセスはラッパー経由（Phase 5-E-4〜）**: GAS コード内の単一キー get/set/delete は `getProperty_()` / `setProperty_()` / `deleteProperty_()`（`kv-props.js`）経由で行うこと。内部で Workers 経由の Cloudflare KV（`kv_get` / `kv_set` / `kv_delete`）に読み書きし、失敗時は ScriptProperties にフォールバックする。書込は KV と SP の Dual-write で整合性を維持（5-E-6 で SP を凍結するまで）。`INTERNAL_API_KEY` のみ無限ループ回避のため ScriptProperties から直接取得する。enumerate 系のうち `.getProperties()` は Phase 5-E-5 で `getAllProperties_()`（`kv_list` + `UrlFetchApp.fetchAll(kv_get)` + SP ユニオン）を追加し Admin GUI 一覧取得を KV 経由化済み。`.getKeys()` は Workers 側に対応 API が無く Dual-write で同期済のため SP 直読のまま（動作に問題なし）。`PropertiesService.getScriptProperties().getProperty(...)` の新規追加は禁止（既存ラッパーを使う）
 
 ---
 

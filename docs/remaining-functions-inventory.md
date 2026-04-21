@@ -158,10 +158,10 @@
 
 | 関数名 | 種別 | 対象テーブル/データ | 呼出元 | ScriptProperties依存 | 分類 | 優先度 | 備考 |
 |--------|------|-------------------|--------|-------------------|------|--------|------|
-| getAllScriptPropertiesForGUI | 読取 | ScriptProperties(全て) | フロント: js-admin-ext | 全て | B | | Admin 専用・5-E 後 |
+| getAllScriptPropertiesForGUI | 読取 | Cloudflare KV（一次）+ ScriptProperties（SP-only 補完/フォールバック） | フロント: js-admin-ext | 全て | B | | Admin 専用・Phase 5-E-5 で KV 経由化済（`kv_list` + `fetchAll(kv_get)` + SP ユニオン） |
 | logAdminAction | 書込 | operationLogs(Firestore) | GAS 内部のみ | なし | C | | 内部ログ記録 |
-| updateScriptPropertyFromGUI | 書込 | ScriptProperties | フロント: js-admin-ext | 任意 | B | | Admin 専用・5-E 後 |
-| deleteScriptPropertyFromGUI | 書込 | ScriptProperties | フロント: js-admin-ext | 任意 | B | | Admin 専用・5-E 後 |
+| updateScriptPropertyFromGUI | 書込 | Cloudflare KV + ScriptProperties（Dual-write） | フロント: js-admin-ext | 任意 | B | | Admin 専用・Phase 5-E-4 の `setProperty_` ラッパー経由で KV 経由化済 |
+| deleteScriptPropertyFromGUI | 書込 | Cloudflare KV + ScriptProperties（Dual-delete） | フロント: js-admin-ext | 任意 | B | | Admin 専用・Phase 5-E-4 の `deleteProperty_` ラッパー経由で KV 経由化済 |
 | initializeAllSheets | 書込 | Drive | GAS 内部のみ | APP_FOLDER_ID | C | | DriveApp 必須 |
 | recordOperationLog | 書込 | operationLogs(Firestore) | GAS 内部のみ | なし | C | | 内部ヘルパー |
 | recordInitializationLog | 書込 | operationLogs(Firestore) | GAS 内部のみ | なし | C | | 内部ヘルパー |

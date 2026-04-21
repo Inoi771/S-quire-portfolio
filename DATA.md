@@ -14,7 +14,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 > `PropertiesService.getScriptProperties().getProperty(...)` の新規追加は禁止。
 > 例外:
 > 1. `INTERNAL_API_KEY` の取得 — ラッパー経由にすると無限ループになるため ScriptProperties から直接取得（`kv-props.js` 内で一度だけ実施）
-> 2. enumerate 系（`.getProperties()` / `.getKeys()`）— Workers 側に対応 API がないため SP を直接参照（Dual-write 済のため動作問題なし。使用箇所は `admin.js` の GEMINI_TEAM_ クリーンアップ・STAFF_PLACEMENT_ アーカイブ、`settings.js` の _UP_ クリーンアップ、`auth.js` の `getAllProperties()`）
+> 2. enumerate 系のうち `.getProperties()` は Phase 5-E-5 で `getAllProperties_()`（`kv_list` + `UrlFetchApp.fetchAll(kv_get)` + SP ユニオン）を追加し Admin GUI の一覧取得は KV 経由化済。`.getKeys()` と周辺の `PropertiesService.getScriptProperties().getProperties()` クリーンアップ用直読（`admin.js` の STAFF_PLACEMENT_ アーカイブ、`settings.js` の _UP_ クリーンアップ、`auth.js` の `getAllProperties()` 等）は Dual-write で同期済のため SP 直読のまま維持（動作問題なし）
 
 ### PROP_KEYS（code.js で定数定義）
 

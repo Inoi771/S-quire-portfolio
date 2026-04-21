@@ -25,11 +25,17 @@
 //   （APP_FOLDER_ID / THEME_COLOR / ADMIN_EMAILS など）があるため有効。
 //
 // 範囲外:
-//   - PropertiesService.getScriptProperties().getProperties()
-//     および .getKeys() は Workers 側に 1 コール相当の API がないため、
-//     引き続き ScriptProperties を直接参照する（Dual-write で同期済）。
+//   - PropertiesService.getScriptProperties().getKeys() は Workers 側に 1 コール
+//     相当の API がないため、引き続き ScriptProperties を直接参照する（Dual-write
+//     で同期済）。
 //   - migrate-props-to-kv.js は移行スクリプト自身の都合で ScriptProperties を
 //     直接読むため、このラッパーを使わない。
+//
+// Phase 5-E-5 追加:
+//   - getAllProperties_() : kv_list + UrlFetchApp.fetchAll(kv_get) で全プロパティ
+//     をまとめて取得するラッパー。ScriptProperties の getProperties() 互換。
+//     KV 失敗時は SP 直読にフォールバック。INTERNAL_API_KEY のような SP-only キー
+//     が抜け落ちないよう、正常時も SP とのユニオンで返す。
 // ========================================
 
 /**
@@ -215,4 +221,107 @@ function deleteProperty_(key) {
     delete _kvPropsCache_[key];
   }
   return kvOk || spOk;
+}
+
+/**
+ * 【Phase 5-E-5】Workers KV に保存された全プロパティをまとめて取得する。
+ * 返り値は { key: value } のオブジェクト（ScriptProperties.getProperties() 互換）。
+ *
+ * 動作:
+ *   1) KV 一次: kv_list で全キー列挙（ページネーション）→ UrlFetchApp.fetchAll で
+ *      各キーの値を並列 kv_get（HTTP ラウンドトリップ節約）
+ *   2) SP ユニオン: KV 経由で取れなかったキー（INTERNAL_API_KEY 等の KV 移行対象外）
+ *      を ScriptProperties の値で補完
+ *   3) KV 失敗時フォールバック: 例外時は ScriptProperties を直読して返す
+ *
+ * 主な利用者は Admin GUI の `getAllScriptPropertiesForGUI`。
+ * 単一キー取得しか要らない呼出は `getProperty_` を使うこと。
+ *
+ * @return {Object<string, string>} キー→値のマップ
+ */
+function getAllProperties_() {
+  var merged = {};
+  var kvOk = false;
+
+  try {
+    var apiKey = _getInternalApiKey_();
+    if (!apiKey) throw new Error('INTERNAL_API_KEY 未設定');
+
+    // 1) kv_list で全キー列挙（ページネーション）
+    var keyNames = [];
+    var cursor = null;
+    var pages = 0;
+    var MAX_PAGES = 100;
+    while (pages < MAX_PAGES) {
+      pages++;
+      var listRes = _postToKvProxy_('kv_list', ['', cursor, 1000]);
+      if (!listRes || !listRes.success) {
+        throw new Error('kv_list 失敗: ' + JSON.stringify(listRes));
+      }
+      (listRes.keys || []).forEach(function(k) { keyNames.push(k.name); });
+      if (listRes.list_complete) break;
+      cursor = listRes.cursor;
+      if (!cursor) break;
+    }
+
+    // 2) 各キーの値を UrlFetchApp.fetchAll で並列取得
+    if (keyNames.length > 0) {
+      var requests = keyNames.map(function(k) {
+        return {
+          url: KV_PROPS_CONFIG.WORKERS_URL,
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({
+            functionName: 'kv_get',
+            args: [k],
+            internalApiKey: apiKey
+          }),
+          muteHttpExceptions: true
+        };
+      });
+      var responses = UrlFetchApp.fetchAll(requests);
+      for (var i = 0; i < responses.length; i++) {
+        var name = keyNames[i];
+        try {
+          var code = responses[i].getResponseCode();
+          var text = responses[i].getContentText();
+          if (code !== 200) {
+            Logger.log('⚠ getAllProperties_: kv_get HTTP ' + code + ' for ' + name);
+            continue;
+          }
+          var parsed = JSON.parse(text);
+          if (parsed && parsed.success) {
+            var v = (parsed.value == null) ? '' : String(parsed.value);
+            merged[name] = v;
+            _kvPropsCache_[name] = v;
+          } else {
+            Logger.log('⚠ getAllProperties_: kv_get fail ' + name + ' → ' + JSON.stringify(parsed));
+          }
+        } catch (e) {
+          Logger.log('⚠ getAllProperties_: kv_get parse fail for ' + name + ': ' + e);
+        }
+      }
+    }
+    kvOk = true;
+  } catch (e) {
+    Logger.log('⚠ getAllProperties_: KV 一次取得失敗（SP 直読にフォールバック）: ' + e);
+  }
+
+  // 3) SP 側をユニオン（または全フォールバック）
+  try {
+    var spProps = PropertiesService.getScriptProperties().getProperties();
+    Object.keys(spProps).forEach(function(k) {
+      if (kvOk) {
+        if (!Object.prototype.hasOwnProperty.call(merged, k)) {
+          merged[k] = spProps[k];
+        }
+      } else {
+        merged[k] = spProps[k];
+      }
+    });
+  } catch (e2) {
+    Logger.log('❌ getAllProperties_: SP 読取失敗: ' + e2);
+  }
+
+  return merged;
 }
