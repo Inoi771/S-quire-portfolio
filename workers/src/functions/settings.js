@@ -1,26 +1,10 @@
 // settings 関連ハンドラー（GAS settings.js の Workers ポート）
 import { supabaseRpc, supabaseSelect, supabaseUpsert, supabaseUpdate, staffFromSupabase } from '../supabase.js';
 import { firestoreSet } from '../firebase.js';
+import { isAdminUser } from './auth.js';
 
 // Phase 5-E-7: KV 直接アクセス用プレフィックス（kv.js の PROP_PREFIX と一致）
 const PROP_PREFIX = 'prop:';
-
-/**
- * 認証済みユーザーが Admin かを判定する内部ヘルパー。
- * KV（prop:ADMIN_EMAILS）を優先し、未設定時は env.ADMIN_EMAILS にフォールバック。
- * GAS の isAdmin() と同じく、値はカンマ区切りのメールアドレス文字列。
- * @private
- */
-async function isAdminUser_(env, user) {
-  if (!user || !user.email) return false;
-  let adminEmailsRaw = '';
-  try {
-    adminEmailsRaw = (await env.KV.get(PROP_PREFIX + 'ADMIN_EMAILS')) || '';
-  } catch (e) { /* KV エラー時は env にフォールバック */ }
-  if (!adminEmailsRaw) adminEmailsRaw = env.ADMIN_EMAILS || '';
-  const list = adminEmailsRaw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-  return list.includes(user.email.toLowerCase());
-}
 
 /**
  * getUserProfile — GAS getUserProfile() の Workers 版
@@ -283,7 +267,7 @@ export async function getSettings(args, env, user) {
  * テーマカラー）はすべて KV（prop:...）にのみ書き込む。
  *
  * 権限チェック:
- *   Admin 限定項目は isAdminUser_() を使って KV(prop:ADMIN_EMAILS) で判定。
+ *   Admin 限定項目は isAdminUser() を使って KV(prop:ADMIN_EMAILS) で判定。
  *   GAS isAdmin() と同じ粒度・同じエラーメッセージを返す。
  *
  * GAS 版との差分:
@@ -306,7 +290,7 @@ export async function updateSettings(args, env, user) {
     let _isAdmin = false;
     async function ensureAdmin() {
       if (!_adminChecked) {
-        _isAdmin = await isAdminUser_(env, user);
+        _isAdmin = await isAdminUser(env, user);
         _adminChecked = true;
       }
       return _isAdmin;

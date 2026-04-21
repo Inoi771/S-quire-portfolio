@@ -5,6 +5,15 @@ import { getUserProfile, getAppStartupData, saveLecGrades, getSettings, updateSe
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
+import {
+  setBasicTestDateOverride,
+  deleteBasicTestDateOverride,
+  setBasicTestDetails,
+  deleteBasicTestDetails,
+  setPublicHighExamDateOverride,
+  deletePublicHighExamDateOverride,
+  deleteJukuEventOverride
+} from './functions/schedule-overrides.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -39,7 +48,14 @@ const HANDLERS = {
   kv_get,
   kv_set,
   kv_delete,
-  kv_list
+  kv_list,
+  setBasicTestDateOverride,
+  deleteBasicTestDateOverride,
+  setBasicTestDetails,
+  deleteBasicTestDetails,
+  setPublicHighExamDateOverride,
+  deletePublicHighExamDateOverride,
+  deleteJukuEventOverride
 };
 
 export async function handleApiCall(body, env) {
