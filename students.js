@@ -839,14 +839,11 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
       }
     });
 
-    // 一括保存後にキャッシュを1回だけ再構築
+    // 一括保存後にインメモリキャッシュを無効化
     if ((savedCount + updatedCount) > 0) {
       try {
         delete _dataSheetCache[String(year)];
         delete _masterDataCache[String(year)];
-        rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
-        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
-        rebuildGradeReportCache(parseInt(year, 10));
       } catch (e) { Logger.log('⚠ OCR後のキャッシュ更新スキップ: ' + e); }
     }
 
@@ -1044,9 +1041,6 @@ function parseGradeDataFromText(text, testName, year) {
       try {
         delete _dataSheetCache[String(year)];
         delete _masterDataCache[String(year)];
-        rebuildGradeSummary(parseInt(year, 10), String(testName).trim());
-        rebuildGradeListCache(parseInt(year, 10), String(testName).trim());
-        rebuildGradeReportCache(parseInt(year, 10));
       } catch (e) { Logger.log('⚠ テキスト読み込み後のキャッシュ更新スキップ: ' + e); }
     }
 
