@@ -173,3 +173,130 @@
 ### 代替案（1 セッションに統合）
 
 調査内容は schedule 系と同じフォーマットで進むため 1 セッションで 40 件を調査する案もあるが、ファイル間の依存関係（特に `PRICING_CONFIG` の共有）が features.js 内で完結するため、分割した方が文脈の切替コストが低いと判断。
+
+---
+
+## 書込系関数 詳細調査（Phase 5-E-9-2a）
+
+### 対象件数の訂正
+
+5-E-9-1 の集計で grades.js 書込を「15 件」と記載したのはオフバイワン。
+実数は grades.js 14 件 + features.js 10 件 = **24 件**。本セクションは 24 件
+すべてを対象に詳細調査する（task 記載の 25 と 1 件の差異）。
+
+### 共通前提
+
+- **KV キー**: GAS 側は `getProperty()` / `setProperty()`（さらに grades.js は `getScriptProperty` / `setScriptProperty` の同ファイル内別名）経由で `kv-props.js` の `kv-proxy` に繋がり、最終的に `prop:<KEY>` として KV に書かれる。
+- **認証**: 全 24 関数ともフロントエンド呼出の公開関数 or それらから呼ばれる `_` 内部ヘルパー。Workers 化時は settings 5-E-7 と同じく **Firebase ID トークン必須**。
+- **Admin 判定**: GAS 側は `isAdmin()`。Workers 側では `workers/src/functions/auth.js` の `isAdminUser(env, user)` を使う（5-E-8b-1a で昇格済）。
+
+### Admin エラーメッセージの差異
+
+| メッセージ文言 | 件数 | 主な関数 |
+|------------|------|---------|
+| `'管理者権限が必要です'` | **11**（grades.js のみ） | `addTestName`, `deleteTestName`, `updateTestName`, `addSchool`, `deleteSchool`, `updateSchool`, `addCampus`, `deleteCampus`, `updateCampusDetails`, `updateVisibleGrades`, `addCampus` |
+| `'Admin のみアクセス可能'` | **11** | grades.js 2 件（`updateGradeAnalysisSigmaConfig` / `resetGradeAnalysisSigmaConfig`）＋ features.js 9 件 |
+| Admin 判定なし | **2** | `setScriptProperty`（wrapper）, `initializeGradesConfig`（defensive init） |
+| 内部 `_` ヘルパー（Admin 判定なし・呼出元の権限に従う） | **2** | `syncLecturePricingToTable_`, `syncNormalConfigToPricingTable_` |
+
+### 詳細表（grades.js 14 件）
+
+| # | 関数名 | KV キー | Admin メッセージ | 依存 | 特殊ロジック | 分類 |
+|---|--------|---------|----------------|------|------------|------|
+| G2 | `setScriptProperty` | 任意（引数） | なし（wrapper） | `setProperty_`（`kv-props.js`） | 他ファイル向けのファイルローカル別名 | **D'** |
+| G3 | `initializeGradesConfig` | `prop:GRADES_TEST_NAMES_CONFIG`, `prop:GRADES_CAMPUS_CODES_CONFIG` | なし | `getScriptProperty`, `setScriptProperty`, 定数 `TEST_NAMES` / `CAMPUSES` | 既存値があれば書込しない defensive init。初回セットアップ時のみ書込 | **D'** |
+| G4 | `addTestName` | `prop:GRADES_TEST_NAMES_CONFIG` | `'管理者権限が必要です'` | `getTestNamesConfig`, `setScriptProperty` | 重複チェック・50 文字制限 | **B'** |
+| G5 | `deleteTestName` | `prop:GRADES_TEST_NAMES_CONFIG` | `'管理者権限が必要です'` | `getTestNamesConfig`, `countGradesByTestName_`（Supabase）, `setScriptProperty` | 使用中グレードを Supabase で事前チェックして削除拒否 | **B'** |
+| G6 | `updateTestName` | `prop:GRADES_TEST_NAMES_CONFIG` | `'管理者権限が必要です'` | `getTestNamesConfig`, `setScriptProperty` | リネーム時の重複チェック | **B'** |
+| G7 | `addSchool` | `prop:GRADES_SCHOOL_CONFIG` | `'管理者権限が必要です'` | `getSchoolConfig`, `setScriptProperty` | 学科文字列 `"名:偏差値"` 形式のパース・重複チェック | **B'** |
+| G8 | `deleteSchool` | `prop:GRADES_SCHOOL_CONFIG` | `'管理者権限が必要です'` | `getSchoolConfig`, `countGradesBySchool_`（Supabase）, `setScriptProperty` | 使用中グレードを Supabase で事前チェックして削除拒否 | **B'** |
+| G9 | `updateSchool` | `prop:GRADES_SCHOOL_CONFIG` | `'管理者権限が必要です'` | `getSchoolConfig`, `setScriptProperty` | 学科文字列のパース・リネーム時の重複チェック | **B'** |
+| G10 | `addCampus` | `prop:GRADES_CAMPUS_CODES_CONFIG` | `'管理者権限が必要です'` | `getScriptProperty`, `setScriptProperty` | コード正規化（upper）・コード 10 字/名前 30 字の長さ制限・重複チェック | **B'** |
+| G11 | `deleteCampus` | `prop:GRADES_CAMPUS_CODES_CONFIG` | `'管理者権限が必要です'` | `getScriptProperty`, `countStudentsByCampus_`（Supabase）, `setScriptProperty` | 在籍生徒を Supabase で事前チェックして削除拒否。フィルタ前にカウント（beforeCount 比較）で「見つからない」判定 | **B'** |
+| G12 | `updateCampusDetails` | `prop:GRADES_CAMPUS_CODES_CONFIG` | `'管理者権限が必要です'` | `getScriptProperty`, `setScriptProperty` | `tel/fax/principal/mobile` は `null` 指定で変更スキップ（部分更新）。コードは変更不可 | **B'** |
+| G13 | `updateVisibleGrades` | `prop:GRADES_VISIBLE_CONFIG` | `'管理者権限が必要です'` | `setScriptProperty`, 定数 `GRADES` | 全コードが `GRADES` 定数に存在するかバリデーション | **B'** |
+| G14 | `updateGradeAnalysisSigmaConfig` | `prop:GRADES_SIGMA_CONFIG` | `'Admin のみアクセス可能'` | `setScriptProperty`, 定数 `DEFAULT_SIGMA` | 各キーを `Number()` で検証して正の数値のみ保存。schedule 系 A と同質 | **A'** |
+| G15 | `resetGradeAnalysisSigmaConfig` | `prop:GRADES_SIGMA_CONFIG` | `'Admin のみアクセス可能'` | `deleteProperty_`（`kv-props.js`） | `setProperty_` でなく **`deleteProperty_` を直接呼ぶ**（空文字列ではなく KV エントリ自体を削除）。schedule 系の delete と同質 | **A'** |
+
+### 詳細表（features.js 10 件）
+
+| # | 関数名 | KV キー | Admin メッセージ | 依存 | 特殊ロジック | 分類 |
+|---|--------|---------|----------------|------|------------|------|
+| F2 | `saveAiKnowledgeEntry` | `prop:AI_KNOWLEDGE_BASE` | `'Admin のみアクセス可能'` | `getProperty`, `setProperty` | id 指定あり→update、なし→新規追加（id=`'kb_' + Date.now()`）。`updatedAt` を ISO 文字列で付与 | **B'** |
+| F3 | `deleteAiKnowledgeEntry` | `prop:AI_KNOWLEDGE_BASE` | `'Admin のみアクセス可能'` | `getProperty`, `setProperty` | id で filter 除去・差分がなければ `'エントリが見つかりません'` エラー | **A'** |
+| F6 | `saveLectureDates` | `prop:LECTURE_PERIODS_CONFIG` | `'Admin のみアクセス可能'` | `getScriptProperty`, `setScriptProperty`, `getDefaultGradeSettings_`, 定数 `LEC_TYPE_NAMES` | id = `fiscalYear + '-' + typeId` で upsert。新規時は `gradeSettings` にデフォルト値を埋める | **B'** |
+| F7 | `resetLectureDates` | `prop:LECTURE_PERIODS_CONFIG` | `'Admin のみアクセス可能'` | `getScriptProperty`, `setScriptProperty`, `computeDefaultLectureDates_` | `gradeSettings` が残っていれば日程だけを自動計算値に置換（エントリ保持）、なければエントリ自体を削除 | **B'** |
+| F9 | `saveLecturePricing` | `prop:LECTURE_PRICING_CONFIG` ＋ `prop:PRICING_TABLE_CONFIG`（sync経由） | `'Admin のみアクセス可能'` | `getProperty_`, `setProperty_`, `getDefaultLecturePricing_`, `migrateLecturePricingData_`, **`syncLecturePricingToTable_`** | 旧フォーマット（`all[typeId]` が配列）の自動移行 → `all[typeId] = lectureData` で 1 タイプ更新 → `PRICING_CONFIG` に sync | **C'** |
+| F10 | `saveUnifiedLecturePricing` | `prop:LECTURE_PRICING_CONFIG` ＋ `prop:PRICING_TABLE_CONFIG`（sync経由） | `'Admin のみアクセス可能'` | F9 と同じ＋`payload.allTypes` を使って 6 タイプ一括更新 | F9 のバルク版（6 タイプ `['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi']` を同時更新） | **C'** |
+| F12 | `saveLectureGreetings` | `prop:LECTURE_GREETINGS_CONFIG` | `'Admin のみアクセス可能'` | `setProperty_` | JSON パース → setProperty の 2 行。最も単純 | **A'** |
+| F14 | `saveNormalClassConfig` | `prop:NORMAL_CLASS_CONFIG` ＋ `prop:PRICING_TABLE_CONFIG`（sync経由） | `'Admin のみアクセス可能'` | `setProperty_`, **`syncNormalConfigToPricingTable_`** | `data.version = 2` を強制付与 → setProperty → `PRICING_CONFIG` に sync | **C'** |
+| F16 | `syncLecturePricingToTable_` | `prop:PRICING_TABLE_CONFIG` | なし（内部ヘルパー） | `getProperty_`, `setProperty_`, `getCampusConfig`, 定数 `LECTURE_GRADE_LABELS_` / `LECTURE_TYPE_DISPLAY_NAMES_` | PRICING_CONFIG 未設定時はスキップ（ログのみ）。既存 `auto_*` + 旧 `seasonal`/`seasonal_high`/`mock` セクションを filter 除去 → 6 タイプの rows から新しい `auto_<typeId>` / `auto_<typeId>_shozui` / `auto_<typeId>_custom` セクションを再生成。例外は catch でログのみ | **C'** |
+| F17 | `syncNormalConfigToPricingTable_` | `prop:PRICING_TABLE_CONFIG` | なし（内部ヘルパー） | `getProperty_`, `setProperty_`, `getCampusConfig` | PRICING_CONFIG 未設定時はスキップ。既存 `_fromNormalConfig` + 旧 `regular`/`shozui`/`individual`/`enrollment` セクションを filter 除去 → `nc_<id>` セクションを**先頭**に挿入し他タブを後ろに結合 | **C'** |
+
+### PRICING_CONFIG シンクの整合性担保方式
+
+#### 2 キー同時書込の対象
+
+`saveLecturePricing` (F9) / `saveUnifiedLecturePricing` (F10) は
+`LECTURE_PRICING_CONFIG` → `PRICING_TABLE_CONFIG` の順に書く。
+`saveNormalClassConfig` (F14) は `NORMAL_CLASS_CONFIG` →
+`PRICING_TABLE_CONFIG` の順。
+
+#### 整合性担保ロジック
+
+1. **書込順序の固定**: メインキー（講習料金 / 通常授業設定）を先に書き込み、
+   その後に内部シンクヘルパー（F16 / F17）が `PRICING_TABLE_CONFIG` を更新する。
+2. **差分置換方式**: シンクヘルパーは `PRICING_TABLE_CONFIG.sections` 全体を
+   上書きするのではなく、**「自動生成マーカー付きセクションだけを filter 除去
+   して再構築」**する。対象マーカー：
+   - F16: `auto_` プレフィックス + 旧 ID（`seasonal` / `seasonal_high` / `mock`）
+   - F17: `_fromNormalConfig: true` フラグ + 旧 ID（`regular` / `shozui` / `individual` / `enrollment`）
+
+   他のセクション（管理者が直接編集した手動セクション等）には一切触れない。
+3. **PRICING_CONFIG 未設定時はスキップ**: シンクヘルパーは冒頭で
+   `PRICING_TABLE_CONFIG` の存在を確認し、未設定なら警告ログを出してリターン。
+   メインキーの書込は成功済みなので機能面は壊れない。
+4. **失敗時の扱い**: シンクヘルパーは `try/catch` でエラーをログに留めるだけ。
+   メインキー書込はすでに完了しているため、呼出元の戻り値は success のまま。
+   次回保存時のシンクで自動復旧する「eventually consistent」方式。
+
+#### 影響範囲と再現可能性
+
+- シンクは再入可能（冪等）: 何度呼んでも同じ結果になる（マーカー付きセクションを除去 → 最新データから再生成）。
+- Workers 化する際もこの順序・冪等性を保てば挙動は同等。2 キー書込がトランザクションでないことの許容は GAS 版でも同じ。
+
+### グループ分類の集計
+
+| グループ | 件数 | 定義 | 対象関数 |
+|---------|------|------|---------|
+| **A'** | **4** | settings / schedule-overrides パターン完全同質（単一 KV キー・Admin 判定のみ・副作用なし・ロジック単純） | `G14`, `G15`, `F3`, `F12` |
+| **B'** | **13** | 条件付き同質（軽微な特殊ロジック: 重複チェック・バリデーション・Supabase guard・部分更新・upsert 分岐） | `G4`〜`G13`, `F2`, `F6`, `F7` |
+| **C'** | **5** | 2 キー同時書込・整合性論点あり（`PRICING_TABLE_CONFIG` シンクが絡む） | `F9`, `F10`, `F14`, `F16`, `F17` |
+| **D'** | **2** | 初期化・内部アクセサ等で通常 CRUD と性質が異なる（Admin 判定なし・wrapper） | `G2`, `G3` |
+| **合計** | **24** | — | — |
+
+### Admin メッセージ差異に関する推奨
+
+**推奨：Workers 化時に現行メッセージを各関数ごとに忠実に移植し、統一はしない。**
+
+#### 理由
+
+1. **挙動パリティの最優先**: 本フェーズは「既存を壊さない」が最優先。フロントの
+   表示メッセージに依存したテスト・スクリーンショット・ユーザーの慣れがあり得る
+   ため、文言変更は独立したクリーンアップフェーズで扱うべき。
+2. **差異は文言のみで意味論は同じ**: `'管理者権限が必要です'` と
+   `'Admin のみアクセス可能'` はどちらも Admin 拒否メッセージであり、
+   機能的な違いはない。統一は「一貫性の改善」であり「互換性の担保」とは別課題。
+3. **統一するならプロジェクト全体で**: grades.js 系の 11 件だけでなく、
+   auth.js / schedule 系との整合性も含めて一度に変更すべき。Workers 化と同時に
+   行うとリグレッション調査の範囲が拡がる。
+
+#### 将来のクリーンアップ手順（参考）
+
+1. 全 GAS/Workers コードで Admin 拒否メッセージをグローバル検索
+2. 統一先文言を決定（候補: `'この操作には管理者権限が必要です'` 等）
+3. GAS と Workers の両実装を同時に差し替え
+4. フロント側のエラー表示テストを実施
+
+このクリーンアップは Phase 5-E 完了後の独立フェーズに回すのが妥当。
+
