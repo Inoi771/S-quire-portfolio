@@ -46,8 +46,14 @@
 //       + KEY_PRICING_TABLE 定数
 //       + `getCampusConfig_` を grades.js から import（α 方式・docs 参照）
 //
-// 以降のサブセッションで追加予定：
-//   5-E-9b-3b:     F4/F9/F10（PRICING シンク群の残り 3 件・getDefaultPricingData_ 含む）
+// Phase 5-E-9b-3b（本コミット・features.js 全体クローズ）:
+//       F4  getPricingConfigForWeb     (読取・v2→v3 マイグレ + mock 除去書込あり)
+//       F9  saveLecturePricing         (書込・単一 typeId update + F16 シンク)
+//       F10 saveUnifiedLecturePricing  (書込・6 typeId 一括更新 + F16 シンク 1 回)
+//       + getDefaultPricingData_       (F4 用デフォルト・約 125 行の静的データ)
+//
+// これで 5-E-9b-3 / 5-E-9b-2 / 5-E-9b / 5-E-9 全体（features.js 17 件 +
+// grades.js 20 件 = 計 40 件）の Workers 化が完了。
 //
 // grades.js（5-E-9b-1）で確立した「低レベル KV ラッパー + denyIfNotAdmin_ +
 // KV キー定数」の構造を features.js でも再現する。Admin メッセージは
@@ -1014,6 +1020,237 @@ export async function saveNormalClassConfig(args, env, user) {
     await writeJson_(env, KEY_NORMAL_CLASS, data);  // メインキー先
     await syncNormalConfigToPricingTable_(env, data); // PRICING シンク後
     return { success: true, message: '通常授業設定を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 料金表（F4/F9/F10）— 5-E-9b-3b
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GAS features.js:2302 getDefaultPricingData_ 相当（PRICING_TABLE_CONFIG 初期値）
+function getDefaultPricingData_() {
+  return {
+    version: 3,
+    title: '通常授業料金',
+    tabs: ['通常授業', '講習'],
+    sections: [
+      {
+        id: 'regular', tab: '通常授業', name: '個別指導料金',
+        headers: ['学年', 'コース', '1科目', 'テキスト代'],
+        rows: [
+          ['小学生', '算・国・英', '6,000 (6,600)', '1,750 (1,925)'],
+          ['', '英・数・国(3人)', '11,000 (12,100)', '1,750 (1,925)'],
+          ['', '英・数・国(6人)', '9,500 (10,450)', '1,750 (1,925)'],
+          ['中学生', '理', '8,000 (8,800)', '1,750 (1,925)'],
+          ['', '社', '8,000 (8,800)', '2,250 (2,475)'],
+          ['', '英単語テスト', '1,000 (1,100)', '1,000 (1,100)'],
+          ['', '基礎数学', '3,500 (3,850)', ''],
+          ['高校生', '1年・2年', '13,500 (14,850)', '毎月1,000 (1,100)'],
+          ['', '3年', '14,500 (15,950)', '毎月1,000 (1,100)']
+        ],
+        notes: [
+          '※割引',
+          '小学生…3科目受講で、2,000 (2,200) 円割引',
+          '中学生…3人クラス3科目受講で、2,000 (2,200)円割引',
+          '3人クラス2科目・6人クラス1科目受講で、1,500 (1,650) 円割引',
+          '3人クラス1科目・6人クラス2科目受講で、1,000 (1,100) 円割引',
+          '高校生…3科目受講で、2,000 (2,200) 円割引',
+          '4科目受講で、4,000 (4,400) 円割引',
+          '5科目受講で、6,000 (6,600) 円割引'
+        ]
+      },
+      {
+        id: 'shozui', tab: '通常授業', name: '※勝瑞校',
+        headers: ['学年', '科目', '月額', '教材費'],
+        rows: [
+          ['高1', '英語', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '数学', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '5,000 (5,500)', '毎月1,000 (1,100)'],
+          ['高2', '英語', '14,000 (15,400)', '毎月1,000 (1,100)'],
+          ['', '数学', '15,000 (16,500)', '毎月1,000 (1,100)'],
+          ['', '理科(物・化)', '13,000 (14,300)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '6,000 (6,600)', '毎月1,000 (1,100)'],
+          ['高3', '英語', '16,000 (17,600)', '毎月1,000 (1,100)'],
+          ['', '数学', '17,000 (18,700)', '毎月1,000 (1,100)'],
+          ['', '理科(物・化)', '14,000 (15,400)', '毎月1,000 (1,100)'],
+          ['', '演習クラスのみ', '7,000 (7,700)', '毎月1,000 (1,100)']
+        ],
+        notes: ['※演習クラスは、授業料に含まれている。別で受講することも可。']
+      },
+      {
+        id: 'individual', tab: '通常授業', name: '完全個別',
+        headers: ['', '1科目', '2科目', '3科目', 'テキスト代'],
+        rows: [
+          ['小学生', '12,000 (13,200)', '', '', '1,750 (1,925)'],
+          ['中学生', '18,000 (19,800)', '', '', '1,750 (1,925)'],
+          ['高校生', '24,000 (26,400)', '46,000 (50,600)', '68,000 (74,800)', '毎月 500 (550)']
+        ],
+        notes: ['※高校生は1科目を週2回受講した場合は2科目として計算すること']
+      },
+      {
+        id: 'enrollment', tab: '通常授業', name: '入塾金・諸経費',
+        headers: ['項目', '対象', '金額', '', ''],
+        rows: [
+          ['入塾金', '全学年・全クラス', '10,000 (11,000)', '兄弟姉妹割引', ''],
+          ['諸経費', '小学生', '2,000 (2,200)', '2人同時通塾', '3,000 (3,300)'],
+          ['', '中学生・高校生', '3,000 (3,300)', '3人同時通塾', '6,000 (6,600)'],
+          ['', '', '', '※上の子の料金から割引', '']
+        ],
+        notes: []
+      },
+      {
+        id: 'seasonal', tab: '講習', name: '講習料金',
+        headers: ['学年', '期間', '内部生', '外部生'],
+        rows: [
+          ['小学生', '春期・夏期・冬期', '4,000 (4,400)', '5,000 (5,500)'],
+          ['中学生(1・2年生)', '春期・夏期・冬期', '8,000 (8,800)', '9,000 (9,900)'],
+          ['', '春期', '8,000 (8,800)', '9,000 (9,900)'],
+          ['', '第1回基礎学対策', '8,000 (8,800)', '9,000 (9,900)'],
+          ['', '第2回基礎学対策', '8,000 (8,800)', '9,000 (9,900)'],
+          ['', '夏・冬・直前(6回)', '12,000 (13,200)', '13,500 (14,850)'],
+          ['中学生(3年生)', '冬(4回)', '', '9,000 (9,900)'],
+          ['', '2科目受講(6回)', '1科目 11,500円で、23,000 (25,300)', ''],
+          ['', '3科目受講(6回)', '1科目 11,000円で、33,000 (36,300)', ''],
+          ['', '4科目受講(6回)', '1科目 10,500円で、42,000 (46,200)', ''],
+          ['', '5科目受講(6回)', '1科目 10,000円で、50,000 (55,000)', ''],
+          ['中学生', '定期テスト対策(4回)', '8,000 (8,800)', '9,000 (9,900)'],
+          ['', '定期テスト対策(6回)', '12,000 (13,200)', '13,500 (14,850)']
+        ],
+        notes: [
+          '※外部生は割引なし',
+          '高1準備講座は 1科目 1,000円(2科目セット税込 2,200円)外部生は無料'
+        ]
+      },
+      {
+        id: 'seasonal_high', tab: '講習', name: '高校生 講習料金(回数別)',
+        headers: ['学年', '1回', '2回', '3回', '4回', '外部生(1科目)'],
+        rows: [
+          ['高校生(1・2年生)', '2,625 (2,887)', '5,250 (5,775)', '7,875 (8,662)', '10,500 (11,550)', '12,500 (13,750)'],
+          ['春期・夏期・冬期', '3,875 (4,262)', '7,750 (8,525)', '11,625 (12,787)', '15,500 (17,050)', ''],
+          ['高校生(3年生)', '1科目受講(4回)', '', '2科目受講(各4回)', '', '外部生(1科目)'],
+          ['春期・夏期・冬期', '1科目 15,500 (17,050)', '', '1科目 14,000円で、28,000 (30,800)', '', '16,500 (18,150)']
+        ],
+        notes: []
+      }
+    ],
+    footerNotes: [
+      '※すべての料金において、1円未満の端数は切り捨てること。',
+      '例えば、中学1・2年に社会のテキストを1冊だけ渡す場合など。'
+    ]
+  };
+}
+
+/**
+ * 料金表データを取得する（F4 の Workers 版・Admin 判定なし）
+ * GAS features.js:2435 と同じ。v2 未満→最新デフォルト / v3 未満→tabs 追加 /
+ * mock セクション除去 の段階的マイグレ書込を同一リクエスト内で実行。
+ *
+ * 戻り値には `campusMap: getCampusConfig_()` を付与（GAS 現行 line 2467 と一致）。
+ */
+export async function getPricingConfigForWeb(args, env, user) {
+  try {
+    const raw = await readKv_(env, KEY_PRICING_TABLE);
+    let data;
+    if (raw) {
+      data = JSON.parse(raw);
+      if (!data.version || data.version < 2) {
+        data = getDefaultPricingData_();
+        await writeJson_(env, KEY_PRICING_TABLE, data);
+      }
+      if (data.version < 3) {
+        data.version = 3;
+        data.tabs = ['通常授業', '講習'];
+        const lectureIds = ['seasonal', 'seasonal_high', 'mock'];
+        data.sections.forEach((s) => {
+          if (!s.tab) {
+            s.tab = (lectureIds.indexOf(s.id) >= 0) ? '講習' : '通常授業';
+          }
+        });
+        await writeJson_(env, KEY_PRICING_TABLE, data);
+      }
+    } else {
+      data = getDefaultPricingData_();
+      await writeJson_(env, KEY_PRICING_TABLE, data);
+    }
+    if (data.sections && data.sections.some((s) => s.id === 'mock')) {
+      data.sections = data.sections.filter((s) => s.id !== 'mock');
+      await writeJson_(env, KEY_PRICING_TABLE, data);
+    }
+    return { success: true, data, campusMap: await getCampusConfig_(env) };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 単一講習タイプの料金設定を保存する（F9・Admin のみ）
+ * GAS features.js:4266 と同じ。旧フォーマット自動移行後に 1 typeId を更新し、
+ * PRICING_TABLE_CONFIG にシンク（F16 を 1 回だけ呼ぶ）。
+ * @param {Array} args [typeId, lectureDataJson]
+ */
+export async function saveLecturePricing(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [typeId, lectureDataJson] = args || [];
+    if (!typeId) return { success: false, error: 'typeId は必須です' };
+    const lectureData = JSON.parse(lectureDataJson);
+    if (!lectureData || !Array.isArray(lectureData.rows)) {
+      return { success: false, error: '料金データの形式が不正です({rows:[...]}形式が必要)' };
+    }
+    const raw = await readKv_(env, KEY_LECTURE_PRICING);
+    let all = raw ? JSON.parse(raw) : getDefaultLecturePricing_();
+    // 旧フォーマット自動移行
+    let needsMigration = false;
+    ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'].forEach((tid) => {
+      if (Array.isArray(all[tid])) needsMigration = true;
+    });
+    if (needsMigration) all = migrateLecturePricingData_(all);
+
+    all[typeId] = lectureData;
+    await writeJson_(env, KEY_LECTURE_PRICING, all);
+    await syncLecturePricingToTable_(env, all);
+    return { success: true, message: typeId + ' の料金を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 全講習タイプの料金設定を一括保存する（F10・Admin のみ）
+ * GAS features.js:4305 と同じ。payload.allTypes から 6 typeId を一括で更新し、
+ * 最後に F16 シンクを **1 回だけ** 呼ぶ（ループ内で呼ばない）。
+ * @param {Array} args [payloadJson]
+ */
+export async function saveUnifiedLecturePricing(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [payloadJson] = args || [];
+    const payload = JSON.parse(payloadJson);
+    if (!payload || !payload.allTypes) {
+      return { success: false, error: 'データ形式が不正です' };
+    }
+    const raw = await readKv_(env, KEY_LECTURE_PRICING);
+    let all = raw ? JSON.parse(raw) : getDefaultLecturePricing_();
+    let needsMigration = false;
+    ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'].forEach((tid) => {
+      if (Array.isArray(all[tid])) needsMigration = true;
+    });
+    if (needsMigration) all = migrateLecturePricingData_(all);
+
+    ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'].forEach((typeId) => {
+      const typePayload = payload.allTypes[typeId];
+      if (typePayload && Array.isArray(typePayload.rows)) {
+        all[typeId] = typePayload;
+      }
+    });
+
+    await writeJson_(env, KEY_LECTURE_PRICING, all);
+    await syncLecturePricingToTable_(env, all);
+    return { success: true, message: '全講習の料金設定を保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
