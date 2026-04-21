@@ -300,3 +300,152 @@
 
 このクリーンアップは Phase 5-E 完了後の独立フェーズに回すのが妥当。
 
+---
+
+## 読取系関数 詳細調査（Phase 5-E-9-2b）
+
+### 対象件数
+
+5-E-9-1 の集計通り、grades.js 読取 8 件（`G16`〜`G23`）＋ features.js 読取 7 件
+（`F1`, `F4`, `F5`, `F8`, `F11`, `F13`, `F15`）＝ **15 件**。加えて wrapper
+`G1` `getScriptProperty` も KV 読み取り経路として追加集計し、総計 **16 件**を調査対象とする。
+
+### 共通前提
+
+- **認証**: 読取系は **Firebase ID トークンのみ**でアクセス可能（Admin 判定不要）が基本。例外は `F1 getAiKnowledgeBase` のみで、これは Admin 限定。
+- **依存**: GAS 側はいずれも `getProperty()` / `getScriptProperty` 経由で `kv-props.js` → KV を読む。defensive init や migration 書込の副作用を持つものがあり、以下で個別に記録する。
+
+### 詳細表（grades.js 9 件：G1 含む）
+
+| # | 関数名 | KV キー | Admin | 呼出元 | 整形・副作用 | 分類 |
+|---|--------|---------|-------|-------|------------|------|
+| G1 | `getScriptProperty` | 任意（引数） | 不要 | grades.js 内部（G3/G18/G20/G21/G22 経由など） | wrapper: `getProperty_()` の空文字フォールバック | **R-内部** |
+| G16 | `getCampusConfigForWeb` | `prop:GRADES_CAMPUS_CODES_CONFIG` | 不要 | **フロント: js-lectures-admin** | `getCampusConfig()` を `{ success, data }` でラップして返す | **R-Web** |
+| G17 | `getGradesConfigForWeb` | `prop:GRADES_TEST_NAMES_CONFIG`, `prop:GRADES_CAMPUS_CODES_CONFIG`, `prop:GRADES_VISIBLE_CONFIG`, `prop:GRADES_SCHOOL_CONFIG` | 不要 | **フロント: 複数画面** | 複合読取 + `GRADES` 定数 + 表示学年フィルター + **Supabase `staffs` の display_name/name セレクト**。`initializeGradesConfig()` を冒頭で呼ぶ書込副作用あり | **R-Web**（KV 単独でない・Supabase 併用） |
+| G18 | `getTestNamesConfig` | `prop:GRADES_TEST_NAMES_CONFIG` | 不要 | `addTestName` / `deleteTestName` / `updateTestName` / `getGradesConfigForWeb` | 先頭で `initializeGradesConfig()` 呼出（初回のみ書込副作用）。失敗時は `TEST_NAMES` デフォルト定数を返す | **R-内部** |
+| G19 | `getSchoolConfig` | `prop:GRADES_SCHOOL_CONFIG` | 不要 | `addSchool` / `deleteSchool` / `updateSchool` / `getGradesConfigForWeb` | 純粋 KV 読取 + JSON.parse・失敗時は空配列 | **R-内部** |
+| G20 | `getCampusConfig` | `prop:GRADES_CAMPUS_CODES_CONFIG` | 不要 | `syncLecturePricingToTable_` / `syncNormalConfigToPricingTable_` / `getCampusConfigForWeb` / `getPricingConfigForWeb` など多数 | `initializeGradesConfig()` 副作用あり。配列 → `{code: name}` 辞書変換 | **R-内部** |
+| G21 | `getCampusDetailsConfig` | `prop:GRADES_CAMPUS_CODES_CONFIG` | 不要 | `getStaffPlacementForWeb`（admin.js:1339）のみ | `initializeGradesConfig()` 副作用あり。配列の各要素を `{code,name,tel,fax,principal,mobile}` に正規化 | **R-内部** |
+| G22 | `getGradeConfig` | **なし（KV 読まない）** | 不要 | 内部複数 | `GRADES` 定数を返すだけ。KV アクセスなし | **R-内部（KV 不要）** |
+| G23 | `getGradeAnalysisSigmaConfig` | `prop:GRADES_SIGMA_CONFIG` | 不要 | **フロント: js-admin-ext** | KV 読取 + `DEFAULT_SIGMA` 定数でのキー単位デフォルト補完。エラー時も `DEFAULT_SIGMA` を返す | **R-Web** |
+
+### 詳細表（features.js 7 件）
+
+| # | 関数名 | KV キー | Admin | 呼出元 | 整形・副作用 | 分類 |
+|---|--------|---------|-------|-------|------------|------|
+| F1 | `getAiKnowledgeBase` | `prop:AI_KNOWLEDGE_BASE` | **必要**（`'Admin のみアクセス可能'`） | フロント: js-admin-chatbot | Admin 判定 → KV 読取 → JSON.parse → `{ success, entries }`。読取でも Admin 必須という珍しい例 | **R-例外** |
+| F4 | `getPricingConfigForWeb` | `prop:PRICING_TABLE_CONFIG` + 返却時 `prop:GRADES_CAMPUS_CODES_CONFIG`（`getCampusConfig()` 経由） | 不要 | フロント: js-pricing | **重い書込副作用あり**: v2 未満 → デフォルト書込、v3 未満 → tabs フィールド追加書込、`mock` セクション残存 → 除去書込。最大 3 回の setProperty が発生（自動マイグレーション） | **R-Web（整合性維持書込あり）** |
+| F5 | `getLecturePeriods` | `prop:LECTURE_PERIODS_CONFIG` | 不要 | フロント: 複数画面 | `computeDefaultLectureDates_` / `getDefaultGradeSettings_` を使って、保存済み上書き＋現・次年度×6 種の自動計算値を結合。旧フォーマット `lp_xxx` 互換処理あり | **R-Web（計算併合）** |
+| F8 | `getLecturePricingConfig` | `prop:LECTURE_PRICING_CONFIG` | 不要 | フロント: 複数画面 | 旧フォーマット（typeId が配列）自動移行 → setProperty 書込副作用。未設定時はデフォルト書込 | **R-Web（マイグレーション書込あり）** |
+| F11 | `getLectureGreetings` | `prop:LECTURE_GREETINGS_CONFIG` | 不要 | フロント: js-lectures-materials | 純粋 KV 読取 + JSON.parse・未設定時は `{}`。副作用なし | **R-Web（純粋）** |
+| F13 | `getNormalClassConfig` | `prop:NORMAL_CLASS_CONFIG` + `prop:NORMAL_CLASS_CONFIG_LEGACY`（退避先） | 不要 | フロント: js-lectures-admin | 旧形式（配列）検出 → レガシー退避キーに old を書き込み + 新形式を書き込む。未設定時はデフォルト書込 | **R-Web（マイグレーション書込あり）** |
+| F15 | `getNormalClassSectionsForWeb` | `prop:NORMAL_CLASS_CONFIG`（F13 経由） | 不要 | フロント: js-lectures-flyer | `getNormalClassConfig()` をラップして `campusCode` でフィルタ | **R-Web** |
+
+### 分類集計
+
+| 分類 | 件数 | 定義 | 対象関数 |
+|------|------|------|---------|
+| **R-Web** | **9** | フロントエンドから直接呼び出されるゲッター。Workers 化必須 | `G16`, `G17`, `G23`, `F4`, `F5`, `F8`, `F11`, `F13`, `F15` |
+| **R-内部** | **6** | GAS 内部ヘルパー（呼出元は他 GAS 関数のみ）。Workers 化時に独立エクスポートするかインライン展開するかは判断対象 | `G1`, `G18`, `G19`, `G20`, `G21`, `G22` |
+| **R-例外** | **1** | Admin 判定必須の読取（F1 のみ） | `F1` |
+| **合計** | **16** | — | — |
+
+### 書込副作用を持つ読取関数
+
+読取のふりをして裏で KV に書き込むパターンが以下 5 件。Workers 化時は設計判断が必要：
+
+| 関数 | 副作用 | Workers 化時の扱い |
+|-----|--------|------------------|
+| `G17` `getGradesConfigForWeb` | 初回のみ `initializeGradesConfig`（TEST_NAMES_CONFIG + CAMPUS_CODES_CONFIG の defensive init）。KV なし → 書込、KV あり → スキップ | defensive init を Workers 側にも実装（副作用を保持）。もしくは初期化は別の明示的なフローに分離する（要検討） |
+| `G18` `getTestNamesConfig` | 同上（initializeGradesConfig 呼出） | 同上 |
+| `G20` `getCampusConfig` | 同上 | 同上 |
+| `G21` `getCampusDetailsConfig` | 同上 | 同上 |
+| `F4` `getPricingConfigForWeb` | v2→v3 マイグレーション・`mock` 除去・未設定時デフォルト書込（最大 3 回の setProperty） | Workers 側でも同等の migrate-on-read を実装（副作用を保持）。あるいは migrate を独立関数化して「初回起動時だけ呼ぶ」運用に変更（別 PR 案件） |
+| `F8` `getLecturePricingConfig` | 旧フォーマット自動移行・未設定時デフォルト書込 | 同上 |
+| `F13` `getNormalClassConfig` | 旧形式（配列）→ 新形式マイグレーション・`NORMAL_CLASS_CONFIG_LEGACY` への退避書込・未設定時デフォルト書込 | 同上（2 キー書込となる点に注意） |
+
+### インライン展開の判断材料
+
+#### Workers 化不要（インライン展開 or 定数化）候補
+
+| 関数 | 理由 |
+|-----|------|
+| `G1` `getScriptProperty` | `getProperty_` の空文字フォールバック別名。Workers 側では `env.KV.get(...) ?? ''` でインライン展開可能 |
+| `G2` `setScriptProperty` | `setProperty_` のエイリアス。Workers 側では `env.KV.put(...)` で十分 |
+| `G3` `initializeGradesConfig` | defensive init。Workers 化時は「KV が空なら初期化」の 3-5 行を書込関数と読取関数にインライン展開、または 1 本の Workers 内部 private ヘルパーに集約 |
+| `G22` `getGradeConfig` | KV 読まず `GRADES` 定数を返すだけ。Workers 側ではモジュールレベル `const` に置けば十分。router 公開不要 |
+
+= **4 件が Workers 化不要**（ただし G22 以外は Workers 側に同等機能の private helper を持つ前提）
+
+#### Workers 内部 private helper 化候補（router には公開しない）
+
+| 関数 | 理由 |
+|-----|------|
+| `G18` `getTestNamesConfig` | `addTestName` / `deleteTestName` / `updateTestName` / `getGradesConfigForWeb` から使われる。Workers では 4 関数間で共有する private helper として配置 |
+| `G19` `getSchoolConfig` | `addSchool` / `deleteSchool` / `updateSchool` / `getGradesConfigForWeb` から使われる。同様 |
+| `G20` `getCampusConfig` | `syncLecturePricingToTable_` / `syncNormalConfigToPricingTable_` / `getCampusConfigForWeb` / `getPricingConfigForWeb` 等から使われる。辞書変換含め Workers 内 private helper 化 |
+| `G21` `getCampusDetailsConfig` | `getStaffPlacementForWeb`（admin.js）のみで使用。`getStaffPlacementForWeb` の Workers 化時に一緒に移植（5-E-9 の範囲外・講師配置系として別フェーズ対応） |
+
+= **4 件が Workers 内部 private helper 化**（router 経由の公開は不要）
+
+### 5-E-9 全体の実数確定
+
+| 分類 | 件数 |
+|------|------|
+| 書込 A'（完全同質） | 4 |
+| 書込 B'（条件付き同質） | 13 |
+| 書込 C'（2 キー同時書込） | 5 |
+| 書込 D'（初期化・内部アクセサ） | 2 |
+| 書込 小計 | **24** |
+| 読取 R-Web（フロント公開） | 9 |
+| 読取 R-内部（GAS 内部ヘルパー） | 6 |
+| 読取 R-例外（Admin 必須） | 1 |
+| 読取 小計 | **16** |
+| **5-E-9 総計** | **40** |
+
+---
+
+## 5-E-9 実装フェーズの分割提案
+
+### 推奨: **3 サブフェーズに分割**
+
+40 件を一度に Workers 化するとレビュー負荷・リグレッションリスクが大きいため、
+ファイル境界 + キーファミリ境界で 3 分割する。
+
+| サブフェーズ | 扱う関数 | 件数 | 主な成果物 | 備考 |
+|------------|---------|------|----------|------|
+| **5-E-9b-1** | grades.js 全体 | **20** | `workers/src/functions/grades-config.js` 新設。書込 CRUD 12（G4-G13, G14, G15）＋ Web 読取 3（G16, G17, G23）＋ Workers 内部 private helper 4（G18-G21 相当） + 定数化 1（G22 相当） + defensive init helper（G3 相当）。`isAdminUser` は既存 auth.js 流用 | Admin メッセージの差異（`'管理者権限が必要です'` vs `'Admin のみアクセス可能'`）は現行忠実に移植。`G17 getGradesConfigForWeb` は Supabase `staffs` 参照を含むため staffs 読取基盤（既存）との統合テストが要 |
+| **5-E-9b-2** | features.js 単純 KV（AI KB + 講習期間 + 挨拶文 + 通常授業読取） | **12** | `workers/src/functions/features-config-simple.js`（仮）新設。F1 R-例外（Admin 必須読取）・F2/F3 AI KB 書込・F5/F6/F7 講習期間・F11/F12 挨拶文・F13/F15 通常授業・F8 講習料金読取（マイグレ書込副作用含む） | F1 は Admin 判定を忘れず。F8/F13 はマイグレ書込の二重発火防止に注意（同期 await） |
+| **5-E-9b-3** | features.js PRICING シンク群 | **8** | `workers/src/functions/features-pricing-sync.js`（仮）新設。F4 R-Web（マイグレ書込含む）・F9/F10/F14 書込（2 キー同時）・F16/F17 内部シンクヘルパー（Workers 内 private）。G20 `getCampusConfig` 相当（grades-config.js から import）を使って `campusScope` 解決 | PRICING シンクの整合性ロジック（マーカー付きセクションのみ filter 置換・PRICING 未設定時スキップ・eventually consistent）を GAS 版と完全一致させる。シンク失敗時の戻り値扱いも現行通り |
+
+### サブフェーズ別の件数
+
+- 5-E-9b-1: 20 件（grades.js 全 KV 関連）
+- 5-E-9b-2: 12 件（features.js 単純 KV + R-例外）
+- 5-E-9b-3: 8 件（features.js PRICING シンク）
+- 小計: **40 件**
+
+### Workers 化不要（インライン展開・定数化）の件数
+
+- **4 件**: `G1`, `G2`, `G3`, `G22`（上記「インライン展開の判断材料」参照）
+- これらは Workers 側にコピー実装せず、各 Workers ファイルでインライン処理 or モジュール定数として取り込む
+- router.js の HANDLERS には登録しない（独立エクスポート不要）
+
+### Workers 内部 private helper 化（非公開）
+
+- **4 件**: `G18`, `G19`, `G20`, `G21`（router 公開不要、Workers ファイル内の private 関数として配置）
+- gas-bridge.html の `WORKERS_FUNCTIONS` セットにも追加しない
+
+### 5-E-9 全体の router 公開関数数
+
+- 書込: 24 - 2（D' の G2/G3 除外）= **22 件**
+- 読取: 16 - 4（R-内部の G1/G18-G21 と G22 は非公開）= **10 件**（R-Web 9 + R-例外 1）
+- **合計: 32 件を router に公開**（8 件はインライン化・private helper 化）
+
+### 代替案（2 サブフェーズ統合）
+
+5-E-9b-2 と 5-E-9b-3 を 1 本にまとめて features.js 全 17 件を一気に移行する案も
+あるが、PRICING シンク群は特殊ロジック（2 キー同時・マーカー置換・eventually
+consistent）を含み、単純 KV とテスト観点が異なるため、切り離した 3 分割を推奨する。
+
+
