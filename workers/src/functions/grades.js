@@ -8,18 +8,23 @@
 //       G16 getCampusConfigForWeb             (読取・校舎)
 //       getCampusConfig_（private）           (G20 相当)
 //       ensureGradesConfigInit_（private）    (G3 相当)
-//   セッション 2（本コミット）:
+//   セッション 2（コミット 56b18b9）:
 //       G4  addTestName                       (書込・テスト名)
 //       G5  deleteTestName                    (書込・テスト名 + Supabase count guard)
 //       G6  updateTestName                    (書込・テスト名)
 //       getTestNamesConfig_（private）        (G18 相当)
 //       countGradesByTestName_（private）     (Supabase count guard・α 方式)
+//   セッション 3（本コミット）:
+//       G7  addSchool                         (書込・志望校)
+//       G8  deleteSchool                      (書込・志望校 + Supabase OR count guard)
+//       G9  updateSchool                      (書込・志望校)
+//       getSchoolConfig_（private）           (G19 相当)
+//       countGradesBySchool_（private）       (Supabase shogaku1/shogaku2 OR・α 方式)
+//       parseDepartments_（private）          (G7/G9 共用の学科文字列パーサ)
 //
-// 以降のサブセッションで追加予定（残り 12 件）：
-//   G7-G9   志望校 CRUD（3 件）
+// 以降のサブセッションで追加予定（残り 9 件）：
 //   G10-G13 校舎書込 + 表示学年（4 件）
 //   G17     getGradesConfigForWeb  （Supabase 併用）
-//   G19     getSchoolConfig_       （private）
 //   G21     getCampusDetailsConfig_（private）
 //
 // インライン展開/定数化（Workers では独立定義しない）:
@@ -293,6 +298,145 @@ export async function updateTestName(args, env, user) {
     testNames[idx] = newName;
     await writeJson_(env, KEY_TEST_NAMES, testNames);
     return { success: true, message: 'テスト名を変更しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─── Workers 内部 private reader: G19 getSchoolConfig 相当 ───
+// GAS grades.js:509 と同じ。純粋 KV 読取 + JSON.parse、失敗時は空配列。
+async function getSchoolConfig_(env) {
+  try {
+    const raw = await readKv_(env, KEY_SCHOOL);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ─── 学科文字列パーサ（GAS G7/G9 内の共通ロジックを抽出） ───
+// 入力例: "普通科:55, 理数科:60, 商業科"
+// 戻り値: [{ name: '普通科', deviation: 55 }, { name: '理数科', deviation: 60 }, { name: '商業科', deviation: null }]
+// 偏差値が非数値または省略の場合は deviation = null。空要素は除外。
+function parseDepartments_(departmentsStr) {
+  return (departmentsStr || '').split(',')
+    .map((d) => {
+      d = d.trim();
+      if (!d) return null;
+      const colonIdx = d.indexOf(':');
+      if (colonIdx === -1) return { name: d, deviation: null };
+      const deptName = d.substring(0, colonIdx).trim();
+      const deviationStr = d.substring(colonIdx + 1).trim();
+      let deviation = deviationStr ? parseInt(deviationStr, 10) : null;
+      if (deviation !== null && isNaN(deviation)) deviation = null;
+      return { name: deptName, deviation };
+    })
+    .filter((d) => d !== null && d.name.length > 0);
+}
+
+// ─── Supabase count guard（GAS countGradesBySchool_ 相当・選択肢α） ───
+// 指定志望校名を使用している Supabase `grades` 件数を返す（エラー時は 0）。
+// shogaku1 / shogaku2 の両カラムを対象に OR 検索。GAS 実装と同じく 2 回の
+// SELECT を個別発行し、id で union して重複を排除する（REST の `or` 構文は
+// 使わない）。GAS 挙動との完全一致を優先した。
+async function countGradesBySchool_(env, schoolName) {
+  try {
+    const [rows1, rows2] = await Promise.all([
+      supabaseSelect(env, 'grades', 'select=id&shogaku1=eq.' + encodeURIComponent(schoolName)),
+      supabaseSelect(env, 'grades', 'select=id&shogaku2=eq.' + encodeURIComponent(schoolName))
+    ]);
+    const seen = {};
+    (Array.isArray(rows1) ? rows1 : []).forEach((d) => { seen[d.id] = true; });
+    (Array.isArray(rows2) ? rows2 : []).forEach((d) => { seen[d.id] = true; });
+    return Object.keys(seen).length;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * 志望校を追加（G7 の Workers 版）
+ * GAS grades.js:164 と同じ。学科文字列のパースと重複チェック付き。
+ * @param {Array} args [schoolName, departmentsStr]
+ */
+export async function addSchool(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [schoolName, departmentsStr] = args || [];
+    if (!schoolName || schoolName.trim().length === 0) {
+      return { success: false, error: '学校名を入力してください' };
+    }
+    schoolName = schoolName.trim();
+    const departments = parseDepartments_(departmentsStr);
+    const schools = await getSchoolConfig_(env);
+    if (schools.some((s) => s.name === schoolName)) {
+      return { success: false, error: 'この学校名は既に登録されています' };
+    }
+    schools.push({ name: schoolName, departments });
+    await writeJson_(env, KEY_SCHOOL, schools);
+    return { success: true, message: '学校を追加しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 志望校を削除（G8 の Workers 版）
+ * GAS grades.js:206 と同じ。削除前に shogaku1/shogaku2 を OR 検索して count し、
+ * 1 件でも使われていれば削除を拒否する（α 方式・GAS と同じ 2 回 SELECT）。
+ * @param {Array} args [schoolName]
+ */
+export async function deleteSchool(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    const [schoolName] = args || [];
+    const schools = await getSchoolConfig_(env);
+    const index = schools.findIndex((s) => s.name === schoolName);
+    if (index === -1) {
+      return { success: false, error: '学校が見つかりません' };
+    }
+    const gradeCount = await countGradesBySchool_(env, schoolName);
+    if (gradeCount > 0) {
+      return { success: false, error: 'この志望校は ' + gradeCount + ' 件の成績データで使用されているため削除できません' };
+    }
+    schools.splice(index, 1);
+    await writeJson_(env, KEY_SCHOOL, schools);
+    return { success: true, message: '学校を削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 志望校を更新（G9 の Workers 版）
+ * GAS grades.js:237 と同じ。リネーム時の重複チェック（自分自身は許容）、
+ * 学科文字列を parseDepartments_ で解析して置換する。
+ * @param {Array} args [oldName, newName, departmentsStr]
+ */
+export async function updateSchool(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+    let [oldName, newName, departmentsStr] = args || [];
+    newName = (newName || '').trim();
+    if (!newName) {
+      return { success: false, error: '学校名を入力してください' };
+    }
+    const schools = await getSchoolConfig_(env);
+    const idx = schools.findIndex((s) => s.name === oldName);
+    if (idx === -1) {
+      return { success: false, error: '学校が見つかりません' };
+    }
+    const dupIdx = schools.findIndex((s) => s.name === newName);
+    if (dupIdx !== -1 && dupIdx !== idx) {
+      return { success: false, error: 'この学校名は既に登録されています' };
+    }
+    const departments = parseDepartments_(departmentsStr);
+    schools[idx] = { name: newName, departments };
+    await writeJson_(env, KEY_SCHOOL, schools);
+    return { success: true, message: '志望校を更新しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

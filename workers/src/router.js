@@ -27,7 +27,10 @@ import {
   resetGradeAnalysisSigmaConfig,
   addTestName,
   deleteTestName,
-  updateTestName
+  updateTestName,
+  addSchool,
+  deleteSchool,
+  updateSchool
 } from './functions/grades.js';
 
 // 認証不要の関数
@@ -83,7 +86,10 @@ const HANDLERS = {
   resetGradeAnalysisSigmaConfig,
   addTestName,
   deleteTestName,
-  updateTestName
+  updateTestName,
+  addSchool,
+  deleteSchool,
+  updateSchool
 };
 
 export async function handleApiCall(body, env) {
