@@ -12,7 +12,11 @@ import {
   deleteBasicTestDetails,
   setPublicHighExamDateOverride,
   deletePublicHighExamDateOverride,
-  deleteJukuEventOverride
+  deleteJukuEventOverride,
+  setJukuEventOverride,
+  addClosedDayExtra,
+  removeComputedClosedDay,
+  deleteClosedDayOverride
 } from './functions/schedule-overrides.js';
 
 // 認証不要の関数
@@ -55,7 +59,11 @@ const HANDLERS = {
   deleteBasicTestDetails,
   setPublicHighExamDateOverride,
   deletePublicHighExamDateOverride,
-  deleteJukuEventOverride
+  deleteJukuEventOverride,
+  setJukuEventOverride,
+  addClosedDayExtra,
+  removeComputedClosedDay,
+  deleteClosedDayOverride
 };
 
 export async function handleApiCall(body, env) {

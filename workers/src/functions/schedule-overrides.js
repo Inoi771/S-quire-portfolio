@@ -1,10 +1,16 @@
-// schedule.js 上書き系関数の Workers ポート（Phase 5-E-8b-1a：グループ A 7 関数）
+// schedule.js 上書き系関数の Workers ポート
 //
-// 対象（グループ A・settings パターン完全同質）：
+// Phase 5-E-8b-1a：グループ A 7 関数（settings パターン完全同質）
 //   - setBasicTestDateOverride / deleteBasicTestDateOverride        → KV `prop:BASIC_TEST_DATES`
 //   - setBasicTestDetails / deleteBasicTestDetails                   → KV `prop:BASIC_TEST_DETAILS`
 //   - setPublicHighExamDateOverride / deletePublicHighExamDateOverride → KV `prop:PUBLIC_HIGH_EXAM_DATES`
 //   - deleteJukuEventOverride                                        → KV `prop:JUKU_EVENT_OVERRIDES`
+//
+// Phase 5-E-8b-1b：グループ B 4 関数（条件付き同質・特殊ロジックあり）
+//   - setJukuEventOverride             → KV `prop:JUKU_EVENT_OVERRIDES`（'none' 分岐で false 格納）
+//   - addClosedDayExtra                → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
+//   - removeComputedClosedDay          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
+//   - deleteClosedDayOverride          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
 //
 // いずれも「KV から JSON を読む → フィールドを追加/削除 → JSON として書き戻す」
 // 構造で、5-E-7 `updateSettings` と同質（単一キー・Admin 判定のみ・副作用なし）。
@@ -177,7 +183,6 @@ export async function deletePublicHighExamDateOverride(args, env, user) {
 /**
  * 塾内部イベントの上書き設定を削除して自動計算に戻す（Admin のみ）
  * GAS schedule.js:785 の Workers 版。
- * `setJukuEventOverride` は 'none' 分岐があるためグループ B として後続フェーズで扱う。
  * @param {Array} args [type, year, month]
  */
 export async function deleteJukuEventOverride(args, env, user) {
@@ -190,6 +195,129 @@ export async function deleteJukuEventOverride(args, env, user) {
     delete overrides[key];
     await writeKvJson_(env, 'JUKU_EVENT_OVERRIDES', overrides);
     return { success: true, message: '自動計算に戻しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 塾内部イベントの上書き設定を保存する（Admin のみ）
+ * GAS schedule.js:759 の Workers 版。
+ *
+ * 特殊ロジック：`dateStr === 'none'` のとき値を `false`（無効化フラグ）で
+ * 格納する。それ以外は `{ date, details }` オブジェクトを格納。
+ * `details` は省略時に空文字列にフォールバック。
+ *
+ * @param {Array} args [type, year, month, dateStr, details]
+ */
+export async function setJukuEventOverride(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [type, year, month, dateStr, details] = args || [];
+    const key = type + '_' + year + '_' + month;
+    const overrides = await readKvJson_(env, 'JUKU_EVENT_OVERRIDES');
+    if (dateStr === 'none') {
+      overrides[key] = false; // 無効化（その月はイベントなし）
+    } else {
+      overrides[key] = { date: dateStr, details: details || '' };
+    }
+    await writeKvJson_(env, 'JUKU_EVENT_OVERRIDES', overrides);
+    return { success: true, message: '保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CLOSED_DAYS_OVERRIDES（休校日の add/del デュアルリスト管理）
+// ─────────────────────────────────────────────────────────────
+//
+// 値の形状は `{ add: [...], del: [...] }`。
+//   - `add`: 計算上は開校日だが臨時休校にする日
+//   - `del`: 計算上は休校日だが開校日にする日
+// どの関数も片方への追加と同時にもう片方から同じ日付を除外することで、
+// 同一日付が add と del に同時に存在しない（＝排他）不変条件を維持する。
+
+/**
+ * add/del 両配列を defensive に初期化した状態で CLOSED_DAYS_OVERRIDES を読む。
+ * 既存値の形状が壊れていても `{ add: [], del: [] }` に正規化する。
+ * @private
+ */
+async function readClosedDays_(env) {
+  const obj = await readKvJson_(env, 'CLOSED_DAYS_OVERRIDES');
+  obj.add = Array.isArray(obj.add) ? obj.add : [];
+  obj.del = Array.isArray(obj.del) ? obj.del : [];
+  return obj;
+}
+
+/**
+ * 予定タブに休校日を追加（計算外の臨時休校など）（Admin のみ）
+ * GAS schedule.js:821 の Workers 版。
+ *
+ * 特殊ロジック：`add` に dateStr を push（重複チェック付き）すると同時に
+ * `del` から同じ dateStr を filter 除去する（排他不変条件の維持）。
+ *
+ * @param {Array} args [dateStr]
+ */
+export async function addClosedDayExtra(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [dateStr] = args || [];
+    const obj = await readClosedDays_(env);
+    if (obj.add.indexOf(dateStr) === -1) obj.add.push(dateStr);
+    obj.del = obj.del.filter((d) => d !== dateStr);
+    await writeKvJson_(env, 'CLOSED_DAYS_OVERRIDES', obj);
+    return { success: true, message: dateStr + ' を休校日に追加しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 計算上は休校日だが予定タブでは開校日とする（Admin のみ）
+ * GAS schedule.js:843 の Workers 版。
+ *
+ * 特殊ロジック：`del` に dateStr を push（重複チェック付き）すると同時に
+ * `add` から同じ dateStr を filter 除去する（`addClosedDayExtra` の対称）。
+ *
+ * @param {Array} args [dateStr]
+ */
+export async function removeComputedClosedDay(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [dateStr] = args || [];
+    const obj = await readClosedDays_(env);
+    if (obj.del.indexOf(dateStr) === -1) obj.del.push(dateStr);
+    obj.add = obj.add.filter((d) => d !== dateStr);
+    await writeKvJson_(env, 'CLOSED_DAYS_OVERRIDES', obj);
+    return { success: true, message: dateStr + ' を開校日に変更しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 休校日の上書き設定を削除して元の計算値に戻す（Admin のみ）
+ * GAS schedule.js:865 の Workers 版。
+ *
+ * 特殊ロジック：add/del 両配列から dateStr を filter 除去する
+ * （どちらに入っていても確実にクリア）。
+ *
+ * @param {Array} args [dateStr]
+ */
+export async function deleteClosedDayOverride(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [dateStr] = args || [];
+    const obj = await readClosedDays_(env);
+    obj.add = obj.add.filter((d) => d !== dateStr);
+    obj.del = obj.del.filter((d) => d !== dateStr);
+    await writeKvJson_(env, 'CLOSED_DAYS_OVERRIDES', obj);
+    return { success: true, message: '元の設定に戻しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
