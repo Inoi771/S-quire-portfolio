@@ -16,7 +16,9 @@ import {
   setJukuEventOverride,
   addClosedDayExtra,
   removeComputedClosedDay,
-  deleteClosedDayOverride
+  deleteClosedDayOverride,
+  setLectureDeadlineOverride,
+  deleteLectureDeadlineOverride
 } from './functions/schedule-overrides.js';
 
 // 認証不要の関数
@@ -63,7 +65,9 @@ const HANDLERS = {
   setJukuEventOverride,
   addClosedDayExtra,
   removeComputedClosedDay,
-  deleteClosedDayOverride
+  deleteClosedDayOverride,
+  setLectureDeadlineOverride,
+  deleteLectureDeadlineOverride
 };
 
 export async function handleApiCall(body, env) {

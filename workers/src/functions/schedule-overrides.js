@@ -12,6 +12,14 @@
 //   - removeComputedClosedDay          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
 //   - deleteClosedDayOverride          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
 //
+// Phase 5-E-8b-2：グループ C 2 関数（KV 書込は同質・Firestore `operationLogs`
+// への `logAdminAction` 副作用は Workers 側では省略）
+//   - setLectureDeadlineOverride       → KV `prop:LECTURE_DEADLINE_OVERRIDES`
+//   - deleteLectureDeadlineOverride    → KV `prop:LECTURE_DEADLINE_OVERRIDES`
+//   ※ Workers 経由では operationLogs への監査ログが残らない制約あり。
+//     5-E-10（Firestore 系 Workers 化）で解消予定。詳細は
+//     docs/phase-5e8-survey.md の「5-E-10 への宿題」セクション参照。
+//
 // いずれも「KV から JSON を読む → フィールドを追加/削除 → JSON として書き戻す」
 // 構造で、5-E-7 `updateSettings` と同質（単一キー・Admin 判定のみ・副作用なし）。
 // 戻り値・エラーメッセージは GAS 側 `schedule.js` と完全一致させる。
@@ -318,6 +326,56 @@ export async function deleteClosedDayOverride(args, env, user) {
     obj.del = obj.del.filter((d) => d !== dateStr);
     await writeKvJson_(env, 'CLOSED_DAYS_OVERRIDES', obj);
     return { success: true, message: '元の設定に戻しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// LECTURE_DEADLINE_OVERRIDES（講習日程締切の手動上書き）
+// ─────────────────────────────────────────────────────────────
+//
+// GAS 版では set/delete 完了後に `logAdminAction()` を呼んで Firestore
+// `operationLogs` へ監査ログを書き込むが、Workers 版では省略する。
+// Workers 経由の操作はログが残らない制約を許容し、5-E-10（Firestore
+// 系 Workers 化）で解消する。詳細は docs/phase-5e8-survey.md の
+// 「5-E-10 への宿題」セクション参照。GAS 側フォールバックでは
+// 引き続き `logAdminAction` が動作するため、Workers 未登録クライアント
+// からの操作はログが残る。
+
+/**
+ * 指定講習の締切日を手動で上書き設定する（Admin のみ）
+ * GAS schedule.js:907 の Workers 版。`logAdminAction` は省略。
+ * @param {Array} args [lectureId, dateStr]
+ */
+export async function setLectureDeadlineOverride(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [lectureId, dateStr] = args || [];
+    const overrides = await readKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES');
+    overrides[lectureId] = dateStr;
+    await writeKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES', overrides);
+    return { success: true, message: '締切日を上書きしました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 指定講習の締切日上書き設定を削除して自動計算に戻す（Admin のみ）
+ * GAS schedule.js:926 の Workers 版。`logAdminAction` は省略。
+ * @param {Array} args [lectureId]
+ */
+export async function deleteLectureDeadlineOverride(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [lectureId] = args || [];
+    const overrides = await readKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES');
+    delete overrides[lectureId];
+    await writeKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES', overrides);
+    return { success: true, message: '自動計算に戻しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
