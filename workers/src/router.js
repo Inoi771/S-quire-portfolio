@@ -37,6 +37,13 @@ import {
   updateVisibleGrades,
   getGradesConfigForWeb
 } from './functions/grades.js';
+import {
+  getAiKnowledgeBase,
+  saveAiKnowledgeEntry,
+  deleteAiKnowledgeEntry,
+  getLectureGreetings,
+  saveLectureGreetings
+} from './functions/features.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -99,7 +106,12 @@ const HANDLERS = {
   deleteCampus,
   updateCampusDetails,
   updateVisibleGrades,
-  getGradesConfigForWeb
+  getGradesConfigForWeb,
+  getAiKnowledgeBase,
+  saveAiKnowledgeEntry,
+  deleteAiKnowledgeEntry,
+  getLectureGreetings,
+  saveLectureGreetings
 };
 
 export async function handleApiCall(body, env) {
