@@ -366,8 +366,8 @@ function setUserProperty(key, value) {
  */
 function cleanupMigratedUserProperties_() {
   try {
-    // getProperties() は Workers に対応 API がないため SP を直接参照（Dual-write 済）
-    var all = PropertiesService.getScriptProperties().getProperties();
+    // Phase 5-E-6: KV を一次ソースとして列挙（SP はフォールバック・ユニオン補完のみ）
+    var all = getAllProperties_();
     var migratedKeys = Object.keys(STAFF_FIELD_MAP_);
     // 廃止済みの _UP_ キー（コードから削除済みで使われていないもの）
     var obsoleteKeys = [

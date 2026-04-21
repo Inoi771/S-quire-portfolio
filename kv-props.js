@@ -1,5 +1,5 @@
 // ========================================
-// 【Phase 5-E-4】Workers KV プロキシ用 ScriptProperties ラッパー
+// 【Phase 5-E-4〜6】Workers KV プロキシ用 ScriptProperties ラッパー
 // ========================================
 //
 // 役割:
@@ -7,16 +7,15 @@
 //   deleteProperty を Workers 経由の Cloudflare KV 読み書きに置き換える。
 //   既存呼出を機械的に置換するための薄いラッパー。
 //
-// 動作:
-//   - 読み取り (getProperty_) : KV 優先 → 失敗時 ScriptProperties にフォールバック
-//   - 書き込み (setProperty_) : KV と ScriptProperties の両方へ書く（Dual-write）
-//                               → 5-E-6 で ScriptProperties 凍結するまでの移行期間は
-//                                 フォールバック用の ScriptProperties を同期し続ける
-//   - 削除     (deleteProperty_) : KV と ScriptProperties の両方から削除
+// 動作（Phase 5-E-6 以降 = ScriptProperties 凍結後）:
+//   - 読み取り (getProperty_) : KV 優先 → 失敗時 ScriptProperties にフォールバック（可用性保険）
+//   - 書き込み (setProperty_) : KV のみ（SP は凍結）
+//   - 削除     (deleteProperty_) : KV のみ（SP は凍結）
 //
 // 認証:
 //   Workers の KV プロキシは INTERNAL_API_KEY 共有シークレットで認証する。
 //   このキーだけは ScriptProperties から直接取得する（ラッパー経由にすると無限ループ）。
+//   INTERNAL_API_KEY は Phase 5-E-6 以降も引き続き SP に置く（KV 認証に使うため）。
 //
 // キャッシュ:
 //   同一 GAS 実行（doGet / doPost / トリガー 1 回分）内で参照したキーは
@@ -26,8 +25,7 @@
 //
 // 範囲外:
 //   - PropertiesService.getScriptProperties().getKeys() は Workers 側に 1 コール
-//     相当の API がないため、引き続き ScriptProperties を直接参照する（Dual-write
-//     で同期済）。
+//     相当の API がないため、列挙が必要な箇所では `getAllProperties_()` を使うこと。
 //   - migrate-props-to-kv.js は移行スクリプト自身の都合で ScriptProperties を
 //     直接読むため、このラッパーを使わない。
 //
@@ -36,6 +34,12 @@
 //     をまとめて取得するラッパー。ScriptProperties の getProperties() 互換。
 //     KV 失敗時は SP 直読にフォールバック。INTERNAL_API_KEY のような SP-only キー
 //     が抜け落ちないよう、正常時も SP とのユニオンで返す。
+//
+// Phase 5-E-6 変更:
+//   - setProperty_ / deleteProperty_ の SP 書込／削除を停止（Dual-write 終了）。
+//   - 凍結後の SP は古い値のまま残るが、KV を唯一の正として扱う。
+//     読み取り系で KV が一時的に到達不能になった場合の保険として SP 読取フォールバック
+//     は温存する（getProperty_ / getAllProperties_ ともに維持）。
 // ========================================
 
 /**
@@ -150,77 +154,51 @@ function getProperty_(key) {
 }
 
 /**
- * KV と ScriptProperties の両方に値を書き込む（Dual-write）。
- * KV 書込が失敗しても、ScriptProperties への書込は継続する。
- * 両方失敗した場合のみ例外を投げる。
+ * 値を Cloudflare KV に書き込む（Phase 5-E-6 以降は KV のみ。SP は凍結）。
+ * KV 書込失敗時は例外を投げる（呼出側でハンドリング）。
  * @param {string} key プロパティキー
  * @param {string} value 値（文字列。オブジェクトは事前に JSON.stringify すること）
- * @return {boolean} 少なくとも片方が成功した場合 true
+ * @return {boolean} 成功した場合 true
  */
 function setProperty_(key, value) {
   if (!key) return false;
   var v = (value == null) ? '' : String(value);
 
-  // KV 書き込み
-  var kvOk = false;
-  try {
-    var res = _postToKvProxy_('kv_set', [key, v]);
-    kvOk = !!(res && res.success);
-    if (!kvOk) {
-      Logger.log('⚠ setProperty_: KV 応答異常: ' + key + ' → ' + JSON.stringify(res));
-    }
-  } catch (e) {
-    Logger.log('⚠ setProperty_: KV 書込失敗（SP は継続）: ' + key + ' → ' + e);
+  // Phase 5-E-6: KV のみに書き込み（SP への Dual-write は停止）
+  var res = _postToKvProxy_('kv_set', [key, v]);
+  var kvOk = !!(res && res.success);
+  if (!kvOk) {
+    Logger.log('❌ setProperty_: KV 応答異常: ' + key + ' → ' + JSON.stringify(res));
+    throw new Error('setProperty_: KV 書込失敗: ' + key);
   }
 
-  // ScriptProperties 書き込み（移行期間中の整合性維持）
-  var spOk = false;
-  try {
-    PropertiesService.getScriptProperties().setProperty(key, v);
-    spOk = true;
-  } catch (e2) {
-    Logger.log('❌ setProperty_: SP 書込失敗: ' + key + ' → ' + e2);
-    if (!kvOk) throw e2;
-  }
-
-  // キャッシュ更新（どちらか成功していれば値は信頼できる）
-  if (kvOk || spOk) _kvPropsCache_[key] = v;
-  return kvOk || spOk;
+  // キャッシュ更新
+  _kvPropsCache_[key] = v;
+  return true;
 }
 
 /**
- * KV と ScriptProperties の両方から値を削除する。
- * どちらかが失敗しても片方は試みる（best-effort）。
+ * Cloudflare KV から値を削除する（Phase 5-E-6 以降は KV のみ。SP は凍結）。
+ * KV 削除失敗時は例外を投げる。
  * @param {string} key プロパティキー
- * @return {boolean} 少なくとも片方が成功した場合 true
+ * @return {boolean} 成功した場合 true
  */
 function deleteProperty_(key) {
   if (!key) return false;
 
-  var kvOk = false;
-  try {
-    var res = _postToKvProxy_('kv_delete', [key]);
-    kvOk = !!(res && res.success);
-    if (!kvOk) {
-      Logger.log('⚠ deleteProperty_: KV 応答異常: ' + key + ' → ' + JSON.stringify(res));
-    }
-  } catch (e) {
-    Logger.log('⚠ deleteProperty_: KV 削除失敗（SP は継続）: ' + key + ' → ' + e);
-  }
-
-  var spOk = false;
-  try {
-    PropertiesService.getScriptProperties().deleteProperty(key);
-    spOk = true;
-  } catch (e2) {
-    Logger.log('❌ deleteProperty_: SP 削除失敗: ' + key + ' → ' + e2);
+  // Phase 5-E-6: KV のみから削除（SP への Dual-delete は停止）
+  var res = _postToKvProxy_('kv_delete', [key]);
+  var kvOk = !!(res && res.success);
+  if (!kvOk) {
+    Logger.log('❌ deleteProperty_: KV 応答異常: ' + key + ' → ' + JSON.stringify(res));
+    throw new Error('deleteProperty_: KV 削除失敗: ' + key);
   }
 
   // キャッシュから除去
   if (Object.prototype.hasOwnProperty.call(_kvPropsCache_, key)) {
     delete _kvPropsCache_[key];
   }
-  return kvOk || spOk;
+  return true;
 }
 
 /**
