@@ -21,7 +21,6 @@
 - `getAdminEmails()` — Admin メール一覧（Admin のみ）
 - `addAdminEmail(newEmail)` — Admin 追加（Admin のみ）
 - `removeAdminEmail(emailToRemove)` — Admin 削除（自分自身は不可、最低1人保持）
-- `getSetupStatus()` — 初回セットアップが必要かを返す（`isFirstSetup`, `currentUserEmail`, `hasAppFolder`）。ADMIN_EMAILS が空なら `isFirstSetup: true`
 - `initializeFirstAdmin(displayName)` — ADMIN_EMAILS が空の場合のみ現在ユーザーを管理者として登録（2回目以降は拒否）。ADMIN_EMAILS 登録＋講師ID発行＋Supabase staffs 作成＋ allowedUsers 登録を一括で行う
 - `getAllowedUsers()` — Driveフォルダの共有ユーザー一覧を取得（Admin のみ。ACCESS_FOLDER_ID 優先）
 - `addUserAccess(email)` — ユーザーにアプリアクセスを付与（Admin のみ。DriveフォルダにEditor追加＋staffs作成＋allowedUsers登録）
@@ -29,12 +28,10 @@
 - `getTeacherEmails()` — `@aiCallable` 現在の講師の `emails` 配列を取得（設定タブのメール管理UIで使用）
 - `addEmailToTeacher(newEmail)` — `@aiCallable` 現在の講師に新しいメールアドレスを追加（`emails` 配列＋ `allowedUsers` ＋ Drive共有）
 - `removeEmailFromTeacher(emailToRemove)` — `@aiCallable` 現在の講師からメールアドレスを削除（最低1件は残す制約付き。`allowedUsers` ＋ Drive共有も削除）
-- `linkUserById(teacherId)` — `@aiCallable` 講師IDを入力してスタッフ紐付け（初回アクセス時）。`emails`/`firebaseUids` 配列に現在のメール・UIDを追加し、allowedUsers にも登録
 - `createAccessDeniedHtml(email)` — アクセス拒否ページのHTMLを生成
 
 ### セクション3: Web App エントリーポイント
 - `doGet()` — index.html を配信
-- `getAppMetadata()` — アプリ名・バージョン情報
 
 ### セクション4: スケジュール管理
 - `getFolderByName(parentFolder, folderName)` — フォルダ取得ヘルパー
@@ -42,7 +39,6 @@
 - `getScheduleFolder()` — 月間スケジュールフォルダ取得
 - `getScheduleData()` — `@aiCallable` 全スケジュール取得
 - `getScheduleDropdownData()` — `@aiCallable` フォーム用ドロップダウン
-- `addScheduleEntry(schoolName, eventName, dateStr, details)` — `@aiCallable` 予定追加
 - `updateSchedules()` — 全年度フォルダをスキャンして `autoImportAllSchedules()` を呼ぶ
 - `extractTextFromPDF(file)` — PDF → テキスト（Google Docs OCR）
 - `extractEventsFromText(schoolName, text, year)` — テキスト → イベント配列（Gemini API）
@@ -62,7 +58,6 @@
 - `getRegisteredEmail()` — 登録メール取得（初回はGoogle アカウントのメール）
 - `getUserProfile()` — `@aiCallable` プロフィール取得
 - `getOrCreateTeacherId()` — 講師ID取得（初回自動生成）
-- `updateEmailAddress(newEmail)` — `@aiCallable` メール変更
 - `updateUserProfile(profileData)` — `@aiCallable` プロフィール更新
 - `getSubjectOptions()` — `@aiCallable` 教科リスト
 - `savePreferredCampuses(campusCodes)` — `@aiCallable` 配属校舎リストを保存（UserProperties `PREFERRED_CAMPUSES`）
@@ -111,12 +106,7 @@
 - `getStudentPlacementData(year)` — `@aiCallable` 進学先一覧取得。指定年度の中3生（学年コード15）全員について第1〜第3回基礎学力テストの合計点・平均・進学先を返す。戻り値: `[{studentId, name, campus, score1, score2, score3, avg, placement, placementSchool}]`
 - `makeSummaryDocId_(year, testName)` — gradeSummaries ドキュメントID生成ヘルパー
 - `getGradeSummary(year, testName)` — gradeSummaries 1件読み取り
-- `rebuildGradeSummary(year, testName)` — gradeSummaries を再計算して保存
-- `rebuildAllGradeSummaries()` — Admin専用。全年度×全テスト名の gradeSummaries を一括再構築
 - `getCampusAverages(year, testName)` — `@aiCallable` 校舎別平均点（gradeSummariesファストパス＋フォールバック）
-- `rebuildGradeListCache(year, testName)` — 一覧表キャッシュを再構築（gradeListCache）
-- `rebuildGradeReportCache(year)` — 成績表キャッシュを再構築（gradeReportCache）
-- `rebuildAllCaches(year)` — Admin専用。指定年度の gradeSummaries + gradeListCache + gradeReportCache を一括再構築
 ### セクション8-B: AI成績分析・生徒別AI分析（analysis.js）
 - `fetchGeminiWithRetry_(url, options)` — Gemini APIリクエスト共通ヘルパー。429レート制限時は最大3回リトライ（5秒→15秒→30秒）、500/503は1回リトライ（10秒）。メインキーで429が解消しない場合は予備キー（`GEMINI_API_KEY_BACKUP`）に自動切替
 - `getAnalysisSheet(year)` — AI分析シート取得/作成ヘルパー
@@ -245,7 +235,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `createSystemSettingsSheet(settingsFolder)` — システム設定シート作成
 - `scheduledInitializeSheets()` — 時間トリガー用（24時間ごと推奨）
 - `manualInitializeSheets()` — 手動初期化（Admin のみ）
-- `initializeApplication()` — スクリプトプロパティのデフォルト値設定
 
 ### セクション12: ユーティリティ
 - `recordOperationLog(action, details, status)` — 操作ログ記録
@@ -328,11 +317,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLecturePeriods()` — `@aiCallable` 講習期間一覧取得（現年度・翌年度の6種を自動計算し保存済みオーバーライドをマージ。`_isOverridden`フラグで手動/自動を区別）
 - `saveLectureDates(fiscalYear, typeId, startDate, endDate)` — 指定年度・種別の日程を上書き保存（Admin のみ）
 - `resetLectureDates(fiscalYear, typeId)` — 指定年度・種別の日程をリセットして自動計算に戻す（gradeSettingsがある場合はエントリを残して日程のみリセット）（Admin のみ）
-- `saveLecturePeriod(lectureData)` — 旧フォーマット互換：講習期間保存（Admin のみ。新規時は `gradeSettings` を自動生成、更新時は既存 `gradeSettings` を保持）
-- `deleteLecturePeriod(lectureId)` — 旧フォーマット互換：講習期間削除（Admin のみ）
-- `saveLectureGradeSettings(lectureId, gradeSettingsJson)` — 指定講習の学年別設定（コマ時間・回数）を上書き保存（Admin のみ。新フォーマットIDで未保存の場合は自動計算日程でエントリを作成）
 - `getTeacherNamesMap()` — `@aiCallable` 講師ID→情報マッピングを全ユーザーに返す（グリッド上の講師名解決用）
-- `getLectureTeachers()` — 講師一覧取得（Admin のみ。getAllowedUsers ベースで teacherId 付加）
 - `getFlyerImages()` — `@aiCallable` チラシ用画像一覧を Drive の assets/flyer フォルダから取得（{id, name, mimeType, tags}[]。tagsは画像タグシートから取得）
 - `getFlyerImageBase64(fileId)` — `@aiCallable` DriveファイルIDから画像をbase64エンコードして返す
 - `uploadFlyerImage(base64, fileName, mimeType)` — `@aiCallable` チラシ用画像をDriveのassets/flyerフォルダにアップロード（フォルダがなければ自動作成。JPEG/PNG/GIF/WebPのみ許可）。戻り値: `{success, fileId, fileName}`
@@ -379,11 +364,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 ### セクション18: 料金表管理
 - `getDefaultPricingData_()` — デフォルトの料金表データを返す内部ヘルパー
 - `getPricingConfigForWeb()` — `@aiCallable` 料金表データを取得（未初期化ならデフォルトで初期化）
-- `savePricingConfig(jsonData)` — 料金表データを一括保存（Admin のみ）
-- `addPricingSection(sectionName, headersJson)` — セクション追加（Admin のみ）
-- `deletePricingSection(sectionId)` — セクション削除（Admin のみ）
-- `updatePricingTitle(newTitle)` — タイトル更新（Admin のみ）
-- `updatePricingFooterNotes(notesJson)` — フッター注記更新（Admin のみ）
 
 ### セクション13: 基礎学力テスト日程管理 / 予定タブ固定イベント上書き管理
 - `getBasicTestDateOverrides()` — `@aiCallable` 上書き設定を全取得（`{"2025-1": "2025/10/01", ...}`）
@@ -453,20 +433,6 @@ var rawText = textPart ? (textPart.text || '') : '';
 | `supabaseDelete_(table, query)` | DELETE |
 | `supabaseRpc_(functionName, params)` | RPC（PostgreSQL関数呼び出し） |
 | `supabaseBatchUpsert_(table, dataArray, onConflict)` | 大量データ一括UPSERT（500件チャンク） |
-
-## migrate-to-supabase.js（データ移行スクリプト）
-
-Firestore → Supabase の一括データ移行。一度だけ実行。
-
-| 関数名 | 説明 |
-|--------|------|
-| `migrateGradesToSupabase()` | grades コレクション移行 |
-| `migrateSchoolAveragesToSupabase()` | schoolAverages コレクション移行 |
-| `migrateTestAnalysisToSupabase()` | testAnalysis コレクション移行 |
-| `migrateStudentAnalysisToSupabase()` | studentAnalysis コレクション移行 |
-| `migrateAllToSupabase()` | 全コレクション一括移行（メインエントリポイント） |
-
----
 
 ## admin.js — 講師配置表（S12付近）
 
