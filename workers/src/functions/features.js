@@ -38,14 +38,23 @@
 // Admin 判定なしで動作する（マイグレ書込は暗黙の自己修復として任意の
 // 認証ユーザーが発火可能・初回起動時のみ実行）。
 //
+// Phase 5-E-9b-3a（本コミット）:
+//       F16 syncLecturePricingToTable_ (private・PRICING_TABLE_CONFIG の auto_* 再生成)
+//       F17 syncNormalConfigToPricingTable_ (private・_fromNormalConfig 再生成)
+//       F14 saveNormalClassConfig      (書込・NORMAL_CLASS_CONFIG + PRICING_TABLE_CONFIG 2 キー)
+//       + LECTURE_GRADE_LABELS_ 定数
+//       + KEY_PRICING_TABLE 定数
+//       + `getCampusConfig_` を grades.js から import（α 方式・docs 参照）
+//
 // 以降のサブセッションで追加予定：
-//   5-E-9b-3:      F4/F9/F10/F14/F16/F17（PRICING シンク群）
+//   5-E-9b-3b:     F4/F9/F10（PRICING シンク群の残り 3 件・getDefaultPricingData_ 含む）
 //
 // grades.js（5-E-9b-1）で確立した「低レベル KV ラッパー + denyIfNotAdmin_ +
 // KV キー定数」の構造を features.js でも再現する。Admin メッセージは
 // features.js 側が一貫して `'Admin のみアクセス可能'` なので 1 系統のみ。
 
 import { isAdminUser } from './auth.js';
+import { getCampusConfig_ } from './grades.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -60,10 +69,14 @@ const KEY_CLOSED_DAYS_OVERRIDES  = 'CLOSED_DAYS_OVERRIDES';
 const KEY_LECTURE_PRICING        = 'LECTURE_PRICING_CONFIG';
 const KEY_NORMAL_CLASS           = 'NORMAL_CLASS_CONFIG';
 const KEY_NORMAL_CLASS_LEGACY    = 'NORMAL_CLASS_CONFIG_LEGACY';
+const KEY_PRICING_TABLE          = 'PRICING_TABLE_CONFIG';
 
-// 講習料金系の定数（GAS features.js:4103-4110 と一致）
+// 講習料金系の定数（GAS features.js:4103-4112 と一致）
 const LECTURE_GRADE_KEYS_ALL   = ['sho', 'chu1', 'chu2', 'chu3', 'ko1', 'ko2', 'ko3'];
 const LECTURE_CHU3_ONLY_TYPES_ = ['kiso1', 'kiso2', 'nyushi'];
+const LECTURE_GRADE_LABELS_    = { sho: '小学生', chu1: '中1', chu2: '中2', chu3: '中3', ko1: '高1', ko2: '高2', ko3: '高3' };
+// 注: `LECTURE_TYPE_DISPLAY_NAMES_`（GAS 4112）は `LEC_TYPE_NAMES`（2485）と
+//     同一内容のため、Workers では `LEC_TYPE_NAMES` を共用する。
 
 // 講習タイプ定数（GAS features.js:2482-2492 と一致）
 const LEC_TYPE_IDS = ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'];
@@ -830,6 +843,177 @@ export async function getNormalClassSectionsForWeb(args, env, user) {
       });
     }
     return { success: true, data: sections };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRICING シンク（F14/F16/F17）— 5-E-9b-3a
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 整合性担保: 書込順序固定（メインキー先 → PRICING_TABLE_CONFIG シンク後）。
+// マーカー付きセクション（auto_* / _fromNormalConfig）のみ filter 置換し、
+// 他セクションには触れない。PRICING_TABLE_CONFIG 未設定時はシンクスキップ。
+// シンク内部の失敗は try/catch で握り潰し、呼出元の成功応答を維持する
+// eventually consistent 方式（GAS 現行挙動を踏襲）。
+
+// GAS features.js:4382 syncLecturePricingToTable_ 相当（internal）
+async function syncLecturePricingToTable_(env, pricingData) {
+  try {
+    const tableRaw = await readKv_(env, KEY_PRICING_TABLE);
+    if (!tableRaw) return; // PRICING_CONFIG 未設定はスキップ（GAS と一致）
+    const tableData = JSON.parse(tableRaw);
+
+    if (!tableData.tabs) tableData.tabs = ['通常授業', '講習'];
+    if (tableData.tabs.indexOf('講習') === -1) tableData.tabs.push('講習');
+
+    // auto_* + 旧 seasonal/seasonal_high/mock セクションを除去
+    tableData.sections = (tableData.sections || []).filter((s) => {
+      return !/^auto_/.test(s.id) && s.id !== 'seasonal' && s.id !== 'seasonal_high' && s.id !== 'mock';
+    });
+
+    const typeOrder = ['spring', 'summer', 'kiso1', 'kiso2', 'winter', 'nyushi'];
+    const lecCampusConfig = await getCampusConfig_(env);
+    const resolveNames = (codes) => (codes || []).map((code) => lecCampusConfig[code] || code);
+
+    typeOrder.forEach((typeId) => {
+      const typeData = pricingData[typeId];
+      if (!typeData || !Array.isArray(typeData.rows)) return;
+
+      const standardRows  = typeData.rows.filter((r) => r.type === 'standard');
+      const shozuiRows    = typeData.rows.filter((r) => r.type === 'shozui');
+      const allCustomRows = typeData.rows.filter((r) => r.type === 'custom');
+      // 中3追加行と高校生行をラベル文字列で分離（GAS features.js:4412-4413 の注意書きに従う）
+      const chu3CustomRows = allCustomRows.filter((r) => (r.label || '').indexOf('中3') !== -1);
+      const koCustomRows   = allCustomRows.filter((r) => (r.label || '').indexOf('中3') === -1);
+      const typeName = LEC_TYPE_NAMES[typeId] || typeId;
+      const sectionScopes = typeData.sectionScopes || {};
+      const stdScope = sectionScopes.standard || { campusScope: 'all', campusCodes: [] };
+      const shzScope = sectionScopes.shozui   || { campusScope: 'specific', campusCodes: ['08'] };
+      const cstScope = sectionScopes.custom   || { campusScope: 'all', campusCodes: [] };
+
+      const rowsToTableRows = (rows) => rows.map((r) => {
+        const intTax = Math.floor((r.internal || 0) * 1.1);
+        const extTax = Math.floor((r.external || 0) * 1.1);
+        const mins = (r.duration || 0) * 10;
+        const label = (r.type === 'custom')
+          ? (r.label || '')
+          : (LECTURE_GRADE_LABELS_[r.gradeKey] || r.gradeKey || '');
+        return [label, mins + '分', String(r.count || 0) + '回',
+                intTax.toLocaleString() + '円', extTax.toLocaleString() + '円'];
+      });
+
+      if (standardRows.length > 0) {
+        // 中3標準行直後に中3追加行を挿入（春期は要件上非表示）
+        const mergedStandardRows = [];
+        standardRows.forEach((r) => {
+          mergedStandardRows.push(r);
+          if (r.gradeKey === 'chu3' && typeId !== 'spring' && chu3CustomRows.length > 0) {
+            chu3CustomRows.forEach((cr) => mergedStandardRows.push(cr));
+          }
+        });
+        tableData.sections.push({
+          id: 'auto_' + typeId, tab: '講習', name: typeName,
+          headers: ['学年', '1コマ', '回数', '内部生(税込)', '外部生(税込)'],
+          rows: rowsToTableRows(mergedStandardRows),
+          notes: [], _autoGenerated: true,
+          campusScope: stdScope.campusScope,
+          campusCodes: stdScope.campusCodes,
+          campusResolvedNames: resolveNames(stdScope.campusCodes)
+        });
+      }
+      if (shozuiRows.length > 0) {
+        tableData.sections.push({
+          id: 'auto_' + typeId + '_shozui', tab: '講習', name: typeName + '(勝瑞校・高校生)',
+          headers: ['学年', '1コマ', '回数', '内部生(税込)', '外部生(税込)'],
+          rows: rowsToTableRows(shozuiRows),
+          notes: [], _autoGenerated: true,
+          campusScope: shzScope.campusScope,
+          campusCodes: shzScope.campusCodes,
+          campusResolvedNames: resolveNames(shzScope.campusCodes)
+        });
+      }
+      if (koCustomRows.length > 0) {
+        tableData.sections.push({
+          id: 'auto_' + typeId + '_custom', tab: '講習', name: typeName + '(追加)',
+          headers: ['学年/コース', '1コマ', '回数', '内部生(税込)', '外部生(税込)'],
+          rows: rowsToTableRows(koCustomRows),
+          notes: [], _autoGenerated: true,
+          campusScope: cstScope.campusScope,
+          campusCodes: cstScope.campusCodes,
+          campusResolvedNames: resolveNames(cstScope.campusCodes)
+        });
+      }
+    });
+
+    await writeJson_(env, KEY_PRICING_TABLE, tableData);
+  } catch (e) { /* eventually consistent: 失敗はログ相当で握り潰す */ }
+}
+
+// GAS features.js:4658 syncNormalConfigToPricingTable_ 相当（internal）
+async function syncNormalConfigToPricingTable_(env, normalData) {
+  try {
+    const tableRaw = await readKv_(env, KEY_PRICING_TABLE);
+    if (!tableRaw) return; // 未設定時はスキップ
+    const tableData = JSON.parse(tableRaw);
+
+    if (!tableData.tabs) tableData.tabs = ['通常授業', '講習'];
+    if (tableData.tabs.indexOf('通常授業') === -1) tableData.tabs.unshift('通常授業');
+
+    // _fromNormalConfig + 旧手動通常授業セクションを除去
+    const LEGACY_NORMAL_IDS = ['regular', 'shozui', 'individual', 'enrollment'];
+    tableData.sections = (tableData.sections || []).filter((s) => {
+      if (s._fromNormalConfig) return false;
+      if (s.tab === '通常授業' && LEGACY_NORMAL_IDS.indexOf(s.id) !== -1) return false;
+      return true;
+    });
+
+    const campusConfig = await getCampusConfig_(env);
+    const newSections = (normalData.sections || []).map((sec) => {
+      const resolvedNames = (sec.campusCodes || []).map((code) => campusConfig[code] || code);
+      return {
+        id: 'nc_' + sec.id, tab: '通常授業', name: sec.name,
+        headers: sec.headers, rows: sec.rows,
+        notes: (sec.notes || []),
+        _fromNormalConfig: true,
+        campusScope: sec.campusScope,
+        campusCodes: sec.campusCodes,
+        campusResolvedNames: resolvedNames
+      };
+    });
+
+    // 通常授業セクションを先頭、その他（講習等）を後ろに
+    const otherSections = tableData.sections.filter((s) => s.tab !== '通常授業');
+    tableData.sections = newSections.concat(otherSections);
+
+    await writeJson_(env, KEY_PRICING_TABLE, tableData);
+  } catch (e) { /* eventually consistent: 失敗はログ相当で握り潰す */ }
+}
+
+/**
+ * 通常授業の設定データを保存する（F14 の Workers 版・Admin のみ）
+ * GAS features.js:4637 と同じ。NORMAL_CLASS_CONFIG を書いた後、
+ * PRICING_TABLE_CONFIG にシンク（2 キー書込・順序固定）。
+ *
+ * メインキー書込が失敗した場合は outer catch で return し、sync は呼ばれない。
+ * sync が失敗しても eventually consistent（次回保存で復旧）として success を返す。
+ *
+ * @param {Array} args [jsonData]
+ */
+export async function saveNormalClassConfig(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [jsonData] = args || [];
+    const data = JSON.parse(jsonData);
+    if (!data || !Array.isArray(data.sections)) {
+      return { success: false, error: 'データの形式が不正です' };
+    }
+    data.version = 2;
+    await writeJson_(env, KEY_NORMAL_CLASS, data);  // メインキー先
+    await syncNormalConfigToPricingTable_(env, data); // PRICING シンク後
+    return { success: true, message: '通常授業設定を保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

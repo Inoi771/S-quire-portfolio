@@ -100,7 +100,9 @@ async function denyIfNotAdminSigma_(env, user) {
 // ─── Workers 内部 private reader: G20 getCampusConfig 相当 ───
 // GAS 側は配列 `[{code,name,...}]` → `{code: name}` 辞書に変換する。
 // エラー時は `CAMPUSES` デフォルト定数を返す（defensive）。
-async function getCampusConfig_(env) {
+// Phase 5-E-9b-3a 以降: features.js の PRICING シンクが同じ辞書を使うため
+// `export` して共有する（α 方式）。
+export async function getCampusConfig_(env) {
   try {
     await ensureGradesConfigInit_(env);
     const raw = await readKv_(env, KEY_CAMPUS_CODES);

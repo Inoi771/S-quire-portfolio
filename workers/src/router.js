@@ -48,7 +48,8 @@ import {
   resetLectureDates,
   getLecturePricingConfig,
   getNormalClassConfig,
-  getNormalClassSectionsForWeb
+  getNormalClassSectionsForWeb,
+  saveNormalClassConfig
 } from './functions/features.js';
 
 // 認証不要の関数
@@ -123,7 +124,8 @@ const HANDLERS = {
   resetLectureDates,
   getLecturePricingConfig,
   getNormalClassConfig,
-  getNormalClassSectionsForWeb
+  getNormalClassSectionsForWeb,
+  saveNormalClassConfig
 };
 
 export async function handleApiCall(body, env) {

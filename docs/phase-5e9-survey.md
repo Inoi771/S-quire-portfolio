@@ -511,4 +511,29 @@ F6/F7 は引数で `fiscalYear` を受け取るため現在時刻に依存せず
 - `isHolidayLec_` 等の休校日判定はすべて特定日付（Y/M/D）に対する判定で、タイムゾーン非依存。
 - `isHolidayLec_` の実装内キャッシュ（`holidayCacheLec_`）はモジュール変数。Workers のインスタンス再利用で状態が持ち越される可能性があるため、F5/F7 の先頭で `holidayCacheLec_ = null` にリセットして最新 KV 値を確実に反映する（GAS の「同一実行内キャッシュ」と同じ挙動を再現）。
 
+### features.js の PRICING シンクで `getCampusConfig_` を共有する方式（5-E-9b-3a）
+
+#### 選択肢
+
+- **α**: `workers/src/functions/grades.js` から `getCampusConfig_` を `export` して features.js で `import`
+- **β**: features.js 内に同等の private helper を再実装（重複だが結合なし）
+- **γ**: `workers/src/functions/shared.js` 等に切り出して双方から import
+
+#### 決定：**α（grades.js からエクスポート + features.js で import）**
+
+#### 理由
+
+1. **Workers モジュール間の import は既に実績あり**:
+   `workers/src/functions/settings.js` が `./auth.js` から `isAdminUser` を import、
+   `workers/src/functions/features.js` も同じく `auth.js` 参照など、横断 import は確立パターン。
+2. **単一ソース維持**: GAS 側も `getCampusConfig()` は grades.js に 1 本しかなく、features.js の `syncLecturePricingToTable_` / `syncNormalConfigToPricingTable_` から呼んでいる。Workers も同じ依存関係（grades.js が提供、features.js が利用）を維持するのが自然。
+3. **β は重複コスト**: `ensureGradesConfigInit_` と `readCampusConfigArray_` の依存まで重複することになり、保守時にどちらかを更新し忘れるリスク。
+4. **γ は現時点で前倒し**: 共有ヘルパーを必要とするファイルがまだ 2 つだけで、専用モジュールを切るメリットが薄い。将来 3 つ以上になれば γ に格上げする判断も可能（`getTeacherEmails` 等が同様の共有候補）。
+
+#### 実装
+
+- grades.js の `async function getCampusConfig_` に `export` を付与（他の private helper は非エクスポートのまま）
+- features.js の先頭 import に `getCampusConfig_` を追加
+- 関数本体・挙動・副作用は変更なし（`ensureGradesConfigInit_` が呼ばれる点も grades.js 側の挙動を踏襲）
+
 
