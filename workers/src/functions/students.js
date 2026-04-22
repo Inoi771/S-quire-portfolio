@@ -636,6 +636,51 @@ export async function saveExamResult(args, env, user) {
 }
 
 /**
+ * 【Phase 6-A-12 / 6-A-13】fetchCampusAverages_ — 校舎別平均のコアロジック（private）
+ *
+ * Phase 6-A-13 で getCampusAverages と getGradeSummary の共通処理として切出し。
+ * Supabase RPC + 校舎名マッピング + ソート済み配列を返す。
+ * 認証・レスポンス整形は呼び出し元（ハンドラ）が担当する。
+ *
+ * @param {Object} env
+ * @param {number} year
+ * @param {string} testName
+ * @returns {Promise<Array<{campusCode, campusName, count, kokugo, shakai, sugaku, rika, eigo, total}>>}
+ * @throws Supabase RPC / KV エラーは上位に伝搬
+ */
+async function fetchCampusAverages_(env, year, testName) {
+  const [rpcResult, campusMap] = await Promise.all([
+    supabaseRpc(env, 'get_campus_averages', { p_year: year, p_test: testName }),
+    getCampusConfig_(env)
+  ]);
+
+  const campusArr = Array.isArray(rpcResult) ? rpcResult : [];
+
+  const campuses = campusArr.map((c) => {
+    const code = c.campusCode || c.campus_code || '';
+    return {
+      campusCode: code,
+      campusName: code === 'all' ? '全校舎' : (campusMap[code] || code || ''),
+      count:  c.count  || c.cnt || 0,
+      kokugo: c.kokugo != null ? c.kokugo : '',
+      shakai: c.shakai != null ? c.shakai : '',
+      sugaku: c.sugaku != null ? c.sugaku : '',
+      rika:   c.rika   != null ? c.rika   : '',
+      eigo:   c.eigo   != null ? c.eigo   : '',
+      total:  c.total  != null ? c.total  : ''
+    };
+  });
+
+  campuses.sort((a, b) => {
+    if (a.campusCode === 'all') return -1;
+    if (b.campusCode === 'all') return 1;
+    return a.campusCode.localeCompare(b.campusCode);
+  });
+
+  return campuses;
+}
+
+/**
  * 【Phase 6-A-12】getCampusAverages — GAS students.js:1584 の Workers 版
  *
  * 指定年度・テストの校舎別平均点を Supabase RPC `get_campus_averages`
@@ -650,9 +695,9 @@ export async function saveExamResult(args, env, user) {
  *   - Supabase RPC `get_campus_averages(p_year, p_test)` — 校舎別集計
  *   - KV `prop:CAMPUS_CODES`（getCampusConfig_ 経由）— 校舎コード→校舎名の辞書
  *
- * ソート順（GAS 版完全一致）:
- *   - `campusCode === 'all'` を先頭に固定
- *   - それ以外は campusCode の localeCompare 昇順
+ * Phase 6-A-13 リファクタ:
+ *   コアロジックを `fetchCampusAverages_` に切り出し。外部 API としての
+ *   戻り値形状・ソート順は Phase 6-A-12 と完全互換。
  *
  * 戻り値形状（GAS 版完全一致）:
  *   成功: { success: true, campuses: [{campusCode, campusName, count,
@@ -664,37 +709,70 @@ export async function getCampusAverages(args, env, user) {
   try {
     const year     = parseInt(args && args[0], 10);
     const testName = String((args && args[1]) || '').trim();
-
-    const [rpcResult, campusMap] = await Promise.all([
-      supabaseRpc(env, 'get_campus_averages', { p_year: year, p_test: testName }),
-      getCampusConfig_(env)
-    ]);
-
-    const campusArr = Array.isArray(rpcResult) ? rpcResult : [];
-
-    const campuses = campusArr.map((c) => {
-      const code = c.campusCode || c.campus_code || '';
-      return {
-        campusCode: code,
-        campusName: code === 'all' ? '全校舎' : (campusMap[code] || code || ''),
-        count:  c.count  || c.cnt || 0,
-        kokugo: c.kokugo != null ? c.kokugo : '',
-        shakai: c.shakai != null ? c.shakai : '',
-        sugaku: c.sugaku != null ? c.sugaku : '',
-        rika:   c.rika   != null ? c.rika   : '',
-        eigo:   c.eigo   != null ? c.eigo   : '',
-        total:  c.total  != null ? c.total  : ''
-      };
-    });
-
-    campuses.sort((a, b) => {
-      if (a.campusCode === 'all') return -1;
-      if (b.campusCode === 'all') return 1;
-      return a.campusCode.localeCompare(b.campusCode);
-    });
-
+    const campuses = await fetchCampusAverages_(env, year, testName);
     return { success: true, campuses };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-13】getGradeSummary — GAS students.js:1646 の Workers 版
+ *
+ * 指定年度・テストの成績サマリー（校舎別平均 Map + 点数帯ヒストグラム）を返す。
+ * 呼出元: firebase-students.html:441 `gasApiPromise_('getGradeSummary', [year, testName])`。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ。Admin ガードなし（GAS 版踏襲）。
+ *
+ * データソース:
+ *   - 校舎別平均: fetchCampusAverages_（Supabase RPC `get_campus_averages` + KV 校舎名）
+ *   - 点数帯分布: Supabase RPC `get_grade_breakdown(p_year, p_test)`
+ *   両者を Promise.all で並列取得（GAS 版は直列）。
+ *
+ * 戻り値形状（GAS 版完全一致・success フラグ無し）:
+ *   成功: {
+ *     fiscalYear:     <int>,
+ *     testName:       <string>,
+ *     count:          <int>          // 'all' 校舎の count
+ *     campusAverages: { <code>: {kokugo, shakai, sugaku, rika, eigo, total, count}, ... }
+ *     gradeBreakdown: <get_grade_breakdown の生戻り値 / null なら {}>
+ *   }
+ *   失敗: null（GAS 版と同じ。エラー時も try/catch 内で null を返す）
+ */
+export async function getGradeSummary(args, env, user) {
+  try {
+    const year     = parseInt(args && args[0], 10);
+    const testName = String((args && args[1]) || '').trim();
+
+    const [campuses, gradeBreakdownRaw] = await Promise.all([
+      fetchCampusAverages_(env, year, testName),
+      supabaseRpc(env, 'get_grade_breakdown', { p_year: year, p_test: testName })
+    ]);
+
+    const campusAverages = {};
+    let totalCount = 0;
+    campuses.forEach((c) => {
+      campusAverages[c.campusCode] = {
+        kokugo: c.kokugo,
+        shakai: c.shakai,
+        sugaku: c.sugaku,
+        rika:   c.rika,
+        eigo:   c.eigo,
+        total:  c.total,
+        count:  c.count
+      };
+      if (c.campusCode === 'all') totalCount = c.count;
+    });
+
+    return {
+      fiscalYear: year,
+      testName,
+      count: totalCount,
+      campusAverages,
+      gradeBreakdown: gradeBreakdownRaw || {}
+    };
+  } catch (e) {
+    return null;
   }
 }
