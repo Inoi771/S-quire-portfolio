@@ -324,10 +324,20 @@ GASには200回のデプロイ上限・6分の実行時間制限があり、Clou
 Phase 1: Drive/Sheets不要機能の削除（GAS上）          ✅ 完了
 Phase 2: チラシ画像をSupabase Storageへ移行（GAS上）  ✅ 完了
 Phase 3: スクリプトプロパティをSupabaseへ移行         ⏭ スキップ（Phase 5に統合）
-Phase 4: Cloudflare Workers環境セットアップ           ← 現在
-Phase 5: GASバックエンドをCloudflare Workersへ移行
-Phase 6: デプロイ設定の切替
+Phase 4: Cloudflare Workers環境セットアップ           ✅ 完了
+Phase 5: GASバックエンドをCloudflare Workersへ移行    進行中（5-E-11 まで完了）
+Phase 6-A: C 分類関数の Workers 移行                  ← 次（着手前）
+Phase 6-B: デプロイ設定の切替（旧 Phase 6）
 ```
+
+> **Phase 6 分割の経緯**: 旧 Phase 6「デプロイ設定の切替」を **Phase 6-B** にリネームし、
+> その前段として **Phase 6-A: C 分類関数の Workers 移行** を新設（2026-04-22 合意）。
+> Phase 6-A の対象は `docs/remaining-functions-inventory.md` の C 分類のうち、フロント
+> エンドから呼ばれ・GAS 固有 API 依存がないもの。**チラシ系 9 関数**（`getFlyerImages` /
+> `getFlyerImageBase64` / `uploadFlyerImage` / `analyzeFlyerImageMeta` / `deleteFlyerImage`
+> / `saveFlyerImageTags` / `generateFlyerWithAI` / `saveFlyerAiData` / `loadFlyerAiData`）は
+> Drive/Spreadsheet → Supabase Storage/テーブル移行が未完のため **Phase 6-A のスコープ外**
+> として後続フェーズに先送り。
 
 ---
 
@@ -1445,7 +1455,39 @@ const GAS_URL = 'https://s-quire-api.your-subdomain.workers.dev';
 
 ---
 
-## Phase 6: デプロイ設定の切替
+## Phase 6-A: C 分類関数の Workers 移行
+
+### 対象
+
+`docs/remaining-functions-inventory.md` の C 分類 79 関数のうち、以下 3 条件を満たす
+関数を Phase 6-A の対象とする:
+
+1. フロントエンドから呼ばれる（GAS 内部ヘルパーは対象外）
+2. GAS 固有 API（DriveApp / SpreadsheetApp / CalendarApp / GmailApp / MailApp /
+   ScriptApp / HtmlService / ContentService / LockService）に依存しない
+3. データ移行などの前提条件がクリア済み
+
+### 確定対象関数
+
+- `savePreferredCampuses`（`settings.js:590`）— `setUserProperty('PREFERRED_CAMPUSES', ...)`
+  経由で `staffs.preferred_campuses` に保存。Workers 版は `saveLecGrades`
+  （`workers/src/functions/settings.js:177`）と同型の PATCH で実装可能。
+
+> Phase 6-A のサブフェーズ構成・要相談 3 関数（`resetUserThemeColor` /
+> `editAutoLearnedKnowledge` / `resolveAiFeedback`）の取扱いは着手前に別途決定する。
+
+### スコープ外（後続フェーズに先送り）
+
+- **チラシ系 9 関数**（`features.js`）— DriveApp / SpreadsheetApp 依存。前提として
+  Drive → Supabase Storage、Spreadsheet（imageTags / flyerAi）→ Firestore or Supabase
+  テーブルへの移行が必要（現状 `features.js` 内に DriveApp 参照残存）
+- **Drive / Spreadsheet / Calendar / Gmail / MailApp / ScriptApp 依存関数群**（約 25 関数）
+  — それぞれ Google API への差し替え・Workers Cron Triggers 設計等が必要
+- **migrate.js 14 関数** — 手動実行のロールバック用。Workers 化不要
+
+---
+
+## Phase 6-B: デプロイ設定の切替（旧 Phase 6）
 
 ### 新規追加: `.github/workflows/deploy-workers.yml`
 
@@ -1488,7 +1530,8 @@ jobs:
 | 3 | プロパティ移行 | 中（設定変更） | PropertiesService併用 |
 | 4 | CF環境構築 | 低（既存に影響なし） | 不要なら削除のみ |
 | 5 | Workers移行 | 高（大規模書き換え） | GAS URLを一時的に戻す |
-| 6 | デプロイ切替 | 低（設定変更） | yml削除 |
+| 6-A | C 分類関数の Workers 移行 | 低（小スコープ・GAS フォールバック温存） | WORKERS_FUNCTIONS から除去 |
+| 6-B | デプロイ切替 | 低（設定変更） | yml削除 |
 
 ---
 
