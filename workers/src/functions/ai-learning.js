@@ -195,7 +195,6 @@ export async function resolveAiFeedback(args, env, user) {
  * @return {Object} { success, message } | { success:false, error }
  */
 export async function deleteAiFeedback(args, env, user) {
-  throw new Error('test 5xx');  // ← この1行を追加（テスト用・後で削除）
   const denied = await denyIfNotAdmin_(env, user);
   if (denied) return denied;
   try {
