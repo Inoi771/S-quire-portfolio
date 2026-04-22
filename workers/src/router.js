@@ -64,6 +64,12 @@ import {
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher } from './functions/auth-emails.js';
+import {
+  getNotificationSettings,
+  updateNotificationSettings,
+  getLineSchedulerNotifPrefs,
+  updateLineSchedulerNotifPref
+} from './functions/notifications.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -154,7 +160,11 @@ const HANDLERS = {
   deleteMinutes,
   getTeacherEmails,
   addEmailToTeacher,
-  removeEmailFromTeacher
+  removeEmailFromTeacher,
+  getNotificationSettings,
+  updateNotificationSettings,
+  getLineSchedulerNotifPrefs,
+  updateLineSchedulerNotifPref
 };
 
 export async function handleApiCall(body, env) {
