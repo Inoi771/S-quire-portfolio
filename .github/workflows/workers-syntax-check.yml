@@ -28,13 +28,26 @@ jobs:
           set -o pipefail
           failed=0
           count=0
-          # find は safe な -print0 + while read -d '' を使う（スペース含むパスも対応）
+          # Node.js の `node --check file.js` は .js 拡張子を CJS 扱いするため、
+          # ESM の import 文を含む workers/src/**/*.js では構文エラーを
+          # 素通ししてしまう。対策として stdin + --input-type=module で
+          # 明示的に ESM として構文チェックする（エラー出力では [stdin] を
+          # 実ファイル名に差し替える）。
           while IFS= read -r -d '' f; do
             count=$((count + 1))
             echo "::group::node --check $f"
-            if ! node --check "$f" 2>&1; then
-              # GitHub Actions の file アノテーションでエラー箇所をサマリ表示
-              echo "::error file=${f}::構文エラー: $f （上のログに行番号が表示されます）"
+            if output=$(node --input-type=module --check < "$f" 2>&1); then
+              echo "$output"
+            else
+              # [stdin] を実ファイル名に置換して行番号と一緒にログ表示
+              echo "$output" | sed "s|\[stdin\]|$f|g"
+              # GitHub Actions のサマリに該当ファイル+行番号を表示
+              line=$(echo "$output" | grep -oE '^\[stdin\]:[0-9]+' | head -n1 | cut -d: -f2)
+              if [ -n "$line" ]; then
+                echo "::error file=${f},line=${line}::構文エラー: $f:$line"
+              else
+                echo "::error file=${f}::構文エラー: $f"
+              fi
               failed=1
             fi
             echo "::endgroup::"
