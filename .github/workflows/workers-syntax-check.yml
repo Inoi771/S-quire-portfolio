@@ -1,0 +1,49 @@
+name: Workers シンタックスチェック
+
+# workers/src/ 配下の .js ファイルが変更された push / pull_request のみで起動する。
+# deploy-workers.yml（デプロイ）・merge-to-main.yml（自動マージ）とは独立した軽量 CI。
+on:
+  push:
+    paths:
+      - 'workers/src/**/*.js'
+  pull_request:
+    paths:
+      - 'workers/src/**/*.js'
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js セットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: workers/src 配下の .js を node --check で構文確認
+        shell: bash
+        run: |
+          set -o pipefail
+          failed=0
+          count=0
+          # find は safe な -print0 + while read -d '' を使う（スペース含むパスも対応）
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
+            echo "::group::node --check $f"
+            if ! node --check "$f" 2>&1; then
+              # GitHub Actions の file アノテーションでエラー箇所をサマリ表示
+              echo "::error file=${f}::構文エラー: $f （上のログに行番号が表示されます）"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done < <(find workers/src -type f -name '*.js' -print0)
+
+          echo "---"
+          echo "チェック対象: ${count} ファイル"
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::workers/src 配下に構文エラーがあります"
+            exit 1
+          fi
+          echo "全ファイル OK"
