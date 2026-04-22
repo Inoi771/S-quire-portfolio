@@ -28,6 +28,7 @@
 
 import { isAdminUser } from './auth.js';
 import { firestoreSet, firestoreDelete } from '../firebase.js';
+import { getLecturePeriods } from './features.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -101,6 +102,21 @@ async function denyIfNotAdmin_(env, user) {
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * 基礎学力テスト日程の上書き設定を全取得する（Phase 6-A-6）
+ * GAS schedule.js:571 の Workers 版。
+ * KV 未設定・パース失敗・例外いずれも `{}` を返す（GAS 版と完全一致）。
+ * @return {Object} 上書き設定（例: { "2025-1": "2025/10/01" }）
+ */
+export async function getBasicTestDateOverrides(args, env, user) {
+  try {
+    return await readKvJson_(env, 'BASIC_TEST_DATES');
+  } catch (error) {
+    console.log('❌ getBasicTestDateOverrides エラー: ' + error);
+    return {};
+  }
+}
+
+/**
  * 基礎学力テスト日程を上書き設定する（Admin のみ）
  * GAS schedule.js:588 の Workers 版。
  * @param {Array} args [academicYear, testNum, dateStr]
@@ -141,6 +157,21 @@ export async function deleteBasicTestDateOverride(args, env, user) {
 // ─────────────────────────────────────────────────────────────
 // BASIC_TEST_DETAILS（基礎学力テスト詳細テキストの上書き）
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * 基礎学力テスト詳細テキストの上書き設定を全取得する（Phase 6-A-6）
+ * GAS schedule.js:630 の Workers 版。
+ * KV 未設定・パース失敗・例外いずれも `{}` を返す（GAS 版と完全一致）。
+ * @return {Object} 上書き設定（例: { "2025-1": "中3 全員" }）
+ */
+export async function getBasicTestDetails(args, env, user) {
+  try {
+    return await readKvJson_(env, 'BASIC_TEST_DETAILS');
+  } catch (error) {
+    console.log('❌ getBasicTestDetails エラー: ' + error);
+    return {};
+  }
+}
 
 /**
  * 基礎学力テストの詳細テキストを上書き保存する（Admin のみ）
@@ -185,6 +216,21 @@ export async function deleteBasicTestDetails(args, env, user) {
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * 公立高校一般選抜日程の上書き設定を全取得する（Phase 6-A-6）
+ * GAS schedule.js:686 の Workers 版。
+ * KV 未設定・パース失敗・例外いずれも `{}` を返す（GAS 版と完全一致）。
+ * @return {Object} 上書き設定（例: { "2025": "2026/03/11" }）
+ */
+export async function getPublicHighExamDateOverrides(args, env, user) {
+  try {
+    return await readKvJson_(env, 'PUBLIC_HIGH_EXAM_DATES');
+  } catch (error) {
+    console.log('❌ getPublicHighExamDateOverrides エラー: ' + error);
+    return {};
+  }
+}
+
+/**
  * 公立高校一般選抜の日程を上書き保存する（Admin のみ）
  * GAS schedule.js:702 の Workers 版。
  * @param {Array} args [academicYear, dateStr]
@@ -225,6 +271,23 @@ export async function deletePublicHighExamDateOverride(args, env, user) {
 // ─────────────────────────────────────────────────────────────
 // JUKU_EVENT_OVERRIDES（塾内部イベントの上書き削除のみ）
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * 塾内部イベントの上書き設定を全取得する（Phase 6-A-6 内部ヘルパー）
+ * GAS schedule.js:740 `getJukuEventOverrides` の Workers 版。
+ * frontend から直接呼ばれないため export しない。`getScheduleOverridesBundle`
+ * の内部からのみ使用される。
+ * @private
+ * @return {Object} 上書き設定
+ */
+async function getJukuEventOverrides_(env) {
+  try {
+    return await readKvJson_(env, 'JUKU_EVENT_OVERRIDES');
+  } catch (error) {
+    console.log('❌ getJukuEventOverrides_ エラー: ' + error);
+    return {};
+  }
+}
 
 /**
  * 塾内部イベントの上書き設定を削除して自動計算に戻す（Admin のみ）
@@ -382,6 +445,22 @@ export async function deleteClosedDayOverride(args, env, user) {
 // Workers ルート・GAS ルート双方で監査ログが残る。
 
 /**
+ * 講習日程締切の上書き設定を全取得する（Phase 6-A-6）
+ * GAS schedule.js:891 の Workers 版。
+ * KV 未設定・パース失敗・例外いずれも `{}` を返す（GAS 版と完全一致）。
+ * キー名は `LECTURE_DEADLINE_OVERRIDES`（GAS 側 PROP_KEYS.LECTURE_DEADLINE_OVERRIDES と同じ値）。
+ * @return {Object} 上書き設定（例: { "2025-summer": "2025-06-15" }）
+ */
+export async function getLectureDeadlineOverrides(args, env, user) {
+  try {
+    return await readKvJson_(env, 'LECTURE_DEADLINE_OVERRIDES');
+  } catch (error) {
+    console.log('❌ getLectureDeadlineOverrides エラー: ' + error);
+    return {};
+  }
+}
+
+/**
  * 指定講習の締切日を手動で上書き設定する（Admin のみ）
  * GAS schedule.js:907 の Workers 版。Phase 5-E-10 で logAdminActionToFirestore を追加。
  * @param {Array} args [lectureId, dateStr]
@@ -491,5 +570,72 @@ export async function deleteCustomScheduleEntry(args, env, user) {
     return { success: true, message: '削除しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 起動時バンドル取得（Phase 6-A-6）
+// ─────────────────────────────────────────────────────────────
+//
+// GAS schedule.js:955 `getScheduleOverridesBundle` の Workers 版。
+// 予定タブ起動時に 7 種のオーバーライド設定を 1 リクエストで取得するホットパス。
+// GAS 版の逐次呼び出しに対し Workers 版は `Promise.all` で並列化（戻り値形状は完全一致）。
+//
+// 構成要素：
+//   basicTestDates   — getBasicTestDateOverrides
+//   basicTestDetails — getBasicTestDetails
+//   jukuEvents       — getJukuEventOverrides_（内部ヘルパー）
+//   closedDays       — readClosedDays_（既存ヘルパー、{add, del} 形式を保証）
+//   pubHighExamDates — getPublicHighExamDateOverrides
+//   lecturePeriods   — features.js:getLecturePeriods（import 再利用）
+//   lectureDeadlines — getLectureDeadlineOverrides
+//
+// 部分失敗時の挙動：各要素は内部で try/catch して `{}` / `[]` を返すため、
+// Promise.all が reject されない設計。bundle 全体の try/catch は最後のセーフティネット。
+
+/**
+ * カレンダー表示用のオーバーライド系データ 7 種を一括取得する（Phase 6-A-6）
+ * GAS schedule.js:955 の Workers 版。起動時の HTTP リクエスト数を 7→1 に削減する。
+ * @return {Object} { basicTestDates, basicTestDetails, jukuEvents, closedDays, pubHighExamDates, lecturePeriods, lectureDeadlines }
+ */
+export async function getScheduleOverridesBundle(args, env, user) {
+  try {
+    const [
+      basicTestDates,
+      basicTestDetails,
+      jukuEvents,
+      closedDays,
+      pubHighExamDates,
+      lecturePeriods,
+      lectureDeadlines
+    ] = await Promise.all([
+      getBasicTestDateOverrides([], env, user),
+      getBasicTestDetails([], env, user),
+      getJukuEventOverrides_(env),
+      readClosedDays_(env),
+      getPublicHighExamDateOverrides([], env, user),
+      getLecturePeriods([], env, user),
+      getLectureDeadlineOverrides([], env, user)
+    ]);
+    return {
+      basicTestDates,
+      basicTestDetails,
+      jukuEvents,
+      closedDays,
+      pubHighExamDates,
+      lecturePeriods,
+      lectureDeadlines
+    };
+  } catch (error) {
+    console.log('❌ getScheduleOverridesBundle エラー: ' + error);
+    return {
+      basicTestDates: {},
+      basicTestDetails: {},
+      jukuEvents: {},
+      closedDays: { add: [], del: [] },
+      pubHighExamDates: {},
+      lecturePeriods: [],
+      lectureDeadlines: {}
+    };
   }
 }

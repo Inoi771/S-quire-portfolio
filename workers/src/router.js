@@ -12,10 +12,13 @@ import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByS
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
 import {
+  getBasicTestDateOverrides,
   setBasicTestDateOverride,
   deleteBasicTestDateOverride,
+  getBasicTestDetails,
   setBasicTestDetails,
   deleteBasicTestDetails,
+  getPublicHighExamDateOverrides,
   setPublicHighExamDateOverride,
   deletePublicHighExamDateOverride,
   deleteJukuEventOverride,
@@ -23,10 +26,12 @@ import {
   addClosedDayExtra,
   removeComputedClosedDay,
   deleteClosedDayOverride,
+  getLectureDeadlineOverrides,
   setLectureDeadlineOverride,
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
-  deleteCustomScheduleEntry
+  deleteCustomScheduleEntry,
+  getScheduleOverridesBundle
 } from './functions/schedule-overrides.js';
 import {
   getCampusConfigForWeb,
@@ -110,10 +115,13 @@ const HANDLERS = {
   kv_set,
   kv_delete,
   kv_list,
+  getBasicTestDateOverrides,
   setBasicTestDateOverride,
   deleteBasicTestDateOverride,
+  getBasicTestDetails,
   setBasicTestDetails,
   deleteBasicTestDetails,
+  getPublicHighExamDateOverrides,
   setPublicHighExamDateOverride,
   deletePublicHighExamDateOverride,
   deleteJukuEventOverride,
@@ -121,10 +129,12 @@ const HANDLERS = {
   addClosedDayExtra,
   removeComputedClosedDay,
   deleteClosedDayOverride,
+  getLectureDeadlineOverrides,
   setLectureDeadlineOverride,
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
   deleteCustomScheduleEntry,
+  getScheduleOverridesBundle,
   getCampusConfigForWeb,
   getGradeAnalysisSigmaConfig,
   updateGradeAnalysisSigmaConfig,
