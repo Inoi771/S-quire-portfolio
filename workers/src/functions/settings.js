@@ -376,3 +376,109 @@ export async function updateSettings(args, env, user) {
     return { success: false, error: error.toString() };
   }
 }
+
+/**
+ * 【Phase 6-A-4】updateUserProfile — GAS settings.js:496 の Workers 版
+ *
+ * プロフィール情報（displayName / subjects / aiAssistantName / aiPersonality /
+ * themeColor）を Supabase staffs に保存する。
+ *
+ * 書込方式:
+ *   - supabaseUpdate による部分更新（CLAUDE.md settings.js:109 の教訓、
+ *     B-⑭/⑯/⑰ の partial UPSERT NOT NULL 違反回避）。Phase 6-A-3
+ *     auth-emails.js と同型。
+ *
+ * バリデーション（GAS 版と完全一致・順序厳守）:
+ *   1. displayName 空/空白のみ → 「名前は必須です」
+ *   2. subjects は string なら ','分割 + trim + 空要素除去で array 化
+ *   3. displayName.trim().length > 50 → 「名前は50文字以下にしてください」
+ *   4. subjects.length > 10 → 「担当教科は最大10個までです」
+ *   5. aiPersonality は 9 種 enum 外なら 'polite' にフォールバック（エラーにしない）
+ *   6. themeColor は /^#[0-9a-fA-F]{6}$/ に合致するときのみ payload に含める
+ *      （不正値は theme_color を PATCH payload に含めず、既存値を維持）
+ *
+ * aiAssistantName が空なら 'イノイマン' で保存する。
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   - 成功: { success: true, message: 'プロフィールを更新しました',
+ *            profile: { displayName, subjects } }
+ *   - 失敗: { success: false, error: <文言> }
+ *
+ * @param {Array<Object>} args [profileData]
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {Object} user 認証済みユーザー { email, uid }
+ * @return {Object}
+ */
+export async function updateUserProfile(args, env, user) {
+  try {
+    const [profileData = {}] = args || [];
+
+    // 現在のログイン中講師を解決
+    const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+      p_uid: user.uid || null,
+      p_email: user.email ? user.email.toLowerCase() : null
+    });
+    if (!rows || rows.length === 0) {
+      return { success: false, error: '未登録のユーザーです' };
+    }
+    const staff = staffFromSupabase(rows[0]);
+    const teacherId = staff.teacherId || staff._id;
+
+    // 1. displayName 必須チェック（trim 前の生値で空判定）
+    if (!profileData.displayName || String(profileData.displayName).trim().length === 0) {
+      return { success: false, error: '名前は必須です' };
+    }
+    const displayName = String(profileData.displayName).trim();
+
+    // 2. subjects: string → array
+    let subjects = profileData.subjects || [];
+    if (typeof subjects === 'string') {
+      subjects = subjects.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    }
+
+    // 3. displayName 長さチェック
+    if (displayName.length > 50) {
+      return { success: false, error: '名前は50文字以下にしてください' };
+    }
+    // 4. subjects 個数チェック
+    if (subjects.length > 10) {
+      return { success: false, error: '担当教科は最大10個までです' };
+    }
+
+    // AIアシスタント名（空なら既定値）
+    const aiName = (String(profileData.aiAssistantName || '').trim()) || 'イノイマン';
+
+    // 5. aiPersonality enum 外は 'polite' にフォールバック
+    const validPersonalities = ['polite', 'friendly', 'energetic', 'cool', 'kansai', 'hakata', 'tohoku', 'nagoya', 'awa'];
+    const aiPersonality = validPersonalities.indexOf(profileData.aiPersonality) !== -1
+      ? profileData.aiPersonality
+      : 'polite';
+
+    // 6. themeColor は正規表現合致時のみ payload に含める
+    const themeColor = String(profileData.themeColor || '').trim();
+
+    const payload = {
+      display_name: displayName,
+      name: displayName,
+      subjects,
+      ai_assistant_name: aiName,
+      ai_personality: aiPersonality,
+      updated_at: new Date().toISOString()
+    };
+    if (/^#[0-9a-fA-F]{6}$/.test(themeColor)) {
+      payload.theme_color = themeColor;
+    }
+
+    await supabaseUpdate(env, 'staffs', payload,
+      'id=eq.' + encodeURIComponent(teacherId)
+    );
+
+    return {
+      success: true,
+      message: 'プロフィールを更新しました',
+      profile: { displayName, subjects }
+    };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
