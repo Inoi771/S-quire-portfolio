@@ -5,7 +5,8 @@ import {
   getAdminEmails,
   getAllScriptPropertiesForGUI,
   updateScriptPropertyFromGUI,
-  deleteScriptPropertyFromGUI
+  deleteScriptPropertyFromGUI,
+  getPlacementTeacherNames
 } from './functions/admin.js';
 import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult } from './functions/students.js';
@@ -104,6 +105,7 @@ const HANDLERS = {
   getAllScriptPropertiesForGUI,
   updateScriptPropertyFromGUI,
   deleteScriptPropertyFromGUI,
+  getPlacementTeacherNames,
   getUserProfile,
   getAppStartupData,
   getMasterData,
