@@ -202,6 +202,38 @@ export async function saveLecGrades(args, env, user) {
 }
 
 /**
+ * savePreferredCampuses — GAS savePreferredCampuses() の Workers 版
+ * 配属校舎コードの配列を staffs.preferred_campuses に保存。
+ * saveLecGrades と同型で、find_staff_by_auth で staffId を解決し PATCH で更新する。
+ * GAS 版は UserProperty ('PREFERRED_CAMPUSES') に JSON 保存するフォールバックとして温存。
+ */
+export async function savePreferredCampuses(args, env, user) {
+  try {
+    const [campusCodes] = args || [];
+    const list = Array.isArray(campusCodes) ? campusCodes : [];
+
+    // 認証済みユーザーから staffId を導出
+    const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+      p_uid: user.uid || null,
+      p_email: user.email ? user.email.toLowerCase() : null
+    });
+    if (!rows || rows.length === 0) {
+      return { success: false, error: 'スタッフ情報が取得できません' };
+    }
+    const staffId = rows[0].id;
+    if (!staffId) {
+      return { success: false, error: 'スタッフ情報が取得できません' };
+    }
+
+    await supabaseUpdate(env, 'staffs', { preferred_campuses: list }, 'id=eq.' + encodeURIComponent(staffId));
+
+    return { success: true, message: '保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 【Phase 5-E-7】getSettings — GAS settings.js getSettings() の Workers 版
  *
  * 設定画面・初期化フロー向けに、現在のユーザーが見られる設定をまとめて返す。
