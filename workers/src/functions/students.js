@@ -1,6 +1,7 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
 import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
-import { getCampusConfig_ } from './grades.js';
+import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_ } from './grades.js';
+import { calcDeviationValue_ } from './analysis.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -127,21 +128,39 @@ export async function getGradesYearFolders(args, env, user) {
 }
 
 /**
+ * 【Phase 6-A-14】fetchSchoolAverages_ — 学校別平均のコアロジック（private）
+ *
+ * getSchoolAverages と getStudentGradeReport の共通処理として切出し。
+ * averages 配列のみを返す。success ラッパーは呼出側で付ける。
+ * 行なし / averages フィールドなし / JSON パース不要時は空配列を返す。
+ *
+ * @param {Object} env
+ * @param {number} year
+ * @param {string} testName
+ * @returns {Promise<Array<{schoolName, kokugo, shakai, sugaku, rika, eigo, total}>>}
+ * @throws Supabase エラーは上位に伝搬
+ */
+async function fetchSchoolAverages_(env, year, testName) {
+  const docId = makeSchoolAveDocId(year, testName);
+  const rows = await supabaseSelect(env, 'school_averages',
+    'id=eq.' + encodeURIComponent(docId));
+  if (!rows || rows.length === 0 || !rows[0].averages) return [];
+  let averages = rows[0].averages;
+  if (typeof averages === 'string') averages = JSON.parse(averages);
+  return averages;
+}
+
+/**
  * getSchoolAverages — GAS getSchoolAverages(year, testName) の Workers 版
  * GAS 版との差分: なし（完全同一ロジック）
+ *
+ * Phase 6-A-14 リファクタ: コアを fetchSchoolAverages_ に切出し。外部 API 完全互換。
  */
 export async function getSchoolAverages(args, env, user) {
   const year     = parseInt(args && args[0], 10);
   const testName = String((args && args[1]) || '').trim();
   try {
-    const docId = makeSchoolAveDocId(year, testName);
-    const rows = await supabaseSelect(env, 'school_averages',
-      'id=eq.' + encodeURIComponent(docId));
-    if (!rows || rows.length === 0 || !rows[0].averages) {
-      return { success: true, averages: [] };
-    }
-    let averages = rows[0].averages;
-    if (typeof averages === 'string') averages = JSON.parse(averages);
+    const averages = await fetchSchoolAverages_(env, year, testName);
     return { success: true, averages };
   } catch (error) {
     return { success: false, error: error.toString() };
@@ -774,5 +793,169 @@ export async function getGradeSummary(args, env, user) {
     };
   } catch (e) {
     return null;
+  }
+}
+
+/**
+ * 【Phase 6-A-14】getStudentGradeReport — GAS students.js:1249 の Workers 版
+ *
+ * 成績表タブ用: 指定生徒の全テスト成績 + 学校別平均 + 偏差値を返す。
+ * 呼出元: firebase-students.html:286 `gasApiPromise_('getStudentGradeReport', [year, studentId])`。
+ * 使われる画面:
+ *   - js-grades-list.html: 成績表カード表示
+ *   - js-grades-report-pdf.html: 成績表PDF一括出力
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（router.js で実施）。Admin ガードなし
+ *   — GAS 版も参照系として isAdmin チェック無し。
+ *
+ * データソース:
+ *   - Supabase `students` (is_deleted=false)     — 生徒マスタ
+ *   - Supabase `grades` (fiscal_year=year)        — 成績データ全件
+ *   - Supabase `school_averages` (id=docId)       — テストごとの学校別平均
+ *   - KV `prop:GRADES_TEST_NAMES_CONFIG`           — テスト名ソート順
+ *   - KV `prop:GRADES_SIGMA_CONFIG`                — σ 設定（偏差値計算用）
+ *
+ * GAS 版との差分:
+ *   - 第1段（4並列）・第2段（uniqueTests 並列）の Promise.all 最適化のみ。
+ *   - 戻り値形状・エラー文言・studentId 正規化・schoolName フォールバックは完全一致。
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: {
+ *     success: true,
+ *     student:        { studentId, name, furigana, campus, grade, schoolName },
+ *     grades:         [{testName, kokugo, shakai, sugaku, rika, eigo, total, average,
+ *                       shogaku1, shogaku1_gakka, shogaku2, shogaku2_gakka}, ...] // ソート済み
+ *     testNames:      string[],                         // getTestNamesConfig_ 生配列
+ *     schoolAverages: { [testName]: {schoolName, kokugo, shakai, sugaku, rika, eigo, total} },
+ *     deviationValues:{ [testName]: {kokugo, shakai, sugaku, rika, eigo, total} }
+ *                     // 値は number | null、schoolAverages に無いテストはキー自体作らない
+ *   }
+ *   エラー: { success: false, error: <文言> }
+ */
+export async function getStudentGradeReport(args, env, user) {
+  try {
+    const year      = parseInt(args && args[0], 10);
+    const studentId = args && args[1];
+
+    if (!studentId) {
+      return { success: false, error: '生徒IDが指定されていません' };
+    }
+    const targetId = String(studentId).trim();
+
+    // 第1段: 4並列取得（GAS 版は逐次だが Workers では並列化）
+    const [masterData, allGrades, configTestNames, sigma] = await Promise.all([
+      getMasterData([year], env, user),
+      getDataSheetData(year, env),
+      getTestNamesConfig_(env),
+      fetchSigmaConfig_(env)
+    ]);
+
+    // 1. 生徒マスタから対象生徒を線形検索（GAS students.js:1260-1265 と完全同一）
+    let student = null;
+    for (let i = 0; i < masterData.length; i++) {
+      if (String(masterData[i].studentId) === targetId) {
+        student = masterData[i];
+        break;
+      }
+    }
+    if (!student) {
+      return { success: false, error: '生徒が見つかりません（ID: ' + studentId + '）' };
+    }
+
+    // 2. 全成績データから studentId で絞り込み + re-shape（GAS 1271-1291 と同一）
+    const studentGrades = [];
+    allGrades.forEach((row) => {
+      if (String(row.studentId) === targetId) {
+        studentGrades.push({
+          testName:       row.testName,
+          kokugo:         row.kokugo,
+          shakai:         row.shakai,
+          sugaku:         row.sugaku,
+          rika:           row.rika,
+          eigo:           row.eigo,
+          total:          row.total,
+          average:        row.average,
+          shogaku1:       row.shogaku1 || '',
+          shogaku1_gakka: row.shogaku1_gakka || '',
+          shogaku2:       row.shogaku2 || '',
+          shogaku2_gakka: row.shogaku2_gakka || ''
+        });
+      }
+    });
+
+    // 3. テスト名設定の順序で並べ替え（GAS 1293-1301 と同一）
+    const testOrder = {};
+    configTestNames.forEach((name, idx) => { testOrder[name] = idx; });
+    studentGrades.sort((a, b) => {
+      const orderA = testOrder[a.testName] !== undefined ? testOrder[a.testName] : 9999;
+      const orderB = testOrder[b.testName] !== undefined ? testOrder[b.testName] : 9999;
+      return orderA - orderB;
+    });
+
+    // 4. uniqueTests 特定（重複除去・出現順維持）＋ 学校別平均を第2段並列取得
+    const studentSchool = (student.schoolName || '').trim();
+    const uniqueTests = [];
+    studentGrades.forEach((g) => {
+      if (uniqueTests.indexOf(g.testName) === -1) uniqueTests.push(g.testName);
+    });
+
+    const averagesList = await Promise.all(
+      uniqueTests.map((t) => fetchSchoolAverages_(env, year, t).catch(() => null))
+    );
+
+    // 5. schoolAverages を組立（GAS 1313-1332 と完全同一の探索順序）
+    //    完全一致最優先・break せず探索継続・無ければ先頭の "平均" 含む行を採用
+    const schoolAverages = {};
+    uniqueTests.forEach((testName, i) => {
+      const averages = averagesList[i];
+      if (!Array.isArray(averages)) return;
+      let fallback = null;
+      for (let j = 0; j < averages.length; j++) {
+        const sn = (averages[j].schoolName || '').trim();
+        if (studentSchool && sn === studentSchool) {
+          schoolAverages[testName] = averages[j];
+          fallback = null;
+          break;
+        }
+        if (!fallback && sn.indexOf('平均') !== -1) {
+          fallback = averages[j];
+        }
+      }
+      if (fallback) {
+        schoolAverages[testName] = fallback;
+      }
+    });
+
+    // 6. 偏差値を計算（GAS 1335-1347 と同一・schoolAverages 無しテストはキー作らない）
+    const deviationValues = {};
+    const subjKeys = ['kokugo', 'shakai', 'sugaku', 'rika', 'eigo', 'total'];
+    studentGrades.forEach((g) => {
+      const avg = schoolAverages[g.testName];
+      if (!avg) return;
+      const devs = {};
+      subjKeys.forEach((subj) => {
+        devs[subj] = calcDeviationValue_(g[subj], avg[subj], sigma[subj]);
+      });
+      deviationValues[g.testName] = devs;
+    });
+
+    return {
+      success: true,
+      student: {
+        studentId:  student.studentId,
+        name:       student.name,
+        furigana:   student.furigana,
+        campus:     student.campus,
+        grade:      student.grade,
+        schoolName: student.schoolName
+      },
+      grades:          studentGrades,
+      testNames:       configTestNames,
+      schoolAverages,
+      deviationValues
+    };
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
 }

@@ -130,12 +130,16 @@ export async function getCampusConfigForWeb(args, env, user) {
 }
 
 /**
- * 成績分析σ設定を取得する（G23 getGradeAnalysisSigmaConfig の Workers 版）
- * GAS grades.js:586 と同じ挙動：
- *   - 未設定キーは `DEFAULT_SIGMA` で補完
- *   - JSON パース失敗時も `success: true` + DEFAULT_SIGMA を返す
+ * 【Phase 6-A-14】fetchSigmaConfig_ — σ設定のコアロジック（private）
+ *
+ * getGradeAnalysisSigmaConfig と getStudentGradeReport の共通処理として切出し。
+ * sigma オブジェクト（6教科キー）のみを返す。success ラッパーは呼出側で付ける。
+ * エラー時は DEFAULT_SIGMA を返す（GAS 版の defensive 挙動踏襲）。
+ *
+ * @param {Object} env
+ * @returns {Promise<{kokugo:number, shakai:number, sugaku:number, rika:number, eigo:number, total:number}>}
  */
-export async function getGradeAnalysisSigmaConfig(args, env, user) {
+async function fetchSigmaConfig_(env) {
   try {
     const raw = await readKv_(env, KEY_SIGMA);
     let config = {};
@@ -147,11 +151,26 @@ export async function getGradeAnalysisSigmaConfig(args, env, user) {
       const v = config[k];
       result[k] = (v !== undefined && !isNaN(Number(v))) ? Number(v) : DEFAULT_SIGMA[k];
     });
-    return { success: true, sigma: result, defaults: DEFAULT_SIGMA };
+    return result;
   } catch (error) {
-    // GAS 版は catch でも success:true + DEFAULT を返すため忠実に再現
-    return { success: true, sigma: DEFAULT_SIGMA, defaults: DEFAULT_SIGMA };
+    return { ...DEFAULT_SIGMA };
   }
+}
+
+// cross-module 使用のため export（students.js の getStudentGradeReport から参照）
+export { fetchSigmaConfig_ };
+
+/**
+ * 成績分析σ設定を取得する（G23 getGradeAnalysisSigmaConfig の Workers 版）
+ * GAS grades.js:586 と同じ挙動：
+ *   - 未設定キーは `DEFAULT_SIGMA` で補完
+ *   - JSON パース失敗時も `success: true` + DEFAULT_SIGMA を返す
+ *
+ * Phase 6-A-14 リファクタ: コアを fetchSigmaConfig_ に切出し。外部 API 完全互換。
+ */
+export async function getGradeAnalysisSigmaConfig(args, env, user) {
+  const sigma = await fetchSigmaConfig_(env);
+  return { success: true, sigma, defaults: DEFAULT_SIGMA };
 }
 
 /**
@@ -198,7 +217,8 @@ export async function resetGradeAnalysisSigmaConfig(args, env, user) {
 
 // ─── Workers 内部 private reader: G18 getTestNamesConfig 相当 ───
 // GAS 版は JSON.parse 失敗時に `TEST_NAMES` デフォルト定数を返す（defensive）。
-async function getTestNamesConfig_(env) {
+// Phase 6-A-14: cross-module 使用のため export（students.js の getStudentGradeReport から参照）。
+export async function getTestNamesConfig_(env) {
   await ensureGradesConfigInit_(env);
   const raw = await readKv_(env, KEY_TEST_NAMES);
   try {

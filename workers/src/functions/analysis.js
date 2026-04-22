@@ -15,6 +15,26 @@ function makeStudentAnalysisDocId(studentId, testName, year) {
 }
 
 /**
+ * 【Phase 6-A-14】calcDeviationValue_ — 偏差値計算（GAS analysis.js:689 の 1:1 ポート）
+ *
+ * 式: 50 + 10 × (score - average) / sigma
+ * 小数第1位まで四捨五入。無効値（sigma<=0 / score/average が 空/null/undefined/NaN）は null。
+ *
+ * cross-module 使用のため export（students.js の getStudentGradeReport から参照）。
+ * router 登録はしない（純粋関数・外部公開不要）。
+ *
+ * @param {number|string} score
+ * @param {number|string} average
+ * @param {number} sigma
+ * @returns {number|null}
+ */
+export function calcDeviationValue_(score, average, sigma) {
+  if (sigma <= 0 || average === '' || average === null || average === undefined || isNaN(Number(average))) return null;
+  if (score === '' || score === null || score === undefined || isNaN(Number(score))) return null;
+  return Math.round((50 + 10 * (Number(score) - Number(average)) / sigma) * 10) / 10;
+}
+
+/**
  * getGradeAnalysis — GAS getGradeAnalysis(year, testName) の Workers 版
  * GAS 版との差分: safeJsonParse_() を try-catch に置き換え（同一挙動）
  */
