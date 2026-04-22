@@ -84,7 +84,11 @@ import {
   resolveAiFeedback,
   deleteAiFeedback
 } from './functions/ai-learning.js';
-import { getLineRegisteredUsers } from './functions/line.js';
+import {
+  getLineRegisteredUsers,
+  getCampusNotificationRouting,
+  updateCampusNotificationRouting
+} from './functions/line.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -192,7 +196,9 @@ const HANDLERS = {
   getAiFeedback,
   resolveAiFeedback,
   deleteAiFeedback,
-  getLineRegisteredUsers
+  getLineRegisteredUsers,
+  getCampusNotificationRouting,
+  updateCampusNotificationRouting
 };
 
 export async function handleApiCall(body, env) {
