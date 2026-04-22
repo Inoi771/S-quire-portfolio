@@ -9,7 +9,7 @@ import {
   getPlacementTeacherNames
 } from './functions/admin.js';
 import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile } from './functions/settings.js';
-import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages } from './functions/students.js';
+import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages, getGradeSummary } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
 import {
@@ -123,6 +123,7 @@ const HANDLERS = {
   submitGradeData,
   saveExamResult,
   getCampusAverages,
+  getGradeSummary,
   saveLecGrades,
   savePreferredCampuses,
   getSettings,
