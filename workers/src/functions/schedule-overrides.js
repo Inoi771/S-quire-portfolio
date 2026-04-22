@@ -12,13 +12,15 @@
 //   - removeComputedClosedDay          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
 //   - deleteClosedDayOverride          → KV `prop:CLOSED_DAYS_OVERRIDES`（add/del デュアルリスト）
 //
-// Phase 5-E-8b-2：グループ C 2 関数（KV 書込は同質・Firestore `operationLogs`
-// への `logAdminAction` 副作用は Workers 側では省略）
+// Phase 5-E-8b-2：グループ C 2 関数（KV 書込 + Firestore `operationLogs` への
+// 監査ログ書込）
 //   - setLectureDeadlineOverride       → KV `prop:LECTURE_DEADLINE_OVERRIDES`
 //   - deleteLectureDeadlineOverride    → KV `prop:LECTURE_DEADLINE_OVERRIDES`
-//   ※ Workers 経由では operationLogs への監査ログが残らない制約あり。
-//     5-E-10（Firestore 系 Workers 化）で解消予定。詳細は
-//     docs/phase-5e8-survey.md の「5-E-10 への宿題」セクション参照。
+//   ※ 5-E-8b-2 時点では Workers 版で `logAdminAction` 相当を省略していたが、
+//     Phase 5-E-10 で本ファイル内の `logAdminActionToFirestore()` ヘルパーを
+//     追加し、Workers 経由でも Firestore `operationLogs` に監査ログが残るよう
+//     対応済み。詳細は docs/phase-5e8-survey.md の「5-E-10 への宿題」セクション
+//     に追記された解消記録を参照。
 //
 // いずれも「KV から JSON を読む → フィールドを追加/削除 → JSON として書き戻す」
 // 構造で、5-E-7 `updateSettings` と同質（単一キー・Admin 判定のみ・副作用なし）。
@@ -372,16 +374,16 @@ export async function deleteClosedDayOverride(args, env, user) {
 // ─────────────────────────────────────────────────────────────
 //
 // GAS 版では set/delete 完了後に `logAdminAction()` を呼んで Firestore
-// `operationLogs` へ監査ログを書き込むが、Workers 版では省略する。
-// Workers 経由の操作はログが残らない制約を許容し、5-E-10（Firestore
-// 系 Workers 化）で解消する。詳細は docs/phase-5e8-survey.md の
-// 「5-E-10 への宿題」セクション参照。GAS 側フォールバックでは
-// 引き続き `logAdminAction` が動作するため、Workers 未登録クライアント
-// からの操作はログが残る。
+// `operationLogs` へ監査ログを書き込む。Workers 版も Phase 5-E-10 で本ファイル
+// 内の `logAdminActionToFirestore()` ヘルパーを呼び、Workers 経由でも監査ログが
+// 残るよう対応済み（5-E-8b-2 時点では未実装だった宿題の解消）。詳細は
+// docs/phase-5e8-survey.md の「5-E-10 への宿題」セクション（解消記録付き）参照。
+// GAS 側フォールバック経路でも従来どおり `logAdminAction` が動作するため、
+// Workers ルート・GAS ルート双方で監査ログが残る。
 
 /**
  * 指定講習の締切日を手動で上書き設定する（Admin のみ）
- * GAS schedule.js:907 の Workers 版。`logAdminAction` は省略。
+ * GAS schedule.js:907 の Workers 版。Phase 5-E-10 で logAdminActionToFirestore を追加。
  * @param {Array} args [lectureId, dateStr]
  */
 export async function setLectureDeadlineOverride(args, env, user) {
@@ -401,7 +403,7 @@ export async function setLectureDeadlineOverride(args, env, user) {
 
 /**
  * 指定講習の締切日上書き設定を削除して自動計算に戻す（Admin のみ）
- * GAS schedule.js:926 の Workers 版。`logAdminAction` は省略。
+ * GAS schedule.js:926 の Workers 版。Phase 5-E-10 で logAdminActionToFirestore を追加。
  * @param {Array} args [lectureId]
  */
 export async function deleteLectureDeadlineOverride(args, env, user) {
