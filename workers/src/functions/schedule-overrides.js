@@ -27,7 +27,7 @@
 // 戻り値・エラーメッセージは GAS 側 `schedule.js` と完全一致させる。
 
 import { isAdminUser } from './auth.js';
-import { firestoreSet, firestoreDelete } from '../firebase.js';
+import { firestoreSet, firestoreDelete, firestoreQuery } from '../firebase.js';
 import { getLecturePeriods } from './features.js';
 
 const PROP_PREFIX = 'prop:';
@@ -570,6 +570,39 @@ export async function deleteCustomScheduleEntry(args, env, user) {
     return { success: true, message: '削除しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Admin が手動で追加したカスタムイベントを全年度分取得する（Admin のみ）
+ * GAS schedule.js:459 の Workers 版。
+ * Firestore `schedules` コレクションから source が 'Admin 直接入力' のドキュメントを全件返す。
+ *
+ * GAS 版との差分: なし
+ *   - 非 Admin 時は `[]` を返す（GAS `if (!isAdmin()) return [];` と完全一致）
+ *   - 例外時も `[]` を返す（GAS `catch` 節と完全一致）
+ *
+ * @param {Array} args 未使用
+ * @return {Array} カスタムイベント配列 [{ fiscalYear, docId, timestamp, school, eventType, schedule, details }]
+ */
+export async function getAdminScheduleEntries(args, env, user) {
+  try {
+    if (!(await isAdminUser(env, user))) return [];
+    const docs = await firestoreQuery(env, 'schedules', [
+      { field: 'source', op: 'EQUAL', value: 'Admin 直接入力' }
+    ]);
+    return docs.map((doc) => ({
+      fiscalYear: doc.fiscalYear || 0,
+      docId:      doc._id || '',
+      timestamp:  doc.timestamp || '',
+      school:     doc.schoolName || '',
+      eventType:  doc.eventType || '',
+      schedule:   doc.scheduleDisplay || '',
+      details:    doc.details || ''
+    }));
+  } catch (error) {
+    console.log('❌ getAdminScheduleEntries エラー: ' + error);
+    return [];
   }
 }
 
