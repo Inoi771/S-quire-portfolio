@@ -75,6 +75,14 @@ import {
   getLineSchedulerNotifPrefs,
   updateLineSchedulerNotifPref
 } from './functions/notifications.js';
+import {
+  getAutoLearnedKnowledge,
+  editAutoLearnedKnowledge,
+  deleteAutoLearnedKnowledge,
+  getAiFeedback,
+  resolveAiFeedback,
+  deleteAiFeedback
+} from './functions/ai-learning.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -174,7 +182,13 @@ const HANDLERS = {
   getNotificationSettings,
   updateNotificationSettings,
   getLineSchedulerNotifPrefs,
-  updateLineSchedulerNotifPref
+  updateLineSchedulerNotifPref,
+  getAutoLearnedKnowledge,
+  editAutoLearnedKnowledge,
+  deleteAutoLearnedKnowledge,
+  getAiFeedback,
+  resolveAiFeedback,
+  deleteAiFeedback
 };
 
 export async function handleApiCall(body, env) {
