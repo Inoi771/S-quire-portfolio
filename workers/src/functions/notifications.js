@@ -371,6 +371,3 @@ export async function updateLineSchedulerNotifPref(args, env, user) {
   }
 }
 
-// CI fail 動作確認用の意図的な構文エラー（直後のコミットで除去する）
-const foo = ;
-
