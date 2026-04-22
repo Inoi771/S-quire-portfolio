@@ -1,5 +1,6 @@
 // 講師メールアドレス管理 CRUD（GAS auth.js のメール管理 3 関数の Workers ポート）
 // Phase 6-A-3: getTeacherEmails / addEmailToTeacher / removeEmailFromTeacher
+// Phase 6-A-10: getAllowedUsers を追加（Admin 専用・ユーザー一覧表示）
 //
 // Phase 6-A-2 の議事録 CRUD と同型パターン:
 //   find_staff_by_auth → supabaseUpdate（部分更新） → firestoreSet/Delete
@@ -11,8 +12,12 @@
 //   - Firestore allowedUsers への書込/削除失敗は try-catch で握り潰し
 //     （getAppStartupData の allowedUsers 書き込みと同じ扱い。GAS 版も同等）
 //   - 戻り値形状は GAS 版と完全一致させる
-import { supabaseRpc, supabaseUpdate, staffFromSupabase } from '../supabase.js';
+//   - getAllowedUsers（6-A-10）は Admin 判定を isAdminUser で先に済ませ、
+//     Supabase staffs の SELECT と KV `prop:ADMIN_EMAILS` のマージで
+//     GAS auth.js:294-336 と同一ロジックを再現する
+import { supabaseRpc, supabaseSelect, supabaseUpdate, staffFromSupabase } from '../supabase.js';
 import { firestoreSet, firestoreDelete } from '../firebase.js';
+import { isAdminUser, getAdminEmailList } from './auth.js';
 
 /**
  * getTeacherEmails — GAS auth.js:493 の Workers 版
@@ -204,6 +209,72 @@ export async function removeEmailFromTeacher(args, env, user) {
     } catch (fsErr) { /* allowedUsers 削除失敗は握り潰し */ }
 
     return { success: true, message: 'メールアドレスを削除しました', emails: emails.slice() };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * getAllowedUsers — GAS auth.js:294 の Workers 版（Phase 6-A-10）
+ *
+ * アプリアクセス可能ユーザーの一覧を返す（Admin のみ）。
+ * Supabase `staffs` の登録スタッフを起点に、KV `prop:ADMIN_EMAILS` に含まれる
+ * Admin メールをマージする：
+ *   - staffs に含まれる Admin → role を '登録済み・Admin' に変更
+ *   - staffs に含まれない Admin → role='Admin', teacherId='' の最小エントリを追加
+ *
+ * GAS 版との差分: なし
+ *   - 非 Admin 時は {success:false, error:'Admin のみアクセス可能'}
+ *   - Supabase 取得失敗時は try-catch で握り潰し、Admin メールのみから一覧を構築
+ *     （GAS auth.js:313-315 と同等・Logger.log 相当を console.log で代替）
+ *   - 例外時は {success:false, error: error.toString()}
+ *   - usersMap のキーは GAS と同じく staffs.email は素のまま、Admin メールは
+ *     小文字化した値を使う（GAS `adminEmails.map(...toLowerCase())` と一致）
+ *
+ * @param {Array} args 未使用
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {Object} user 認証済みユーザー { email, uid }
+ * @return {Object} { success, users: [{email, name, role, teacherId, subjects}] }
+ *                  | { success:false, error }
+ */
+export async function getAllowedUsers(args, env, user) {
+  if (!(await isAdminUser(env, user))) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    const usersMap = {};
+
+    // Supabase staffs テーブルから登録スタッフを取得（失敗時は握り潰し）
+    try {
+      const allRows = await supabaseSelect(env, 'staffs',
+        'select=id,email,display_name,name,subjects');
+      (allRows || []).forEach((row) => {
+        const staffEmail = row.email || '';
+        if (!staffEmail) return;
+        usersMap[staffEmail] = {
+          email: staffEmail,
+          name: row.display_name || row.name || '',
+          role: '登録済み',
+          teacherId: row.id || '',
+          subjects: row.subjects || []
+        };
+      });
+    } catch (staffErr) {
+      console.log('⚠ getAllowedUsers: staffs 取得エラー: ' + staffErr);
+    }
+
+    // Admin メール（staffs に含まれない場合も表示）
+    const adminEmails = await getAdminEmailList(env, { lowercase: true });
+    adminEmails.forEach((adminEmail) => {
+      if (usersMap[adminEmail]) {
+        usersMap[adminEmail].role = usersMap[adminEmail].role + '・Admin';
+      } else {
+        usersMap[adminEmail] = { email: adminEmail, name: '', role: 'Admin', teacherId: '' };
+      }
+    });
+
+    const users = Object.keys(usersMap).map((k) => usersMap[k]);
+    return { success: true, users };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
