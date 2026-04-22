@@ -69,7 +69,7 @@ import {
   saveUnifiedLecturePricing
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
-import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher } from './functions/auth-emails.js';
+import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers } from './functions/auth-emails.js';
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -198,7 +198,8 @@ const HANDLERS = {
   deleteAiFeedback,
   getLineRegisteredUsers,
   getCampusNotificationRouting,
-  updateCampusNotificationRouting
+  updateCampusNotificationRouting,
+  getAllowedUsers
 };
 
 export async function handleApiCall(body, env) {
