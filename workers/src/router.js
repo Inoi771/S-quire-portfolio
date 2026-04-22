@@ -1,3 +1,4 @@
+// Phase 5-E-11 deploy trigger (2026-04-22)
 import { verifyFirebaseIdToken } from './auth.js';
 import { ping } from './functions/ping.js';
 import {
