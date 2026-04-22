@@ -213,3 +213,59 @@ export async function deleteScriptPropertyFromGUI(args, env, user) {
 
   return { success: true, message: 'プロパティを削除しました' };
 }
+
+/**
+ * 現行の会計年度（4月起算）を返す。
+ * GAS students.js:104 `getCurrentFiscalYear()` と完全一致:
+ *   - 4月〜12月 → 当年
+ *   - 1月〜3月 → 前年
+ * エラー時のフォールバックも GAS 版と揃える（当年を返す）。
+ * @private
+ * @return {number}
+ */
+function getCurrentFiscalYear_() {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // 1-12
+    if (month >= 4) return year;
+    return year - 1;
+  } catch (e) {
+    return new Date().getFullYear();
+  }
+}
+
+/**
+ * 【Phase 6-A-11】getPlacementTeacherNames — GAS admin.js:1425 の Workers 版
+ *
+ * 講師配置表（`STAFF_PLACEMENT_{year}`）から講師名・担当科目のペアを返す。
+ * 講習管理タブの「講師ドロップダウン」用（js-lectures.html:475）。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（router.js で実施）。Admin ガードは付けない
+ *   — GAS 版も一般スタッフから呼び出される参照系関数のため。
+ *
+ * GAS 版との差分:
+ *   - `_placementMigrateLegacyKey()` 相当の旧単一キー `STAFF_PLACEMENT` の
+ *     現行年度キーへのコピー／削除は省略（既に移行は一巡済みで、現行年度
+ *     キーのみを読むだけで機能的に一致する。Phase 6-A-11 調査レポート参照）。
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   - 成功（データあり）: { success: true, teachers: [{name, subject}, ...] }
+ *   - 成功（データ無し）: { success: true, teachers: [] }
+ *   - 失敗: { success: false, teachers: [], error: <文言> }
+ */
+export async function getPlacementTeacherNames(args, env, user) {
+  try {
+    const currentFY = getCurrentFiscalYear_();
+    const json = await env.KV.get(PROP_PREFIX + 'STAFF_PLACEMENT_' + currentFY);
+    if (!json) return { success: true, teachers: [] };
+    const data = JSON.parse(json);
+    const teachers = (data.teachers || [])
+      .map((t) => ({ name: t.name || '', subject: t.subject || '' }))
+      .filter((t) => t.name);
+    return { success: true, teachers };
+  } catch (e) {
+    return { success: false, teachers: [], error: e.toString() };
+  }
+}
