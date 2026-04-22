@@ -31,6 +31,7 @@ import {
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
   deleteCustomScheduleEntry,
+  getAdminScheduleEntries,
   getScheduleOverridesBundle
 } from './functions/schedule-overrides.js';
 import {
@@ -83,6 +84,7 @@ import {
   resolveAiFeedback,
   deleteAiFeedback
 } from './functions/ai-learning.js';
+import { getLineRegisteredUsers } from './functions/line.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -142,6 +144,7 @@ const HANDLERS = {
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
   deleteCustomScheduleEntry,
+  getAdminScheduleEntries,
   getScheduleOverridesBundle,
   getCampusConfigForWeb,
   getGradeAnalysisSigmaConfig,
@@ -188,7 +191,8 @@ const HANDLERS = {
   deleteAutoLearnedKnowledge,
   getAiFeedback,
   resolveAiFeedback,
-  deleteAiFeedback
+  deleteAiFeedback,
+  getLineRegisteredUsers
 };
 
 export async function handleApiCall(body, env) {
