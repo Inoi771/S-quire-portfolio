@@ -370,3 +370,7 @@ export async function updateLineSchedulerNotifPref(args, env, user) {
     return { success: false, error: error.toString() };
   }
 }
+
+// CI fail 動作確認用の意図的な構文エラー（直後のコミットで除去する）
+const foo = ;
+
