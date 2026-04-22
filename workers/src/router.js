@@ -62,6 +62,7 @@ import {
   saveLecturePricing,
   saveUnifiedLecturePricing
 } from './functions/features.js';
+import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 
 // 認証不要の関数
 const PUBLIC_FUNCTIONS = new Set(['ping']);
@@ -145,7 +146,10 @@ const HANDLERS = {
   saveNormalClassConfig,
   getPricingConfigForWeb,
   saveLecturePricing,
-  saveUnifiedLecturePricing
+  saveUnifiedLecturePricing,
+  getMinutesList,
+  saveMinutes,
+  deleteMinutes
 };
 
 export async function handleApiCall(body, env) {
