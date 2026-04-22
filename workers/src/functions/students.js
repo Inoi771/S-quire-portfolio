@@ -1,5 +1,6 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
 import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
+import { getCampusConfig_ } from './grades.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -629,6 +630,70 @@ export async function saveExamResult(args, env, user) {
     }, 'id=eq.' + encodeURIComponent(sid));
 
     return { success: true, message: '受験情報を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-12】getCampusAverages — GAS students.js:1584 の Workers 版
+ *
+ * 指定年度・テストの校舎別平均点を Supabase RPC `get_campus_averages`
+ * (SQL 集計済み) で取得し、校舎名ラベルを付与して返す。
+ * 呼出元: firebase-students.html:459 `gasApiPromise_('getCampusAverages', [year, testName])`。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（router.js で実施）。Admin ガードなし
+ *   — GAS 版も isAdmin チェック無しの参照系関数のため。
+ *
+ * データソース:
+ *   - Supabase RPC `get_campus_averages(p_year, p_test)` — 校舎別集計
+ *   - KV `prop:CAMPUS_CODES`（getCampusConfig_ 経由）— 校舎コード→校舎名の辞書
+ *
+ * ソート順（GAS 版完全一致）:
+ *   - `campusCode === 'all'` を先頭に固定
+ *   - それ以外は campusCode の localeCompare 昇順
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: { success: true, campuses: [{campusCode, campusName, count,
+ *           kokugo, shakai, sugaku, rika, eigo, total}, ...] }
+ *   エラー: { success: false, error: <文言> }
+ *     ※ GAS 版はエラー時 campuses プロパティを返さない点に忠実
+ */
+export async function getCampusAverages(args, env, user) {
+  try {
+    const year     = parseInt(args && args[0], 10);
+    const testName = String((args && args[1]) || '').trim();
+
+    const [rpcResult, campusMap] = await Promise.all([
+      supabaseRpc(env, 'get_campus_averages', { p_year: year, p_test: testName }),
+      getCampusConfig_(env)
+    ]);
+
+    const campusArr = Array.isArray(rpcResult) ? rpcResult : [];
+
+    const campuses = campusArr.map((c) => {
+      const code = c.campusCode || c.campus_code || '';
+      return {
+        campusCode: code,
+        campusName: code === 'all' ? '全校舎' : (campusMap[code] || code || ''),
+        count:  c.count  || c.cnt || 0,
+        kokugo: c.kokugo != null ? c.kokugo : '',
+        shakai: c.shakai != null ? c.shakai : '',
+        sugaku: c.sugaku != null ? c.sugaku : '',
+        rika:   c.rika   != null ? c.rika   : '',
+        eigo:   c.eigo   != null ? c.eigo   : '',
+        total:  c.total  != null ? c.total  : ''
+      };
+    });
+
+    campuses.sort((a, b) => {
+      if (a.campusCode === 'all') return -1;
+      if (b.campusCode === 'all') return 1;
+      return a.campusCode.localeCompare(b.campusCode);
+    });
+
+    return { success: true, campuses };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
