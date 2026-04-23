@@ -72,7 +72,8 @@ import {
   saveLecturePricing,
   saveUnifiedLecturePricing,
   getTeacherNamesMap,
-  getLectureScheduleEntries
+  getLectureScheduleEntries,
+  analyzeFlyerImageMeta
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode } from './functions/auth-emails.js';
@@ -233,7 +234,8 @@ const HANDLERS = {
   getUserRoleInfo,
   getStaffPlacementForWeb,
   saveStaffPlacementForWeb,
-  activateHiddenAdminMode
+  activateHiddenAdminMode,
+  analyzeFlyerImageMeta
 };
 
 export async function handleApiCall(body, env) {
