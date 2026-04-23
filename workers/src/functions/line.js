@@ -22,6 +22,23 @@
 import { isAdminUser } from './auth.js';
 import { supabaseSelect } from '../supabase.js';
 import { firestoreGet, firestoreSet, firestoreDelete } from '../firebase.js';
+import {
+  computeClosedDaysForMonth,
+  resolveTemplatePlaceholders,
+  getDebitDay,
+  getReportExtras,
+  findPrevOpenDay,
+  getLectureNames
+} from '../helpers/line-template-helpers.js';
+import {
+  toJstDate,
+  jstDate,
+  getJstYear,
+  getJstMonth,
+  getJstDay,
+  getJstDayOfWeek,
+  getDayOfWeekJa
+} from '../helpers/datetime-helpers.js';
 
 const PROP_PREFIX = 'prop:';
 const KEY_CAMPUS_CODES = 'GRADES_CAMPUS_CODES_CONFIG';
@@ -476,6 +493,148 @@ export async function saveScheduledLineMessage(args, env, user) {
     }
 
     return { success: true, message: '保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-B-06】previewTemplateMessage — GAS line.js:1315 の Workers 版
+ *
+ * テンプレート文字列のプレビューを返す（管理画面用・Admin のみ）。
+ * Phase 6-B-05 の computeClosedDaysForMonth + resolveTemplatePlaceholders を
+ * 薄くラップする。KV 読取は computeClosedDaysForMonth 内部で CLOSED_DAYS_OVERRIDES
+ * のみ発動する（本関数側での KV アクセスは無し）。
+ *
+ * GAS 版との差分: なし
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: { success: true, preview: string }
+ *   失敗: { success: false, error: <文言> }
+ *
+ * @param {Array} args [type: 'meeting'|'report'|'shitsucho', template: string, year: number, month: number]
+ */
+export async function previewTemplateMessage(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [type, template, year, month] = args || [];
+    const closedDays = await computeClosedDaysForMonth(env, year, month);
+    const resolved = resolveTemplatePlaceholders(template, type, year, month, closedDays);
+    return { success: true, preview: resolved };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-B-06】resolveTemplateForSendDate — GAS line.js:1335 の Workers 版
+ *
+ * 送信日時を基にテンプレートからメッセージを再生成する（編集モーダル用・Admin のみ）。
+ *   - meeting/report: イベント日 = sendDate の翌日 → {日付}/{月}/{日}/{曜日} 等を算出
+ *   - shitsucho:      送信月ベースで {翌月}/{引落日付}/{締切日付}/{講習名} を算出
+ *
+ * テンプレート未設定（空文字）時は { success:true, message:'' } を返す
+ * （呼出元は手動編集に fallback する）。
+ *
+ * JST 補正（Phase 6-B-05 helpers 準拠・CLAUDE.md セクション 9 遵守）:
+ *   - sendDateStr（'YYYY-MM-DDTHH:mm' = TZ 無し）の parse → toJstDate
+ *   - 年月日・曜日読取 → getJstYear / getJstMonth / getJstDay / getJstDayOfWeek
+ *   - 翌日 Date 生成 → jstDate(y, m, d+1)（Date.UTC の overflow 正規化で月跨ぎ安全）
+ *   - 月末日取得 → getJstDay(jstDate(y, m+1, 0))
+ *
+ * shitsucho 月別テンプレート選択は GAS 版（line.js:1350-1356）と直書きで 1:1 一致:
+ *   - 3 月:      messageTemplate_march
+ *   - 7 / 11 月: messageTemplate_simple
+ *   - その他:    messageTemplate_default
+ *
+ * GAS 版との差分: なし
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: { success: true, message: string }  // テンプレート未設定なら message:''
+ *   失敗: { success: false, error: <文言> }
+ *
+ * @param {Array} args [type: 'meeting'|'report'|'shitsucho', sendDateStr: 'YYYY-MM-DDTHH:mm']
+ */
+export async function resolveTemplateForSendDate(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [type, sendDateStr] = args || [];
+
+    // テンプレート取得（KV）
+    const raw = await env.KV.get(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS);
+    let settings = {};
+    try { settings = raw ? JSON.parse(raw) : {}; } catch (_) { settings = {}; }
+    const typeSettings = settings[type] || {};
+
+    // 送信日 parse（JST 補正）
+    const sendDate = toJstDate(sendDateStr);
+    const sendYear = getJstYear(sendDate);
+    const sendMonth = getJstMonth(sendDate);
+    const sendDay = getJstDay(sendDate);
+
+    // 種別別テンプレート選択（GAS line.js:1350-1356 と 1:1 一致）
+    let template;
+    if (type === 'shitsucho') {
+      if (sendMonth === 3) template = typeSettings.messageTemplate_march || '';
+      else if (sendMonth === 7 || sendMonth === 11) template = typeSettings.messageTemplate_simple || '';
+      else template = typeSettings.messageTemplate_default || '';
+    } else {
+      template = typeSettings.messageTemplate || '';
+    }
+    if (!template) return { success: true, message: '' };
+
+    // 送信日ベースで変数を計算
+    const DOW = ['日','月','火','水','木','金','土'];
+    const vars = {};
+
+    if (type === 'meeting' || type === 'report') {
+      // イベント日 = 送信日の翌日（jstDate で月跨ぎ安全に生成）
+      const eventDate = jstDate(sendYear, sendMonth, sendDay + 1);
+      const eMonth = getJstMonth(eventDate);
+      const eDay   = getJstDay(eventDate);
+      const eDow   = DOW[getJstDayOfWeek(eventDate)];
+      vars['日付'] = `${eMonth}月${eDay}日(${eDow})`;
+      vars['月']   = String(eMonth);
+      vars['日']   = String(eDay);
+      vars['曜日'] = eDow;
+      if (type === 'report') {
+        vars['報告月']    = String(eMonth);
+        const extra      = getReportExtras(eMonth);
+        vars['講習追記'] = extra ? `と${extra}` : '';
+      }
+    } else if (type === 'shitsucho') {
+      const closedDays = await computeClosedDaysForMonth(env, sendYear, sendMonth);
+      const nextMonth  = sendMonth === 12 ? 1 : sendMonth + 1;
+      const nextYear   = sendMonth === 12 ? sendYear + 1 : sendYear;
+      vars['翌月'] = String(nextMonth);
+      vars['月']   = String(sendMonth);
+      const debitDay = getDebitDay(nextYear, nextMonth);
+      const debitDow = getDayOfWeekJa(nextYear, nextMonth, debitDay);
+      vars['引落日']   = String(debitDay);
+      vars['引落曜日'] = debitDow;
+      vars['引落日付'] = `${debitDay}日(${debitDow})`;
+      // 月末日（GAS: new Date(sendYear, sendMonth, 0).getDate() と同値）
+      const lastDay     = getJstDay(jstDate(sendYear, sendMonth + 1, 0));
+      const rawDeadline = Math.min(sendDay + 5, lastDay);
+      const deadlineDay = findPrevOpenDay(sendYear, sendMonth, rawDeadline, closedDays) || rawDeadline;
+      const deadlineDow = getDayOfWeekJa(sendYear, sendMonth, deadlineDay);
+      vars['締切日']   = String(deadlineDay);
+      vars['締切曜日'] = deadlineDow;
+      vars['締切日付'] = `${sendMonth}月${deadlineDay}日(${deadlineDow})`;
+      vars['講習名']   = getLectureNames(sendMonth);
+    }
+
+    // プレースホルダー置換
+    let result = template;
+    for (const key in vars) {
+      if (Object.prototype.hasOwnProperty.call(vars, key)) {
+        const value = vars[key] !== undefined ? String(vars[key]) : '';
+        result = result.split(`{${key}}`).join(value);
+      }
+    }
+    return { success: true, message: result };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

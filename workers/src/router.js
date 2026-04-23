@@ -101,7 +101,9 @@ import {
   getLineSchedulerSettings,
   saveLineSchedulerSettings,
   saveScheduledLineMessage,
-  deleteScheduledLineMessage
+  deleteScheduledLineMessage,
+  previewTemplateMessage,
+  resolveTemplateForSendDate
 } from './functions/line.js';
 
 // 認証不要の関数
@@ -237,7 +239,9 @@ const HANDLERS = {
   saveStaffPlacementForWeb,
   activateHiddenAdminMode,
   analyzeFlyerImageMeta,
-  saveLectureScheduleEntries
+  saveLectureScheduleEntries,
+  previewTemplateMessage,
+  resolveTemplateForSendDate
 };
 
 export async function handleApiCall(body, env) {
