@@ -35,6 +35,39 @@ jobs:
           npm install
           npm test
 
+      - name: .claspignore 漏れチェック（GAS 非互換ファイル検出）
+        run: |
+          if [ ! -f .claspignore ]; then
+            echo "::error::.claspignore が存在しません。リポジトリ直下に .claspignore を作成してください"
+            exit 1
+          fi
+          FAIL=0
+          MISSING=""
+          for f in *.js; do
+            [ -e "$f" ] || continue
+            ignored=0
+            while IFS= read -r pat; do
+              [ -z "$pat" ] && continue
+              case "$pat" in \#*) continue;; esac
+              case "$f" in $pat) ignored=1; break;; esac
+            done < .claspignore
+            [ "$ignored" = "1" ] && continue
+            if grep -qE '^(module\.exports|(const|let|var)[[:space:]]+[^=]*=[[:space:]]*require\()' "$f"; then
+              echo "::error file=$f::トップレベルの module.exports / require() を含みますが .claspignore に登録されていません（GAS で ReferenceError: module is not defined になり、全機能が停止します）"
+              MISSING="$MISSING $f"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" = "1" ]; then
+            echo ""
+            echo "対応手順: 以下のファイル名を .claspignore に追加してください"
+            for f in $MISSING; do
+              echo "  echo '$f' >> .claspignore"
+            done
+            exit 1
+          fi
+          echo "✓ .claspignore チェック OK（GAS 非互換ファイルはすべて除外されています）"
+
   deploy:
     needs: test
     if: ${{ !contains(github.event.head_commit.message, '[skip gas-deploy]') }}
