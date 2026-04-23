@@ -1,7 +1,7 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
 import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
-import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_ } from './grades.js';
-import { calcDeviationValue_ } from './analysis.js';
+import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_, getSchoolConfig_ } from './grades.js';
+import { calcDeviationValue_, calcPassProbability_ } from './analysis.js';
 
 // GAS getCurrentFiscalYear() と同一ロジック（4月起算）
 // GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
@@ -162,6 +162,115 @@ export async function getSchoolAverages(args, env, user) {
   try {
     const averages = await fetchSchoolAverages_(env, year, testName);
     return { success: true, averages };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-16】saveSchoolAverages — GAS students.js:1438 の Workers 版
+ *
+ * 学校別平均点を Supabase `school_averages` に保存する。既存レコードは
+ * id=eq.{docId} で事前 SELECT → schoolName をキーに merge → UPSERT（全置換）。
+ *
+ * 書込方式:
+ *   全 5 カラム（id, year, test_name, updated_at, averages）を毎回指定する
+ *   ため supabaseUpsert の第4引数 'id' で UPSERT（Phase 5-E-14 で確立した
+ *   「事前 SELECT + UPSERT（id 明示）」パターン）。PATCH ではない。
+ *
+ * skipExisting 分岐（GAS 版 L1469-1493 と 1:1 一致）:
+ *   - 既存あり + skipExisting=true  → OCR モード：既存非ゼロ値を保持し空/ゼロのみ補完
+ *   - 既存あり + skipExisting=false → 全置換
+ *   - 既存なし                      → 新規追加（savedCount++）
+ *
+ * OCR merge ルール:
+ *   各教科 = (existing が非ゼロ) ? existing : (new が null でない ? new : existing)
+ *   total  = merge 後の 5 教科合計（5 教科全て数値の時のみ。それ以外 null）
+ *
+ * 認証: Firebase ID トークン検証のみ（Admin ガードなし）。
+ *
+ * 呼出経路:
+ *   - フロント直接: js-grades-list.html:1701（skipExisting=false）
+ *   - GAS 内部経由: parseAndSaveAveragesFromText（GAS 残留・Gemini 依存）は
+ *     引き続き GAS 側の saveSchoolAverages を呼ぶ（Workers 移行の影響を受けない）
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   成功: { success: true, savedCount, updatedCount }
+ *   失敗: { success: false, error: <文言> }
+ */
+export async function saveSchoolAverages(args, env, user) {
+  try {
+    const [year, testName, dataArray, skipExisting] = args || [];
+    const docId = makeSchoolAveDocId(year, testName);
+    const now = new Date().toISOString();
+    let savedCount = 0;
+    let updatedCount = 0;
+
+    // 既存レコードを取得して existingMap を構築
+    const existingRows = await supabaseSelect(env, 'school_averages',
+      'id=eq.' + encodeURIComponent(docId));
+    const existingDoc = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+    let rawAvg = existingDoc ? existingDoc.averages : null;
+    let existingAverages = [];
+    if (rawAvg) {
+      existingAverages = (typeof rawAvg === 'string') ? JSON.parse(rawAvg) : rawAvg;
+    }
+    const existingMap = {};
+    existingAverages.forEach((a) => {
+      existingMap[String(a.schoolName || '')] = a;
+    });
+
+    (dataArray || []).forEach((d) => {
+      const schoolName = String(d.schoolName || '').trim();
+      if (!schoolName) return;
+
+      const kokugo = (d.kokugo === '' || d.kokugo === null || d.kokugo === undefined) ? null : Number(d.kokugo);
+      const shakai = (d.shakai === '' || d.shakai === null || d.shakai === undefined) ? null : Number(d.shakai);
+      const sugaku = (d.sugaku === '' || d.sugaku === null || d.sugaku === undefined) ? null : Number(d.sugaku);
+      const rika   = (d.rika   === '' || d.rika   === null || d.rika   === undefined) ? null : Number(d.rika);
+      const eigo   = (d.eigo   === '' || d.eigo   === null || d.eigo   === undefined) ? null : Number(d.eigo);
+      const providedTotal = (d.total === '' || d.total === null || d.total === undefined) ? null : Number(d.total);
+      const totalNums = [kokugo, shakai, sugaku, rika, eigo].filter(v => v !== null);
+      const calcTotal = totalNums.length === 5 ? totalNums.reduce((a, b) => a + b, 0) : null;
+      const total = providedTotal !== null ? providedTotal : calcTotal;
+
+      if (existingMap[schoolName]) {
+        if (skipExisting) {
+          // OCR モード: 既存の非ゼロ値はスキップして空/ゼロのみ補完
+          const existing = existingMap[schoolName];
+          const merged = {
+            schoolName: schoolName,
+            kokugo: (existing.kokugo && existing.kokugo !== 0) ? existing.kokugo : (kokugo !== null ? kokugo : existing.kokugo),
+            shakai: (existing.shakai && existing.shakai !== 0) ? existing.shakai : (shakai !== null ? shakai : existing.shakai),
+            sugaku: (existing.sugaku && existing.sugaku !== 0) ? existing.sugaku : (sugaku !== null ? sugaku : existing.sugaku),
+            rika:   (existing.rika   && existing.rika   !== 0) ? existing.rika   : (rika   !== null ? rika   : existing.rika),
+            eigo:   (existing.eigo   && existing.eigo   !== 0) ? existing.eigo   : (eigo   !== null ? eigo   : existing.eigo)
+          };
+          const mergedNums = [merged.kokugo, merged.shakai, merged.sugaku, merged.rika, merged.eigo]
+            .filter(v => v !== null && v !== '');
+          merged.total = mergedNums.length === 5
+            ? mergedNums.reduce((a, b) => Number(a) + Number(b), 0) : null;
+          existingMap[schoolName] = merged;
+        } else {
+          existingMap[schoolName] = { schoolName, kokugo, shakai, sugaku, rika, eigo, total };
+        }
+        updatedCount++;
+      } else {
+        existingMap[schoolName] = { schoolName, kokugo, shakai, sugaku, rika, eigo, total };
+        savedCount++;
+      }
+    });
+
+    const finalAverages = Object.keys(existingMap).map(name => existingMap[name]);
+    await supabaseUpsert(env, 'school_averages', {
+      id:         docId,
+      year:       parseInt(year, 10),
+      test_name:  String(testName),
+      updated_at: now,
+      averages:   finalAverages
+    }, 'id');
+
+    return { success: true, savedCount, updatedCount };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
@@ -356,7 +465,9 @@ async function getDataSheetData(year, env) {
       shogaku1:       String(doc.shogaku1       || ''),
       shogaku1_gakka: String(doc.shogaku1_gakka || ''),
       shogaku2:       String(doc.shogaku2       || ''),
-      shogaku2_gakka: String(doc.shogaku2_gakka || '')
+      shogaku2_gakka: String(doc.shogaku2_gakka || ''),
+      recordedDate:   doc.recorded_at || new Date().toISOString(),
+      studentName:    String(doc.student_name || '')
     };
   });
 }
@@ -651,6 +762,70 @@ export async function saveExamResult(args, env, user) {
     return { success: true, message: '受験情報を保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-16】getStudentExamData — GAS students.js:1793 の Workers 版
+ *
+ * 中3 生徒の受験情報と最新テストの第1志望校を取得する。成績管理タブの
+ * 情報入力セクション（js-grades.html:600）から呼ばれる。
+ *
+ * 認証: Firebase ID トークン検証のみ（Admin ガードなし）。
+ *
+ * GAS 版との差分:
+ *   - students SELECT と grades 取得を Promise.all で並列化（GAS 版は逐次）
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   成功: { success: true, examData, latestGrade }
+ *   失敗: { success: false, error, examData: {}, latestGrade: {} }
+ *   ※ 生徒が見つからない場合でも examData（空） / latestGrade（空）を含めて
+ *     success:true で返す（フロント renderExamSection が防御的に受ける）
+ */
+export async function getStudentExamData(args, env, user) {
+  try {
+    const [studentId, fiscalYear] = args || [];
+    let sid = String(studentId || '').trim();
+    if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
+
+    const [rows, gradeRows] = await Promise.all([
+      supabaseSelect(env, 'students', 'id=eq.' + encodeURIComponent(sid)),
+      getDataSheetData(fiscalYear, env)
+    ]);
+
+    const doc = rows && rows.length > 0 ? studentFromSupabase(rows[0]) : null;
+    const emptyExam = {
+      jukoukou1: '', jukoukou1_gakka: '', jukoukou1_gokaku: '',
+      ikusei: '',
+      jukoukou2: '', jukoukou2_gakka: '', jukoukou2_gokaku: ''
+    };
+    const examData = doc ? {
+      jukoukou1:        String(doc.jukoukou1        || ''),
+      jukoukou1_gakka:  String(doc.jukoukou1_gakka  || ''),
+      jukoukou1_gokaku: String(doc.jukoukou1_gokaku || ''),
+      ikusei:           String(doc.ikusei            || ''),
+      jukoukou2:        String(doc.jukoukou2        || ''),
+      jukoukou2_gakka:  String(doc.jukoukou2_gakka  || ''),
+      jukoukou2_gokaku: String(doc.jukoukou2_gokaku || '')
+    } : emptyExam;
+
+    let latestGrade = { shogaku1: '', shogaku1_gakka: '' };
+    const studentRows = (gradeRows || []).filter(r => {
+      let rowSid = String(r.studentId || '').trim();
+      if (/^\d+$/.test(rowSid) && rowSid.length < 10) rowSid = rowSid.padStart(10, '0');
+      return rowSid === sid;
+    });
+    if (studentRows.length > 0) {
+      studentRows.sort((a, b) => new Date(b.recordedDate) - new Date(a.recordedDate));
+      latestGrade = {
+        shogaku1:       String(studentRows[0].shogaku1       || ''),
+        shogaku1_gakka: String(studentRows[0].shogaku1_gakka || '')
+      };
+    }
+
+    return { success: true, examData, latestGrade };
+  } catch (error) {
+    return { success: false, error: error.toString(), examData: {}, latestGrade: {} };
   }
 }
 
@@ -957,5 +1132,218 @@ export async function getStudentGradeReport(args, env, user) {
     };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-16】getStudentPlacementData — GAS students.js:1844 の Workers 版
+ *
+ * 進学先一覧データを取得する（中3 生の基礎学力テスト3回分 + 受験情報 + 合格可能性）。
+ * 成績管理 → 進学先タブ（js-grades-placement.html:121）から呼ばれる。
+ *
+ * 認証: Firebase ID トークン検証のみ（Admin ガードなし）。
+ *
+ * GAS 版との差分:
+ *   - 第1段 4 並列取得: getMasterData / getDataSheetData / students SELECT / fetchSigmaConfig_
+ *   - 第2段 並列取得: 基礎学 3 回分の fetchSchoolAverages_ + fetchCampusAverages_ + getSchoolConfig_
+ *   - fetchSchoolAverages_/fetchCampusAverages_ は throw する可能性があるため
+ *     .catch(() => null) で fallback（GAS 版の handler-level try-catch と等価）
+ *
+ * 進学先判定優先順位（GAS 版 L1953-1969 と完全一致）:
+ *   1. exam.ikusei === 'true'           → 育成型 → 第1志望校
+ *   2. exam.jukoukou1_gokaku === '合格' → 第1志望校
+ *   3. exam.jukoukou2_gokaku === '合格' → 第2志望校
+ *   4. exam.jukoukou1 あり              → 暫定で第1志望校
+ *
+ * 平均点取得優先順位（L1900-1922 と一致）:
+ *   - 学校別平均の "平均" 含む行を優先
+ *   - なければ塾全体平均（fetchCampusAverages_ の `campusCode === 'all'` 行）
+ *
+ * 戻り値: GAS 版と同じ **生の配列**（success ラップなし）
+ *   成功: [{studentId, name, campus, score1, score2, score3, avg, placement,
+ *          placementSchool, passPercent, ikusei}, ...]
+ *   失敗: []（空配列）
+ *
+ * ※ 絶対に {success, data} 等でラップしない
+ *    （フロント placementTableData = data || [] の受け方に依存）
+ */
+export async function getStudentPlacementData(args, env, user) {
+  try {
+    const year = args && args[0];
+
+    // 第1段: 4 並列取得
+    const [allStudents, allGradeData, allStudentDocs, sigmaConfig] = await Promise.all([
+      getMasterData([year], env, user),
+      getDataSheetData(String(year), env),
+      supabaseSelect(env, 'students', 'is_deleted=eq.false'),
+      fetchSigmaConfig_(env)
+    ]);
+
+    // 中3 フィルタ（学年コード 15）
+    const chuu3Students = (allStudents || []).filter(s => parseInt(s.grade, 10) === 15);
+    if (chuu3Students.length === 0) return [];
+
+    // gradeMap: studentId -> { '第N回基礎学力テスト': total }
+    const gradeMap = {};
+    (allGradeData || []).forEach(row => {
+      const sid = String(row.studentId || '').trim();
+      if (!sid) return;
+      const testName = String(row.testName || '').trim();
+      if (!/^第(\d+)回基礎学力テスト$/.test(testName)) return;
+      const total = (row.total !== '' && row.total !== null && !isNaN(Number(row.total)))
+        ? Number(row.total) : null;
+      if (!gradeMap[sid]) gradeMap[sid] = {};
+      gradeMap[sid][testName] = total;
+    });
+
+    // examMap: studentId -> 受験情報（いずれかの exam フィールドが設定されている場合のみ）
+    const examMap = {};
+    (allStudentDocs || []).forEach(row => {
+      const doc = studentFromSupabase(row);
+      const mSid = String(doc.studentId || '').trim();
+      if (!mSid) return;
+      if (doc.jukoukou1 || doc.jukoukou1_gokaku || doc.jukoukou2) {
+        examMap[mSid] = {
+          jukoukou1:        String(doc.jukoukou1        || '').trim(),
+          jukoukou1_gakka:  String(doc.jukoukou1_gakka  || '').trim(),
+          jukoukou1_gokaku: String(doc.jukoukou1_gokaku || '').trim(),
+          ikusei:           String(doc.ikusei            || '').trim(),
+          jukoukou2:        String(doc.jukoukou2        || '').trim(),
+          jukoukou2_gakka:  String(doc.jukoukou2_gakka  || '').trim(),
+          jukoukou2_gokaku: String(doc.jukoukou2_gokaku || '').trim()
+        };
+      }
+    });
+
+    const sigmaTotal = (sigmaConfig && sigmaConfig.total) ? sigmaConfig.total : 100;
+
+    // 第2段: 基礎学 3 回分の学校別平均 + 校舎別平均 + 志望校設定を並列取得
+    const basicTestNames = ['第1回基礎学力テスト', '第2回基礎学力テスト', '第3回基礎学力テスト'];
+    const [schoolAveragesList, campusAveragesList, schoolConfig] = await Promise.all([
+      Promise.all(basicTestNames.map(tn => fetchSchoolAverages_(env, year, tn).catch(() => null))),
+      Promise.all(basicTestNames.map(tn => fetchCampusAverages_(env, year, tn).catch(() => null))),
+      getSchoolConfig_(env)
+    ]);
+
+    // 各基礎学テストの塾全体平均合計を取得
+    // 優先: 学校別平均の "平均" 含む行 / フォールバック: fetchCampusAverages_ の 'all' 行
+    const jukuTestAvgTotal = {};
+    basicTestNames.forEach((tn, i) => {
+      const averages = schoolAveragesList[i];
+      if (Array.isArray(averages)) {
+        const avgRow = averages.filter(a => (a.schoolName || '').trim().indexOf('平均') !== -1)[0];
+        if (avgRow && avgRow.total != null) {
+          jukuTestAvgTotal[tn] = avgRow.total;
+          return;
+        }
+      }
+      const campuses = campusAveragesList[i];
+      if (Array.isArray(campuses)) {
+        for (let ci = 0; ci < campuses.length; ci++) {
+          if (campuses[ci].campusCode === 'all') {
+            jukuTestAvgTotal[tn] = campuses[ci].total;
+            break;
+          }
+        }
+      }
+    });
+
+    // 志望校設定から 学校名 → 学科別偏差値マップ
+    const schoolDevMapForPlacement = {};
+    (schoolConfig || []).forEach(sc => {
+      const deptMap = {};
+      (sc.departments || []).forEach(d => { deptMap[d.name] = d.deviation; });
+      schoolDevMapForPlacement[sc.name] = deptMap;
+    });
+
+    // データを結合
+    const result = chuu3Students.map(student => {
+      const sid = student.studentId;
+      const grades = gradeMap[sid] || {};
+      const exam = examMap[sid] || {};
+
+      const score1 = (grades['第1回基礎学力テスト'] !== undefined && grades['第1回基礎学力テスト'] !== null)
+        ? grades['第1回基礎学力テスト'] : null;
+      const score2 = (grades['第2回基礎学力テスト'] !== undefined && grades['第2回基礎学力テスト'] !== null)
+        ? grades['第2回基礎学力テスト'] : null;
+      const score3 = (grades['第3回基礎学力テスト'] !== undefined && grades['第3回基礎学力テスト'] !== null)
+        ? grades['第3回基礎学力テスト'] : null;
+
+      const validScores = [score1, score2, score3].filter(s => s !== null);
+      const avg = validScores.length > 0
+        ? validScores.reduce((a, b) => a + b, 0) / validScores.length
+        : null;
+
+      // 進学先決定
+      let placementSchool = '';
+      let placementDept = '';
+      if (exam.ikusei === 'true') {
+        placementSchool = exam.jukoukou1;
+        placementDept = exam.jukoukou1_gakka;
+      } else if (exam.jukoukou1_gokaku === '合格') {
+        placementSchool = exam.jukoukou1;
+        placementDept = exam.jukoukou1_gakka;
+      } else if (exam.jukoukou2_gokaku === '合格') {
+        placementSchool = exam.jukoukou2;
+        placementDept = exam.jukoukou2_gakka;
+      } else if (exam.jukoukou1) {
+        placementSchool = exam.jukoukou1;
+        placementDept = exam.jukoukou1_gakka;
+      }
+
+      const placement = placementSchool
+        ? (placementDept ? placementSchool + ' ' + placementDept : placementSchool)
+        : '';
+
+      // 合格可能性 on-the-fly 計算
+      let passPercent = null;
+      if (placementSchool && validScores.length > 0) {
+        const validTestNamesForCalc = [];
+        if (score1 !== null) validTestNamesForCalc.push('第1回基礎学力テスト');
+        if (score2 !== null) validTestNamesForCalc.push('第2回基礎学力テスト');
+        if (score3 !== null) validTestNamesForCalc.push('第3回基礎学力テスト');
+
+        const schoolAvgTotalsForCalc = validTestNamesForCalc
+          .filter(tn => jukuTestAvgTotal[tn] != null)
+          .map(tn => jukuTestAvgTotal[tn]);
+
+        const cumulativeSchoolAvgForCalc = schoolAvgTotalsForCalc.length > 0
+          ? schoolAvgTotalsForCalc.reduce((a, b) => a + b, 0) / schoolAvgTotalsForCalc.length
+          : null;
+
+        const studentDev = calcDeviationValue_(avg, cumulativeSchoolAvgForCalc, sigmaTotal);
+
+        // 志望校偏差値: 学科一致 → 最初の学科 の順でフォールバック
+        const deptMapForCalc = schoolDevMapForPlacement[placementSchool] || {};
+        let schoolDev = null;
+        if (placementDept && deptMapForCalc[placementDept] != null) {
+          schoolDev = deptMapForCalc[placementDept];
+        } else {
+          const dKeys = Object.keys(deptMapForCalc);
+          if (dKeys.length > 0 && deptMapForCalc[dKeys[0]] != null) schoolDev = deptMapForCalc[dKeys[0]];
+        }
+
+        const probResult = calcPassProbability_(studentDev, schoolDev);
+        if (probResult) passPercent = probResult.percent;
+      }
+
+      return {
+        studentId:       sid,
+        name:            student.name,
+        campus:          student.campus,
+        score1,
+        score2,
+        score3,
+        avg,
+        placement,
+        placementSchool,
+        passPercent,
+        ikusei:          exam.ikusei === 'true'
+      };
+    });
+
+    return result;
+  } catch (error) {
+    return [];
   }
 }

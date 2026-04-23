@@ -35,6 +35,52 @@ export function calcDeviationValue_(score, average, sigma) {
 }
 
 /**
+ * 【Phase 6-A-16】normalCDF_ — 正規分布 CDF（GAS analysis.js:700 の 1:1 ポート）
+ *
+ * Abramowitz & Stegun 7.1.26 近似式。|誤差| ≤ 1.5e-7。
+ * getStudentPlacementData の合格可能性計算で使用。
+ *
+ * @param {number} z
+ * @returns {number} 0 〜 1
+ */
+export function normalCDF_(z) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
+  const p = 0.3275911;
+  const sign = z < 0 ? -1 : 1;
+  z = Math.abs(z) / Math.sqrt(2);
+  const t = 1.0 / (1.0 + p * z);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-z * z);
+  return 0.5 * (1.0 + sign * y);
+}
+
+/**
+ * 【Phase 6-A-16】calcPassProbability_ — 合格可能性計算（GAS analysis.js:717 の 1:1 ポート）
+ *
+ * 生徒偏差値と志望校偏差値の差を z 値（差÷5）に変換し、正規分布で確率算出。
+ * 結果は 1-99 にクランプし、8 段階のグレード（A / B / C+ / C- / D+ / D- / E）を返す。
+ *
+ * @param {number|null} studentDev 生徒の偏差値（合計）
+ * @param {number|null} schoolDev 志望校の偏差値
+ * @returns {{grade: string, percent: number}|null} null の場合は計算不能
+ */
+export function calcPassProbability_(studentDev, schoolDev) {
+  if (studentDev === null || schoolDev === null || isNaN(studentDev) || isNaN(schoolDev)) return null;
+  const diff = studentDev - schoolDev;
+  const z = diff / 5;
+  let prob = Math.round(normalCDF_(z) * 100);
+  prob = Math.max(1, Math.min(99, prob));
+  let grade;
+  if      (prob >= 80) grade = 'A';
+  else if (prob >= 60) grade = 'B';
+  else if (prob >= 50) grade = 'C+';
+  else if (prob >= 40) grade = 'C-';
+  else if (prob >= 30) grade = 'D+';
+  else if (prob >= 20) grade = 'D-';
+  else                 grade = 'E';
+  return { grade, percent: prob };
+}
+
+/**
  * getGradeAnalysis — GAS getGradeAnalysis(year, testName) の Workers 版
  * GAS 版との差分: safeJsonParse_() を try-catch に置き換え（同一挙動）
  */

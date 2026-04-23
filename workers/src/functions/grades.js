@@ -334,7 +334,7 @@ export async function updateTestName(args, env, user) {
 
 // ─── Workers 内部 private reader: G19 getSchoolConfig 相当 ───
 // GAS grades.js:509 と同じ。純粋 KV 読取 + JSON.parse、失敗時は空配列。
-async function getSchoolConfig_(env) {
+export async function getSchoolConfig_(env) {
   try {
     const raw = await readKv_(env, KEY_SCHOOL);
     return raw ? JSON.parse(raw) : [];
