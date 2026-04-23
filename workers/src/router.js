@@ -69,7 +69,8 @@ import {
   getPricingConfigForWeb,
   saveLecturePricing,
   saveUnifiedLecturePricing,
-  getTeacherNamesMap
+  getTeacherNamesMap,
+  getLectureScheduleEntries
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers } from './functions/auth-emails.js';
@@ -94,7 +95,9 @@ import {
   getFormEmailFilterSettings,
   saveFormEmailFilterSettings,
   getLineSchedulerSettings,
-  saveLineSchedulerSettings
+  saveLineSchedulerSettings,
+  saveScheduledLineMessage,
+  deleteScheduledLineMessage
 } from './functions/line.js';
 
 // 認証不要の関数
@@ -221,7 +224,10 @@ const HANDLERS = {
   getFormEmailFilterSettings,
   saveFormEmailFilterSettings,
   getLineSchedulerSettings,
-  saveLineSchedulerSettings
+  saveLineSchedulerSettings,
+  getLectureScheduleEntries,
+  saveScheduledLineMessage,
+  deleteScheduledLineMessage
 };
 
 export async function handleApiCall(body, env) {

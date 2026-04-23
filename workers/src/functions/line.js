@@ -21,7 +21,7 @@
 
 import { isAdminUser } from './auth.js';
 import { supabaseSelect } from '../supabase.js';
-import { firestoreGet, firestoreSet } from '../firebase.js';
+import { firestoreGet, firestoreSet, firestoreDelete } from '../firebase.js';
 
 const PROP_PREFIX = 'prop:';
 const KEY_CAMPUS_CODES = 'GRADES_CAMPUS_CODES_CONFIG';
@@ -354,6 +354,128 @@ export async function saveLineSchedulerSettings(args, env, user) {
     settings[type] = newSettings;
     await env.KV.put(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS, JSON.stringify(settings));
     return { success: true, message: '設定を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-18】deleteScheduledLineMessage — GAS line.js:1957 の Workers 版
+ *
+ * 指定 id の LINE スケジュールを Firestore `lineSchedules` から削除する（Admin のみ）。
+ * 存在確認 → DELETE の 2 ステップ。
+ *
+ * 認証: denyIfNotAdmin_
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: { success: true, message: '削除しました' }
+ *   失敗（存在しない）: { success: false, error: '対象IDが見つかりません: ' + id }
+ *   失敗（その他）: { success: false, error: <文言> }
+ *
+ * ※ エラー文言は半角コロン + 半角スペース + id の形式（GAS 版 L1961 と一致）
+ *
+ * @param {Array} args [id: string]
+ */
+export async function deleteScheduledLineMessage(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [id] = args || [];
+    const existing = await firestoreGet(env, 'lineSchedules', id);
+    if (!existing) return { success: false, error: '対象IDが見つかりません: ' + id };
+    await firestoreDelete(env, 'lineSchedules', id);
+    return { success: true, message: '削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-18】saveScheduledLineMessage — GAS line.js:1897 の Workers 版
+ *
+ * 指定 id の LINE スケジュールを Firestore `lineSchedules` に保存する（Admin のみ）。
+ * 既存ドキュメントがあれば sent / sentAt / createdAt / lectureId / lectureName を
+ * 維持しつつ他フィールドを上書き、無ければ新規追加。
+ *
+ * 認証: denyIfNotAdmin_
+ *
+ * 保持フィールド（GAS 版 L1905-1920 と完全一致）:
+ *   - type / yearMonth    : data 優先、existing fallback、最終 ''
+ *   - recipients          : data 優先、existing fallback、最終 []
+ *   - scheduledAt         : data 優先、existing fallback、最終 ''
+ *   - message             : **data.message !== undefined ? data.message : (existing.message || '')**
+ *                           （三項式の順序が他フィールドと異なる・重要）
+ *   - sent / sentAt       : 常に existing を維持（送信済フラグを書き換えない）
+ *   - createdAt           : existing.createdAt or now
+ *   - lectureId/Name      : existing にあれば維持（data 側は無視）
+ *
+ * shitsucho 同期書込（data.type === 'shitsucho' の場合・GAS L1937-1944 と一致）:
+ *   KV `LINE_SCHEDULER_SETTINGS` を読取 → shitsucho.recipients のみ上書き
+ *   → 旧キー shimurocho 残存なら削除 → KV 書戻し
+ *
+ *   ※ 直書きで実装（saveLineSchedulerSettings を呼ぶと messageTemplate 等を
+ *     誤上書きするため再利用禁止）。Firestore 書込と KV 書込は直列実行
+ *     （Promise.all 並列化せず GAS 版 1:1 一致優先）。
+ *
+ * 戻り値形状（GAS 版完全一致）:
+ *   成功: { success: true, message: '保存しました' }
+ *   失敗: { success: false, error: <文言> }
+ *
+ * @param {Array} args [data: {id, type, yearMonth, recipients, scheduledAt, message}]
+ */
+export async function saveScheduledLineMessage(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [data] = args || [];
+    const docId = data.id;
+    const existing = await firestoreGet(env, 'lineSchedules', docId);
+    const now = new Date().toISOString();
+
+    let saveData;
+    if (existing) {
+      saveData = {
+        id: docId,
+        type:        existing.type || data.type || '',
+        yearMonth:   existing.yearMonth || data.yearMonth || '',
+        recipients:  data.recipients || existing.recipients || [],
+        scheduledAt: data.scheduledAt || existing.scheduledAt || '',
+        message:     data.message !== undefined ? data.message : (existing.message || ''),
+        sent:        existing.sent === true,
+        sentAt:      existing.sentAt || '',
+        createdAt:   existing.createdAt || now
+      };
+      // 講習締切メッセージは lectureId / lectureName を維持
+      if (existing.lectureId)   saveData.lectureId   = existing.lectureId;
+      if (existing.lectureName) saveData.lectureName = existing.lectureName;
+    } else {
+      saveData = {
+        id: docId,
+        type:        data.type || '',
+        yearMonth:   data.yearMonth || '',
+        recipients:  data.recipients || [],
+        scheduledAt: data.scheduledAt || '',
+        message:     data.message || '',
+        sent:        false,
+        sentAt:      '',
+        createdAt:   now
+      };
+    }
+
+    await firestoreSet(env, 'lineSchedules', docId, saveData);
+
+    // shitsucho 同期書込（recipients のみ更新・直列実行）
+    if (data.type === 'shitsucho') {
+      const sRaw = await env.KV.get(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS);
+      let sSettings = {};
+      try { sSettings = sRaw ? JSON.parse(sRaw) : {}; } catch (_) { sSettings = {}; }
+      if (!sSettings.shitsucho) sSettings.shitsucho = {};
+      sSettings.shitsucho.recipients = data.recipients || [];
+      if (sSettings.shimurocho) delete sSettings.shimurocho;
+      await env.KV.put(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS, JSON.stringify(sSettings));
+    }
+
+    return { success: true, message: '保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
