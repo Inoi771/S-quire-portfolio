@@ -62,6 +62,7 @@
 import { isAdminUser } from './auth.js';
 import { getCampusConfig_ } from './grades.js';
 import { supabaseSelect } from '../supabase.js';
+import { firestoreGet } from '../firebase.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -1293,5 +1294,51 @@ export async function getTeacherNamesMap(args, env, user) {
     return { success: true, map };
   } catch (error) {
     return { success: false, map: {} };
+  }
+}
+
+/**
+ * 【Phase 6-A-18】getLectureScheduleEntries — GAS features.js:2930 の Workers 版
+ *
+ * 指定の講習・校舎の Firestore `lectureEntries` ドキュメントからエントリ配列を
+ * 取得する。features.js 初の Firestore 利用。
+ *
+ * 認証: Firebase ID トークン検証のみ（Admin ガードなし・GAS 版踏襲）
+ *
+ * Firestore doc id 構成: `${lectureId}_${campusCode.padStart(2, '0')}`
+ *
+ * 戻り値: **生配列**（success ラップなし・GAS 版と完全一致）
+ *   doc なし / entries 未定義 / 失敗時はすべて `[]`（空配列）
+ *   各エントリの整形:
+ *     - `id`: entry.entryId（**entryId → id にリネーム**）
+ *     - `durationSlots`: `Number(x) || 9` でデフォルト 9
+ *     - `classLabel`: `|| null`（他フィールドは `|| ''`）
+ *
+ * 呼出元（GAS 経由の現役）: js-lectures.html:3054 の OCR 取込 merge
+ * その他の呼出は fb SDK（fbGetLectureScheduleEntries/fbGetAllLectureEntries）で代替済
+ */
+export async function getLectureScheduleEntries(args, env, user) {
+  try {
+    const [lectureId, campusCode] = args || [];
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = String(lectureId) + '_' + normalizedCampus;
+    const doc = await firestoreGet(env, 'lectureEntries', docId);
+    if (!doc || !Array.isArray(doc.entries)) return [];
+    return doc.entries.map((e) => ({
+      id:            e.entryId        || '',
+      lectureId:     String(lectureId),
+      campusCode:    normalizedCampus,
+      date:          e.date          || '',
+      startTime:     e.startTime     || '',
+      durationSlots: Number(e.durationSlots) || 9,
+      subject:       e.subject       || '',
+      grade:         e.grade         || '',
+      teacherName:   e.teacherName   || '',
+      teacherEmail:  e.teacherEmail  || '',
+      classLabel:    e.classLabel    || null,
+      teacherId:     e.teacherId     || ''
+    }));
+  } catch (error) {
+    return [];
   }
 }
