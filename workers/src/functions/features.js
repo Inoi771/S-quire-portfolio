@@ -62,7 +62,8 @@
 import { isAdminUser } from './auth.js';
 import { getCampusConfig_ } from './grades.js';
 import { supabaseSelect } from '../supabase.js';
-import { firestoreGet } from '../firebase.js';
+import { firestoreGet, firestoreUpdateFields } from '../firebase.js';
+import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText } from '../gemini.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -1341,4 +1342,106 @@ export async function getLectureScheduleEntries(args, env, user) {
   } catch (error) {
     return [];
   }
+}
+
+/**
+ * 【Phase 6-B-02】analyzeFlyerImageMeta — GAS features.js:3666 の Workers 版
+ *
+ * uploadFlyerImage() 成功後にフロント（js-lectures-flyer.html:691）から
+ * fire-and-forget で呼ばれる。Gemini Vision で画像を解析し、
+ * Firestore `imageTags/{storageKey}` にファイル名とタグを書込む。
+ *
+ * GAS 版（features.js:3553-3606 の analyzeUploadedImageMetadata_ と
+ * features.js:3666-3689 の analyzeFlyerImageMeta）を 1 関数に統合。
+ * Gemini 呼出は workers/src/gemini.js 経由。プロンプト文言・payload・
+ * ファイル名サニタイズ・Firestore 書込スキーマは GAS 版と完全一致。
+ *
+ * 失敗時は silent skip（Firestore 書込もスキップ）。フロントは戻り値を
+ * 見ないため { success: true } を返すだけで互換性に問題なし。
+ *
+ * @param {Array}  args [storageKey, base64, mimeType]
+ * @return {{ success: boolean }}
+ */
+export async function analyzeFlyerImageMeta(args, env, user) {
+  try {
+    const [storageKey, base64, mimeType] = args || [];
+    if (!storageKey || !base64) return { success: true };
+
+    const dotIdx = storageKey.lastIndexOf('.');
+    const ext = dotIdx !== -1 ? storageKey.substring(dotIdx) : '';
+
+    let aiFileName = '';
+    let aiTags = '';
+    try {
+      const meta = await analyzeUploadedImageMetadata_(env, base64, mimeType);
+      aiFileName = meta.fileName || '';
+      aiTags = meta.tags || '';
+    } catch (metaErr) {
+      console.log('⚠ analyzeFlyerImageMeta: Gemini解析スキップ:', metaErr);
+      return { success: true };
+    }
+
+    const updateData = { updatedAt: new Date().toISOString() };
+    if (aiTags) updateData.tags = aiTags;
+    if (aiFileName) updateData.originalName = aiFileName + ext;
+    await firestoreUpdateFields(env, 'imageTags', storageKey, updateData);
+    console.log(`✅ analyzeFlyerImageMeta: ${storageKey} → ${aiFileName + ext} / ${aiTags}`);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ analyzeFlyerImageMetaエラー:', error);
+    return { success: true };
+  }
+}
+
+/**
+ * Gemini Vision で画像を解析し { fileName, tags } を返す内部ヘルパー。
+ * GAS features.js:3553-3606 の analyzeUploadedImageMetadata_ と完全互換。
+ * API キー未設定時・非 200 応答時は throw（呼出元の catch で silent skip される）。
+ */
+async function analyzeUploadedImageMetadata_(env, base64, mimeType) {
+  const prompt = 'この画像を分析して、保存用のファイル名とタグキーワードを日本語で生成してください。\n\n' +
+    '要件:\n' +
+    '- fileName: 画像の内容を端的に表す日本語のファイル名（拡張子なし、スペースなし、アンダースコア区切り、20文字以内）\n' +
+    '  例: イラスト_走る男子学生、写真_桜と校舎、水彩_勉強する生徒たち\n' +
+    '- tags: 画像を検索するのに役立つキーワードを読点（、）区切りで8〜12個\n' +
+    '  例: イラスト、男子学生、走る、勢い、躍動感、水彩風、元気、疾走\n\n' +
+    'JSON形式のみで返してください（説明文・マークダウン不要）:\n' +
+    '{"fileName":"...","tags":"..."}';
+
+  const payload = {
+    contents: [{
+      parts: [
+        { inlineData: { mimeType, data: base64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.3,
+      maxOutputTokens: 200,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  const response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+  if (response.status !== 200) {
+    throw new Error(await parseGeminiErrorMessage(response));
+  }
+
+  const result = await response.json();
+  const rawText = extractGeminiText(result);
+
+  let metadata = {};
+  try {
+    metadata = JSON.parse(rawText) || {};
+  } catch (_) {
+    metadata = {};
+  }
+
+  // ファイル名の安全化（Drive で使えない文字を除去）
+  const safeName = (metadata.fileName || '').replace(/[\/\\:*?"<>|]/g, '').trim();
+  return {
+    fileName: safeName || '',
+    tags: (metadata.tags || '').trim()
+  };
 }

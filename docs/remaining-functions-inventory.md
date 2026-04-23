@@ -247,7 +247,7 @@
 | getFlyerImages | 読取 | Drive, Spreadsheet | フロント: js-lectures-flyer, imagen | APP_FOLDER_ID | C | | DriveApp 使用 |
 | getFlyerImageBase64 | 読取 | Drive | フロント: js-lectures-flyer, imagen | APP_FOLDER_ID | C | | DriveApp 使用 |
 | uploadFlyerImage | 書込 | Drive, Gemini API | フロント: js-lectures-flyer | APP_FOLDER_ID, GEMINI_API_KEY | C | | DriveApp 使用 |
-| analyzeFlyerImageMeta | 書込 | Drive, Spreadsheet | フロント: js-lectures-flyer | GEMINI_API_KEY | C | | SpreadsheetApp 使用 |
+| analyzeFlyerImageMeta | 書込 | Firestore (`imageTags`), Gemini API | フロント: js-lectures-flyer | GEMINI_API_KEY | B | | ✅ Workers 化済み（Phase 6-B-02）— `workers/src/gemini.js` 経由 |
 | deleteFlyerImage | 書込 | Drive, Spreadsheet | フロント: js-lectures-flyer | APP_FOLDER_ID | C | | DriveApp 使用 |
 | saveFlyerImageTags | 書込 | Spreadsheet | フロント: js-lectures-flyer | APP_FOLDER_ID | C | | SpreadsheetApp 使用 |
 | generateFlyerWithAI | 書込 | Gemini API, Spreadsheet | フロント: js-lectures-flyer | GEMINI_API_KEY | C | | SpreadsheetApp 使用 |

@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 35**
+**現在のデプロイ回数: 36**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -436,8 +436,9 @@ MyProject/
 - **講師配置は年度別キー＋自動切替**: 講師配置（`STAFF_PLACEMENT_{year}`）は ScriptProperties に年度別キーで保存。`getCurrentFiscalYear()`（4月起算）に基づき表示年度を自動決定し、4月1日で新年度に切替、旧年度は `STAFF_PLACEMENT_ARCHIVE_{year}` へ自動退避される。1〜3月のみ編集画面で翌年度の並行編集が可能。詳細は `admin.js` の講師配置セクション参照
 - **ScriptProperties アクセスはラッパー経由（Phase 5-E-4〜6）**: GAS コード内の単一キー get/set/delete は `getProperty_()` / `setProperty_()` / `deleteProperty_()`（`kv-props.js`）経由で行うこと。Phase 5-E-6 で ScriptProperties は凍結され、書込・削除は Cloudflare KV のみに行う（SP への Dual-write は停止済）。読み取りのみ、KV 一時障害時の可用性保険として SP 直読へフォールバックする。`INTERNAL_API_KEY` のみ無限ループ回避のため ScriptProperties から直接取得する（KV 認証に必要なため SP に残置）。enumerate 系は `getAllProperties_()`（`kv_list` + `UrlFetchApp.fetchAll(kv_get)` + SP ユニオン・Phase 5-E-5 実装）を使うこと。`.getKeys()` / `.getProperties()` の新規直読は禁止。凍結後の SP は古い値のまま残るが、KV が唯一の正。`PropertiesService.getScriptProperties().getProperty(...)` の新規追加も禁止（既存ラッパーを使う）
 - **Workers 直 KV アクセス（Phase 5-E-7〜）**: Workers 関数内の単一キー get/set/delete は `env.KV.get('prop:...')` / `env.KV.put('prop:...', value)` / `env.KV.delete('prop:...')` のように KV バインディングを直接使うこと（kv-props.js / kv_get / kv_set プロキシ経由は GAS 側専用）。キー名は必ず `'prop:'` プレフィックスを付ける（`workers/src/functions/kv.js` の `PROP_PREFIX` と一致）。Admin 判定は `prop:ADMIN_EMAILS` を優先し、未設定時のみ `env.ADMIN_EMAILS` にフォールバックすること。B 分類関数の Workers 化時はこのパターンに従う（`workers/src/functions/settings.js` の `getSettings` / `updateSettings` が参考実装）
+- **Workers からの Gemini API 呼出は `workers/src/gemini.js` 経由（Phase 6-B-02〜）**: Gemini API 呼出は `fetchGeminiWithRetry(env, model, payload)` を使うこと。リトライ戦略は GAS 版（`analysis.js:20-102`）と完全一致（500/503→5 秒待機 + BACKUP key / 429→3 秒待機 + BACKUP key / 全失敗→`gemini-2.5-flash` モデル fallback）。API キーは `env.KV.get('prop:GEMINI_API_KEY')` から取得し、`env.GEMINI_API_KEY` への fallback も念のため保持する。エラーレスポンスは `parseGeminiErrorMessage(response)` で日本語メッセージに変換する（PT タイムゾーン判定は `Intl.DateTimeFormat` で行う）。`thinkingConfig` の thought parts フィルタは `extractGeminiText(result)` で集約する。Imagen（`:predict` endpoint）は payload 構造が異なるため本ヘルパーの対象外。
 - **隠し Admin モードは Workers KV TTL で管理（Phase 6-B-01 で実装）**: `activateHiddenAdminMode` は Workers KV `prop:hiddenAdmin_{email}` に値 `'true'` を `expirationTtl: 21600`（6 時間）で書込む。`isAdminUser`（`workers/src/functions/auth.js`）が起動時にこのキーを読み、存在すれば true を返すため、`getUserRoleInfo` 等の呼出元は自動的に隠し Admin 対応となる（呼出元のコード変更不要）。フロント側の `sessionStorage.hiddenAdminMode`（`js-core.html:1000`）はリロード後の即時 UI 復元用で並行運用継続。GAS 版（`auth.js:99-147`）は `WORKERS_FUNCTIONS` セット経由で Workers ルーティングに切替済みのため呼ばれないが、フォールバック保険として残置する（Phase 6-B 完了後の整理対象）。
-- **Phase 6-A' クローズ（2026-04-23）**: Phase 6-A-15 〜 6-A-20 で 17 関数を Workers 化。進捗率は 40.5% → 46.6%（フロント呼出ベース 59.9% → 68.9%）。Phase 6-B-01（2026-04-23）で `activateHiddenAdminMode` を Workers 化し KV TTL パターンを確立。残存 Phase 6-B 対象は ①`saveLectureScheduleEntries`（LockService → Firestore Transactions）②`analyzeFlyerImageMeta`（Gemini + Firestore・features.js 初の Gemini 呼出）③`previewTemplateMessage` / `resolveTemplateForSendDate`（15+ 日付ヘルパー port）④`getScheduledLineMessages` / `resetAndRegenerateSchedule`（25+ 生成ヘルパー tree port）の 4 領域・計 6 関数
+- **Phase 6-A' クローズ（2026-04-23）**: Phase 6-A-15 〜 6-A-20 で 17 関数を Workers 化。進捗率は 40.5% → 46.6%（フロント呼出ベース 59.9% → 68.9%）。Phase 6-B-01（2026-04-23）で `activateHiddenAdminMode` を Workers 化し KV TTL パターンを確立。Phase 6-B-02（2026-04-23）で `workers/src/gemini.js` を新規整備し `analyzeFlyerImageMeta` を Workers 化。Gemini API リトライ戦略（500/503→5s / 429→3s / BACKUP key fallback / gemini-2.5-flash モデル fallback）と `parseGeminiErrorMessage` を共通ヘルパー化し、Phase 6-C 以降で残る 19 箇所の Gemini 呼出の Workers 化コストを大幅削減した。残存 Phase 6-B 対象は ①`saveLectureScheduleEntries`（LockService → Firestore Transactions）②`previewTemplateMessage` / `resolveTemplateForSendDate`（15+ 日付ヘルパー port）③`getScheduledLineMessages` / `resetAndRegenerateSchedule`（25+ 生成ヘルパー tree port）の 3 領域・計 5 関数
 
 ---
 

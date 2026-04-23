@@ -328,6 +328,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getFlyerImages()` — `@aiCallable` チラシ用画像一覧を Drive の assets/flyer フォルダから取得（{id, name, mimeType, tags}[]。tagsは画像タグシートから取得）
 - `getFlyerImageBase64(fileId)` — `@aiCallable` DriveファイルIDから画像をbase64エンコードして返す
 - `uploadFlyerImage(base64, fileName, mimeType)` — `@aiCallable` チラシ用画像をDriveのassets/flyerフォルダにアップロード（フォルダがなければ自動作成。JPEG/PNG/GIF/WebPのみ許可）。戻り値: `{success, fileId, fileName}`
+- `analyzeFlyerImageMeta(storageKey, base64, mimeType)` — Gemini Vision で画像メタデータ（ファイル名・タグ）自動生成し Firestore `imageTags/{storageKey}` を更新（Phase 6-B-02 で Workers 化済み・`workers/src/gemini.js` 経由）
 - `deleteFlyerImage(fileId)` — `@aiCallable` Driveからチラシ用画像をゴミ箱に移動して削除する（画像タグも同時削除）。戻り値: `{success, message}`
 - `getFlyerImageTagSheet_()` — 画像タグデータ保存用シート「画像タグ」を取得/作成する内部ヘルパー
 - `saveFlyerImageTags(fileId, tags)` — `@aiCallable` チラシ画像の説明タグを保存する（upsert）。戻り値: `{success, message}`
