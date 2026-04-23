@@ -75,7 +75,7 @@ import {
   getLectureScheduleEntries
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
-import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo } from './functions/auth-emails.js';
+import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode } from './functions/auth-emails.js';
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -232,7 +232,8 @@ const HANDLERS = {
   deleteScheduledLineMessage,
   getUserRoleInfo,
   getStaffPlacementForWeb,
-  saveStaffPlacementForWeb
+  saveStaffPlacementForWeb,
+  activateHiddenAdminMode
 };
 
 export async function handleApiCall(body, env) {

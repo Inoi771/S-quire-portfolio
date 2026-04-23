@@ -39,12 +39,27 @@ export async function getAdminEmailList(env, opts) {
  *
  * 値はカンマ区切りのメールアドレス文字列で、GAS `isAdmin()` と同じ粒度。
  *
+ * Phase 6-B-01: 隠し Admin モード（`prop:hiddenAdmin_{email}` KV TTL）を先にチェックする。
+ * 値が `'true'` なら即座に true を返す。KV エラー時は通常の ADMIN_EMAILS チェックに進む
+ * （GAS `auth.js:105-111` の try-catch 挙動と一致）。
+ *
  * @param {Object} env Cloudflare Workers 環境（KV バインディング必須）
  * @param {{ email?: string, uid?: string }|null} user 認証済みユーザー
  * @return {Promise<boolean>}
  */
 export async function isAdminUser(env, user) {
   if (!user || !user.email) return false;
+  const email = user.email.toLowerCase();
+
+  // 隠し Admin モード（Phase 6-B-01・GAS CacheService → Workers KV TTL 置換）
+  try {
+    const hidden = await env.KV.get(PROP_PREFIX + 'hiddenAdmin_' + email);
+    if (hidden === 'true') return true;
+  } catch (e) {
+    console.warn('⚠ hiddenAdmin KV 読み取りエラー:', e);
+    /* 通常の ADMIN_EMAILS チェックに進む（GAS 版と一致） */
+  }
+
   const list = await getAdminEmailList(env, { lowercase: true });
-  return list.includes(user.email.toLowerCase());
+  return list.includes(email);
 }

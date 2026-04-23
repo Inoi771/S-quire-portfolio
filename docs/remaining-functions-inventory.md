@@ -32,7 +32,7 @@
 | doGet | その他 | HtmlService | GAS Webエントリ | なし | C | | HtmlService 必須・GAS 固有 |
 | doPost | Webhook | ContentService | GAS Web エントリ / LINE Webhook | ADMIN_EMAILS | C | | GAS エンドポイント自体 |
 | isAdmin | 認証系 | ScriptProperties | フロント: 複数画面 | ADMIN_EMAILS | A | 高 | 高頻度・起動時判定 |
-| activateHiddenAdminMode | 認証系 | ScriptProperties | フロント: js-core | ADMIN_EMAILS | B | | 隠し機能・Admin 昇格 |
+| activateHiddenAdminMode | 認証系 | Workers KV (`prop:hiddenAdmin_*`) | フロント: js-core | ADMIN_EMAILS | B | | ✅ Workers 化済み（Phase 6-B-01）— KV TTL 6h |
 | getCurrentUserEmail | 認証系 | Firebase email context | GAS 内部のみ | なし | C | | 内部コンテキスト取得 |
 | getUserRoleInfo | 読取 | ScriptProperties | フロント: js-admin-ext, js-core | ADMIN_EMAILS | A | 高 | 起動時判定 |
 | getDisplayName | 読取 | なし | GAS 内部のみ | なし | C | | 内部ヘルパー |
