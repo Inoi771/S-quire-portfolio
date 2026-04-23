@@ -6,9 +6,10 @@ import {
   getAllScriptPropertiesForGUI,
   updateScriptPropertyFromGUI,
   deleteScriptPropertyFromGUI,
-  getPlacementTeacherNames
+  getPlacementTeacherNames,
+  getCachedHolidays
 } from './functions/admin.js';
-import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile } from './functions/settings.js';
+import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile, getSubjectOptions, resetUserThemeColor } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages, getGradeSummary, getStudentGradeReport } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
@@ -67,7 +68,8 @@ import {
   saveNormalClassConfig,
   getPricingConfigForWeb,
   saveLecturePricing,
-  saveUnifiedLecturePricing
+  saveUnifiedLecturePricing,
+  getTeacherNamesMap
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers } from './functions/auth-emails.js';
@@ -204,7 +206,11 @@ const HANDLERS = {
   getLineRegisteredUsers,
   getCampusNotificationRouting,
   updateCampusNotificationRouting,
-  getAllowedUsers
+  getAllowedUsers,
+  getSubjectOptions,
+  getCachedHolidays,
+  getTeacherNamesMap,
+  resetUserThemeColor
 };
 
 export async function handleApiCall(body, env) {
