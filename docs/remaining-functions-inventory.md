@@ -242,7 +242,7 @@
 | saveLectureDates | 書込 | ScriptProperties | フロント: js-lectures-admin | LECTURE_PERIODS_CONFIG | B | | Admin 設定・5-E 後 |
 | resetLectureDates | 書込 | ScriptProperties | フロント: js-lectures-admin | LECTURE_PERIODS_CONFIG | B | | Admin 設定・5-E 後 |
 | getLectureScheduleEntries | 読取 | lectureEntries(Firestore) | フロント: js-lectures | なし | A | 高 | 講習日程表示 |
-| saveLectureScheduleEntries | 書込 | lectureEntries(Firestore), LockService | フロント: js-lectures | なし | A | 高 | 講習日程保存（LockService 使用・移行時に要対応） |
+| saveLectureScheduleEntries | 書込 | lectureEntries(Firestore) | フロント: js-lectures | なし | A | 高 | ✅ Workers 化済み（Phase 6-B-03）— `firestoreTransaction` 経由で LockService 置換 |
 | getTeacherNamesMap | 読取 | staffs(Supabase) | フロント: js-core, js-lectures | なし | A | 高 | 教員名マップ・起動時 |
 | getFlyerImages | 読取 | Drive, Spreadsheet | フロント: js-lectures-flyer, imagen | APP_FOLDER_ID | C | | DriveApp 使用 |
 | getFlyerImageBase64 | 読取 | Drive | フロント: js-lectures-flyer, imagen | APP_FOLDER_ID | C | | DriveApp 使用 |

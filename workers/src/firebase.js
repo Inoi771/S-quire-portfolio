@@ -157,6 +157,177 @@ export async function firestoreBatchWrite(env, writes) {
   }
 }
 
+// ── トランザクション ──────────────────────────────────────────────────────────
+
+/**
+ * 読み書き用 Firestore トランザクションを開始する（内部ヘルパー）。
+ *
+ * POST `:beginTransaction` → `{ transaction: <base64 txId> }`
+ *
+ * @param {Object} env
+ * @return {Promise<string>} トランザクション ID（base64 文字列）
+ */
+async function beginTransaction(env) {
+  const url = `${firestoreBaseUrl(env).replace('/documents', '')}/documents:beginTransaction`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: await firestoreHeaders(env),
+    body: JSON.stringify({ options: { readWrite: {} } })
+  });
+  if (res.status >= 400) {
+    const err = new Error(`beginTransaction エラー(${res.status}): ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
+  const json = await res.json();
+  return json.transaction;
+}
+
+/**
+ * 指定 txId の writes を atomic に commit する（内部ヘルパー）。
+ *
+ * POST `:commit` with { transaction, writes }。ABORTED（409）や UNAVAILABLE（503）
+ * で失敗した場合は呼出元（firestoreTransaction）でリトライされる。
+ *
+ * @param {Object} env
+ * @param {string} txId
+ * @param {Array}  writes Firestore Write オブジェクト配列
+ */
+async function commitTransaction(env, txId, writes) {
+  const url = `${firestoreBaseUrl(env).replace('/documents', '')}/documents:commit`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: await firestoreHeaders(env),
+    body: JSON.stringify({ transaction: txId, writes })
+  });
+  if (res.status >= 400) {
+    const err = new Error(`commitTransaction エラー(${res.status}): ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+/**
+ * トランザクション内でドキュメントを 1 件取得する（内部ヘルパー）。
+ * 404 時は null 返却（既存 firestoreGet と同じ挙動）。
+ *
+ * @param {Object} env
+ * @param {string} collection
+ * @param {string} docId
+ * @param {string} txId
+ * @return {Promise<Object|null>}
+ */
+async function getInTransaction(env, collection, docId, txId) {
+  const url = `${firestoreBaseUrl(env)}/${collection}/${encodeURIComponent(docId)}?transaction=${encodeURIComponent(txId)}`;
+  const res = await fetch(url, { headers: await firestoreHeaders(env) });
+  if (res.status === 404) return null;
+  if (res.status >= 400) {
+    const err = new Error(`getInTransaction エラー(${res.status}): ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
+  const doc = await res.json();
+  if (!doc.fields) return null;
+  return fromFirestoreFields(doc.fields);
+}
+
+/**
+ * ABORTED（他ライターとの競合）または UNAVAILABLE（一時障害）なら true を返す。
+ * Google 公式: この 2 種は自動リトライが推奨される。
+ */
+function isAbortedError(err) {
+  const status = err && err.status;
+  return status === 409 || status === 503;
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Firestore 読み書きトランザクションを実行する（callback 形式）。
+ *
+ * GAS `LockService` で保護されていた Read-Modify-Write パターンを Workers で
+ * 再現する。`:commit` endpoint + read-write transaction で atomic 保証し、
+ * ABORTED（409）や UNAVAILABLE（503）で失敗した場合は最大 5 回・指数バック
+ * オフ + jitter で自動リトライする。
+ *
+ * callback には tx オブジェクトが渡され、以下のメソッドを使う:
+ *   - `await tx.get(collection, docId)`  → Object | null
+ *   - `tx.set(collection, docId, data)`  → 全置換 write をキューに追加（同期・Promise 非返却）
+ *   - `tx.update(collection, docId, fields)` → updateMask 付き部分更新をキューに追加
+ *   - `tx.delete(collection, docId)` → 削除をキューに追加
+ *
+ * 使用例:
+ *   await firestoreTransaction(env, async (tx) => {
+ *     const doc = await tx.get('lectureEntries', docId);
+ *     const existing = (doc && doc.entries) || [];
+ *     // ... 権限チェック等 ...
+ *     tx.set('lectureEntries', docId, { ..., entries: newEntries });
+ *     return { success: true };
+ *   });
+ *
+ * @param {Object} env
+ * @param {(tx: Object) => Promise<any>} callback
+ * @return {Promise<any>} callback の戻り値
+ */
+export async function firestoreTransaction(env, callback) {
+  const MAX_RETRIES = 5;
+  const basePath = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  let lastError;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const txId = await beginTransaction(env);
+    const writes = [];
+
+    const tx = {
+      async get(collection, docId) {
+        return getInTransaction(env, collection, docId, txId);
+      },
+      set(collection, docId, data) {
+        writes.push({
+          update: {
+            name: `${basePath}/${collection}/${encodeURIComponent(docId)}`,
+            fields: toFirestoreFields(data)
+          }
+        });
+      },
+      update(collection, docId, fields) {
+        writes.push({
+          update: {
+            name: `${basePath}/${collection}/${encodeURIComponent(docId)}`,
+            fields: toFirestoreFields(fields)
+          },
+          updateMask: { fieldPaths: Object.keys(fields) }
+        });
+      },
+      delete(collection, docId) {
+        writes.push({
+          delete: `${basePath}/${collection}/${encodeURIComponent(docId)}`
+        });
+      }
+    };
+
+    try {
+      const result = await callback(tx);
+      // writes が空でも :commit で transaction をクローズする必要がある
+      await commitTransaction(env, txId, writes);
+      return result;
+    } catch (err) {
+      lastError = err;
+      if (isAbortedError(err) && attempt < MAX_RETRIES - 1) {
+        const backoff = 100 * (2 ** attempt) + Math.random() * 100;
+        console.warn(`⚠ Firestore Transaction ABORTED/UNAVAILABLE (${err.status})。${Math.round(backoff)}ms 後にリトライ (${attempt + 1}/${MAX_RETRIES})`);
+        await sleep(backoff);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 // ── 型変換 ────────────────────────────────────────────────────────────────────
 
 export function toFirestoreFields(obj) {
