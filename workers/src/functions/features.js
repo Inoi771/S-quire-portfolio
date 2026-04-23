@@ -61,6 +61,7 @@
 
 import { isAdminUser } from './auth.js';
 import { getCampusConfig_ } from './grades.js';
+import { supabaseSelect } from '../supabase.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -1253,5 +1254,44 @@ export async function saveUnifiedLecturePricing(args, env, user) {
     return { success: true, message: '全講習の料金設定を保存しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-15】getTeacherNamesMap — GAS features.js:3474 の Workers 版
+ *
+ * Supabase staffs から teacherId → {email, name} マップを返す。アプリ起動時
+ * に講習管理タブから呼ばれ、グリッド上の講師名を常に最新の表示名で描画する
+ * ために使われる。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（Admin ガードなし）。一般スタッフからも
+ *   呼ばれる参照系関数のため。
+ *
+ * Supabase クエリ:
+ *   GET /rest/v1/staffs?select=id,email,display_name,name
+ *   フィルタなし（is_deleted 等は付けない・GAS 版と一致）。
+ *
+ * name の優先順位（厳守）:
+ *   display_name → name → ''（逆順禁止）
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   成功: { success: true, map: { teacherId: { email, name } } }
+ *   失敗: { success: false, map: {} }
+ *   ※ 失敗時の error フィールドは付けない（GAS 版と一致）
+ */
+export async function getTeacherNamesMap(args, env, user) {
+  try {
+    const rows = await supabaseSelect(env, 'staffs', 'select=id,email,display_name,name');
+    const map = {};
+    (rows || []).forEach((row) => {
+      map[row.id] = {
+        email: row.email || '',
+        name: row.display_name || row.name || ''
+      };
+    });
+    return { success: true, map };
+  } catch (error) {
+    return { success: false, map: {} };
   }
 }

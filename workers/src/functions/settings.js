@@ -234,6 +234,25 @@ export async function savePreferredCampuses(args, env, user) {
 }
 
 /**
+ * 【Phase 6-A-15】getSubjectOptions — GAS settings.js:633 の Workers 版
+ *
+ * プロフィール設定画面の担当教科チェックボックスで使う教科名配列を返す。
+ * GAS 版と同じく生の配列を直接返す（`{success, options}` 等でラップしない）。
+ * 順序・表記は GAS 版と完全一致。
+ */
+export async function getSubjectOptions(args, env, user) {
+  return [
+    '英語',
+    '数学',
+    '国語',
+    '理科',
+    '物理',
+    '化学',
+    '社会'
+  ];
+}
+
+/**
  * 【Phase 5-E-7】getSettings — GAS settings.js getSettings() の Workers 版
  *
  * 設定画面・初期化フロー向けに、現在のユーザーが見られる設定をまとめて返す。
@@ -478,6 +497,57 @@ export async function updateUserProfile(args, env, user) {
       message: 'プロフィールを更新しました',
       profile: { displayName, subjects }
     };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-A-15】resetUserThemeColor — GAS settings.js:568 の Workers 版
+ *
+ * ユーザー個別のテーマカラー設定をリセットし、システムデフォルトに戻す。
+ * Supabase staffs の theme_color を空にし、KV `THEME_COLOR` の値（or '#43e97b'）を返す。
+ *
+ * 書込方式:
+ *   GAS 版は supabaseUpsert で全フィールド置換だが、Workers 版では PATCH 化
+ *   （CLAUDE.md settings.js:109 の partial UPSERT NOT NULL 違反回避指針 /
+ *    Phase 6-A-4 updateUserProfile と同型）。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（Admin ガードなし）。自分の設定のみ変更。
+ *
+ * 挙動:
+ *   - staff 未解決（未登録ユーザー）でも KV fallback のみで success:true を返す
+ *     （GAS 版 `if (staff) { ... }` と一致）。
+ *   - staff 解決と KV 読取を Promise.all で並列化（GAS 版は順次）。
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   - 成功: { success: true, themeColor: '#RRGGBB' }
+ *   - 失敗: { success: false, error: <文言> }
+ */
+export async function resetUserThemeColor(args, env, user) {
+  try {
+    const [rows, themeColorProp] = await Promise.all([
+      supabaseRpc(env, 'find_staff_by_auth', {
+        p_uid: user.uid || null,
+        p_email: user.email ? user.email.toLowerCase() : null
+      }),
+      env.KV.get(PROP_PREFIX + 'THEME_COLOR')
+    ]);
+
+    if (rows && rows.length > 0) {
+      const staff = staffFromSupabase(rows[0]);
+      const teacherId = staff.teacherId || staff._id;
+      if (teacherId) {
+        await supabaseUpdate(env, 'staffs', {
+          theme_color: '',
+          updated_at: new Date().toISOString()
+        }, 'id=eq.' + encodeURIComponent(teacherId));
+      }
+    }
+
+    const effectiveColor = themeColorProp || '#43e97b';
+    return { success: true, themeColor: effectiveColor };
   } catch (error) {
     return { success: false, error: error.toString() };
   }

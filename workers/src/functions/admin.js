@@ -269,3 +269,33 @@ export async function getPlacementTeacherNames(args, env, user) {
     return { success: false, teachers: [], error: e.toString() };
   }
 }
+
+/**
+ * 【Phase 6-A-15】getCachedHolidays — GAS admin.js:1145 の Workers 版
+ *
+ * KV `HOLIDAY_CACHE` にキャッシュされた祝日データを返す。アプリ起動時に
+ * フロントエンドが呼び出す高頻度関数（CalendarApp 直アクセスより高速）。
+ *
+ * 認証:
+ *   Firebase ID トークン検証のみ（Admin ガードなし）。
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   生のオブジェクト `{ "YYYY-MM-DD": "祝日名", ... }` を直接返す
+ *   （`{success, holidays}` 等でラップしない）。
+ *   未キャッシュ時・JSON パース失敗時は `{}`（空オブジェクト）を返す。
+ *   フロントは `Object.keys(holidays).length > 0` でチェックするため、
+ *   必ずオブジェクトを返し null/undefined は返さない。
+ *
+ * キャッシュ更新:
+ *   GAS 側 refreshHolidayCache（CalendarApp 依存・日次トリガー）が担当。
+ *   Workers 側は読取専用。
+ */
+export async function getCachedHolidays(args, env, user) {
+  try {
+    const raw = await env.KV.get(PROP_PREFIX + 'HOLIDAY_CACHE');
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (e) {
+    return {};
+  }
+}
