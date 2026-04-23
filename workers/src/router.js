@@ -73,7 +73,7 @@ import {
   getLectureScheduleEntries
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
-import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers } from './functions/auth-emails.js';
+import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo } from './functions/auth-emails.js';
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -227,7 +227,8 @@ const HANDLERS = {
   saveLineSchedulerSettings,
   getLectureScheduleEntries,
   saveScheduledLineMessage,
-  deleteScheduledLineMessage
+  deleteScheduledLineMessage,
+  getUserRoleInfo
 };
 
 export async function handleApiCall(body, env) {

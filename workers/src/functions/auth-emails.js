@@ -279,3 +279,64 @@ export async function getAllowedUsers(args, env, user) {
     return { success: false, error: error.toString() };
   }
 }
+
+/**
+ * 【Phase 6-A-19】getDisplayName_ — GAS auth.js:200 の Workers 版（純関数ヘルパー）
+ *
+ * メールアドレスから表示名を生成する。例: 'taro.tanaka@example.com' → 'Taro Tanaka'
+ * DB ルックアップ一切なし。@ の前をピリオドで分割して各セグメントを Capitalize する。
+ * catch 時は @ の前の文字列をそのまま返す。
+ *
+ * @param {string} userEmail
+ * @returns {string}
+ */
+function getDisplayName_(userEmail) {
+  try {
+    const parts = String(userEmail || '').split('@')[0].split('.');
+    return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  } catch (_) {
+    return String(userEmail || '').split('@')[0];
+  }
+}
+
+/**
+ * 【Phase 6-A-19】getUserRoleInfo — GAS auth.js:171 の Workers 版
+ *
+ * 認証済みユーザーのロール情報（Admin 判定・表示名・メール・ラベル）を返す。
+ * 起動時の Admin タブ表示制御・ログサブタブ・設定タブの API キー表示で使用。
+ *
+ * 認証: Firebase ID トークン検証のみ（Admin ガードなし・GAS 版踏襲）。
+ *
+ * GAS 版との差分（Phase 6-A-19 で明文化）:
+ *   - 隠し Admin モード（CacheService `hiddenAdmin_*`）のチェックを**省略**。
+ *     隠し Admin ユーザーはフロント sessionStorage で状態管理する（js-core.html:1025）。
+ *     リロード時は Admin 権限が一時喪失するが、ロゴタップ再入力で復旧可能。
+ *   - activateHiddenAdminMode の Workers 化は Phase 6-B で対応予定。
+ *     その時点で isAdminUser が `prop:hiddenAdmin_{email}` も読むように拡張すれば
+ *     本関数も自動的に隠し Admin 対応となる（本関数のコード変更不要）。
+ *
+ * 戻り値形状は GAS 版と完全一致:
+ *   成功: { isAdmin, displayName, email, roleLabel: '🔐 Admin' or '👤 一般ユーザー' }
+ *   失敗: { isAdmin: false, displayName: 'Unknown',
+ *           email: 'unknown@example.com', roleLabel: '❌ エラー' }
+ */
+export async function getUserRoleInfo(args, env, user) {
+  try {
+    const email = (user && user.email) || '';
+    const isAdmin = await isAdminUser(env, user);
+    const displayName = getDisplayName_(email);
+    return {
+      isAdmin,
+      displayName,
+      email,
+      roleLabel: isAdmin ? '🔐 Admin' : '👤 一般ユーザー'
+    };
+  } catch (error) {
+    return {
+      isAdmin: false,
+      displayName: 'Unknown',
+      email: 'unknown@example.com',
+      roleLabel: '❌ エラー'
+    };
+  }
+}
