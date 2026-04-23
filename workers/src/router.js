@@ -90,7 +90,11 @@ import {
 import {
   getLineRegisteredUsers,
   getCampusNotificationRouting,
-  updateCampusNotificationRouting
+  updateCampusNotificationRouting,
+  getFormEmailFilterSettings,
+  saveFormEmailFilterSettings,
+  getLineSchedulerSettings,
+  saveLineSchedulerSettings
 } from './functions/line.js';
 
 // 認証不要の関数
@@ -213,7 +217,11 @@ const HANDLERS = {
   resetUserThemeColor,
   saveSchoolAverages,
   getStudentExamData,
-  getStudentPlacementData
+  getStudentPlacementData,
+  getFormEmailFilterSettings,
+  saveFormEmailFilterSettings,
+  getLineSchedulerSettings,
+  saveLineSchedulerSettings
 };
 
 export async function handleApiCall(body, env) {
