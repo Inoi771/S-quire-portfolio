@@ -20,7 +20,7 @@
 - `setProperty(key, value)` — スクリプトプロパティ設定（内部で `setProperty_()` を呼ぶ薄いラッパー）
 - `getAllProperties()` — 全プロパティ取得（Workers KV に enumerate 系 API が無いため ScriptProperties を直接参照・Dual-write で同期済）
 - `isAdmin()` — Admin 判定（ADMIN_EMAILS または隠し管理者モードのキャッシュを確認）
-- `activateHiddenAdminMode(password)` — 隠し管理者モード有効化（CacheService に6時間フラグ保存）
+- `activateHiddenAdminMode(password)` — 隠し管理者モード有効化（Workers KV `prop:hiddenAdmin_{email}` に TTL 6 時間で保存・Phase 6-B-01）
 - `verifyFirebaseIdToken_(idToken)` — Firebase IDトークンを検証し `{ email, uid }` を返す。検証失敗時は null（内部ヘルパー）
 - `getCurrentUserEmail()` — 現在のユーザーメール取得
 - `getUserRoleInfo()` — ロール情報取得（`@aiCallable` ではない）

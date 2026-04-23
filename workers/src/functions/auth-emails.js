@@ -307,13 +307,10 @@ function getDisplayName_(userEmail) {
  *
  * 認証: Firebase ID トークン検証のみ（Admin ガードなし・GAS 版踏襲）。
  *
- * GAS 版との差分（Phase 6-A-19 で明文化）:
- *   - 隠し Admin モード（CacheService `hiddenAdmin_*`）のチェックを**省略**。
- *     隠し Admin ユーザーはフロント sessionStorage で状態管理する（js-core.html:1025）。
- *     リロード時は Admin 権限が一時喪失するが、ロゴタップ再入力で復旧可能。
- *   - activateHiddenAdminMode の Workers 化は Phase 6-B で対応予定。
- *     その時点で isAdminUser が `prop:hiddenAdmin_{email}` も読むように拡張すれば
- *     本関数も自動的に隠し Admin 対応となる（本関数のコード変更不要）。
+ * Phase 6-B-01 で対応済み: isAdminUser が `prop:hiddenAdmin_{email}` を
+ * 先にチェックするよう拡張されたため、本関数は自動的に隠し Admin 対応となる
+ * （本関数のコードは変更不要）。activateHiddenAdminMode ハンドラも本ファイル
+ * 末尾に追加済み。
  *
  * 戻り値形状は GAS 版と完全一致:
  *   成功: { isAdmin, displayName, email, roleLabel: '🔐 Admin' or '👤 一般ユーザー' }
@@ -338,5 +335,40 @@ export async function getUserRoleInfo(args, env, user) {
       email: 'unknown@example.com',
       roleLabel: '❌ エラー'
     };
+  }
+}
+
+/**
+ * 【Phase 6-B-01】activateHiddenAdminMode — GAS auth.js:130 の Workers 版
+ *
+ * 隠し管理者モードを有効化する（ロゴタップ認証からフロントエンドが呼び出す）。
+ * パスワードが正しければ Workers KV `prop:hiddenAdmin_{email}` に
+ * 値 `'true'` を TTL 21600 秒（6 時間）で書込む。
+ *
+ * GAS 版（auth.js:130-147）は CacheService.getScriptCache().put(..., 21600) で
+ * 同一挙動を実現していた。Phase 6-B-01 で KV TTL に置換。
+ *
+ * 呼出元: js-core.html:1012（初回有効化）・js-core.html:1031（リロード時再設定）
+ * 連動: isAdminUser（workers/src/functions/auth.js）が起動時に本キーを読む
+ *
+ * @param {Array} args [password] — パスワード文字列
+ * @return {{ success: boolean, error?: string }}
+ */
+export async function activateHiddenAdminMode(args, env, user) {
+  try {
+    const password = (args && args[0]) || '';
+    if (password !== 'inoiman') {
+      return { success: false, error: 'パスワードが違います' };
+    }
+    const email = ((user && user.email) || '').toLowerCase();
+    if (!email || email === 'unknown@example.com') {
+      return { success: false, error: 'ユーザーを識別できません' };
+    }
+    await env.KV.put('prop:hiddenAdmin_' + email, 'true', { expirationTtl: 21600 });
+    console.log('✓ 隠し管理者モード有効化:', email);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ activateHiddenAdminModeエラー:', error);
+    return { success: false, error: error.toString() };
   }
 }
