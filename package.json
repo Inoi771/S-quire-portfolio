@@ -5,11 +5,10 @@
     "test": "jest",
     "build": "node scripts/build.js"
   },
-  "jest": {
-    "testMatch": ["**/__tests__/**/*.test.js"],
-    "testPathIgnorePatterns": ["/node_modules/", "__tests__/helpers/"]
-  },
   "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "babel-jest": "^30.3.0",
     "jest": "^29.7.0"
   }
 }
