@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 33**
+**現在のデプロイ回数: 34**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -437,6 +437,7 @@ MyProject/
 - **ScriptProperties アクセスはラッパー経由（Phase 5-E-4〜6）**: GAS コード内の単一キー get/set/delete は `getProperty_()` / `setProperty_()` / `deleteProperty_()`（`kv-props.js`）経由で行うこと。Phase 5-E-6 で ScriptProperties は凍結され、書込・削除は Cloudflare KV のみに行う（SP への Dual-write は停止済）。読み取りのみ、KV 一時障害時の可用性保険として SP 直読へフォールバックする。`INTERNAL_API_KEY` のみ無限ループ回避のため ScriptProperties から直接取得する（KV 認証に必要なため SP に残置）。enumerate 系は `getAllProperties_()`（`kv_list` + `UrlFetchApp.fetchAll(kv_get)` + SP ユニオン・Phase 5-E-5 実装）を使うこと。`.getKeys()` / `.getProperties()` の新規直読は禁止。凍結後の SP は古い値のまま残るが、KV が唯一の正。`PropertiesService.getScriptProperties().getProperty(...)` の新規追加も禁止（既存ラッパーを使う）
 - **Workers 直 KV アクセス（Phase 5-E-7〜）**: Workers 関数内の単一キー get/set/delete は `env.KV.get('prop:...')` / `env.KV.put('prop:...', value)` / `env.KV.delete('prop:...')` のように KV バインディングを直接使うこと（kv-props.js / kv_get / kv_set プロキシ経由は GAS 側専用）。キー名は必ず `'prop:'` プレフィックスを付ける（`workers/src/functions/kv.js` の `PROP_PREFIX` と一致）。Admin 判定は `prop:ADMIN_EMAILS` を優先し、未設定時のみ `env.ADMIN_EMAILS` にフォールバックすること。B 分類関数の Workers 化時はこのパターンに従う（`workers/src/functions/settings.js` の `getSettings` / `updateSettings` が参考実装）
 - **隠し Admin モードの Workers 化は Phase 6-B で対応（Phase 6-A-19 で境界整理）**: `getUserRoleInfo` / `isAdminUser` の Workers 版は CacheService チェックを省略するため、隠し Admin ユーザーはフロント sessionStorage で状態管理する方式に依存する（`js-core.html:1025` の `checkAdminTabVisibility` パス）。隠し Admin セッション中にブラウザリロードすると Admin 権限が一時喪失する（ロゴタップ再入力で復旧可能）。`activateHiddenAdminMode` を Workers 化する際は、Workers KV `prop:hiddenAdmin_{email}` に TTL 6 時間で書込し、`isAdminUser` / `getUserRoleInfo` もそれを読むように拡張する
+- **Phase 6-A' クローズ（2026-04-23）**: Phase 6-A-15 〜 6-A-20 で 17 関数を Workers 化。進捗率は 40.5% → 46.6%（フロント呼出ベース 59.9% → 68.9%）。残存 Phase 6-B 対象は ①`activateHiddenAdminMode`（CacheService → Workers KV + TTL）②`saveLectureScheduleEntries`（LockService → Firestore Transactions）③`analyzeFlyerImageMeta`（Gemini + Firestore・features.js 初の Gemini 呼出）④`previewTemplateMessage` / `resolveTemplateForSendDate`（15+ 日付ヘルパー port）⑤`getScheduledLineMessages` / `resetAndRegenerateSchedule`（25+ 生成ヘルパー tree port）の 5 領域・計 7 関数
 
 ---
 

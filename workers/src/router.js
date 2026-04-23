@@ -7,7 +7,9 @@ import {
   updateScriptPropertyFromGUI,
   deleteScriptPropertyFromGUI,
   getPlacementTeacherNames,
-  getCachedHolidays
+  getCachedHolidays,
+  getStaffPlacementForWeb,
+  saveStaffPlacementForWeb
 } from './functions/admin.js';
 import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile, getSubjectOptions, resetUserThemeColor } from './functions/settings.js';
 import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages, getGradeSummary, getStudentGradeReport, saveSchoolAverages, getStudentExamData, getStudentPlacementData } from './functions/students.js';
@@ -228,7 +230,9 @@ const HANDLERS = {
   getLectureScheduleEntries,
   saveScheduledLineMessage,
   deleteScheduledLineMessage,
-  getUserRoleInfo
+  getUserRoleInfo,
+  getStaffPlacementForWeb,
+  saveStaffPlacementForWeb
 };
 
 export async function handleApiCall(body, env) {

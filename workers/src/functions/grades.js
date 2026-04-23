@@ -500,6 +500,7 @@ async function getCampusDetailsConfig_(env) {
     return [];
   }
 }
+export { getCampusDetailsConfig_ };
 
 // ─── Supabase count guard（GAS countStudentsByCampus_ 相当・選択肢α） ───
 // 指定校舎コードに在籍する削除済みでない生徒の件数を返す（エラー時は 0）。
