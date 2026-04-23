@@ -350,7 +350,7 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `normalizeLecDate_(val)` — Sheets日付値をYYYY-MM-DD文字列に正規化する内部ヘルパー
 - `normalizeLecTime_(val)` — Sheets時刻値をHH:MM文字列に正規化する内部ヘルパー
 - `getLectureScheduleSpreadsheet_()` — 講習スケジュール用スプレッドシートを取得/作成する内部ヘルパー
-- `saveLectureScheduleEntries(lectureId, campusCode, entriesJson)` — 講習スケジュールエントリ一括保存（全置換・LockService使用）
+- `saveLectureScheduleEntries(lectureId, campusCode, entriesJson)` — 指定の講習・校舎のスケジュールエントリを一括保存（全置換）。Phase 6-B-03 で Workers 化済み・`workers/src/firebase.js` の `firestoreTransaction` 経由で atomic RMW。
 - `getLectureScheduleEntries(lectureId, campusCode)` — `@aiCallable` 講習スケジュールエントリ取得
 - `ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` 画像/PDFから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
 - `parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` テキストから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）

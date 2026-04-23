@@ -61,8 +61,8 @@
 
 import { isAdminUser } from './auth.js';
 import { getCampusConfig_ } from './grades.js';
-import { supabaseSelect } from '../supabase.js';
-import { firestoreGet, firestoreUpdateFields } from '../firebase.js';
+import { supabaseSelect, supabaseRpc } from '../supabase.js';
+import { firestoreGet, firestoreUpdateFields, firestoreTransaction } from '../firebase.js';
 import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText } from '../gemini.js';
 
 const PROP_PREFIX = 'prop:';
@@ -1444,4 +1444,145 @@ async function analyzeUploadedImageMetadata_(env, base64, mimeType) {
     fileName: safeName || '',
     tags: (metadata.tags || '').trim()
   };
+}
+
+/**
+ * 【Phase 6-B-03】saveLectureScheduleEntries — GAS features.js:2966 の Workers 版
+ *
+ * 指定の講習・校舎のスケジュールエントリを一括保存する（`entries` 配列の全置換）。
+ * GAS 版は `LockService.getScriptLock()` + 10 秒 waitLock で Read-Modify-Write を
+ * 逐次化していたが、Workers 版では `firestoreTransaction`（`:commit` endpoint +
+ * read-write transaction）で atomic 保証する。ABORTED/UNAVAILABLE 時は最大 5 回
+ * 自動リトライされる。
+ *
+ * 権限チェック: Admin 以外は他講師の entry を改ざん/削除できない（teacherId で判定）。
+ *
+ * GAS 版との差分: 完全一致（戻り値・entryId 自動生成・型正規化・書込スキーマ）。
+ * GAS 版（features.js:2966-3060）は AI 系 5 関数（Phase 6-B-04 対象）が GAS 内部
+ * から直接呼ぶため、Phase 6-B-03 時点では残置必須。
+ *
+ * @param {Array}  args [lectureId, campusCode, entriesJson]
+ * @return {{ success: boolean, message?: string, entries?: Array, error?: string }}
+ */
+export async function saveLectureScheduleEntries(args, env, user) {
+  try {
+    const [lectureId, campusCode, entriesJson] = args || [];
+
+    let entries;
+    try {
+      entries = JSON.parse(entriesJson || '[]');
+      if (!Array.isArray(entries)) entries = [];
+    } catch (_) {
+      entries = [];
+    }
+
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = String(lectureId) + '_' + normalizedCampus;
+
+    // Admin 判定と自分の teacherId を先に解決（tx 内は極力短く）
+    const isAdmin = await isAdminUser(env, user);
+    let myTid = '';
+    if (!isAdmin) {
+      try {
+        const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+          p_uid: (user && user.uid) || null,
+          p_email: (user && user.email) ? user.email.toLowerCase() : null
+        });
+        const staff = rows && rows[0];
+        myTid = staff ? (staff.teacherId || staff._id || '') : '';
+      } catch (_) {
+        myTid = '';
+      }
+    }
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existingEntries = (existingDoc && existingDoc.entries) || [];
+
+      // 権限チェック: Admin 以外は他人のエントリを改ざんできない（講師 ID のみで判定）
+      if (!isAdmin) {
+        const existingOtherEntries = {};
+        existingEntries.forEach((e) => {
+          const tid = e.teacherId || '';
+          if (tid && tid !== myTid) {
+            existingOtherEntries[e.entryId || ''] = {
+              date: String(e.date || ''), startTime: String(e.startTime || ''),
+              durationSlots: String(Number(e.durationSlots) || 9),
+              subject: String(e.subject || ''), grade: String(e.grade || ''), teacherId: tid
+            };
+          }
+        });
+        const incomingOtherIds = {};
+        entries.forEach((e) => {
+          const eTid = e.teacherId || '';
+          if (eTid && eTid !== myTid) {
+            incomingOtherIds[e.id] = {
+              date: String(e.date || ''), startTime: String(e.startTime || ''),
+              durationSlots: String(Number(e.durationSlots) || 9),
+              subject: String(e.subject || ''), grade: String(e.grade || ''), teacherId: eTid
+            };
+          }
+        });
+        const otherKeys = Object.keys(existingOtherEntries);
+        for (let m = 0; m < otherKeys.length; m++) {
+          const eid = otherKeys[m];
+          if (!incomingOtherIds[eid]) {
+            return { success: false, error: '他のユーザーのエントリは削除できません' };
+          }
+          const orig = existingOtherEntries[eid];
+          const inc = incomingOtherIds[eid];
+          if (orig.date !== inc.date || orig.startTime !== inc.startTime ||
+              orig.durationSlots !== inc.durationSlots || orig.subject !== inc.subject ||
+              orig.grade !== inc.grade) {
+            return { success: false, error: '他のユーザーのエントリは変更できません' };
+          }
+        }
+      }
+
+      // エントリ ID を確定して保存データを構築
+      const savedEntries = [];
+      const newEntries = entries.map((e) => {
+        const entryId = e.id || ('ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000));
+        const eData = {
+          entryId:       entryId,
+          date:          String(e.date      || ''),
+          startTime:     String(e.startTime || ''),
+          durationSlots: Number(e.durationSlots) || 9,
+          subject:       String(e.subject   || ''),
+          grade:         String(e.grade     || ''),
+          teacherName:   String(e.teacherName  || ''),
+          teacherEmail:  String(e.teacherEmail || ''),
+          classLabel:    e.classLabel || null,
+          teacherId:     String(e.teacherId || '')
+        };
+        savedEntries.push({
+          id: entryId, lectureId: String(lectureId), campusCode: normalizedCampus,
+          date: eData.date, startTime: eData.startTime, durationSlots: eData.durationSlots,
+          subject: eData.subject, grade: eData.grade, teacherName: eData.teacherName,
+          teacherEmail: eData.teacherEmail, classLabel: eData.classLabel, teacherId: eData.teacherId
+        });
+        return eData;
+      });
+
+      // 1 ドキュメントに entries 配列として全置換保存
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    newEntries,
+        updatedAt:  new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        message: entries.length + '件を保存しました',
+        entries: savedEntries
+      };
+    });
+
+    console.log(`✓ saveLectureScheduleEntries: ${entries.length}件保存 (${lectureId}/${normalizedCampus})`);
+    return result;
+  } catch (error) {
+    console.error('❌ saveLectureScheduleEntriesエラー:', error);
+    return { success: false, error: error.toString() };
+  }
 }
