@@ -4,6 +4,8 @@ README.md
 .claspignore
 package.json
 package-lock.json
+babel.config.js
+jest.config.js
 plan.md
 firebase.json
 firestore.rules

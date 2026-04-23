@@ -9,6 +9,7 @@ on:
       - '*.js'
       - '*.html'
       - 'appsscript.json'
+      - '.claspignore'
       - '.github/workflows/deploy-to-gas.yml'
   workflow_dispatch:
 

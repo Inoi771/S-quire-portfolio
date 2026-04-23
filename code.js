@@ -399,4 +399,4 @@ if (typeof module !== 'undefined') {
     EVENT_TYPES: EVENT_TYPES
   };
 }
-// 更新 2026-04-08
+// 更新 2026-04-23
