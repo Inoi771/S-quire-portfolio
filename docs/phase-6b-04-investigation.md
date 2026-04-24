@@ -462,3 +462,85 @@ if (action === 'create_lecture_entry') {
 | 本番稼働中の AI 一時停止リスク | 中（一括切替時に 5 関数全滅の可能性） | 中-高（一括切替時に全 AI action 全滅の可能性） | 低（関数単位切戻しで最小化） |
 
 ---
+
+## 5. 推奨案とその理由
+
+### 5.1 推奨: **案 C（段階移行・フィーチャーフラグ併用）** を基本とし、**関数単位で案 A の個別エンドポイント化を実施**する
+
+具体的には以下のハイブリッド方針:
+
+1. Workers 側: 5 関数（+ `multiCampusBulkOperationsAI_` の扱いは 7 章参照）を **個別エンドポイント** として実装（案 A のエンドポイント構成を採用）
+2. GAS 側: `executeAiAction` は GAS に残し、各 action 分岐に **フィーチャーフラグ（KV）による GAS/Workers 切替**を挟む（案 C の切替機構を採用）
+3. 関数を **1 つずつ Workers に切替え**、各関数で本番動作確認後に次へ進む（案 C の段階移行）
+
+### 5.2 この方針を推奨する理由
+
+#### 5.2.1 本番稼働中のプロジェクトとして安全性が最優先
+
+`CLAUDE.md` 冒頭の「🚨 本番環境移行済み」セクションで **「大きな修正の禁止」「スコープを最小に」「確認を強化」「プラン先行」** が明示されている。案 B（`executeAiAction` 丸ごと Workers 化）は 5 関数以外の非 AI lecture action（`submit_grade` / `submit_student` / `add_schedule` / `edit_schedule` / `delete_schedule`）を巻き込む設計変更を伴い、**スコープが対象 5 関数を大きく超える**。本番稼働ポリシーに適合しない。
+
+#### 5.2.2 Phase 6-B-09 ロールバック（2026-04-24）の教訓
+
+Phase 6-B-09 は LINE 配信エンジンを丸ごと Workers に移行しようとしたが、Cloudflare Dashboard 上で Cron 実行確認ができず緊急ロールバックとなった。この経験から **「一括切替ではなく段階切替・観測可能な単位で進める」** という教訓が得られている。案 C はこの教訓を直接反映する。
+
+#### 5.2.3 `saveLectureScheduleEntries` Workers 版の再利用性
+
+Phase 6-B-03 で `saveLectureScheduleEntries` を Workers 化した際、以下のパターンが確立している:
+
+- `isAdminUser(env, user)` での Admin 判定
+- `supabaseRpc('find_staff_by_auth', ...)` での teacherId 解決
+- `firestoreTransaction` で RMW atomic 保証
+- `user.email` / `user.uid` を Firebase ID トークンから受取
+
+**5 関数とも同じ Firestore ドキュメント `lectureEntries/{lectureId}_{campusCode}` に対する RMW** であるため、このパターンをそのままコピペ再利用できる。案 A の個別エンドポイント化が最も素直な選択肢（案 B の統合分岐よりコードがシンプル）。
+
+#### 5.2.4 フィーチャーフラグによるロールバックの速さ
+
+- 案 A 単独だと git revert + GAS redeploy で **1-2 分**（反映時間含む）
+- 案 B だと gas-bridge.html 1 行変更 + Firebase Hosting redeploy で **2-3 分**
+- 案 C の KV フラグだと **即時**（KV Put 後、次のリクエストから適用）
+
+本番で問題が出た場合の MTTR（Mean Time To Recovery）を最小化するには KV フラグが最適。
+
+#### 5.2.5 非 AI lecture action との分離
+
+`executeAiAction` には AI lecture 5 種以外に `submit_grade` / `submit_student` / `add_schedule` / `edit_schedule` / `delete_schedule` の 5 種を含むが、これらは **Phase 6-B-04 のスコープ外**。案 C だとこれらの action を完全に GAS 側に残したまま AI lecture 5 種だけを切替えできる。案 B は非 AI lecture action の挙動テストも必要になる。
+
+### 5.3 この方針で採用しない要素
+
+- **案 A の「GAS 版ラッパー即置換」は採用しない**: 5 関数を一括で Workers に切替えると、Workers 側のバグで 5 種類の AI 操作が同時に全滅するリスクがある
+- **案 C の「完全に案 A を使わず GAS 版を残す両立運用」は採用しない**: GAS 側の LockService バグや挙動差が残ると parity 検証が難しくなるため、最終的には GAS 版を dead code 化する
+
+### 5.4 想定フロー（ハイブリッド方針）
+
+```
+Phase 6-B-04-01: Workers 実装 & デプロイ（GAS 側は未接続・KV フラグ OFF）
+  ↓
+Phase 6-B-04-02: createLectureEntryAI のみ KV フラグ ON → 本番観測 1-3 日
+  ↓ 問題なければ
+Phase 6-B-04-03: editLectureEntryAI の KV フラグ ON → 本番観測 1-3 日
+  ↓ 問題なければ
+Phase 6-B-04-04: deleteLectureEntryAI の KV フラグ ON → 本番観測 1-3 日
+  ↓ 問題なければ
+Phase 6-B-04-05: bulkLectureOperationsAI + multiCampusBulkOperationsAI_ の
+                 KV フラグ ON → 本番観測 1-3 日
+  ↓ 問題なければ
+Phase 6-B-04-06: createWeeklyLectureEntriesAI の KV フラグ ON → 本番観測 1-3 日
+  ↓ 最後に
+Phase 6-B-04-07: GAS 版 5 関数を dead code として残置（実質無効）→
+                 次フェーズで削除
+```
+
+詳細な順序の根拠は 7 章参照。
+
+### 5.5 定量的な比較（参考）
+
+| 観点 | 案 A 単独 | 案 B 単独 | 案 C 単独 | **ハイブリッド（推奨）** |
+|------|:--:|:--:|:--:|:--:|
+| 実装工数（動作確認込み） | 3-4 日 | 3-5 日 | 1-2 週間 | 1-2 週間 |
+| 本番リスク | 中 | 中-高 | 低 | **低** |
+| MTTR（ロールバック所要） | 1-2 分 | 2-3 分 | 即時 | **即時** |
+| スコープの最小性 | ○ | △（非 AI action も巻込） | ○ | **◎** |
+| Phase 6-B-09 教訓の反映 | △ | × | ◎ | **◎** |
+
+---
