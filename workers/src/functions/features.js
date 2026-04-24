@@ -64,7 +64,11 @@ import { getCampusConfig_ } from './grades.js';
 import { supabaseSelect, supabaseRpc } from '../supabase.js';
 import { firestoreGet, firestoreUpdateFields, firestoreTransaction } from '../firebase.js';
 import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText } from '../gemini.js';
-import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
+import {
+  getCurrentFiscalYear,
+  toJstDate, getJstYear, getJstMonth, getJstDay, getJstDayOfWeek,
+  addDays, getFiscalYear
+} from '../helpers/datetime-helpers.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -1577,6 +1581,416 @@ export async function saveLectureScheduleEntries(args, env, user) {
     return result;
   } catch (error) {
     console.error('❌ saveLectureScheduleEntriesエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ========================================
+// Phase 6-B-04: AI 系講習エントリ操作 5 関数の Workers 版
+// ----------------------------------------
+// GAS 版（features.js:3079-3437）を firestoreTransaction + datetime-helpers に
+// 置換した Workers 実装。メッセージは P2 F01-F21 と character-for-character 一致。
+// ルーティング: INTERNAL_FUNCTIONS（INTERNAL_API_KEY + body.email/uid 経由）。
+// 詳細は docs/phase-6b-04-investigation.md / docs/phase-6b-04-00-*.md 参照。
+// KV フィーチャーフラグ（prop:FF_AI_LECTURE_*）経由で段階切替する前提のため、
+// 本関数群が呼ばれるのはフラグ ON 後のみ（Phase 6-B-04-01 以降）。
+// ========================================
+
+/**
+ * GAS 版 5 関数共通の認証・teacherId 解決前置処理。
+ * tx 内は極力短く保つため、この処理は tx 外で実施する。
+ * @private
+ */
+async function _resolveAiLectureContext_(env, user) {
+  const isAdmin = await isAdminUser(env, user);
+  const teacherEmail = String((user && user.email) || '').toLowerCase();
+  let teacherId = '';
+  let teacherName = '';
+  try {
+    const rows = await supabaseRpc(env, 'find_staff_by_auth', {
+      p_uid:   (user && user.uid) || null,
+      p_email: teacherEmail       || null
+    });
+    const staff = rows && rows[0];
+    if (staff) {
+      teacherId   = staff.teacherId || staff._id || '';
+      teacherName = staff.display_name || staff.name || '';
+    }
+  } catch (_) {}
+  return { isAdmin, teacherId, teacherName, teacherEmail };
+}
+
+/**
+ * AI アシスタントから講習エントリを 1 件作成する。
+ * GAS 版: features.js:3079 createLectureEntryAI_ と完全一致。
+ * @param {Array}  args [lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel]
+ * @return {{ success: boolean, message?: string, error?: string }}
+ */
+export async function createLectureEntryAI(args, env, user) {
+  try {
+    const [lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel] = args || [];
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = `${String(lectureId)}_${normalizedCampus}`;
+
+    const ctx = await _resolveAiLectureContext_(env, user);
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existing = (existingDoc && existingDoc.entries) || [];
+
+      const entryId = 'ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      const newEntry = {
+        id: entryId,
+        lectureId: String(lectureId),
+        campusCode: normalizedCampus,
+        date: String(date || ''),
+        startTime: String(startTime || ''),
+        durationSlots: Number(durationSlots) || 9,
+        subject: String(subject || ''),
+        grade: String(grade || ''),
+        teacherName: ctx.teacherName,
+        teacherEmail: ctx.teacherEmail,
+        classLabel: classLabel || null,
+        teacherId: ctx.teacherId
+      };
+      const newEntries = existing.concat([newEntry]);
+
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    newEntries,
+        updatedAt:  new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        message: String(date || '') + ' ' + String(startTime || '') + '〜 ' + String(subject || '') + ' の授業を追加しました'
+      };
+    });
+    return result;
+  } catch (error) {
+    console.error('❌ createLectureEntryAIエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AI アシスタントから講習エントリを 1 件編集する。
+ * GAS 版: features.js:3239 editLectureEntryAI_ と完全一致。
+ * @param {Array}  args [lectureId, campusCode, entryId, changes]
+ * @return {{ success: boolean, message?: string, error?: string }}
+ */
+export async function editLectureEntryAI(args, env, user) {
+  try {
+    const [lectureId, campusCode, entryId, changes] = args || [];
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = `${String(lectureId)}_${normalizedCampus}`;
+    const ch = changes || {};
+
+    const ctx = await _resolveAiLectureContext_(env, user);
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existing = (existingDoc && existingDoc.entries) || [];
+
+      const targetIdx = existing.findIndex(e => e.id === entryId);
+      if (targetIdx === -1) {
+        return { success: false, error: '指定されたエントリが見つかりません（ID: ' + entryId + '）' };
+      }
+      const target = existing[targetIdx];
+      if (!ctx.isAdmin && target.teacherId && target.teacherId !== ctx.teacherId) {
+        return { success: false, error: '他の講師のエントリは編集できません' };
+      }
+
+      const updated = existing.map((e, i) => {
+        if (i !== targetIdx) return e;
+        const n = Object.assign({}, e);
+        if (ch.date          !== undefined) n.date          = String(ch.date);
+        if (ch.startTime     !== undefined) n.startTime     = String(ch.startTime);
+        if (ch.durationSlots !== undefined) n.durationSlots = Number(ch.durationSlots) || 9;
+        if (ch.subject       !== undefined) n.subject       = String(ch.subject);
+        if (ch.grade         !== undefined) n.grade         = String(ch.grade);
+        if (ch.classLabel    !== undefined) n.classLabel    = ch.classLabel || null;
+        return n;
+      });
+
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    updated,
+        updatedAt:  new Date().toISOString()
+      });
+
+      return { success: true, message: 'エントリを更新しました' };
+    });
+    return result;
+  } catch (error) {
+    console.error('❌ editLectureEntryAIエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AI アシスタントから講習エントリを 1 件削除する。
+ * GAS 版: features.js:3289 deleteLectureEntryAI_ と完全一致。
+ * @param {Array}  args [lectureId, campusCode, entryId]
+ * @return {{ success: boolean, message?: string, error?: string }}
+ */
+export async function deleteLectureEntryAI(args, env, user) {
+  try {
+    const [lectureId, campusCode, entryId] = args || [];
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = `${String(lectureId)}_${normalizedCampus}`;
+
+    const ctx = await _resolveAiLectureContext_(env, user);
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existing = (existingDoc && existingDoc.entries) || [];
+
+      const targetIdx = existing.findIndex(e => e.id === entryId);
+      if (targetIdx === -1) {
+        return { success: false, error: '指定されたエントリが見つかりません（ID: ' + entryId + '）' };
+      }
+      const target = existing[targetIdx];
+      if (!ctx.isAdmin && target.teacherId && target.teacherId !== ctx.teacherId) {
+        return { success: false, error: '他の講師のエントリは削除できません' };
+      }
+
+      const deleted = target;
+      const updated = existing.filter((_, i) => i !== targetIdx);
+
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    updated,
+        updatedAt:  new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        message: String(deleted.date || '') + ' ' + String(deleted.startTime || '') + '〜 ' + String(deleted.subject || '') + ' を削除しました'
+      };
+    });
+    return result;
+  } catch (error) {
+    console.error('❌ deleteLectureEntryAIエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AI アシスタントから講習エントリを一括操作する（create/edit/delete 混合）。
+ * GAS 版: features.js:3332 bulkLectureOperationsAI_ と完全一致。
+ * @param {Array}  args [lectureId, campusCode, operations]
+ * @return {{ success: boolean, message?: string, error?: string }}
+ */
+export async function bulkLectureOperationsAI(args, env, user) {
+  try {
+    const [lectureId, campusCode, operations] = args || [];
+    if (!operations || operations.length === 0) {
+      return { success: false, error: '操作がありません' };
+    }
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = `${String(lectureId)}_${normalizedCampus}`;
+
+    const ctx = await _resolveAiLectureContext_(env, user);
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existing = (existingDoc && existingDoc.entries) || [];
+      const working = existing.slice();
+
+      let createdCount = 0, editedCount = 0, deletedCount = 0;
+      const errors = [];
+
+      for (let i = 0; i < operations.length; i++) {
+        const op = operations[i];
+        if (op.op === 'create') {
+          const entryId = 'ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
+          working.push({
+            id: entryId,
+            lectureId: String(lectureId),
+            campusCode: normalizedCampus,
+            date: String(op.date || ''),
+            startTime: String(op.startTime || ''),
+            durationSlots: Number(op.durationSlots) || 9,
+            subject: String(op.subject || ''),
+            grade: String(op.grade || ''),
+            teacherName: ctx.teacherName,
+            teacherEmail: ctx.teacherEmail,
+            classLabel: op.classLabel || null,
+            teacherId: ctx.teacherId
+          });
+          createdCount++;
+        } else if (op.op === 'edit') {
+          const idx = working.findIndex(e => e.id === op.entryId);
+          if (idx === -1) { errors.push('編集: エントリが見つかりません'); continue; }
+          if (!ctx.isAdmin && working[idx].teacherId && working[idx].teacherId !== ctx.teacherId) {
+            errors.push('編集: 他の講師のエントリ'); continue;
+          }
+          const ch = op.changes || {};
+          const n = Object.assign({}, working[idx]);
+          if (ch.date          !== undefined) n.date          = String(ch.date);
+          if (ch.startTime     !== undefined) n.startTime     = String(ch.startTime);
+          if (ch.durationSlots !== undefined) n.durationSlots = Number(ch.durationSlots) || 9;
+          if (ch.subject       !== undefined) n.subject       = String(ch.subject);
+          if (ch.grade         !== undefined) n.grade         = String(ch.grade);
+          if (ch.classLabel    !== undefined) n.classLabel    = ch.classLabel || null;
+          working[idx] = n;
+          editedCount++;
+        } else if (op.op === 'delete') {
+          const idx = working.findIndex(e => e.id === op.entryId);
+          if (idx === -1) { errors.push('削除: エントリが見つかりません'); continue; }
+          if (!ctx.isAdmin && working[idx].teacherId && working[idx].teacherId !== ctx.teacherId) {
+            errors.push('削除: 他の講師のエントリ'); continue;
+          }
+          working.splice(idx, 1);
+          deletedCount++;
+        }
+        // 不明な op は無視（GAS 版踏襲・errors にも積まない）
+      }
+
+      const totalSuccess = createdCount + editedCount + deletedCount;
+      if (totalSuccess === 0) {
+        return {
+          success: false,
+          error: '処理できる操作がありませんでした' + (errors.length > 0 ? '（' + errors.join('、') + '）' : '')
+        };
+      }
+
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    working,
+        updatedAt:  new Date().toISOString()
+      });
+
+      const parts = [];
+      if (createdCount > 0) parts.push('追加' + createdCount + '件');
+      if (editedCount > 0) parts.push('変更' + editedCount + '件');
+      if (deletedCount > 0) parts.push('削除' + deletedCount + '件');
+      let msg = parts.join('、') + 'を処理しました';
+      if (errors.length > 0) msg += '（' + errors.length + '件スキップ）';
+      return { success: true, message: msg };
+    });
+    return result;
+  } catch (error) {
+    console.error('❌ bulkLectureOperationsAIエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * AI アシスタントから講習エントリを毎週一括作成する。
+ * GAS 版: features.js:3135 createWeeklyLectureEntriesAI_ と完全一致。
+ *
+ * 日付計算は JST 安全な datetime-helpers 経由で実施:
+ *   toJstDate(str)       : YYYY-MM-DD を JST 00:00 として parse
+ *   getJstYear/Month/Day : JST 壁時計で Y/M/D を取得
+ *   getJstDayOfWeek      : JST 曜日（日=0）
+ *   addDays              : UTC 空間加算のため tz 非依存
+ *   getFiscalYear        : 1-indexed 月入力（4 月起算）
+ *
+ * 境界ケース C01-C12 は docs/phase-6b-04-00-weekly-boundary-cases.md 参照。
+ * @param {Array}  args [lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel]
+ * @return {{ success: boolean, message?: string, error?: string }}
+ */
+export async function createWeeklyLectureEntriesAI(args, env, user) {
+  try {
+    const [lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel] = args || [];
+    const normalizedCampus = String(campusCode || '').padStart(2, '0');
+    const docId = `${String(lectureId)}_${normalizedCampus}`;
+
+    const ctx = await _resolveAiLectureContext_(env, user);
+
+    // gradeSettings 解決
+    const lecPeriods = await getLecturePeriods([], env, user);
+    const lp = (Array.isArray(lecPeriods) ? lecPeriods : []).find(l => l.id === lectureId) || null;
+
+    const gradeToSettingsKey = {
+      '07':'小','08':'小','09':'小','10':'小','11':'小','12':'小','小':'小',
+      '13':'中1','14':'中2','15':'中3','16':'高1','17':'高2','18':'高3'
+    };
+    let settingsKey = gradeToSettingsKey[grade] || '中1';
+    if (lp && lp.name && String(lp.name).indexOf('春期') !== -1 && settingsKey !== '小') {
+      settingsKey = '新' + settingsKey;
+    }
+    let count = 4;
+    let finalDuration = Number(durationSlots) || 9;
+    if (lp && lp.gradeSettings && lp.gradeSettings[settingsKey]) {
+      count = lp.gradeSettings[settingsKey].count || 4;
+      if (!durationSlots || Number(durationSlots) === 9) {
+        finalDuration = lp.gradeSettings[settingsKey].duration || 9;
+      }
+    }
+
+    // 開始日 parse（JST 安全）
+    const startDate  = toJstDate(String(date || ''));
+    const sYear      = getJstYear(startDate);
+    const sMonth     = getJstMonth(startDate);
+    const fiscalYear = getFiscalYear(sYear, sMonth);
+
+    // 会計年度 12 ヶ月分の休校日マージ
+    const closedDays = {};
+    for (let m = 1; m <= 12; m++) {
+      const yr = (m >= 4) ? fiscalYear : fiscalYear + 1;
+      const mo = await computeClosedDaysForMonth_(env, yr, m);
+      Object.keys(mo).forEach(k => { closedDays[k] = true; });
+    }
+
+    // 作成日リストを tx 外で全決定（tx 内は push + set のみ）
+    const toCreate = [];
+    let cur = startDate;
+    let created = 0;
+    while (created < count) {
+      const y = getJstYear(cur);
+      const mo = getJstMonth(cur);
+      const d = getJstDay(cur);
+      const dateKey = y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      if (!closedDays[dateKey] && getJstDayOfWeek(cur) !== 0) {
+        toCreate.push(dateKey);
+        created++;
+      }
+      cur = addDays(cur, 7);
+      if (getJstYear(cur) > fiscalYear + 2) break;  // 安全ガード（C09 永久日曜ループ対策）
+    }
+
+    const result = await firestoreTransaction(env, async (tx) => {
+      const existingDoc = await tx.get('lectureEntries', docId);
+      const existing = (existingDoc && existingDoc.entries) || [];
+      const working = existing.slice();
+
+      toCreate.forEach((dateKey, i) => {
+        const entryId = 'ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + i;
+        working.push({
+          id: entryId,
+          lectureId: String(lectureId),
+          campusCode: normalizedCampus,
+          date: dateKey,
+          startTime: String(startTime || ''),
+          durationSlots: finalDuration,
+          subject: String(subject || ''),
+          grade: String(grade || ''),
+          teacherName: ctx.teacherName,
+          teacherEmail: ctx.teacherEmail,
+          classLabel: classLabel || null,
+          teacherId: ctx.teacherId
+        });
+      });
+
+      tx.set('lectureEntries', docId, {
+        lectureId:  String(lectureId),
+        campusCode: normalizedCampus,
+        entries:    working,
+        updatedAt:  new Date().toISOString()
+      });
+
+      return { success: true, message: toCreate.length + '件の授業コマを作成しました（毎週・休校日除く）' };
+    });
+    return result;
+  } catch (error) {
+    console.error('❌ createWeeklyLectureEntriesAIエラー:', error);
     return { success: false, error: error.toString() };
   }
 }
