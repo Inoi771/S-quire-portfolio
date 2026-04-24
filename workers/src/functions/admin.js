@@ -9,6 +9,7 @@ import { isAdminUser, getAdminEmailList } from './auth.js';
 import { firestoreSet } from '../firebase.js';
 import { supabaseSelect } from '../supabase.js';
 import { getCampusConfig_, getCampusDetailsConfig_ } from './grades.js';
+import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -217,27 +218,6 @@ export async function deleteScriptPropertyFromGUI(args, env, user) {
 }
 
 /**
- * 現行の会計年度（4月起算）を返す。
- * GAS students.js:104 `getCurrentFiscalYear()` と完全一致:
- *   - 4月〜12月 → 当年
- *   - 1月〜3月 → 前年
- * エラー時のフォールバックも GAS 版と揃える（当年を返す）。
- * @private
- * @return {number}
- */
-function getCurrentFiscalYear_() {
-  try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1; // 1-12
-    if (month >= 4) return year;
-    return year - 1;
-  } catch (e) {
-    return new Date().getFullYear();
-  }
-}
-
-/**
  * 【Phase 6-A-20】_placementEditableYears_ — GAS admin.js:1305 の Workers 版（純関数）
  *
  * 講師配置の編集可能年度リストを返す。
@@ -285,7 +265,7 @@ function _placementEditableYears_(currentFY) {
  */
 export async function getPlacementTeacherNames(args, env, user) {
   try {
-    const currentFY = getCurrentFiscalYear_();
+    const currentFY = getCurrentFiscalYear();
     const json = await env.KV.get(PROP_PREFIX + 'STAFF_PLACEMENT_' + currentFY);
     if (!json) return { success: true, teachers: [] };
     const data = JSON.parse(json);
@@ -325,7 +305,7 @@ export async function getPlacementTeacherNames(args, env, user) {
  */
 export async function getStaffPlacementForWeb(args, env, user) {
   try {
-    const currentFY = getCurrentFiscalYear_();
+    const currentFY = getCurrentFiscalYear();
     // 旧キー migration / 旧年度アーカイブは完全省略（Phase 6-A-11 系譜）
 
     const editableYears = _placementEditableYears_(currentFY);
@@ -432,7 +412,7 @@ export async function saveStaffPlacementForWeb(args, env, user) {
     }
     const [dataJson, year] = args || [];
 
-    const currentFY = getCurrentFiscalYear_();
+    const currentFY = getCurrentFiscalYear();
     const editableYears = _placementEditableYears_(currentFY);
     const parsedYear = parseInt(year, 10);
     const targetYear = (!isNaN(parsedYear)) ? parsedYear : currentFY;

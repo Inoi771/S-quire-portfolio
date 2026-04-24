@@ -187,3 +187,33 @@ export function formatJstDateStr(date) {
 export function isLeapYear(year) {
   return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
+
+/**
+ * 現在 JST 時刻に基づく会計年度（4 月起算）を返す。
+ * GAS `getCurrentFiscalYear()`（students.js:104）の Workers 版。
+ *
+ * @return {number}
+ */
+export function getCurrentFiscalYear() {
+  const now = new Date();
+  return getFiscalYear(getJstYear(now), getJstMonth(now));
+}
+
+/**
+ * 指定年月の第 N 番目の曜日に該当する Date（JST 基準）を返す。
+ * 該当日が月末を超える場合（例: 2 月の第 5 日曜が存在しない）は `null`。
+ *
+ * @param {number} year 西暦年
+ * @param {number} month 月（1-12）
+ * @param {number} n 第 N 番目（1-5）
+ * @param {number} dayOfWeek 曜日（0=日, 1=月, ..., 6=土）
+ * @return {Date | null}
+ */
+export function getNthWeekdayOfMonth(year, month, n, dayOfWeek) {
+  const firstDow = getJstDayOfWeek(jstDate(year, month, 1));
+  const diff = (dayOfWeek - firstDow + 7) % 7;
+  const day = 1 + diff + (n - 1) * 7;
+  const candidate = jstDate(year, month, day);
+  if (getJstMonth(candidate) !== month) return null;
+  return candidate;
+}

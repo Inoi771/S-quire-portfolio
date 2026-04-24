@@ -2,15 +2,7 @@
 import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
 import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_, getSchoolConfig_ } from './grades.js';
 import { calcDeviationValue_, calcPassProbability_ } from './analysis.js';
-
-// GAS getCurrentFiscalYear() と同一ロジック（4月起算）
-// GAS は JST サーバーで動くため、Workers(UTC) では +9h 補正する
-function getCurrentFiscalYearJST() {
-  const jstDate = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const year  = jstDate.getUTCFullYear();
-  const month = jstDate.getUTCMonth() + 1; // 1-12
-  return month >= 4 ? year : year - 1;
-}
+import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
 
 // GAS makeSchoolAveDocId_() と同一ロジック
 function makeSchoolAveDocId(year, testName) {
@@ -111,7 +103,7 @@ export async function getMasterData(args, env, user) {
  */
 export async function getGradesYearFolders(args, env, user) {
   try {
-    const currentFy = getCurrentFiscalYearJST();
+    const currentFy = getCurrentFiscalYear();
     const dbYears = await supabaseRpc(env, 'get_grades_years');
     const yearSet = {};
     if (Array.isArray(dbYears)) {
