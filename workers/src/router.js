@@ -74,7 +74,12 @@ import {
   getTeacherNamesMap,
   getLectureScheduleEntries,
   analyzeFlyerImageMeta,
-  saveLectureScheduleEntries
+  saveLectureScheduleEntries,
+  createLectureEntryAI,
+  createWeeklyLectureEntriesAI,
+  editLectureEntryAI,
+  deleteLectureEntryAI,
+  bulkLectureOperationsAI
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode } from './functions/auth-emails.js';
@@ -117,7 +122,26 @@ const PUBLIC_FUNCTIONS = new Set(['ping']);
 
 // INTERNAL_API_KEY（body.internalApiKey）で認証する内部 API
 // Firebase ID トークンではなく共有シークレットで認証（GAS → Workers 間の信頼パス）
-const INTERNAL_FUNCTIONS = new Set(['kv_get', 'kv_set', 'kv_delete', 'kv_list']);
+const INTERNAL_FUNCTIONS = new Set([
+  'kv_get', 'kv_set', 'kv_delete', 'kv_list',
+  // Phase 6-B-04: AI 系講習エントリ操作（executeAiAction 経由で GAS から呼出）
+  'createLectureEntryAI',
+  'createWeeklyLectureEntriesAI',
+  'editLectureEntryAI',
+  'deleteLectureEntryAI',
+  'bulkLectureOperationsAI'
+]);
+
+// INTERNAL_FUNCTIONS のうち、body.email / body.uid から user オブジェクトを
+// 組立てて handler に渡す必要がある関数。teacherId 解決や権限チェックで使う。
+// kv_* は user 不要なので含めない。
+const INTERNAL_FUNCTIONS_NEED_USER = new Set([
+  'createLectureEntryAI',
+  'createWeeklyLectureEntriesAI',
+  'editLectureEntryAI',
+  'deleteLectureEntryAI',
+  'bulkLectureOperationsAI'
+]);
 
 // functionName → handler マップ
 const HANDLERS = {
@@ -246,6 +270,11 @@ const HANDLERS = {
   activateHiddenAdminMode,
   analyzeFlyerImageMeta,
   saveLectureScheduleEntries,
+  createLectureEntryAI,
+  createWeeklyLectureEntriesAI,
+  editLectureEntryAI,
+  deleteLectureEntryAI,
+  bulkLectureOperationsAI,
   previewTemplateMessage,
   resolveTemplateForSendDate,
   getScheduledLineMessages,
@@ -284,6 +313,18 @@ export async function handleApiCall(body, env) {
       const err = new Error('内部APIキーが一致しません');
       err.status = 401;
       throw err;
+    }
+    // Phase 6-B-04: AI 関数は body の email/uid から user を組立てる
+    // （GAS executeAiAction が getFirebaseEmailContext_() 由来の値を body に埋込済）
+    if (INTERNAL_FUNCTIONS_NEED_USER.has(functionName)) {
+      const bodyEmail = body.email ? String(body.email).toLowerCase() : '';
+      const bodyUid   = body.uid ? String(body.uid) : '';
+      if (!bodyEmail && !bodyUid) {
+        const err = new Error('AI 関数の呼出に email または uid が必要です');
+        err.status = 400;
+        throw err;
+      }
+      user = { email: bodyEmail, uid: bodyUid };
     }
   } else if (!PUBLIC_FUNCTIONS.has(functionName)) {
     // Firebase ID トークン方式（既存パス）
