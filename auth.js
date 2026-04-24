@@ -19,6 +19,10 @@ function setFirebaseEmailContext_(email) {
   _firebaseEmailContext_ = email ? email.toLowerCase() : null;
 }
 
+function getFirebaseEmailContext_() {
+  return _firebaseEmailContext_ || '';
+}
+
 /**
  * Firebase IDトークンをFirebase REST APIで検証し、メールアドレスを返す（Phase2認証準備）
  * Phase2（Firebase Hosting移行後）の doPost() API認証に使用する
