@@ -1967,4 +1967,223 @@ function deleteScheduledLineMessage(id) {
   }
 }
 
+/**
+ * 指定IDのスケジュールを今すぐ送信する（Admin 手動実行用）
+ * @param {string} id スケジュールID
+ * @return {Object} { success, sentCount, failedEmails }
+ */
+function sendScheduledLineMessageNow(id) {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var doc = firestoreGet_('lineSchedules', id);
+    if (!doc) return { success: false, error: '対象IDが見つかりません' };
+
+    var recipientsArr = doc.recipients || [];
+    var msgType = doc.type || '';
+    if (msgType === 'shimurocho') msgType = 'shitsucho'; // 旧名称の後方互換
+    if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
+      recipientsArr = getAllLineRegisteredTeacherIds_();
+    }
+    // LINE User ID で重複排除
+    var seenLineIds = {};
+    var deduped = [];
+    recipientsArr.forEach(function(tid) {
+      var staff = getStaffByTeacherId_(tid);
+      var lid = staff ? staff.lineUserId : null;
+      if (lid) {
+        if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
+      } else {
+        deduped.push(tid);
+      }
+    });
+    recipientsArr = deduped;
+    var message = doc.message || '';
+    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡' };
+
+    var sentCount = 0;
+    var failedRecipients = [];
+    recipientsArr.forEach(function(tid) {
+      var staff = getStaffByTeacherId_(tid);
+      var notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+      var pref = notifPrefs[msgType] || 'line';
+      if (pref === 'none') return;
+      if (pref === 'line' || pref === 'both') {
+        var lineUserId = staff ? staff.lineUserId : null;
+        if (lineUserId) {
+          var ok = sendLineMessage(lineUserId, message);
+          if (ok) sentCount++; else failedRecipients.push(tid);
+        } else {
+          failedRecipients.push(tid + '(LINE未登録)');
+        }
+      }
+      if (pref === 'gmail' || pref === 'both') {
+        // 種別ごとの通知先メール → お問い合わせ通知メール → デフォルトメール
+        var schedEmails = (staff && staff.schedulerNotifEmails && Array.isArray(staff.schedulerNotifEmails[msgType]) && staff.schedulerNotifEmails[msgType].length > 0)
+          ? staff.schedulerNotifEmails[msgType]
+          : getNotificationEmailsByTeacherId_(tid);
+        if (schedEmails.length > 0) {
+          schedEmails.forEach(function(addr) {
+            try {
+              MailApp.sendEmail(addr, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
+              sentCount++;
+            } catch(e) { failedRecipients.push(tid + '(mail:' + addr + '): ' + e); }
+          });
+        }
+      }
+    });
+
+    // 送信済みフラグを更新
+    doc.sent = true;
+    doc.sentAt = new Date().toISOString();
+    firestoreSet_('lineSchedules', id, doc);
+    return { success: true, sentCount: sentCount, failedRecipients: failedRecipients };
+  } catch(e) {
+    Logger.log('❌ sendScheduledLineMessageNow エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 送信予定時刻を過ぎた未送信メッセージを一括送信する（時間トリガーから呼ばれる）
+ * @return {Object} { success, sentCount, errors }
+ */
+function checkAndSendDueLineMessages() {
+  try {
+    // 今月・来月のスケジュールを自動生成（未生成の場合のみ）
+    var now = new Date();
+    var cy = now.getFullYear();
+    var cm = now.getMonth() + 1;
+    generateMonthlySchedule_(cy, cm);
+    generateLectureDeadlineSchedules_(cy, cm);
+    var ny = cm === 12 ? cy + 1 : cy;
+    var nm = cm === 12 ? 1 : cm + 1;
+    generateMonthlySchedule_(ny, nm);
+    generateLectureDeadlineSchedules_(ny, nm);
+
+    // 未送信のドキュメントを全件取得し、送信予定日時が過ぎたものをクライアント側でフィルタ
+    var docs = firestoreQuery_('lineSchedules', [fsFilter_('sent', 'EQUAL', false)]);
+    var typeSubjects = { meeting: '全体ミーティングのお知らせ', report: '回数報告書提出日のお知らせ', shitsucho: '室長用連絡', lecDeadline7: '講習日程締切 1週間前のお知らせ', lecDeadline14: '講習日程締切 2週間前のお知らせ' };
+
+    var sentCount = 0;
+    var errors = [];
+    docs.forEach(function(doc) {
+      var scheduledAtStr = doc.scheduledAt || '';
+      if (!scheduledAtStr) return;
+      var scheduledDate = new Date(scheduledAtStr);
+      if (isNaN(scheduledDate.getTime()) || scheduledDate > now) return;
+
+      var recipientsArr = doc.recipients || [];
+      var msgType = doc.type || '';
+      if (msgType === 'shimurocho') msgType = 'shitsucho';
+      if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
+        recipientsArr = getAllLineRegisteredTeacherIds_();
+      }
+      // LINE User ID で重複排除
+      var seenLineIds = {};
+      var deduped = [];
+      recipientsArr.forEach(function(tid) {
+        var staff = getStaffByTeacherId_(tid);
+        var lid = staff ? staff.lineUserId : null;
+        if (lid) {
+          if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
+        } else {
+          deduped.push(tid);
+        }
+      });
+      recipientsArr = deduped;
+      var message = doc.message || '';
+      var rowSent = 0;
+      recipientsArr.forEach(function(tid) {
+        var staff = getStaffByTeacherId_(tid);
+        var notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+        var pref = notifPrefs[msgType] || 'line';
+        if (pref === 'none') return;
+        if (pref === 'line' || pref === 'both') {
+          var lineUserId = staff ? staff.lineUserId : null;
+          if (lineUserId) {
+            try { if (sendLineMessage(lineUserId, message)) rowSent++; } catch(e) { errors.push(tid + ': ' + e); }
+          }
+        }
+        if (pref === 'gmail' || pref === 'both') {
+          var schedEmails2 = (staff && staff.schedulerNotifEmails && Array.isArray(staff.schedulerNotifEmails[msgType]) && staff.schedulerNotifEmails[msgType].length > 0)
+            ? staff.schedulerNotifEmails[msgType]
+            : getNotificationEmailsByTeacherId_(tid);
+          if (schedEmails2.length > 0) {
+            schedEmails2.forEach(function(addr) {
+              try {
+                MailApp.sendEmail(addr, '【スクエア】' + (typeSubjects[msgType] || 'お知らせ'), message);
+                rowSent++;
+              } catch(e) { errors.push(tid + '(mail:' + addr + '): ' + e); }
+            });
+          }
+        }
+      });
+      // 送信済みフラグを更新
+      doc.sent = true;
+      doc.sentAt = new Date().toISOString();
+      firestoreSet_('lineSchedules', doc._id, doc);
+      sentCount += rowSent;
+    });
+    return { success: true, sentCount: sentCount, errors: errors };
+  } catch(e) {
+    Logger.log('❌ checkAndSendDueLineMessages エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * checkAndSendDueLineMessages を毎時実行するトリガーを設定する
+ * @return {Object} { success, message }
+ */
+function setupScheduledLineTrigger() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    // 既存トリガーを削除
+    ScriptApp.getProjectTriggers().forEach(function(t) {
+      if (t.getHandlerFunction() === 'checkAndSendDueLineMessages') ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger('checkAndSendDueLineMessages').timeBased().everyHours(1).create();
+    return { success: true, message: 'LINEスケジューラーを開始しました（毎時チェック）' };
+  } catch(e) {
+    Logger.log('❌ setupScheduledLineTrigger エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * checkAndSendDueLineMessages のトリガーをすべて削除する
+ * @return {Object} { success, message }
+ */
+function deleteScheduledLineTrigger() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var count = 0;
+    ScriptApp.getProjectTriggers().forEach(function(t) {
+      if (t.getHandlerFunction() === 'checkAndSendDueLineMessages') { ScriptApp.deleteTrigger(t); count++; }
+    });
+    return { success: true, message: 'LINEスケジューラーを停止しました' };
+  } catch(e) {
+    Logger.log('❌ deleteScheduledLineTrigger エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * checkAndSendDueLineMessages トリガーの稼働状態を確認する
+ * @return {Object} { success, active, nextRun }
+ */
+function getScheduledLineTriggerStatus() {
+  try {
+    if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+    var triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+      return t.getHandlerFunction() === 'checkAndSendDueLineMessages';
+    });
+    var active = triggers.length > 0;
+    return { success: true, active: active };
+  } catch(e) {
+    Logger.log('❌ getScheduledLineTriggerStatus エラー: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
 // ========================================
