@@ -1,4 +1,5 @@
 import { handleApiCall } from './router.js';
+import { handleScheduled } from './cron.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://fir-quire.web.app',
@@ -27,5 +28,9 @@ export default {
         headers: CORS_HEADERS
       });
     }
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleScheduled(event, env));
   }
 };

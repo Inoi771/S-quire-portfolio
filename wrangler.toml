@@ -15,3 +15,9 @@ FIREBASE_WEB_API_KEY = "AIzaSyDGxhgsCbpgJuXm6PzY1WcR8a4QOtfJBiU"
 # Secrets はCloudflare Dashboardで登録済み（wrangler.tomlには値を書かない）
 # 登録済み: FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY
 #           SUPABASE_URL / SUPABASE_SERVICE_KEY
+
+# Phase 6-B-09: LINE スケジュール配信の定時実行
+# GAS 版の毎時トリガー (checkAndSendDueLineMessages) を Cloudflare Cron に移行
+# "0 * * * *" は UTC 基準で毎時 0 分だが、分オフセットは JST でも 0 分で一致
+[triggers]
+crons = ["0 * * * *"]
