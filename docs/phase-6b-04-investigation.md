@@ -544,3 +544,149 @@ Phase 6-B-04-07: GAS 版 5 関数を dead code として残置（実質無効）
 | Phase 6-B-09 教訓の反映 | △ | × | ◎ | **◎** |
 
 ---
+
+## 6. リスク評価と回避策
+
+### 6.1 リスクマトリクス
+
+| # | リスク | 発生可能性 | 影響度 | 総合 | 回避策 |
+|---|-------|----------|-------|------|-------|
+| R1 | Workers 側で teacherId 解決が GAS 版と一致しない | 中 | 大 | 高 | 6.2.1 |
+| R2 | Firestore Transaction ABORTED 頻発でレイテンシ悪化 | 低 | 中 | 中 | 6.2.2 |
+| R3 | 戻り値メッセージの character-for-character 不一致 | 中 | 中 | 中 | 6.2.3 |
+| R4 | KV フィーチャーフラグの読取遅延・一時障害 | 低 | 大 | 中 | 6.2.4 |
+| R5 | `createWeeklyLectureEntriesAI_` の休校日計算で日付ズレ | 中 | 大 | 高 | 6.2.5 |
+| R6 | GAS 側 `executeAiAction` の auth context と Workers 側の不一致 | 中 | 大 | 高 | 6.2.6 |
+| R7 | フロント側 `lectureEntries` キャッシュクリアの不整合 | 低 | 中 | 中 | 6.2.7 |
+| R8 | `multiCampusBulkOperationsAI_` の部分失敗時の整合性 | 中 | 中 | 中 | 6.2.8 |
+| R9 | `bulkLectureOperationsAI_` の長時間実行で Workers 時間制限超過 | 低 | 大 | 中 | 6.2.9 |
+| R10 | デプロイ中の半期状態（新旧関数が混在）で Firestore に破損書込 | 低 | 大 | 中 | 6.2.10 |
+
+### 6.2 回避策
+
+#### 6.2.1 R1: teacherId 解決の不一致
+
+**懸念**: GAS 版 `getOrCreateTeacherId()` → `getCurrentStaff_()` → `resolveStaffByUid_(uid, email)` の解決ロジックと、Workers 版 `supabaseRpc('find_staff_by_auth', { p_uid, p_email })` の結果が異なる可能性。
+
+**回避策**:
+- Phase 6-B-03 `saveLectureScheduleEntries` Workers 版（`workers/src/functions/features.js:1476-1490`）の実装パターンをそのまま踏襲する
+- 実装時に同一ユーザーの GAS 版 / Workers 版 teacherId を並列に取得し、**ログで一致を確認**（デバッグログは Phase 完了後に削除）
+- `find_staff_by_auth` RPC は既に本番稼働中の関数であり、新規導入による挙動差のリスクは低い
+
+#### 6.2.2 R2: Firestore Transaction ABORTED 頻発
+
+**懸念**: LockService は逐次化だが Transaction は楽観ロック。同一 `lectureEntries/{docId}` に対して短時間で連打すると ABORTED（409）が発生。自動リトライはされるが、最大 5 回のリトライで exponential backoff（100ms × 2^n + jitter）によりレイテンシが 1-2 秒まで増加する可能性。
+
+**回避策**:
+- Workers 実装で **tx 内処理を極力短く保つ**（認証・teacherId 解決は tx 外で済ませる・`saveLectureScheduleEntries` Workers 版のパターン踏襲）
+- AI は通常 1 発話で 1 操作、連打は稀。LLM 応答の遅延が自然なレートリミッターとして働く
+- リトライ上限 5 回で失敗した場合は GAS 版と同様に `error.toString()` を返す（parity 維持）
+- Workers ログに ABORTED 発生率を記録し、異常値（例: 5% 超）なら原因調査
+
+#### 6.2.3 R3: 戻り値メッセージの不一致
+
+**懸念**: フロント `js-ai-actions.html:232-233` は `'✅ ' + (result.message || '処理が完了しました')` で表示し、ユーザーはメッセージ本文で成否・対象を認識する。character-for-character の不一致があると UX が変化する。
+
+**回避策**:
+- 1 章で記録したエラーメッセージ一覧を **Workers 実装のテストフィクスチャ** として使う
+- Jest テスト（`__tests__/workers-helpers/` と同じ形式）で Workers 版の成功・失敗メッセージを GAS 版と比較
+- 特に注意: `editLectureEntryAI_` の成功メッセージ `'エントリを更新しました'` は特定フィールド名を含まないため変更容易だが、あえて現状維持
+
+#### 6.2.4 R4: KV フィーチャーフラグの読取遅延・一時障害
+
+**懸念**: Cloudflare KV の eventually consistent 書込（グローバル伝播に最大 60 秒）。フラグ ON 直後は一部リクエストが古い値（GAS 経路）を見る可能性。
+
+**回避策**:
+- フラグ読取失敗時は **GAS 版（既存安定経路）にフォールバック**する設計（fail-safe）
+- フラグ ON/OFF の反映時間を「最大 60 秒」と明記し、運用手順に含める
+- `INTERNAL_API_KEY` 同様、フラグ書込後は **1-2 分待機** してから動作確認する
+- KV 障害時はフラグ未設定扱い（= GAS 経路）となるため、Workers 全面停止でも GAS で業務継続可能
+
+#### 6.2.5 R5: `createWeeklyLectureEntriesAI_` の休校日計算の日付ズレ
+
+**懸念**: GAS（JST native）と Workers（UTC native）の `new Date()` 挙動差。`new Date(date + 'T00:00:00')` は TZ 未指定のため、GAS では JST 00:00、Workers では UTC 00:00（= JST 09:00）として parse される。これが `.getDay()` / `.getMonth()` / 月跨ぎ計算に影響する可能性。
+
+**回避策**:
+- Phase 6-B-05 で整備した `workers/src/helpers/datetime-helpers.js` の **`toJstDate(str)` / `jstDate(y,m,d)` / `getJstDayOfWeek(d)` / `addDays(d,n)` を必ず使う**
+- `CLAUDE.md` の「Workers 内 Date 操作は必ず JST 補正する」方針を実装時に遵守
+- Jest テストで月跨ぎ・年末年始・うるう年・GW 曜日切替などの境界ケースを網羅（Phase 6-B-05 の helpers test と同形式）
+- GAS 版の実行結果と Workers 版の実行結果を実データで並列比較（最低 1 件ずつの春期・夏期・冬期講習でテスト）
+
+#### 6.2.6 R6: GAS→Workers 間の認証コンテキスト引継ぎ
+
+**懸念**: GAS `executeAiAction` は `getFirebaseEmailContext_()` で認証済 email を取得済だが、Workers を呼ぶ際にこのコンテキストを Workers の `user.email` / `user.uid` に正しく引き継ぐ必要がある。直接 ID トークン検証のフローではないため、**内部 API キー方式**（`INTERNAL_FUNCTIONS` セット）で呼ぶことになる。
+
+**回避策**:
+- router.js の `INTERNAL_FUNCTIONS` セットに 5 関数を追加し、`INTERNAL_API_KEY` + `email` + `uid` を body で渡す
+- GAS 側のヘルパー `callWorkersInternal_(functionName, args)` を新設し、`PropertiesService.getScriptProperties().getProperty('INTERNAL_API_KEY')` で取得した秘密鍵と `getFirebaseEmailContext_()` の結果を body に埋込
+- Workers 側で `user = { email: body.email, uid: body.uid }` を組立てて既存 handler に渡す（既存 `INTERNAL_FUNCTIONS` の扱いと同じ）
+- 代替案: `google.script.run` を fetch に置換（現在の gas-bridge ルートと同様）だが、GAS→Workers の `UrlFetchApp.fetch` なら内部 API キー方式の方がシンプル
+
+#### 6.2.7 R7: フロント側 `lectureEntries` キャッシュクリアの不整合
+
+**懸念**: `js-ai-actions.html:237-260` で成功時に `lectureEntries[campus]` / `dirtyCampuses[campus]` / `allCampusEntriesCache` をクリアし `refreshLecEntries()` を呼ぶ。Workers 移行で処理時間が変動するとキャッシュクリアのタイミングが変化し、一時的に古いデータが表示される可能性。
+
+**回避策**:
+- フロント側のロジックは **変更しない**（スコープ外・既存パターン維持）
+- Workers 側の成功応答は必ず同じ形式 `{ success: true, message: '...' }` を返す（キャッシュクリアの判定は `result.success` のみに依存）
+- ネットワーク遅延で `withSuccessHandler` 実行前にユーザーが別操作をした場合の挙動は GAS 版と同じ（既存の仕様）
+
+#### 6.2.8 R8: `multiCampusBulkOperationsAI_` の部分失敗
+
+**懸念**: 複数校舎に跨る操作で、1 校舎目は成功し 2 校舎目で失敗した場合、Firestore は 1 校舎目のみ書込済の中間状態になる。Transaction は 1 ドキュメント単位なので cross-campus atomic にはできない。
+
+**回避策**:
+- GAS 版も同じ挙動（各校舎ごとに別 LockService 獲得→別 Firestore 書込）であり、**既存仕様をそのまま踏襲**（parity 維持）
+- Workers 実装でも校舎ごとにループし、各校舎で独立した `bulkLectureOperationsAI` を呼ぶ設計を踏襲
+- 戻り値の `messages` / `errors` 集約ロジックも原文一致（`' / '` 区切り・`' ⚠️ 一部エラー: '` 接頭辞）
+- 必要であれば将来的に Firestore batch write で改善検討（Phase 6-B-04 のスコープ外）
+
+#### 6.2.9 R9: `bulkLectureOperationsAI_` の Workers 時間制限超過
+
+**懸念**: Cloudflare Workers 無料プランは CPU time 10ms（Unbound は 30 秒）。`bulkLectureOperationsAI_` で 100 件の操作を 1 トランザクションで処理すると、tx 内の配列走査と Firestore fields 変換で CPU time を圧迫する可能性。
+
+**回避策**:
+- 現状 AI が生成する操作件数は通常 10 件以下（1 発話で大量操作は稀）
+- Unbound プラン（月 $5）は既に Phase 5 で検討済。`migration-plan.md` の「Cloudflare Workers subrequest 数の問題」セクション参照
+- **通常プランのままでもランタイム計測を行い、90% の操作が 100ms 未満に収まることを確認**
+- 上限超過時はエラーを GAS 相当に翻訳（`error.toString()`）し、フロント側のエラー表示で通知
+
+#### 6.2.10 R10: デプロイ中の半期状態（Firestore 破損書込）
+
+**懸念**: Workers デプロイと GAS デプロイが同時に反映される途中で、一部リクエストが Workers 版（新 schema）、一部が GAS 版（旧 schema）で書込むと Firestore `lectureEntries/{docId}` が混在状態になる可能性。
+
+**回避策**:
+- Workers 版 `saveLectureScheduleEntries`（Phase 6-B-03）の schema は GAS 版と完全一致を確認済（`features.js:3044-3049` と `workers/src/functions/features.js:1562-1567`）
+- 5 関数も同じ schema で書込む設計（`entries` 配列のフィールド構造が同一）
+- デプロイ順序: **Workers 先行 → KV フラグ OFF → GAS デプロイ → KV フラグ ON** の順で進める
+- KV フラグ OFF のまま Workers をデプロイすれば、Workers 側の関数は呼ばれないため破損リスク 0
+
+### 6.3 リスク低減のための事前作業
+
+Phase 6-B-04 着手前に以下を整備することを推奨:
+
+| # | 事前作業 | 目的 |
+|---|---------|------|
+| P1 | GAS/Workers 共通の teacherId 解決テストケース（10 ユーザー分） | R1 検証 |
+| P2 | GAS 版の戻り値サンプル集（成功・失敗メッセージ文字列の実データ） | R3 比較基準 |
+| P3 | `createWeeklyLectureEntriesAI_` の境界ケースフィクスチャ（月跨ぎ・年跨ぎ・うるう年・GW） | R5 Jest テスト用 |
+| P4 | `INTERNAL_API_KEY` の GAS ScriptProperties 設定確認（R6 の前提） | R6 実装容易化 |
+| P5 | KV フラグ `prop:FF_AI_LECTURE_*` キー設計（命名規約） | R4 運用手順 |
+
+P1-P5 はいずれも 1-2 時間で完了する軽量タスク。
+
+### 6.4 動作確認チェックリスト（Phase 6-B 規約準拠）
+
+`CLAUDE.md` の「Phase 移行 コミットメッセージルール」に従い、各サブフェーズのコミット body に以下のタスクリストを含める:
+
+- [ ] AI ウィジェットから「○月○日○時 数学 小学生で授業追加して」→ 成功メッセージが GAS 版と完全一致すること
+- [ ] AI ウィジェットから「毎週同じ時間で数学の授業を 4 回追加して」→ 休校日スキップが GAS 版と同一件数になること
+- [ ] AI ウィジェットから「○○のエントリを削除して」→ Admin/Non-Admin で権限チェックが GAS 版と一致すること
+- [ ] AI ウィジェットから「複数の操作をまとめて実行して」→ bulk_lecture_operations が正常に Firestore に反映されること
+- [ ] 他講師のエントリ改ざん試行時のエラーメッセージ（`'他の講師のエントリは編集できません'` / `'他の講師のエントリは削除できません'`）が GAS 版と完全一致すること
+- [ ] エントリ ID 不一致時のエラーメッセージ（`'指定されたエントリが見つかりません（ID: ...）'`）が GAS 版と完全一致すること
+- [ ] KV フラグ OFF → ON → OFF の切替えで GAS ↔ Workers 経路がそれぞれ使われること
+- [ ] Firestore `lectureEntries/{docId}` の entries 配列 schema が変化しないこと
+- [ ] `refreshLecEntries()` 呼出後に UI に反映されること
+
+---
