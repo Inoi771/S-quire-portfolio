@@ -937,3 +937,144 @@ async function generateMonthlySchedule_(env, year, month) {
     return 0;
   }
 }
+
+/**
+ * 【Phase 6-B-07 Stage 3】getScheduledLineMessages — GAS line.js:1796 の Workers 版
+ *
+ * 指定年月のスケジュール一覧を取得する。未生成の場合は自動生成してから返す。
+ * 通常スケジュール（meeting/report/shitsucho）はあるが講習締切（lecDeadline*）だけ
+ * 欠けている場合は lecDeadline のみを補完生成する（GAS 版と同一挙動）。
+ *
+ * Workers 版の微差（機能等価）:
+ *   - Workers `firestoreQuery` は `_id` を付与しないため、`doc._id` 参照を
+ *     `doc.id || doc._id` にフォールバック。`lineSchedules` 生成側（Stage 2 の
+ *     generateMonthlySchedule_ / generateLectureDeadlineSchedules_ および既存の
+ *     saveScheduledLineMessage）が必ず `id` フィールドを書込むため機能等価。
+ *
+ * GAS 版との差分: なし（上記フォールバックは同一結果を返す）
+ *
+ * @param {Array} args [year: number, month: number]
+ * @return {Object} { success: true, messages: Array } | { success: false, error }
+ */
+export async function getScheduledLineMessages(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [year, month] = args || [];
+    const mm = month < 10 ? '0' + month : '' + month;
+    const yearMonth = '' + year + mm;
+
+    // Firestoreから取得し、なければ自動生成
+    let docs = await firestoreQuery(env, 'lineSchedules', [
+      { field: 'yearMonth', op: 'EQUAL', value: yearMonth }
+    ]);
+    if (docs.length === 0) {
+      await generateMonthlySchedule_(env, year, month);
+      await generateLectureDeadlineSchedules_(env, year, month);
+      docs = await firestoreQuery(env, 'lineSchedules', [
+        { field: 'yearMonth', op: 'EQUAL', value: yearMonth }
+      ]);
+    } else {
+      // 通常スケジュールはあるが講習締切スケジュールだけ欠けている場合に補完
+      const hasLecDeadline = docs.some((d) =>
+        d.type === 'lecDeadline7' || d.type === 'lecDeadline14');
+      if (!hasLecDeadline) {
+        await generateLectureDeadlineSchedules_(env, year, month);
+        docs = await firestoreQuery(env, 'lineSchedules', [
+          { field: 'yearMonth', op: 'EQUAL', value: yearMonth }
+        ]);
+      }
+    }
+
+    // 種別ごとに重複がある場合は最初の1件のみ採用（重複防止）
+    // __ALL__ を含むドキュメントがある場合は実際の送信人数を1回だけ取得
+    // ただし講習締切（lecDeadline7/lecDeadline14）は1月に複数講習あり得るため重複排除しない
+    const hasAll = docs.some((doc) => (doc.recipients || []).indexOf('__ALL__') >= 0);
+    const allLineCount = hasAll ? (await getAllLineRegisteredTeacherIds_(env)).length : 0;
+    const seenTypes = {};
+    const messages = [];
+    docs.forEach((doc) => {
+      let type = doc.type || '';
+      if (type === 'shimurocho') type = 'shitsucho'; // 旧名称の後方互換
+      const isMultiType = (type === 'lecDeadline7' || type === 'lecDeadline14');
+      if (!isMultiType) {
+        if (seenTypes[type]) return;
+        seenTypes[type] = true;
+      }
+      const recips = doc.recipients || [];
+      const recipientCount = recips.indexOf('__ALL__') >= 0 ? allLineCount : recips.length;
+      messages.push({
+        id: doc.id || doc._id,
+        type: type,
+        yearMonth: doc.yearMonth || yearMonth,
+        recipients: recips,
+        recipientCount: recipientCount,
+        scheduledAt: doc.scheduledAt || '',
+        message: doc.message || '',
+        sent: doc.sent === true,
+        sentAt: doc.sentAt || '',
+        createdAt: doc.createdAt || '',
+        lectureId: doc.lectureId || '',
+        lectureName: doc.lectureName || ''
+      });
+    });
+    // 表示順: 室長用 → 全体ミーティング → 回数報告書
+    const typeOrder = { shitsucho: 0, meeting: 1, report: 2, lecDeadline14: 3, lecDeadline7: 4 };
+    messages.sort((a, b) => {
+      const ao = (typeOrder[a.type] !== undefined ? typeOrder[a.type] : 9);
+      const bo = (typeOrder[b.type] !== undefined ? typeOrder[b.type] : 9);
+      if (ao !== bo) return ao - bo;
+      // 同タイプは送信予定日時順
+      return (a.scheduledAt || '').localeCompare(b.scheduledAt || '');
+    });
+    return { success: true, messages: messages };
+  } catch (error) {
+    console.log('❌ getScheduledLineMessages エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-B-07 Stage 3】resetAndRegenerateSchedule — GAS line.js:1871 の Workers 版
+ *
+ * 指定年月のスケジュールを全削除して再生成する（Admin のみ）。
+ *
+ * Workers 版の微差（機能等価）:
+ *   - GAS 版は `firestoreBatchWrite_` で一括削除。Workers の `firestoreBatchWrite` は
+ *     生 REST 形式（`{delete: '<basePath>/<col>/<docId>'}`）を要求するため、
+ *     共有 `firebase.js` を触らず最小スコープで済ませる方針として、逐次
+ *     `firestoreDelete(env, 'lineSchedules', docId)` ループで削除する。
+ *     1 月あたり typical 3〜10 docs のため HTTP N 往復で許容。atomic 性は不要
+ *     （削除順不同でも正しい・途中失敗時も次回 reset で再試行可能）。
+ *   - `doc._id` → `doc.id || doc._id` にフォールバック（getScheduledLineMessages と同理由）。
+ *
+ * GAS 版との差分: なし（上記は挙動等価）
+ *
+ * @param {Array} args [year: number, month: number]
+ * @return {Object} { success: true, created: number, message: string } | { success: false, error }
+ */
+export async function resetAndRegenerateSchedule(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [year, month] = args || [];
+    const mm = month < 10 ? '0' + month : '' + month;
+    const yearMonth = '' + year + mm;
+    // 該当年月のFirestoreドキュメントを全削除（逐次 HTTP）
+    const docs = await firestoreQuery(env, 'lineSchedules', [
+      { field: 'yearMonth', op: 'EQUAL', value: yearMonth }
+    ]);
+    for (const doc of docs) {
+      const docId = doc.id || doc._id;
+      if (!docId) continue;
+      await firestoreDelete(env, 'lineSchedules', docId);
+    }
+    // 再生成
+    let created = await generateMonthlySchedule_(env, year, month);
+    created += await generateLectureDeadlineSchedules_(env, year, month);
+    return { success: true, created: created, message: created + '件のスケジュールを再生成しました' };
+  } catch (error) {
+    console.log('❌ resetAndRegenerateSchedule エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
