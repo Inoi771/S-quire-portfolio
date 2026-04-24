@@ -21,14 +21,27 @@
 
 import { isAdminUser } from './auth.js';
 import { supabaseSelect } from '../supabase.js';
-import { firestoreGet, firestoreSet, firestoreDelete } from '../firebase.js';
+import { firestoreGet, firestoreSet, firestoreDelete, firestoreQuery } from '../firebase.js';
+import { getLecturePeriods } from './features.js';
+import { getLectureDeadlineOverrides } from './schedule-overrides.js';
 import {
   computeClosedDaysForMonth,
   resolveTemplatePlaceholders,
   getDebitDay,
   getReportExtras,
   findPrevOpenDay,
-  getLectureNames
+  findPrevOpenDayDate,
+  getLectureNames,
+  computeLectureDeadlineDate,
+  computeMeetingNotifDate,
+  computeReportNotifDate,
+  computeShimurochoSendDate,
+  buildMeetingMessage,
+  buildReportMessage,
+  buildShimurochoMessage,
+  buildLecDeadline7Message,
+  buildLecDeadline14Message,
+  buildMessageFromTemplate
 } from '../helpers/line-template-helpers.js';
 import {
   toJstDate,
@@ -37,7 +50,8 @@ import {
   getJstMonth,
   getJstDay,
   getJstDayOfWeek,
-  getDayOfWeekJa
+  getDayOfWeekJa,
+  addDays
 } from '../helpers/datetime-helpers.js';
 
 const PROP_PREFIX = 'prop:';
@@ -637,5 +651,289 @@ export async function resolveTemplateForSendDate(args, env, user) {
     return { success: true, message: result };
   } catch (error) {
     return { success: false, error: error.toString() };
+  }
+}
+
+// ─── Phase 6-B-07 Stage 1-2: 生成ロジック内部ヘルパー（router 未登録・未接続） ────
+// Stage 3 で getScheduledLineMessages / resetAndRegenerateSchedule から呼び出される
+// 予定。本コミット時点では export せず、どこからも呼ばれないため挙動変化なし。
+
+/**
+ * 【Phase 6-B-07 Stage 1】getAllLineRegisteredTeacherIds_ — GAS line.js:1417 の Workers 版
+ *
+ * LINE 登録済みスタッフの ID 配列を返す内部ヘルパー（router 未登録）。
+ * Supabase `staffs` テーブルから `line_user_id IS NOT NULL` のスタッフを全件取得し、
+ * `staff.id` のみを配列で返す。getScheduledLineMessages の recipientCount
+ * 算出で使用する（__ALL__ 指定時の実配信数カウント）。
+ *
+ * GAS 版との差分:
+ *   - GAS 版は `_staffCache_` にも書き込むが、Workers 版は cache 不要（request-scoped）。
+ *     本関数の戻り値（ID 配列）のみを利用する呼出元に影響なし。
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @return {Promise<string[]>} line_user_id 登録済みスタッフ ID 配列
+ */
+async function getAllLineRegisteredTeacherIds_(env) {
+  try {
+    const rows = await supabaseSelect(env, 'staffs',
+      'line_user_id=neq.null&select=id,line_user_id');
+    const ids = [];
+    (rows || []).forEach((row) => {
+      if (row.line_user_id) ids.push(row.id);
+    });
+    return ids;
+  } catch (error) {
+    console.log('❌ getAllLineRegisteredTeacherIds_ エラー: ' + error);
+    return [];
+  }
+}
+
+/**
+ * 【Phase 6-B-07 Stage 2】generateLectureDeadlineSchedules_ — GAS line.js:1524 の Workers 版
+ *
+ * 指定年月に送信予定となる講習日程締切 LINE 通知（lecDeadline7 / lecDeadline14）を
+ * 自動生成する内部ヘルパー（router 未登録）。対象は春期・夏期・冬期講習のみ。
+ * 既存 ID があればスキップ、過去日時もスキップ。
+ *
+ * JST 補正（CLAUDE.md セクション 9 準拠）:
+ *   - computeLectureDeadlineDate の戻り Date → getJstYear / getJstMonth / getJstDay で分解
+ *   - T-7 / T-14 日の計算 → addDays（UTC 空間で加算・tz 非依存）
+ *   - findPrevOpenDayDate は内部で JST 安全
+ *   - scheduledAt 文字列は `+09:00` 付き ISO で明示
+ *   - 過去判定 `new Date(scheduledAt) > now` は ISO-with-TZ parse のため tz-aware
+ *
+ * GAS 版との差分: なし（JST 補正は既存 helpers で完全吸収）
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月（1〜12）
+ * @return {Promise<number>} 作成件数
+ */
+async function generateLectureDeadlineSchedules_(env, year, month) {
+  try {
+    const mm = month < 10 ? '0' + month : '' + month;
+    const yearMonth = '' + year + mm;
+
+    let lecturePeriods = [];
+    try {
+      lecturePeriods = (await getLecturePeriods([], env, null)) || [];
+    } catch (e) {
+      console.log('⚠ generateLectureDeadlineSchedules_: getLecturePeriods エラー ' + e);
+      return 0;
+    }
+    let overrides = {};
+    try {
+      overrides = (await getLectureDeadlineOverrides([], env, null)) || {};
+    } catch (_) {}
+
+    const raw = await env.KV.get(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS);
+    let settings = {};
+    try { settings = raw ? JSON.parse(raw) : {}; } catch (_) { settings = {}; }
+    const d7Settings = settings.lecDeadline7 || {};
+    const d14Settings = settings.lecDeadline14 || {};
+    const d7Hour = d7Settings.sendHour !== undefined ? d7Settings.sendHour : 16;
+    const d14Hour = d14Settings.sendHour !== undefined ? d14Settings.sendHour : 16;
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    let created = 0;
+
+    for (const lp of lecturePeriods) {
+      const name = lp.name || '';
+      // 対象は春期・夏期・冬期のみ
+      if (name.indexOf('春期') === -1 &&
+          name.indexOf('夏期') === -1 &&
+          name.indexOf('冬期') === -1) continue;
+
+      const tDate = await computeLectureDeadlineDate(env, lp, overrides);
+      if (!tDate) continue;
+
+      // T-7 日（日曜・休校日なら前営業日に繰り上げ）= 理科・社会の締切日
+      let t7 = addDays(tDate, -7);
+      t7 = await findPrevOpenDayDate(env, t7);
+
+      // T-14 日（T-7 日から 7 日戻してさらに前営業日調整）= 締切 1 週間前のアラート
+      let t14 = addDays(t7, -7);
+      t14 = await findPrevOpenDayDate(env, t14);
+
+      // lecDeadline7: T-7 日が該当月なら作成
+      const t7Year = getJstYear(t7);
+      const t7Month = getJstMonth(t7);
+      const t7Day = getJstDay(t7);
+      if (t7Year === year && t7Month === month) {
+        const id7 = 'sch_' + yearMonth + '_lecDeadline7_' + lp.id;
+        const existing7 = await firestoreGet(env, 'lineSchedules', id7);
+        if (!existing7) {
+          const mm7 = t7Month < 10 ? '0' + t7Month : '' + t7Month;
+          const dd7 = t7Day < 10 ? '0' + t7Day : '' + t7Day;
+          const hh7 = d7Hour < 10 ? '0' + d7Hour : '' + d7Hour;
+          const sched7 = t7Year + '-' + mm7 + '-' + dd7 + 'T' + hh7 + ':00:00+09:00';
+          if (new Date(sched7) > now) {
+            await firestoreSet(env, 'lineSchedules', id7, {
+              id: id7, type: 'lecDeadline7', yearMonth: yearMonth,
+              lectureId: lp.id, lectureName: name,
+              recipients: ['__ALL__'], scheduledAt: sched7,
+              message: buildLecDeadline7Message(name, t7),
+              sent: false, sentAt: '', createdAt: nowIso
+            });
+            created++;
+          }
+        }
+      }
+
+      // lecDeadline14: T-14 日が該当月なら作成
+      const t14Year = getJstYear(t14);
+      const t14Month = getJstMonth(t14);
+      const t14Day = getJstDay(t14);
+      if (t14Year === year && t14Month === month) {
+        const id14 = 'sch_' + yearMonth + '_lecDeadline14_' + lp.id;
+        const existing14 = await firestoreGet(env, 'lineSchedules', id14);
+        if (!existing14) {
+          const mm14 = t14Month < 10 ? '0' + t14Month : '' + t14Month;
+          const dd14 = t14Day < 10 ? '0' + t14Day : '' + t14Day;
+          const hh14 = d14Hour < 10 ? '0' + d14Hour : '' + d14Hour;
+          const sched14 = t14Year + '-' + mm14 + '-' + dd14 + 'T' + hh14 + ':00:00+09:00';
+          if (new Date(sched14) > now) {
+            await firestoreSet(env, 'lineSchedules', id14, {
+              id: id14, type: 'lecDeadline14', yearMonth: yearMonth,
+              lectureId: lp.id, lectureName: name,
+              recipients: ['__ALL__'], scheduledAt: sched14,
+              message: buildLecDeadline14Message(name, t7),
+              sent: false, sentAt: '', createdAt: nowIso
+            });
+            created++;
+          }
+        }
+      }
+    }
+
+    return created;
+  } catch (error) {
+    console.log('❌ generateLectureDeadlineSchedules_ エラー: ' + error);
+    return 0;
+  }
+}
+
+/**
+ * 【Phase 6-B-07 Stage 2】generateMonthlySchedule_ — GAS line.js:1625 の Workers 版
+ *
+ * 指定年月の LINE スケジュール 3 件（meeting / report / shitsucho）を自動生成する
+ * 内部ヘルパー（router 未登録）。既に同じ種別のエントリが存在する場合はスキップする。
+ * shimurocho（旧名称）の既存エントリも shitsucho と同等に扱う（後方互換）。
+ *
+ * JST 補正（CLAUDE.md セクション 9 準拠）:
+ *   - scheduledAt 文字列は `+09:00` 付き ISO で明示（year / mm / dd / hh を直接組立）
+ *   - 過去判定 `new Date(scheduledAt) <= now` は ISO-with-TZ parse のため tz-aware
+ *   - closedDays 算出は computeClosedDaysForMonth 内部で KV 読取（JST 安全）
+ *   - computeMeetingNotifDate / computeReportNotifDate / computeShimurochoSendDate は
+ *     純関数で JST 安全（Phase 6-B-05 で検証済み）
+ *
+ * GAS 版との差分: なし
+ *
+ * @param {Object} env
+ * @param {number} year カレンダー年
+ * @param {number} month カレンダー月（1〜12）
+ * @return {Promise<number>} 作成件数
+ */
+async function generateMonthlySchedule_(env, year, month) {
+  try {
+    const mm = month < 10 ? '0' + month : '' + month;
+    const yearMonth = '' + year + mm;
+
+    // 既存エントリの種別を Firestore で確認
+    const existingDocs = await firestoreQuery(env, 'lineSchedules', [
+      { field: 'yearMonth', op: 'EQUAL', value: yearMonth }
+    ]);
+    const existingTypes = {};
+    (existingDocs || []).forEach((doc) => { existingTypes[doc.type] = true; });
+
+    const raw = await env.KV.get(PROP_PREFIX + KEY_LINE_SCHEDULER_SETTINGS);
+    let settings = {};
+    try { settings = raw ? JSON.parse(raw) : {}; } catch (_) { settings = {}; }
+
+    const closedDays = await computeClosedDaysForMonth(env, year, month);
+    const now = new Date();
+    const nowIso = now.toISOString();
+    let created = 0;
+
+    // 全体ミーティング連絡
+    if (!existingTypes['meeting']) {
+      const meetingResult = computeMeetingNotifDate(year, month, closedDays);
+      if (meetingResult) {
+        const mSettings = settings.meeting || {};
+        const mHour = mSettings.sendHour !== undefined ? mSettings.sendHour : 16;
+        const mDd = meetingResult.day < 10 ? '0' + meetingResult.day : '' + meetingResult.day;
+        const mHh = mHour < 10 ? '0' + mHour : '' + mHour;
+        const mScheduledAt = year + '-' + mm + '-' + mDd + 'T' + mHh + ':00:00+09:00';
+        if (new Date(mScheduledAt) <= now) {
+          console.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (meeting ' + mScheduledAt + ')');
+        } else {
+          const mId = 'sch_' + yearMonth + '_meeting';
+          const templateMsg = await buildMessageFromTemplate(env, 'meeting', year, month, closedDays);
+          await firestoreSet(env, 'lineSchedules', mId, {
+            id: mId, type: 'meeting', yearMonth: yearMonth,
+            recipients: ['__ALL__'], scheduledAt: mScheduledAt,
+            message: templateMsg || buildMeetingMessage(year, month, meetingResult.meetingDay),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
+          created++;
+        }
+      }
+    }
+
+    // 回数報告書提出日連絡
+    if (!existingTypes['report']) {
+      const reportResult = computeReportNotifDate(year, month, closedDays);
+      if (reportResult) {
+        const rSettings = settings.report || {};
+        const rHour = rSettings.sendHour !== undefined ? rSettings.sendHour : 16;
+        const rDd = reportResult.day < 10 ? '0' + reportResult.day : '' + reportResult.day;
+        const rHh = rHour < 10 ? '0' + rHour : '' + rHour;
+        const rScheduledAt = year + '-' + mm + '-' + rDd + 'T' + rHh + ':00:00+09:00';
+        if (new Date(rScheduledAt) <= now) {
+          console.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (report ' + rScheduledAt + ')');
+        } else {
+          const rId = 'sch_' + yearMonth + '_report';
+          const templateMsg = await buildMessageFromTemplate(env, 'report', year, month, closedDays);
+          await firestoreSet(env, 'lineSchedules', rId, {
+            id: rId, type: 'report', yearMonth: yearMonth,
+            recipients: ['__ALL__'], scheduledAt: rScheduledAt,
+            message: templateMsg || buildReportMessage(year, month, reportResult.reportDay, month),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
+          created++;
+        }
+      }
+    }
+
+    // 室長用連絡（shimurocho は旧名称・存在時はスキップ）
+    if (!existingTypes['shitsucho'] && !existingTypes['shimurocho']) {
+      const sDay = computeShimurochoSendDate(year, month, closedDays);
+      if (sDay) {
+        const sSettings = settings.shitsucho || settings.shimurocho || {};
+        const sHour = sSettings.sendHour !== undefined ? sSettings.sendHour : 14;
+        const sDd = sDay < 10 ? '0' + sDay : '' + sDay;
+        const sHh = sHour < 10 ? '0' + sHour : '' + sHour;
+        const sScheduledAt = year + '-' + mm + '-' + sDd + 'T' + sHh + ':00:00+09:00';
+        if (new Date(sScheduledAt) <= now) {
+          console.log('⚠ generateMonthlySchedule_: 送信予定日時が過去のためスキップ (shitsucho ' + sScheduledAt + ')');
+        } else {
+          const sId = 'sch_' + yearMonth + '_shitsucho';
+          const templateMsg = await buildMessageFromTemplate(env, 'shitsucho', year, month, closedDays);
+          await firestoreSet(env, 'lineSchedules', sId, {
+            id: sId, type: 'shitsucho', yearMonth: yearMonth,
+            recipients: sSettings.recipients || [], scheduledAt: sScheduledAt,
+            message: templateMsg || buildShimurochoMessage(year, month, sDay, closedDays),
+            sent: false, sentAt: '', createdAt: nowIso
+          });
+          created++;
+        }
+      }
+    }
+
+    return created;
+  } catch (error) {
+    console.log('❌ generateMonthlySchedule_ エラー: ' + error);
+    return 0;
   }
 }
