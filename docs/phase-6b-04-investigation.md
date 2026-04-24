@@ -690,3 +690,105 @@ P1-P5 はいずれも 1-2 時間で完了する軽量タスク。
 - [ ] `refreshLecEntries()` 呼出後に UI に反映されること
 
 ---
+
+## 7. 段階移行する場合の推奨順序
+
+推奨方針（5 章）に従い、関数を **以下の順序** で Workers に切替える。各サブフェーズは独立したコミットとし、本番観測期間を挟む。
+
+### 7.1 推奨順序の原則
+
+1. **シンプルな関数から始める**: RMW ロジックが単純で、依存ヘルパーが少ない関数を先行
+2. **書込量が小さい関数から始める**: 1 件単位で書込む関数を優先し、複数件バルクは最後
+3. **日付計算が絡む関数は最後**: JST/UTC 差分のリスクが最も高い `createWeeklyLectureEntriesAI_` は最終段
+4. **依存関係のあるラッパーは被依存側の安定後**: `multiCampusBulkOperationsAI_` は `bulkLectureOperationsAI_` 安定後
+
+### 7.2 推奨順序
+
+| サブフェーズ | 関数 | 理由 | 想定観測期間 |
+|------------|------|------|------------|
+| **6-B-04-00**（事前準備） | 6.3 の事前作業 P1-P5 実施 + Workers 側 5 関数実装 + router 登録 + KV フラグ OFF デプロイ | Workers 実装完了・未接続状態でデプロイ安定性を確認 | 1-2 日 |
+| **6-B-04-01** | `createLectureEntryAI` | **最もシンプルな RMW（1 件追加のみ）**。teacherId / displayName / teacherEmail の解決パターン・firestoreTransaction の挙動を本番で最初に検証する | 2-3 日 |
+| **6-B-04-02** | `editLectureEntryAI` | 権限チェックロジックを本番で初めて検証。`existing.length` で対象検索する単純 in-place 更新。createLecture 成功で teacherId 解決ロジックが安定していることが前提 | 2-3 日 |
+| **6-B-04-03** | `deleteLectureEntryAI` | edit と同型の RMW（権限チェック + splice）。edit 成功後ならリスク小 | 1-2 日 |
+| **6-B-04-04** | `bulkLectureOperationsAI` | 複数操作を 1 トランザクションで処理するため Firestore Transaction の atomicity を最大限活用する関数。create / edit / delete を混在するため、前 3 段で個別動作を確認済であることが前提 | 3-5 日（本番観測を長めに） |
+| **6-B-04-05** | `multiCampusBulkOperationsAI` | `bulkLectureOperationsAI` を校舎ごとにループ呼出するラッパー。被依存側（bulk）の安定後に実施 | 2-3 日 |
+| **6-B-04-06** | `createWeeklyLectureEntriesAI` | **最もリスクが高い**（JST/UTC 日付計算・休校日マージ・毎週繰返し・安全ガード）。最終段で実施し、他関数で Workers ↔ Firestore のパイプラインが全て動作確認済であることを前提 | 5-7 日（最も長めに） |
+| **6-B-04-07**（クローズ） | GAS 側 5 関数を **dead code 化**（削除ではなく呼出経路のみ無効化） | 全関数の本番安定確認後、GAS 版を削除すると緊急ロールバックができなくなるため、まず「到達不能だが存在する」状態にする | 1-2 週間 |
+| **6-B-04-08**（将来・別フェーズ） | GAS 側 5 関数の完全削除 | Phase 6-B-04 クローズから 2-4 週間安定稼働を確認後、別サブフェーズとして GAS から削除 | 別フェーズ |
+
+### 7.3 各サブフェーズで守るべきチェックポイント
+
+各サブフェーズでフラグを ON にする前に以下を確認:
+
+- [ ] Workers 側の該当関数が **KV フラグ OFF のまま 3 日以上** デプロイ済で安定していること（ルーター登録・認証経路の安定化）
+- [ ] 直前サブフェーズが **本番で 2-3 日以上の観測期間を経過** していること
+- [ ] Jest テスト（該当関数のパラメータ parity テスト）が全パスしていること
+- [ ] `docs/migration-plan.md` の Phase 6-B 進捗ログを更新済であること
+- [ ] 本番ログで ABORTED エラー率 < 1% を確認（Workers dashboard または logging）
+- [ ] Firestore の `lectureEntries/{docId}` schema が変化していないことを任意 1 件で確認
+
+### 7.4 各サブフェーズでのコミット構成
+
+各サブフェーズで作るコミット（例: 6-B-04-02 `editLectureEntryAI`）:
+
+1. **実装コミット**: Workers 側に関数追加・router 登録（フラグは OFF のまま）
+   - メッセージ: `Phase 6-B-04-02 Stage 1: editLectureEntryAI を Workers 実装（未接続）`
+2. **フラグ ON コミット**: GAS 側 shim 追加 + KV キー更新手順をドキュメント化
+   - メッセージ: `Phase 6-B-04-02 Stage 2: editLectureEntryAI を Workers 経路に切替え`
+3. （必要なら）**ロールバックコミット**: 問題発生時
+   - メッセージ: `リバート: Phase 6-B-04-02 Workers 切替 - ○○ エラーで GAS に戻す`
+
+### 7.5 ロールバック判定基準
+
+以下のいずれかが発生したら **即座に KV フラグを OFF** に戻す:
+
+- ABORTED エラー率が 5% を超える
+- 戻り値メッセージの不一致がユーザーから報告される
+- Firestore 書込で schema 不整合が検知される
+- Workers レスポンス 90pct レイテンシが GAS の 2 倍超
+- ユーザー数名から連続して AI 操作失敗の報告がある
+
+### 7.6 全フェーズ完了の判定
+
+Phase 6-B-04 完了の条件:
+
+- [ ] 5 関数 + `multiCampusBulkOperationsAI_` の計 6 関数すべてが KV フラグ ON で 2 週間以上安定稼働
+- [ ] GAS 側の 5 関数（+ ラッパー）が dead code 化済（呼出経路が無効）
+- [ ] 動作確認チェックリスト（6.4）が全項目 ✅
+- [ ] `docs/migration-plan.md` に Phase 6-B-04 クローズ記録が追記されている
+- [ ] `CLAUDE.md` の「Phase 6-A' クローズ」記述に続いて Phase 6-B-04 クローズが記載されている
+
+### 7.7 想定実施スケジュール（参考）
+
+| Week | 内容 |
+|------|-----|
+| W1 | Phase 6-B-04-00（事前準備・Workers 実装・未接続デプロイ） |
+| W2 | Phase 6-B-04-01（createLectureEntryAI 切替・観測） |
+| W3 | Phase 6-B-04-02（editLectureEntryAI 切替・観測） |
+| W4 | Phase 6-B-04-03（deleteLectureEntryAI 切替・観測） |
+| W5-W6 | Phase 6-B-04-04（bulkLectureOperationsAI 切替・長期観測） |
+| W7 | Phase 6-B-04-05（multiCampusBulkOperationsAI 切替・観測） |
+| W8-W9 | Phase 6-B-04-06（createWeeklyLectureEntriesAI 切替・長期観測） |
+| W10-W11 | Phase 6-B-04-07（GAS 側 dead code 化・クローズ） |
+
+合計 **約 10-11 週間**（観測期間を長めに取った場合）。最短で **6-7 週間**（問題なく順調に進んだ場合）。
+
+---
+
+## 付録: 関連ドキュメント
+
+- `CLAUDE.md` — Phase 6-A' クローズ記述・「Workers 化時の設計ルール」セクション
+- `docs/migration-plan.md` — Phase 6-B 全体計画・Phase 6-B-09 ロールバック記録
+- `docs/remaining-functions-inventory.md` — 関数分類の原本（C 分類 79 関数の原資料）
+- `workers/src/firebase.js:275` — `firestoreTransaction` 実装
+- `workers/src/functions/features.js:1461` — `saveLectureScheduleEntries` Workers 版（Phase 6-B-03 の参考実装）
+- `workers/src/helpers/datetime-helpers.js` — JST 安全な日付処理（Phase 6-B-05）
+- `workers/src/functions/auth.js:50` — `isAdminUser`（隠し Admin 対応済）
+- `features.js:1779` — `executeAiAction`（GAS 版・Phase 6-B-04 の境界）
+- `features.js:3079` / `:3135` / `:3239` / `:3289` / `:3332` / `:3445` — 対象 5+1 関数の GAS 版原本
+
+---
+
+**本レポート作成者**: Claude Code (Phase 6-B 継続担当)
+**最終更新**: 2026-04-24
+
