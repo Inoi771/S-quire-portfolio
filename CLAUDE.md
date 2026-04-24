@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 45**
+**現在のデプロイ回数: 46**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -275,6 +275,7 @@ MyProject/
 ├── firebase-students.html Firebase 生徒データクライアント関数（成績関連はGAS API経由）
 ├── minutes.js           議事録管理・AI文字起こし＋要約（約250行）
 ├── kv-props.js          Phase 5-E-4/5: ScriptProperties ラッパー（getProperty_/setProperty_/deleteProperty_ + 5-E-5 で getAllProperties_ 追加）— Workers KV 経由に切替え・SP フォールバック付き（約330行）
+├── workers-bridge.js    Phase 6-B-04: GAS→Workers 内部API呼出ヘルパー（callWorkersInternal_ / shouldUseWorkersForAiAction_）＋テストスタブ（約130行）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
 ├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
 ├── migrate-props-to-kv.js Phase 5-E-3: ScriptProperties→Cloudflare KV 一括コピー（一度だけ実行）

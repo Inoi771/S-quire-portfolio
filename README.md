@@ -78,6 +78,7 @@ MyProject/
 ├── js-admin-chatbot.html JS: チャットボット管理
 ├── gas-bridge.html       JS: google.script.run → fetch() 変換シム
 ├── firebase.js           Firestore REST APIクライアント
+├── workers-bridge.js     GAS→Workers 内部API呼出ヘルパー（Phase 6-B-04）
 ├── firebase-init.html    Firebase 初期化
 ├── firebase-auth.html    Firebase Auth管理
 ├── firebase-schedule.html Firebase スケジュール・講習クライアント
