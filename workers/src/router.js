@@ -105,7 +105,11 @@ import {
   previewTemplateMessage,
   resolveTemplateForSendDate,
   getScheduledLineMessages,
-  resetAndRegenerateSchedule
+  resetAndRegenerateSchedule,
+  sendScheduledLineMessageNow,
+  getScheduledLineTriggerStatus,
+  setupScheduledLineTrigger,
+  deleteScheduledLineTrigger
 } from './functions/line.js';
 
 // 認証不要の関数
@@ -245,7 +249,11 @@ const HANDLERS = {
   previewTemplateMessage,
   resolveTemplateForSendDate,
   getScheduledLineMessages,
-  resetAndRegenerateSchedule
+  resetAndRegenerateSchedule,
+  sendScheduledLineMessageNow,
+  getScheduledLineTriggerStatus,
+  setupScheduledLineTrigger,
+  deleteScheduledLineTrigger
 };
 
 export async function handleApiCall(body, env) {
