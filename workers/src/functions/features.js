@@ -64,6 +64,7 @@ import { getCampusConfig_ } from './grades.js';
 import { supabaseSelect, supabaseRpc } from '../supabase.js';
 import { firestoreGet, firestoreUpdateFields, firestoreTransaction } from '../firebase.js';
 import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText } from '../gemini.js';
+import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
 
 const PROP_PREFIX = 'prop:';
 
@@ -447,12 +448,6 @@ function getDefaultGradeSettings_(lectureName) {
   };
 }
 
-// JST 壁時計時刻を { year, month } で返す（タイムゾーン差吸収）
-function getJstNow_() {
-  const nowJst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return { year: nowJst.getUTCFullYear(), month: nowJst.getUTCMonth() + 1 };
-}
-
 /**
  * 登録済みの講習期間一覧を取得する（F5 の Workers 版）
  * GAS features.js:2762 と同じ。現年度・翌年度×6 種を自動計算し、保存済みと合成。
@@ -466,8 +461,7 @@ export async function getLecturePeriods(args, env, user) {
     stored.forEach((lp) => { storedMap[lp.id] = lp; });
 
     // 現在 JST 基準で年度を決定
-    const { year, month } = getJstNow_();
-    const currentFy = (month >= 4) ? year : year - 1;
+    const currentFy = getCurrentFiscalYear();
     const fys = [currentFy, currentFy + 1];
     const result = [];
 
