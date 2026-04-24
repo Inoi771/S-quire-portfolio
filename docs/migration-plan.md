@@ -2571,7 +2571,7 @@ Step B 動作確認中、以下の挙動を確認：
 
 ## 決定
 
-**LINE 通知スケジュール配信の Workers 移行（Phase 6-B-09）を中止し、GAS 運用に戻す。**
+**LINE 通知スケジュール配信の Workers 移行（Phase 6-B-09）を中止し、GAS 運用を継続する。**
 
 ## 背景
 
@@ -2604,15 +2604,55 @@ Step B 動作確認中、以下の挙動を確認：
 | 今すぐ手動送信（`sendScheduledLineMessageNow`） | Workers（gas-bridge の WORKERS_FUNCTIONS 経由） |
 | Workers Cron | **kill switch OFF で no-op**（実質停止中・温存のみ） |
 
-## 将来の再移行方針
+## 今後の方針
 
-- Cron Invocation が表示されない原因（Dashboard 表示設定 / Cron 登録状態 / wrangler deploy 時の crons 同期）を調査
-- `wrangler tail` で実稼働ログを採取し、毎時 0 分に `[cron] triggered:` が出力されるか確認
-- 問題解消が確認できた段階で、再度 Step 5 / Step 6 相当の作業を実施して Workers 移行を完遂する
-- それまで Workers 実装コード・`wrangler.toml` の `[triggers]` 設定は現状維持（変更しない）
+本トリガーは **GAS に残す**（再移行は行わない）。詳細は後述の「トリガー関数の扱い方針」セクション参照。
+
+Workers 実装コード・`wrangler.toml` の `[triggers]` 設定は当面温存するが、将来的な撤去も視野に入れる。
 
 ## 関連情報
 
 - ロールバック実施時点の GAS デプロイカウンター: **43**
 - ロールバック実施日: **2026-04-24**
-- 関連コミット: `622721a`（Step 5 revert）/ 本セッションの Step 6 revert コミット
+- 関連コミット: `622721a`（Step 5 revert）/ `a98781d`（Step 6 revert）
+
+---
+
+# トリガー関数の扱い方針（2026-04-24 決定）
+
+## 方針
+
+**GAS の時間主導トリガーは Workers に移行せず、すべて GAS に残す。**
+
+## 対象トリガー（全 3 件）
+
+| # | トリガー | 関数名 | 頻度 | 方針 |
+|---|---------|-------|------|------|
+| 1 | daily（毎日メンテナンス） | `scheduledInitializeSheets` | 毎日 | **GAS 継続**（移行検討せず） |
+| 2 | lineScheduler（LINE自動送信） | `checkAndSendDueLineMessages` | 毎時 | **GAS 継続**（Phase 6-B-09 ロールバックで確定） |
+| 3 | formEmail（フォームメール転送） | `checkAndForwardFormEmails` | 5分 | **GAS 継続**（移行検討せず） |
+
+> 注: `admin.js:1040` の `runFirestoreBackup` は関数本体が存在しない参照切れ（稼働していない）。
+
+## 判断理由
+
+1. **運用安定性優先** — GAS のトリガー機構は長期実運用の実績があり挙動が安定している
+2. **Workers Cron の可観測性の課題** — Cloudflare Dashboard の Invocation 表示等、実稼働状況の把握が GAS に比べて難しい（Phase 6-B-09 で顕在化）
+3. **GAS 実行時間枠の余裕** — 各トリガーは GAS 実行時間の 6 分制限に十分収まっており、Workers 化の緊急性が低い
+4. **分散化の弊害** — トリガーを GAS / Workers 両方に分散させるとデバッグ・運用手順が複雑化する
+
+## Workers 側コードの扱い
+
+- `workers/src/cron.js` / `workers/src/functions/line.js` の Cron 関連実装は **当面温存**（kill switch OFF で no-op）
+- `wrangler.toml` の `[triggers] crons = ["0 * * * *"]` も維持（課金影響なし）
+- 将来的に Workers 化を再検討しないと判断した段階で、これらのコード・設定を撤去する（そのとき別フェーズとして整理）
+
+## 再検討の条件（例）
+
+以下のいずれかに該当する場合のみ、再移行を検討する:
+
+- GAS トリガー実行枠で処理しきれない量の配信が必要になった場合
+- GAS プロジェクト履歴の逼迫で Workers へ退避せざるを得なくなった場合
+- Cloudflare Cron の可観測性・安定性が Phase 6-B-09 時点から大きく改善された場合
+
+上記に該当しない限り、**GAS 運用を継続する**。
