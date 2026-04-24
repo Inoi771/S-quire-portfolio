@@ -1078,3 +1078,291 @@ export async function resetAndRegenerateSchedule(args, env, user) {
     return { success: false, error: error.toString() };
   }
 }
+
+// ============================================================
+// 【Phase 6-B-09】LINE スケジュール配信 送信エンジン
+// ============================================================
+// GAS line.js:1975-2187 の Workers 移行。メール送信分岐は完全廃止
+// （Phase 6-B-09 事前確認で Supabase 上のメール通知 ON レコード 0 件確認済）。
+//
+// 対応関数:
+//   - sendLineMessage_                     内部: LINE Push API 呼出（GAS L145 移植）
+//   - getStaffByTeacherIdMinimal_          内部: Supabase staffs 1 件取得（request-scoped cache）
+//   - sendScheduledLineMessageNow          API: Admin 手動即時送信（GAS L1975 移植）
+//   - checkAndSendDueLineMessagesCron      Cron: 毎時起動の自動配信（GAS L2050 移植）
+//   - getScheduledLineTriggerStatus        API: 稼働状態 stub（常に active:true）
+//
+// JST 補正（CLAUDE.md セクション 9 準拠）:
+//   - 現在月・翌月の算出: getJstYear / getJstMonth
+//   - scheduledAt の過去判定: new Date(ISO+TZ) で tz-aware
+//   - sentAt 書込: new Date().toISOString()（UTC ISO で保存・GAS 版と同値）
+// ============================================================
+
+/**
+ * LINE Push API にメッセージを送信する内部ヘルパー。
+ * GAS line.js:145 sendLineMessage の Workers 版。
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {string} lineUserId LINE userId（"U" で始まる文字列）
+ * @param {string} message 送信メッセージ本文
+ * @return {Promise<boolean>} 送信成功なら true
+ */
+async function sendLineMessage_(env, lineUserId, message) {
+  try {
+    const token = await env.KV.get(PROP_PREFIX + 'LINE_CHANNEL_ACCESS_TOKEN');
+    if (!token) {
+      console.log('⚠ LINE_CHANNEL_ACCESS_TOKEN が未設定のため送信スキップ');
+      return false;
+    }
+    if (!lineUserId) {
+      console.log('⚠ lineUserId が空のため送信スキップ');
+      return false;
+    }
+    const response = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        to: lineUserId,
+        messages: [{ type: 'text', text: message }]
+      })
+    });
+    if (response.status !== 200) {
+      const text = await response.text();
+      console.log('⚠ LINEプッシュ失敗: ' + response.status + ' ' + text);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.log('❌ sendLineMessage_ エラー: ' + error);
+    return false;
+  }
+}
+
+/**
+ * teacherId から staff 情報（line_user_id / scheduler_notif_prefs のみ）を
+ * request-scoped cache 付きで取得する。GAS line.js:13 getStaffByTeacherId_ の
+ * Workers 版（最小フィールド版）。
+ *
+ * メール送信機能廃止に伴い、email/emails/schedulerNotifEmails は取得不要。
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {string} teacherId 講師ID
+ * @param {Map} cache request-scoped Map（呼出元で new Map() して使い回す）
+ * @return {Promise<Object|null>} { teacherId, lineUserId, schedulerNotifPrefs } | null
+ */
+async function getStaffByTeacherIdMinimal_(env, teacherId, cache) {
+  if (!teacherId) return null;
+  if (cache.has(teacherId)) return cache.get(teacherId);
+  try {
+    const rows = await supabaseSelect(env, 'staffs',
+      'id=eq.' + encodeURIComponent(teacherId) + '&select=id,line_user_id,scheduler_notif_prefs&limit=1');
+    const row = rows && rows[0];
+    const staff = row ? {
+      teacherId: row.id,
+      lineUserId: row.line_user_id || null,
+      schedulerNotifPrefs: row.scheduler_notif_prefs || {}
+    } : null;
+    cache.set(teacherId, staff);
+    return staff;
+  } catch (error) {
+    console.log('⚠ getStaffByTeacherIdMinimal_ エラー: ' + teacherId + ' ' + error);
+    cache.set(teacherId, null);
+    return null;
+  }
+}
+
+/**
+ * 1 ドキュメントの LINE 送信処理（recipients 展開 → dedupe → LINE 送信）。
+ * sendScheduledLineMessageNow / checkAndSendDueLineMessagesCron 共通の内部ロジック。
+ *
+ * GAS 版 exact parity:
+ *   - 旧名称 'shimurocho' → 'shitsucho' 後方互換
+ *   - meeting/report または recipients に '__ALL__' が含まれる場合は全員展開
+ *   - LINE User ID で重複排除（同一ユーザーへの多重送信防止）
+ *   - schedulerNotifPrefs[msgType] のデフォルトは 'line'
+ *   - pref === 'none' は何もしない
+ *   - pref === 'line' | 'both' で LINE 送信（'both' でもメールは廃止済のため送らない）
+ *   - pref === 'gmail' は無送信（メール廃止につき）
+ *   - LINE User ID 未登録は failedRecipients に '{tid}(LINE未登録)' で記録
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {Object} doc Firestore lineSchedules ドキュメント
+ * @param {Map} staffCache request-scoped cache
+ * @return {Promise<{sentCount:number, failedRecipients:string[], errors:string[]}>}
+ */
+async function processScheduleDoc_(env, doc, staffCache) {
+  let recipientsArr = doc.recipients || [];
+  let msgType = doc.type || '';
+  if (msgType === 'shimurocho') msgType = 'shitsucho';
+  if (msgType === 'meeting' || msgType === 'report' || recipientsArr.indexOf('__ALL__') >= 0) {
+    recipientsArr = await getAllLineRegisteredTeacherIds_(env);
+  }
+
+  // LINE User ID で重複排除
+  const seenLineIds = {};
+  const deduped = [];
+  for (const tid of recipientsArr) {
+    const staff = await getStaffByTeacherIdMinimal_(env, tid, staffCache);
+    const lid = staff ? staff.lineUserId : null;
+    if (lid) {
+      if (!seenLineIds[lid]) { seenLineIds[lid] = true; deduped.push(tid); }
+    } else {
+      deduped.push(tid);
+    }
+  }
+  recipientsArr = deduped;
+
+  const message = doc.message || '';
+  let sentCount = 0;
+  const failedRecipients = [];
+  const errors = [];
+
+  for (const tid of recipientsArr) {
+    const staff = await getStaffByTeacherIdMinimal_(env, tid, staffCache);
+    const notifPrefs = (staff && staff.schedulerNotifPrefs) ? staff.schedulerNotifPrefs : {};
+    const pref = notifPrefs[msgType] || 'line';
+    if (pref === 'none') continue;
+    if (pref === 'line' || pref === 'both') {
+      const lineUserId = staff ? staff.lineUserId : null;
+      if (lineUserId) {
+        try {
+          const ok = await sendLineMessage_(env, lineUserId, message);
+          if (ok) sentCount++; else failedRecipients.push(tid);
+        } catch (e) {
+          errors.push(tid + ': ' + e);
+        }
+      } else {
+        failedRecipients.push(tid + '(LINE未登録)');
+      }
+    }
+    // pref === 'gmail' の場合はメール送信廃止につき何もしない（無送信）
+  }
+  return { sentCount, failedRecipients, errors };
+}
+
+/**
+ * 【Phase 6-B-09】sendScheduledLineMessageNow — GAS line.js:1975 の Workers 版
+ *
+ * 指定 ID のスケジュールを Admin が即時送信する。Firestore `lineSchedules` から
+ * ドキュメント取得 → recipients 展開 → LINE 配信 → sent/sentAt 更新。
+ *
+ * GAS 版との差分（意図的変更）:
+ *   - MailApp.sendEmail 呼出を完全削除（メール送信機能廃止）
+ *   - pref === 'gmail' は無送信（GAS 版はメール送信）
+ *   - pref === 'both' は LINE のみ送信（GAS 版は LINE + メール）
+ *   - 戻り値の failedRecipients のフォーマットは LINE 失敗のみ
+ *     （GAS 版の '{tid}(mail:{addr}): {err}' は発生しない）
+ *
+ * @param {Array} args [id: string]
+ * @return {Promise<Object>} { success, sentCount, failedRecipients } | { success:false, error }
+ */
+export async function sendScheduledLineMessageNow(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  try {
+    const [id] = args || [];
+    if (!id) return { success: false, error: 'id が指定されていません' };
+    const doc = await firestoreGet(env, 'lineSchedules', id);
+    if (!doc) return { success: false, error: '対象IDが見つかりません' };
+
+    const staffCache = new Map();
+    const { sentCount, failedRecipients } = await processScheduleDoc_(env, doc, staffCache);
+
+    // 送信済みフラグ更新（GAS 版と同フィールド・同フォーマット）
+    doc.sent = true;
+    doc.sentAt = new Date().toISOString();
+    await firestoreSet(env, 'lineSchedules', id, doc);
+
+    return { success: true, sentCount: sentCount, failedRecipients: failedRecipients };
+  } catch (error) {
+    console.log('❌ sendScheduledLineMessageNow エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-B-09】checkAndSendDueLineMessagesCron — GAS line.js:2050 の Workers 版
+ *
+ * Cloudflare Cron Triggers（毎時 0 分）から呼ばれる定時実行関数。
+ * `workers/src/cron.js` の handleScheduled からのみ呼出される（API 非公開）。
+ *
+ * 処理:
+ *   1. 当月・来月分の MonthlySchedule / LectureDeadlineSchedules を自動生成
+ *   2. Firestore から sent=false の全ドキュメントを取得
+ *   3. 各ドキュメントの scheduledAt と現在時刻を比較し、過去のもののみ送信
+ *   4. recipients 展開 → LINE 配信 → sent/sentAt 更新
+ *
+ * JST 補正:
+ *   - 当月・来月の year/month は getJstYear / getJstMonth 経由（Workers は UTC native）
+ *   - scheduledAt は ISO+09:00 文字列で保存されているため new Date() で tz-aware parse
+ *
+ * GAS 版との差分: メール送信分岐削除（processScheduleDoc_ 内の挙動と同じ）
+ *
+ * @param {Object} env Cloudflare Workers 環境
+ * @return {Promise<Object>} { success, sentCount, errors } | { success:false, error }
+ */
+export async function checkAndSendDueLineMessagesCron(env) {
+  try {
+    const now = new Date();
+    const cy = getJstYear(now);
+    const cm = getJstMonth(now);
+    await generateMonthlySchedule_(env, cy, cm);
+    await generateLectureDeadlineSchedules_(env, cy, cm);
+    const ny = cm === 12 ? cy + 1 : cy;
+    const nm = cm === 12 ? 1 : cm + 1;
+    await generateMonthlySchedule_(env, ny, nm);
+    await generateLectureDeadlineSchedules_(env, ny, nm);
+
+    // sent=false のドキュメントを全件取得
+    const docs = await firestoreQuery(env, 'lineSchedules', [
+      { field: 'sent', op: 'EQUAL', value: false }
+    ]);
+
+    let sentCount = 0;
+    const errors = [];
+    const staffCache = new Map();
+
+    for (const doc of docs) {
+      const scheduledAtStr = doc.scheduledAt || '';
+      if (!scheduledAtStr) continue;
+      const scheduledDate = new Date(scheduledAtStr);
+      if (isNaN(scheduledDate.getTime()) || scheduledDate > now) continue;
+
+      const result = await processScheduleDoc_(env, doc, staffCache);
+      sentCount += result.sentCount;
+      errors.push(...result.errors);
+
+      // 送信済みフラグ更新
+      doc.sent = true;
+      doc.sentAt = new Date().toISOString();
+      const docId = doc.id || doc._id;
+      if (docId) {
+        await firestoreSet(env, 'lineSchedules', docId, doc);
+      }
+    }
+    return { success: true, sentCount: sentCount, errors: errors };
+  } catch (error) {
+    console.log('❌ checkAndSendDueLineMessagesCron エラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 【Phase 6-B-09】getScheduledLineTriggerStatus — GAS line.js:2175 の Workers 版（stub）
+ *
+ * GAS 版の ScriptApp.getProjectTriggers() 判定を置き換える stub。Cloudflare Cron
+ * Triggers（wrangler.toml）で常時稼働しているため、常に active:true を返す。
+ *
+ * UI 側（js-admin.html）は active の真偽で表示を切替えるため、true 固定で
+ * 「LINE 配信: 常時稼働中（Cloudflare Cron）」表示になる。
+ *
+ * @return {Promise<Object>} { success:true, active:true, mode:"cloudflare-cron" }
+ */
+export async function getScheduledLineTriggerStatus(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  return { success: true, active: true, mode: 'cloudflare-cron' };
+}
