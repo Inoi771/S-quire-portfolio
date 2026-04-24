@@ -1224,7 +1224,8 @@
           : '<span style="padding:3px 8px;background:#e8f5e9;color:#2e7d32;border-radius:12px;font-size:11px;">⏳ 未送信</span>';
         var ops = m.sent
           ? '<span style="font-size:11px;color:#aaa;">—</span>'
-          : '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
+          : '<button onclick="openSchedulerEditModal(\'' + m.id + '\')" style="padding:4px 8px;background:#e8f0fe;color:#3c4f8a;border:1px solid #c5d0e6;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">編集</button>' +
+            '<button onclick="sendScheduledMsgNow(\'' + m.id + '\')" style="padding:4px 8px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px;">今すぐ送信</button>' +
             '<button onclick="stopScheduledMsg(\'' + m.id + '\')" style="padding:4px 8px;background:#fce4ec;color:#c62828;border:1px solid #ffab91;border-radius:4px;cursor:pointer;font-size:11px;">送信停止</button>';
         html += '<tr style="border-bottom:1px solid #eee;">' +
           '<td style="padding:10px;">' + typeLabel + '</td>' +
