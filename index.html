@@ -2515,16 +2515,10 @@
         <!-- ===== 📩 LINE通知タブ ===== -->
         <div id="admin-scheduler" class="admin-tab-content" style="display: none;">
 
-          <!-- トリガー管理 -->
-          <div style="background:white;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:20px;">
-            <h3 style="margin:0 0 12px 0;">⚙️ 自動送信トリガー</h3>
-            <p style="font-size:12px;color:#666;margin:0 0 12px 0;">トリガーを開始すると1時間ごとにスケジュールを確認し、送信時刻になったメッセージを自動送信します。</p>
-            <div id="schedulerTriggerStatus" style="padding:12px 16px;border-radius:8px;background:#f5f5f5;margin-bottom:12px;font-size:13px;">状態を確認中...</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;">
-              <button onclick="startSchedulerLineTrigger()" id="btnStartScheduler" style="padding:10px 18px;background:#43e97b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">▶ 開始する</button>
-              <button onclick="stopSchedulerLineTrigger()" id="btnStopScheduler" style="padding:10px 18px;background:#e0e0e0;color:#333;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">■ 停止する</button>
-            </div>
-            <div id="schedulerTriggerMessage" style="margin-top:10px;font-size:13px;"></div>
+          <!-- トリガー管理（Workers Cron 移行済） -->
+          <div style="background:#e3f2fd;border-left:4px solid #2196f3;border-radius:6px;padding:14px 18px;margin-bottom:20px;">
+            <div style="font-weight:600;color:#1565c0;margin-bottom:4px;">ℹ️ 自動送信は常時稼働中です</div>
+            <div style="font-size:13px;color:#555;">送信時刻になったメッセージは Cloudflare Workers により自動配信されます。管理者の操作は不要です。</div>
           </div>
 
           <!-- デフォルト設定 -->
@@ -2959,11 +2953,8 @@
                     <li>管理タブ → LINE通知 を開く</li>
                     <li>年月を選ぶと3種類のスケジュールが自動生成されます</li>
                     <li>内容を確認・編集して「保存」</li>
-                    <li>「今すぐ送信」で手動送信、または自動送信トリガーを有効にすると予定時刻に自動送信されます</li>
+                    <li>「今すぐ送信」ボタンで手動送信、または送信時刻になると自動配信されます</li>
                   </ol>
-                </div>
-                <div style="background:#fff3cd; border-radius:8px; padding:14px; border-left:4px solid #ffc107;">
-                  <p style="font-size:13px; margin:0; line-height:1.8;">⚠️ 自動送信するには「トリガーを有効にする」ボタンを押す必要があります。LINE通知タブの下部から設定できます。</p>
                 </div>
               </div>
             </div>

@@ -759,78 +759,8 @@
           defMonthSel.appendChild(dopt2);
         }
       }
-      loadSchedulerTriggerStatus();
       loadSchedulerDefaultSettings();
       loadScheduledMessages();
-    }
-
-    // トリガー状態を取得・表示する
-    function loadSchedulerTriggerStatus() {
-      var statusDiv = document.getElementById('schedulerTriggerStatus');
-      if (!statusDiv) return;
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result && result.success) {
-            if (result.active) {
-              statusDiv.style.background = '#e8f5e9';
-              statusDiv.innerHTML = '✅ <strong>稼働中</strong> — 1時間ごとに送信スケジュールを確認しています';
-            } else {
-              statusDiv.style.background = '#fff3e0';
-              statusDiv.innerHTML = '⏸ <strong>停止中</strong> — 自動送信は行われません';
-            }
-          } else {
-            statusDiv.innerHTML = '⚠️ 状態の取得に失敗しました';
-          }
-        })
-        .withFailureHandler(function(err) {
-          statusDiv.innerHTML = '❌ エラー: ' + err;
-        })
-        .getScheduledLineTriggerStatus();
-    }
-
-    // トリガーを開始する
-    function startSchedulerLineTrigger() {
-      document.getElementById('btnStartScheduler').disabled = true;
-      google.script.run
-        .withSuccessHandler(function(result) {
-          document.getElementById('btnStartScheduler').disabled = false;
-          var msg = document.getElementById('schedulerTriggerMessage');
-          if (result.success) {
-            msg.innerHTML = '<span style="color:#2e7d32">✅ ' + result.message + '</span>';
-            loadSchedulerTriggerStatus();
-          } else {
-            msg.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
-          }
-        })
-        .withFailureHandler(function(err) {
-          document.getElementById('btnStartScheduler').disabled = false;
-          document.getElementById('schedulerTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
-        })
-        .setupScheduledLineTrigger();
-    }
-
-    // トリガーを停止する
-    function stopSchedulerLineTrigger() {
-      appConfirm('自動送信を停止しますか？').then(function(ok) {
-        if (!ok) return;
-        document.getElementById('btnStopScheduler').disabled = true;
-        google.script.run
-          .withSuccessHandler(function(result) {
-            document.getElementById('btnStopScheduler').disabled = false;
-            var msg = document.getElementById('schedulerTriggerMessage');
-            if (result.success) {
-              msg.innerHTML = '<span style="color:#e65100">⏸ ' + result.message + '</span>';
-              loadSchedulerTriggerStatus();
-            } else {
-              msg.innerHTML = '<span style="color:#c62828">❌ ' + result.error + '</span>';
-            }
-          })
-          .withFailureHandler(function(err) {
-            document.getElementById('btnStopScheduler').disabled = false;
-            document.getElementById('schedulerTriggerMessage').innerHTML = '<span style="color:#c62828">❌ ' + err + '</span>';
-          })
-          .deleteScheduledLineTrigger();
-      });
     }
 
     // デフォルト設定をロード・描画する（テンプレート＋選択月のプレビュー）
