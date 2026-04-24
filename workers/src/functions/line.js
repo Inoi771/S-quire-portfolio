@@ -1366,3 +1366,44 @@ export async function getScheduledLineTriggerStatus(args, env, user) {
   if (denied) return denied;
   return { success: true, active: true, mode: 'cloudflare-cron' };
 }
+
+/**
+ * 【Phase 6-B-09】setupScheduledLineTrigger — GAS line.js:2138 の Workers 版（stub）
+ *
+ * 旧 GAS 版は ScriptApp.newTrigger() で毎時トリガーを新規作成していたが、
+ * Workers 版では Cloudflare Cron Triggers で常時稼働している。このため
+ * フロントから呼ばれても何もせず、成功レスポンスのみ返す（互換 stub）。
+ *
+ * Step 6（UI 調整）完了後はフロントからの呼出もなくなり本 stub は到達不能になる。
+ *
+ * @return {Promise<Object>} { success:true, message:string }
+ */
+export async function setupScheduledLineTrigger(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  return {
+    success: true,
+    message: 'Cloudflare Cron で常時稼働中のため、トリガー設定操作は不要です'
+  };
+}
+
+/**
+ * 【Phase 6-B-09】deleteScheduledLineTrigger — GAS line.js:2157 の Workers 版（stub）
+ *
+ * 旧 GAS 版は ScriptApp.deleteTrigger() で毎時トリガーを削除していたが、
+ * Workers 版では Cloudflare Cron で常時稼働しているため停止操作は無効。
+ * フロント互換のため成功レスポンスのみ返す（互換 stub）。
+ *
+ * 実際に Cron を停止したい場合は wrangler.toml の [triggers] crons を編集する
+ * か、KV `prop:WORKERS_LINE_CRON_ENABLED` を "true" 以外に設定すること。
+ *
+ * @return {Promise<Object>} { success:true, message:string }
+ */
+export async function deleteScheduledLineTrigger(args, env, user) {
+  const denied = await denyIfNotAdmin_(env, user);
+  if (denied) return denied;
+  return {
+    success: true,
+    message: 'Cloudflare Cron 方式のためフロントからの停止操作は無効化されています'
+  };
+}
