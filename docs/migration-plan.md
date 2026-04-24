@@ -2565,3 +2565,54 @@ Step B 動作確認中、以下の挙動を確認：
 前セッションの調査データから文書生成のみ実施する（追加調査は不要）。
 
 
+---
+
+# Phase 6-B-09 ロールバック記録（2026-04-24）
+
+## 決定
+
+**LINE 通知スケジュール配信の Workers 移行（Phase 6-B-09）を中止し、GAS 運用に戻す。**
+
+## 背景
+
+- Cloudflare Workers 側の Cron Trigger 実装は完了（Step 2〜4）済み
+- Step 5 で GAS の 5 関数（`sendScheduledLineMessageNow` / `checkAndSendDueLineMessages` / `setupScheduledLineTrigger` / `deleteScheduledLineTrigger` / `getScheduledLineTriggerStatus`）を削除
+- Step 6 でフロント UI の「▶ 開始する / ■ 停止する」ボタンを非表示化し、案内 div に置換
+- Step 7 への移行手順中、Cloudflare Dashboard の **Invocations ビューに Cron Trigger の起動履歴が表示されず**、Cron が実際に発火しているか確認できない問題が発生
+- 本番環境で配信停止が続くリスクを回避するため、GAS 運用への緊急ロールバックを決定
+
+## 実施内容
+
+| 操作 | コミット | 内容 |
+|------|----------|------|
+| Step 5 revert | `622721a`（merge 後 `3c730c7`） | GAS の 5 関数を `line.js` に復元（+219 行） |
+| Step 6 revert（部分） | 本セッション | UI「開始/停止」ボタン・`TRIGGER_DEFS_` の `lineScheduler` エントリ・JS 3 関数を復活。ただし `gas-bridge.html` の `WORKERS_FUNCTIONS` からは 3 トリガー関数を除外した状態を維持（ボタンが GAS 関数を直接呼ぶようにするため） |
+
+## Workers 側の扱い
+
+- `workers/src/cron.js` / `workers/src/functions/line.js` の実装は **温存**
+- Kill switch `prop:WORKERS_LINE_CRON_ENABLED` は **未設定のまま**（= Cron が発火しても早期 return で no-op）
+- `wrangler.toml` の `[triggers] crons = ["0 * * * *"]` も維持（課金影響なし／将来再移行時に即使える状態）
+- `sendScheduledLineMessageNow` のみ Workers 実装が実稼働（gas-bridge の `WORKERS_FUNCTIONS` に残置、「今すぐ送信」ボタンから呼ばれる）。Firestore `lineSchedules` コレクションは GAS・Workers 両方から同じデータを読み書きするため整合性に問題なし
+
+## 配信経路（ロールバック後の最終状態）
+
+| 機能 | 実行エンジン |
+|------|--------------|
+| 毎時自動配信（`checkAndSendDueLineMessages`） | GAS（時間トリガー） |
+| トリガー開始・停止・状態確認 | GAS（フロント UI → gas-bridge → GAS） |
+| 今すぐ手動送信（`sendScheduledLineMessageNow`） | Workers（gas-bridge の WORKERS_FUNCTIONS 経由） |
+| Workers Cron | **kill switch OFF で no-op**（実質停止中・温存のみ） |
+
+## 将来の再移行方針
+
+- Cron Invocation が表示されない原因（Dashboard 表示設定 / Cron 登録状態 / wrangler deploy 時の crons 同期）を調査
+- `wrangler tail` で実稼働ログを採取し、毎時 0 分に `[cron] triggered:` が出力されるか確認
+- 問題解消が確認できた段階で、再度 Step 5 / Step 6 相当の作業を実施して Workers 移行を完遂する
+- それまで Workers 実装コード・`wrangler.toml` の `[triggers]` 設定は現状維持（変更しない）
+
+## 関連情報
+
+- ロールバック実施時点の GAS デプロイカウンター: **43**
+- ロールバック実施日: **2026-04-24**
+- 関連コミット: `622721a`（Step 5 revert）/ 本セッションの Step 6 revert コミット
