@@ -110,7 +110,9 @@ function shouldUseWorkersForAiAction_(flagKey) {
  * 期待結果: { success: true, message: 'pong', ... } 相当
  */
 function _testCallWorkersInternal() {
-  return callWorkersInternal_('ping', []);
+  var result = callWorkersInternal_('ping', []);
+  Logger.log('_testCallWorkersInternal: ' + JSON.stringify(result));
+  return result;
 }
 
 /**
@@ -127,7 +129,9 @@ function _testCheckAllFlags() {
     'FF_AI_LECTURE_MULTI_CAMPUS',
     'FF_AI_LECTURE_WEEKLY'
   ];
-  return keys.map(function(k) { return k + ' = ' + (getProperty_(k) || '(unset)'); }).join('\n');
+  var result = keys.map(function(k) { return k + ' = ' + (getProperty_(k) || '(unset)'); }).join('\n');
+  Logger.log('_testCheckAllFlags:\n' + result);
+  return result;
 }
 
 /**
@@ -136,6 +140,7 @@ function _testCheckAllFlags() {
  * 実行後 2 分待機してから動作確認すること（KV 伝播）。
  */
 function _flagOn_CREATE() {
+  Logger.log('フラグON: FF_AI_LECTURE_CREATE');
   setProperty_('FF_AI_LECTURE_CREATE', 'workers');
   return _testCheckAllFlags();
 }
@@ -145,6 +150,7 @@ function _flagOn_CREATE() {
  * 緊急ロールバック用。実行後 2 分待機で全 node に伝播。
  */
 function _flagOff_CREATE() {
+  Logger.log('フラグOFF: FF_AI_LECTURE_CREATE');
   deleteProperty_('FF_AI_LECTURE_CREATE');
   return _testCheckAllFlags();
 }
