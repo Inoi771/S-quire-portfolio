@@ -83,6 +83,8 @@
         // ※ AIウィジェット（#aiWidgetModal）・ドロワーパネル（#drawerPanel）・
         //   スワイプゾーン（#drawerSwipeZone）は zoom なしの元サイズが適切なため除外している
       }
+      // 他の .html ファイル (js-core / js-lectures など) から呼べるように window に公開
+      window.fitToScreen = fitToScreen;
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', fitToScreen);
       } else {
