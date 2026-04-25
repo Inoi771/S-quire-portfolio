@@ -129,3 +129,22 @@ function _testCheckAllFlags() {
   ];
   return keys.map(function(k) { return k + ' = ' + (getProperty_(k) || '(unset)'); }).join('\n');
 }
+
+/**
+ * [Phase 6-B-04 クローズ時削除] FF_AI_LECTURE_CREATE を 'workers' に設定。
+ * 戻り値は _testCheckAllFlags() の出力で反映確認用。
+ * 実行後 2 分待機してから動作確認すること（KV 伝播）。
+ */
+function _flagOn_CREATE() {
+  setProperty_('FF_AI_LECTURE_CREATE', 'workers');
+  return _testCheckAllFlags();
+}
+
+/**
+ * [Phase 6-B-04 クローズ時削除] FF_AI_LECTURE_CREATE を削除（GAS 経路に戻す）。
+ * 緊急ロールバック用。実行後 2 分待機で全 node に伝播。
+ */
+function _flagOff_CREATE() {
+  deleteProperty_('FF_AI_LECTURE_CREATE');
+  return _testCheckAllFlags();
+}
