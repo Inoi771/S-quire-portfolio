@@ -1831,10 +1831,21 @@ function executeAiAction(action, paramsJson) {
           params.durationSlots || 9, params.subject, params.grade, params.classLabel || ''
         );
       }
-      return createLectureEntryAI_(
+      // Phase 6-B-04-01: KV フラグ FF_AI_LECTURE_CREATE が 'workers' なら Workers 経路。
+      // HTTP レベル失敗（5xx/timeout/JSON 破損）のみ GAS にフォールバック。
+      // Workers が {success:false} を正常応答した場合はそのまま返す（GAS 版と同等扱い）。
+      var _createArgs = [
         params.lectureId, params.campusCode, params.date, params.startTime,
         params.durationSlots || 9, params.subject, params.grade, params.classLabel || ''
-      );
+      ];
+      if (shouldUseWorkersForAiAction_('FF_AI_LECTURE_CREATE')) {
+        try {
+          return callWorkersInternal_('createLectureEntryAI', _createArgs);
+        } catch (e) {
+          Logger.log('⚠ createLectureEntryAI Workers 経路失敗 → GAS fallback: ' + e);
+        }
+      }
+      return createLectureEntryAI_.apply(null, _createArgs);
     }
 
     if (action === 'edit_lecture_entry') {
