@@ -2656,3 +2656,92 @@ Workers 実装コード・`wrangler.toml` の `[triggers]` 設定は当面温存
 - Cloudflare Cron の可観測性・安定性が Phase 6-B-09 時点から大きく改善された場合
 
 上記に該当しない限り、**GAS 運用を継続する**。
+
+---
+
+# Phase 6-C-01 完了記録（2026-04-26）
+
+## 概要
+
+**B 分類 Admin 系の `removeUserAccess` を Workers 化。**
+
+`docs/remaining-functions-inventory.md` の B 分類 68 関数のうち、フロントから呼ばれているが Workers 未登録だった 4 件（`addAdminEmail` / `removeAdminEmail` / `removeUserAccess` / `initializeFirstAdmin`）の調査結果を踏まえ、実装意義のある `removeUserAccess` 1 件のみを移行した。
+
+## 移行した関数
+
+| 関数 | GAS 場所 | 役割 |
+|------|---------|------|
+| `removeUserAccess` | `auth.js:405-489` | Admin が指定メールアドレスのユーザーアクセスを完全に削除する |
+
+### Workers 側の処理内容（GAS 版と完全等価）
+
+1. Supabase `staffs` レコード削除（teacherId 経由）
+2. Firestore `config/notification_routing` から teacherId を全 campus から除外
+3. Firestore `allowedUsers/{email}` を全関連メール分削除
+4. KV `prop:ADMIN_EMAILS` から全関連メールを除外（RMW）
+5. Firestore `operationLogs` に監査ログ書込
+
+## 変更ファイル（3 ファイル・1 コミット）
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `workers/src/functions/auth-emails.js` | import に `supabaseDelete` / `firestoreGet` 追加。末尾に private helper 4 種（`getCampusRoutingMap_` / `setCampusRoutingMap_` / `makeSafeId_` / `logAdminActionToFirestore_`）と `removeUserAccess` 本体を追加。+156 行 |
+| `workers/src/router.js` | import + HANDLERS マップに `removeUserAccess` を登録 |
+| `gas-bridge.html` | `WORKERS_FUNCTIONS` Set に `'removeUserAccess'` を追加（`getAllowedUsers` の直後） |
+
+## ヘルパーの再利用方針
+
+`removeUserAccess` が必要とする 3 つの private helper（`getCampusRoutingMap_` / `setCampusRoutingMap_` / `logAdminActionToFirestore_`）は `workers/src/functions/line.js` に同名で実装済みだが export されていなかった。
+
+採用案: **`auth-emails.js` 内に private 再実装**（line.js からの import 依存を避ける）。
+- Phase 6-A/6-B での通例パターン（`line.js` / `notifications.js` / `schedule-overrides.js` が同型ヘルパーをコメント上「同一」明記で再実装）を踏襲
+- 公開 API の境界を変えずスコープを最小化
+
+## GAS 版との差分
+
+**なし（完全等価）**:
+- 戻り値形状・エラーメッセージ・try-catch 握り潰し粒度・ログ文言まで一致
+- 自分自身の削除は拒否（`'自分自身のアクセスは削除できません'`）
+- staffs 検索失敗・削除失敗・通知振り分け削除失敗・allowedUsers 削除失敗はいずれも握り潰しで処理続行
+
+GAS 版（`auth.js:405-489`）はフォールバック保険として残置（`gas-bridge.html` の `WORKERS_FUNCTIONS` から `'removeUserAccess'` を 1 行除外して Hosting 再デプロイすれば即座に GAS 経路へロールバック可能）。
+
+## 動作確認チェックリスト
+
+- [ ] 管理タブ → ユーザー管理 → 任意のテストユーザーの「アクセス削除」ボタン押下 → 「○○ のアクセスを削除しました（全メール・通知設定も解除されました）」トースト
+- [ ] 削除後、ユーザー一覧から該当行が消える
+- [ ] `allowedUsers` Firestore コレクションから該当 doc が消える
+- [ ] `staffs` Supabase テーブルから該当行が消える
+- [ ] 通知振り分け設定画面で削除済 teacherId が表示されない
+- [ ] 自分自身の削除を試行 → 「自分自身のアクセスは削除できません」エラー
+- [ ] 存在しないメール削除 → success（GAS 版と同じく握り潰し）
+- [ ] Admin でないユーザーの呼出 → 「Admin のみアクセス可能」
+- [ ] `operationLogs` Firestore に `'removeUserAccess'` 監査ログが記録される
+
+## 残存スタブ関数の扱い
+
+| 関数 | GAS 場所 | 状態 | 今後の方針 |
+|------|---------|------|-----------|
+| `addAdminEmail` | `auth.js:243-245` | **スタブ**（即エラー返却・1 行） | Workers 化対象外。「管理者の追加はできません。管理者は GAS のデプロイアカウントに固定されています。」を返すだけのため Workers 化の実利益なし |
+| `removeAdminEmail` | `auth.js:658-660` | **スタブ**（即エラー返却・1 行） | Workers 化対象外。同上 |
+| `initializeFirstAdmin` | `auth.js:669-` | 本実装あり | 当面スキップ。初回セットアップ専用で呼出 1 回限り（既に登録済の場合は早期 return）のため、Workers 化の優先度は極めて低い |
+
+スタブ 2 関数は将来「フロント UI からボタン削除＋GAS 関数削除」の独立フェーズで撤去を検討する余地あり（本フェーズのスコープ外）。
+
+## B 分類完了状態
+
+`docs/remaining-functions-inventory.md` の B 分類 68 関数の Workers 化状況:
+
+| 状態 | 件数 |
+|------|------|
+| Workers 化済（router 登録済） | 63 |
+| 移行不要（GAS 内部ヘルパー） | 2（`getJukuEventOverrides` / `getClosedDayOverrides`） |
+| 移行不要（スタブ化済） | 2（`addAdminEmail` / `removeAdminEmail`） |
+| 当面スキップ（極低頻度） | 1（`initializeFirstAdmin`） |
+| **B 分類実質完了率** | **68/68（100%）** |
+
+> 「B 分類の実質的な Workers 化対象はこれで完了」とする。残存 3 件は構造的に Workers 化が無意味または不要。
+
+## 関連コミット
+
+- `ffdc0c3` Phase 6-C-01: removeUserAccess を Workers 化
