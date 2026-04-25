@@ -3037,7 +3037,7 @@
           (function(campusCode, campusOps) {
             google.script.run
               .withSuccessHandler(function(res) {
-                var existEnts = (res && res.entries) ? res.entries.map(function(e) {
+                var existEnts = Array.isArray(res) ? res.map(function(e) {
                   return { id: e.entryId || '', lectureId: currentLectureId, campusCode: campusCode,
                            date: e.date || '', startTime: e.startTime || '',
                            durationSlots: Number(e.durationSlots) || 9, subject: e.subject || '',
