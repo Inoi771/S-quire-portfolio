@@ -187,42 +187,6 @@
         execParams = {
           docId: params.docId
         };
-      } else if (action === 'create_lecture_entry') {
-        execParams = {
-          lectureId: params.lectureId,
-          campusCode: params.campusCode,
-          date: params.date,
-          startTime: params.startTime,
-          durationSlots: params.durationSlots || 9,
-          subject: params.subject,
-          grade: params.grade,
-          classLabel: params.classLabel || '',
-          weekly: params.weekly || false
-        };
-      } else if (action === 'edit_lecture_entry') {
-        execParams = {
-          lectureId: params.lectureId,
-          campusCode: params.campusCode,
-          entryId: params.entryId,
-          changes: params.changes || {}
-        };
-      } else if (action === 'delete_lecture_entry') {
-        execParams = {
-          lectureId: params.lectureId,
-          campusCode: params.campusCode,
-          entryId: params.entryId
-        };
-      } else if (action === 'bulk_lecture_operations') {
-        execParams = {
-          lectureId: params.lectureId,
-          campusCode: params.campusCode,
-          operations: params.operations || []
-        };
-      } else if (action === 'multi_campus_bulk_operations') {
-        execParams = {
-          lectureId: params.lectureId,
-          campusGroups: params.campusGroups || []
-        };
       }
 
       google.script.run
@@ -233,31 +197,6 @@
             addAIWidgetMessage('ai', successMsg);
             aiWidgetChatHistory.push({ role: 'ai', text: successMsg });
             trimAIWidgetHistory_();
-            // 講習エントリ操作成功後、キャッシュをクリアして画面を自動更新
-            if (action === 'create_lecture_entry' || action === 'edit_lecture_entry' || action === 'delete_lecture_entry' || action === 'bulk_lecture_operations' || action === 'multi_campus_bulk_operations') {
-              var campusesToClear = [];
-              if (action === 'multi_campus_bulk_operations') {
-                (execParams.campusGroups || []).forEach(function(g) {
-                  campusesToClear.push(String(g.campusCode || '').padStart(2, '0'));
-                });
-              } else {
-                campusesToClear.push(String(execParams.campusCode || '').padStart(2, '0'));
-              }
-              campusesToClear.forEach(function(affectedCampus) {
-                if (typeof lectureEntries !== 'undefined') {
-                  delete lectureEntries[affectedCampus];
-                }
-                if (typeof dirtyCampuses !== 'undefined') {
-                  dirtyCampuses[affectedCampus] = false;
-                }
-              });
-              if (typeof allCampusEntriesCache !== 'undefined') {
-                allCampusEntriesCache = [];
-              }
-              if (typeof refreshLecEntries === 'function') {
-                refreshLecEntries();
-              }
-            }
           } else {
             var errMsg = '❌ ' + (result ? result.error || 'エラーが発生しました' : 'エラーが発生しました');
             addAIWidgetMessage('ai', errMsg);
