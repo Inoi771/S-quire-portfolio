@@ -2977,6 +2977,8 @@
           if (!date || !startTime) return;
           opsByCampus[campusCode].creates.push({
             id:            'ent_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+            lectureId:     currentLectureId,
+            campusCode:    campusCode,
             date:          date,
             startTime:     startTime,
             durationSlots: Math.max(1, Math.round(durationM / 10)),
