@@ -3096,11 +3096,16 @@
         var keys = Object.keys(mergedByCampus);
         var completed = 0;
         var failed = 0;
+        var savedByCampus = {};
         keys.forEach(function(campusCode) {
           google.script.run
             .withSuccessHandler(function(result) {
               completed++;
-              if (!result || !result.success) failed++;
+              if (!result || !result.success) {
+                failed++;
+              } else if (Array.isArray(result.entries)) {
+                savedByCampus[campusCode] = result.entries;
+              }
               if (completed === keys.length) {
                 saveBtn.disabled = false;
                 saveBtn.textContent = 'このまま保存';
@@ -3111,7 +3116,8 @@
                     keys.length + '校舎分を保存しました';
                   if (ocrSkipped > 0) msg += '（' + ocrSkipped + '件の変更・削除対象が見つかりませんでした）';
                   showToast(msg, 'success');
-                  keys.forEach(function(cc) { lectureEntries[cc] = mergedByCampus[cc]; });
+                  // サーバー応答 (lectureId/campusCode 付き) を採用。応答が空なら merge 結果に fallback
+                  keys.forEach(function(cc) { lectureEntries[cc] = savedByCampus[cc] || mergedByCampus[cc]; });
                   renderLecEntries(currentLectureCampus);
                   closeLecOcrModalDirect_();
                 }
