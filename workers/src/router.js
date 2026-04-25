@@ -77,7 +77,7 @@ import {
   saveLectureScheduleEntries
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
-import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode } from './functions/auth-emails.js';
+import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode, removeUserAccess } from './functions/auth-emails.js';
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -246,6 +246,7 @@ const HANDLERS = {
   getStaffPlacementForWeb,
   saveStaffPlacementForWeb,
   activateHiddenAdminMode,
+  removeUserAccess,
   analyzeFlyerImageMeta,
   saveLectureScheduleEntries,
   previewTemplateMessage,
