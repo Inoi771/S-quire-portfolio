@@ -2745,3 +2745,73 @@ GAS 版（`auth.js:405-489`）はフォールバック保険として残置（`g
 ## 関連コミット
 
 - `ffdc0c3` Phase 6-C-01: removeUserAccess を Workers 化
+
+---
+
+# Phase 6-C-02 完了記録（2026-04-26）
+
+## 概要
+
+**A 分類「優先度: 高」の `submitStudentInfo` を Workers 化。**
+
+`docs/remaining-functions-inventory.md` の更新で実残候補が 14 件に絞り込まれた中で、優先度「高」の最簡候補（姉妹関数 `updateStudentInfo` が既に Workers 化済み）として選定。
+
+## 移行した関数
+
+| 関数 | GAS 場所 | 役割 |
+|------|---------|------|
+| `submitStudentInfo` | `students.js:419-498` | 生徒情報の新規登録（成績管理タブ → 情報入力フォーム → 「登録」ボタン） |
+
+## LockService の代替設計
+
+GAS 版は `LockService.getScriptLock()` で同時登録時の ID 採番衝突を防いでいたが、Workers には同等機能がない。**PK 衝突時リトライ方式**を採用：
+
+| ステップ | 内容 |
+|---------|------|
+| 1 | バリデーション（必須項目・形式） |
+| 2 | `students` 全 active を取得し氏名+ふりがな完全一致で重複チェック |
+| 3 | 同プレフィックス（校舎+年度+学年）の `student_id` を取得し maxSeq+1 で採番 |
+| 4 | `supabaseInsert` で INSERT（PK 違反時はステップ 3 から最大 3 回リトライ） |
+| 5 | 3 回失敗したら「同時操作による競合が発生しました」エラー |
+
+PostgreSQL の `unique_violation` エラーコード `23505` を捕捉してリトライする。GAS 版の LockService より厳格な保証（PK 制約による DB レベルの一意性）が得られる。
+
+## 変更ファイル（3 ファイル・1 コミット）
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `workers/src/functions/students.js` | import に `supabaseInsert` 追加。`updateStudentInfo` の直前に `submitStudentInfo` を追加。+90 行 |
+| `workers/src/router.js` | import + HANDLERS マップに `submitStudentInfo` を登録 |
+| `gas-bridge.html` | `WORKERS_FUNCTIONS` Set に `'submitStudentInfo'` を追加（`updateStudentInfo` の直前） |
+
+## GAS 版との差分
+
+**意図的差分: LockService → PK 衝突リトライ**
+- 同時登録時の保証粒度: GAS 版は LockService（プロセス単位）/ Workers 版は PostgreSQL UNIQUE 制約（DB 単位）
+- ロック獲得失敗時のメッセージ: GAS 版「同時操作による競合が発生しました。時間をおいて再試行してください。」/ Workers 版も同一文言（リトライ枯渇時）
+- その他のロジック（バリデーション・重複チェック・ID 採番・INSERT 内容）は完全一致
+
+## 動作確認チェックリスト
+
+- [ ] 成績管理タブ → 情報入力サブタブ → 校舎・学年・氏名・ふりがな入力 → 「登録」ボタン → 「生徒情報を登録しました」トースト表示
+- [ ] 生徒IDが `{校舎2桁}{年度4桁}{学年2桁}{連番2桁}` の 10 桁形式で採番される
+- [ ] 既存の同一氏名・ふりがなを再登録 → 「同じ氏名・ふりがなの生徒がすでに登録されています（ID: ○○）」エラー
+- [ ] 必須項目（校舎・学年・姓・姓ふりがな）欠落 → 「必須項目（校舎、学年、姓、姓ふりがな）を入力してください」エラー
+- [ ] 登録直後に成績管理画面から該当生徒が選択可能（fbGetStudentsForDropdown 経由で表示される）
+- [ ] PK 衝突は実環境では極めて稀のため目視確認困難。Supabase Logs で INSERT INTO students の successful 行を確認
+
+## ロールバック手順
+
+`gas-bridge.html` の `WORKERS_FUNCTIONS` Set から `'submitStudentInfo'` の 1 行を除外して Hosting 再デプロイすれば即座に GAS 経路へロールバック可能。GAS 版 `submitStudentInfo`（students.js L419-498）はフォールバック保険として残置。
+
+## A 分類の進捗
+
+| 状態 | 件数 |
+|------|------|
+| Workers 化済 | 約 111（旧台帳掲載 95 + 旧台帳未掲載 16） |
+| 未移行 A | **13**（うち Gemini API 系 12 件） |
+| 残存「高」優先度 | 2（`requestAIAssistant` / `executeAiAction`） |
+
+## 関連コミット
+
+- （本コミット） Phase 6-C-02: submitStudentInfo を Workers 化

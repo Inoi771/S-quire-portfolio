@@ -1,5 +1,5 @@
 // students 関連ハンドラー（GAS students.js の Workers ポート）
-import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert } from '../supabase.js';
+import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert, supabaseInsert } from '../supabase.js';
 import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_, getSchoolConfig_ } from './grades.js';
 import { calcDeviationValue_, calcPassProbability_ } from './analysis.js';
 import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
@@ -549,6 +549,98 @@ export async function getStudentListWithGrades(args, env, user) {
     });
 
     return { success: true, students };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * submitStudentInfo — GAS submitStudentInfo(...) の Workers 版
+ * 生徒情報を新規登録する（成績管理タブ → 情報入力フォーム → 「登録」ボタン）
+ * GAS 版 students.js L419-498 と同一挙動。差分:
+ *   - LockService 不在のため PK 衝突時にリトライで採番をやり直す（最大 3 回）
+ *   - その他のロジック（バリデーション・重複チェック・ID 採番・全カラム指定 INSERT）は完全一致
+ * args: [year, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName]
+ */
+export async function submitStudentInfo(args, env, user) {
+  const [year, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName] = args || [];
+  try {
+    if (!sei || !seiFurigana || !campusCode || !gradeCode) {
+      return { success: false, error: '必須項目（校舎、学年、姓、姓ふりがな）を入力してください' };
+    }
+
+    const campus = String(campusCode).padStart(2, '0');
+    const grade = String(gradeCode).padStart(2, '0');
+    const prefix = campus + String(year) + grade;
+    const fullName = String(sei).trim() + (mei ? String(mei).trim() : '');
+    const fullFurigana = String(seiFurigana).trim() + (meiFurigana ? String(meiFurigana).trim() : '');
+
+    // 重複チェック（削除済みを除く同一氏名・ふりがな）— GAS L448-458 と同一
+    const allActive = await supabaseSelect(env, 'students',
+      'is_deleted=eq.false&select=id,student_id,sei,mei,sei_furigana,mei_furigana');
+    for (const s of allActive || []) {
+      const existName = String(s.sei || '').trim() + String(s.mei || '').trim();
+      const existFurigana = String(s.sei_furigana || '').trim() + String(s.mei_furigana || '').trim();
+      if (existName === fullName && existFurigana === fullFurigana) {
+        return { success: false, error: '同じ氏名・ふりがなの生徒がすでに登録されています（ID: ' + (s.student_id || s.id) + '）' };
+      }
+    }
+
+    const registrationYear = parseInt(String(year), 10);
+    const registrationGrade = parseInt(grade, 10);
+
+    // ID 採番 + INSERT（PK 衝突時は max+1 を再計算してリトライ）
+    const MAX_RETRIES = 3;
+    let studentId = '';
+    for (let retry = 0; retry < MAX_RETRIES; retry++) {
+      // 同プレフィックスを持つ生徒から maxSeq を計算 — GAS L441-467 と同一
+      const existing = await supabaseSelect(env, 'students',
+        'student_id=gte.' + encodeURIComponent(prefix + '00') +
+        '&student_id=lte.' + encodeURIComponent(prefix + '99') +
+        '&select=id,student_id');
+
+      let maxSeq = 0;
+      for (const doc of existing || []) {
+        const id = String(doc.student_id || doc.id || '');
+        if (id.indexOf(prefix) === 0) {
+          const seq = parseInt(id.slice(prefix.length), 10);
+          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+        }
+      }
+
+      studentId = prefix + String(maxSeq + 1).padStart(2, '0');
+      const now = new Date().toISOString();
+
+      const record = {
+        id: studentId,
+        student_id: studentId,
+        campus,
+        sei: String(sei).trim(),
+        mei: String(mei || '').trim(),
+        sei_furigana: String(seiFurigana).trim(),
+        mei_furigana: String(meiFurigana || '').trim(),
+        school_name: String(schoolName || '').trim(),
+        is_deleted: false,
+        created_at: now,
+        registration_year: registrationYear,
+        registration_grade: registrationGrade
+      };
+
+      try {
+        await supabaseInsert(env, 'students', record);
+        return { success: true, message: '生徒情報を登録しました', studentId };
+      } catch (err) {
+        const errMsg = String(err && err.message ? err.message : err);
+        // Postgres unique_violation (23505) → 競合発生・リトライ
+        if (errMsg.includes('23505') || errMsg.includes('duplicate key')) {
+          if (retry < MAX_RETRIES - 1) continue;
+          return { success: false, error: '同時操作による競合が発生しました。時間をおいて再試行してください。' };
+        }
+        throw err;
+      }
+    }
+
+    return { success: false, error: '同時操作による競合が発生しました。時間をおいて再試行してください。' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
