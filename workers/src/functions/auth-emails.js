@@ -15,8 +15,8 @@
 //   - getAllowedUsers（6-A-10）は Admin 判定を isAdminUser で先に済ませ、
 //     Supabase staffs の SELECT と KV `prop:ADMIN_EMAILS` のマージで
 //     GAS auth.js:294-336 と同一ロジックを再現する
-import { supabaseRpc, supabaseSelect, supabaseUpdate, staffFromSupabase } from '../supabase.js';
-import { firestoreSet, firestoreDelete } from '../firebase.js';
+import { supabaseRpc, supabaseSelect, supabaseUpdate, supabaseDelete, staffFromSupabase } from '../supabase.js';
+import { firestoreGet, firestoreSet, firestoreDelete } from '../firebase.js';
 import { isAdminUser, getAdminEmailList } from './auth.js';
 
 /**
@@ -369,6 +369,158 @@ export async function activateHiddenAdminMode(args, env, user) {
     return { success: true };
   } catch (error) {
     console.error('❌ activateHiddenAdminModeエラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// ─── Firestore config/notification_routing 読取（line.js:94 と同一） ───
+async function getCampusRoutingMap_(env) {
+  const doc = await firestoreGet(env, 'config', 'notification_routing');
+  if (!doc) return {};
+  const map = {};
+  Object.keys(doc).forEach((k) => {
+    if (k !== '_id' && k !== 'updatedAt') map[k] = doc[k];
+  });
+  return map;
+}
+
+// ─── Firestore config/notification_routing 書込（line.js:106 と同一） ───
+async function setCampusRoutingMap_(env, routingMap) {
+  routingMap.updatedAt = new Date().toISOString();
+  await firestoreSet(env, 'config', 'notification_routing', routingMap);
+}
+
+// ─── Firestore DocId 用 safe ID 変換（line.js:112 と同一） ───
+function makeSafeId_(s) {
+  return String(s || '').replace(/[^a-zA-Z0-9぀-鿿゠-ヿ]/g, '_').substring(0, 40);
+}
+
+// ─── 監査ログ書込（line.js:119 logAdminActionToFirestore と同一） ───
+async function logAdminActionToFirestore_(env, action, details) {
+  try {
+    const now = new Date();
+    const timestampMs = now.getTime();
+    const docId = timestampMs + '_' + makeSafeId_(action);
+    await firestoreSet(env, 'operationLogs', docId, {
+      action: action || '',
+      details: details || '',
+      result: '成功',
+      timestamp: now.toISOString(),
+      operator: 'Workers'
+    });
+  } catch (error) {
+    console.log('logAdminActionToFirestore エラー: ' + (error && error.toString ? error.toString() : error));
+  }
+}
+
+/**
+ * 【Phase 6-C-01】removeUserAccess — GAS auth.js:405 の Workers 版
+ *
+ * 指定メールアドレスのユーザーアクセスを完全に削除する（Admin のみ）。
+ *
+ * 削除対象（GAS 版と完全一致）:
+ *   1. Supabase `staffs` レコード（teacherId 経由）
+ *   2. Firestore `config/notification_routing` から teacherId を全 campus から除外
+ *   3. Firestore `allowedUsers/{email}` を全関連メール分削除
+ *   4. KV `prop:ADMIN_EMAILS` から全関連メールを除外
+ *   5. 監査ログ `operationLogs` に書込
+ *
+ * GAS 版との差分: なし
+ *   - 自分自身の削除は拒否（`'自分自身のアクセスは削除できません'`）
+ *   - staffs 検索失敗・staffs 削除失敗・通知振り分け削除失敗・allowedUsers 削除失敗
+ *     はいずれも try-catch で握り潰し（GAS 版と同一粒度）
+ *   - メール正規化は trim().toLowerCase()
+ *
+ * @param {Array} args [email]
+ * @param {Object} env Cloudflare Workers 環境
+ * @param {Object} user 認証済みユーザー { email, uid }
+ * @return {Object} { success, message } | { success:false, error }
+ */
+export async function removeUserAccess(args, env, user) {
+  if (!(await isAdminUser(env, user))) {
+    return { success: false, error: 'Admin のみアクセス可能' };
+  }
+  try {
+    let [email] = args || [];
+    email = (email || '').trim().toLowerCase();
+
+    const currentUser = ((user && user.email) || '').toLowerCase();
+    if (email === currentUser) {
+      return { success: false, error: '自分自身のアクセスは削除できません' };
+    }
+
+    // Supabase staffs からスタッフを検索
+    let staff = null;
+    try {
+      const staffRows = await supabaseRpc(env, 'find_staff_by_auth', { p_uid: null, p_email: email });
+      if (staffRows && staffRows.length > 0) staff = staffFromSupabase(staffRows[0]);
+    } catch (staffErr) {
+      console.log('⚠ removeUserAccess: staffs 検索エラー: ' + staffErr);
+    }
+
+    // スタッフの全メールアドレスを収集
+    const allEmails = [email];
+    if (staff) {
+      const staffEmails = Array.isArray(staff.emails) ? staff.emails : (staff.email ? [staff.email] : []);
+      staffEmails.forEach((e) => {
+        if (e && allEmails.indexOf(e) === -1) allEmails.push(e);
+      });
+    }
+
+    // Supabase staffs レコードを削除
+    if (staff) {
+      const teacherId = staff.teacherId || staff._id;
+      try {
+        await supabaseDelete(env, 'staffs', 'id=eq.' + encodeURIComponent(teacherId));
+        console.log('✓ removeUserAccess: staffs/' + teacherId + ' を削除');
+      } catch (sbErr) {
+        console.log('⚠ removeUserAccess: staffs 削除失敗: ' + sbErr);
+      }
+
+      // 通知振り分け設定からも自動削除
+      try {
+        const routingMap = await getCampusRoutingMap_(env);
+        let routingChanged = false;
+        Object.keys(routingMap).forEach((campusCode) => {
+          const ids = routingMap[campusCode];
+          if (Array.isArray(ids)) {
+            const idx = ids.indexOf(teacherId);
+            if (idx !== -1) {
+              ids.splice(idx, 1);
+              routingChanged = true;
+            }
+          }
+        });
+        if (routingChanged) {
+          await setCampusRoutingMap_(env, routingMap);
+          console.log('✓ removeUserAccess: 通知振り分けから ' + teacherId + ' を削除');
+        }
+      } catch (routingErr) {
+        console.log('⚠ removeUserAccess: 通知振り分け削除失敗: ' + routingErr);
+      }
+    }
+
+    // Firestore allowedUsers から全メールを削除
+    for (const em of allEmails) {
+      try {
+        await firestoreDelete(env, 'allowedUsers', em);
+      } catch (fsErr) {
+        console.log('⚠ removeUserAccess: allowedUsers 削除失敗（' + em + '）: ' + fsErr);
+      }
+    }
+
+    // ADMIN_EMAILS からも全メールを削除（KV 直アクセス・GAS getProperty/setProperty 相当）
+    const adminRaw = (await env.KV.get('prop:ADMIN_EMAILS')) || '';
+    const adminList = adminRaw.split(',').map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0);
+    const newAdminList = adminList.filter((e) => allEmails.indexOf(e) === -1);
+    if (newAdminList.length !== adminList.length) {
+      await env.KV.put('prop:ADMIN_EMAILS', newAdminList.join(','));
+    }
+
+    await logAdminActionToFirestore_(env, 'removeUserAccess', { email: email, allEmails: allEmails });
+    return { success: true, message: email + ' のアクセスを削除しました（全メール・通知設定も解除されました）' };
+  } catch (error) {
+    console.log('❌ removeUserAccessエラー: ' + error);
     return { success: false, error: error.toString() };
   }
 }
