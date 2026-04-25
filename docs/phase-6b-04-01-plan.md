@@ -225,3 +225,33 @@ return createLectureEntryAI_.apply(null, _createArgs);
 6. 原因調査・修正後に再着手
 
 所要時間: **3-5 分**
+
+---
+
+## 【中止】2026-04-26 追記
+
+### 中止理由
+
+Phase 6-B-04-01 Stage 2.1 試行（2026-04-25 深夜）で 3 件の問題が発覚:
+1. `grade='13'`（数値コード）で保存される
+2. 重複検出機能が動かない
+3. `teacherId` が空文字
+
+これを受けて 2026-04-26 に方針再検討を実施し、**案 2（AI write 系廃止）** を採用した。本 plan の残作業（Stage 2.x）は不要となった。
+
+### 残置物の扱い
+
+| 残置物 | 扱い |
+|-------|-----|
+| `features.js` create shim（76e3c10） | dead code として残置・次フェーズで削除 |
+| `workers-bridge.js`（callWorkersInternal_ / テストスタブ） | dead code として残置・次フェーズで削除 |
+| Workers 側 `createLectureEntryAI` 等 5 関数（ceb3028） | dead endpoint として残置・次フェーズで削除 |
+| KV フラグ `FF_AI_LECTURE_CREATE` | unset 状態で残置・次フェーズで命名空間整理 |
+
+### 次フェーズでの一括削除予定
+
+`features.js:3074-3431` の AI 講習エントリ個別 CRUD セクション全体を削除する。詳細は `docs/phase-6b-04-completion-2026-04-26.md` § 4 参照。
+
+### 学びの保持
+
+本 plan 自体は削除しない。Phase 6-B-04-01 の Stage 設計（KV フラグでの段階切替・テストスタブによる検証）は今後の Workers 移行で再利用できる。中止記録として残すことに価値がある。
