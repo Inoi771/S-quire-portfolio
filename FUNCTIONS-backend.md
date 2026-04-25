@@ -152,12 +152,7 @@
 - `resolveAiFeedback(docId)` — フィードバックを解決済みにする（Admin のみ）
 - `deleteAiFeedback(docId)` — フィードバックを削除（Admin のみ）
 - `applyConfigChange_(settings)` — config_changeの推奨設定をバックエンドで実際に適用する内部ヘルパー（themeColor, aiAssistantName, aiPersonality, displayName）
-- `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule / create_lecture_entry / edit_lecture_entry / delete_lecture_entry）
-- `createLectureEntryAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを1件追加する内部ヘルパー
-- `createWeeklyLectureEntriesAI_(lectureId, campusCode, date, startTime, durationSlots, subject, grade, classLabel)` — AIアシスタントから講習エントリを毎週一括作成する内部ヘルパー（休校日スキップ、学年別設定の回数分）
-- `editLectureEntryAI_(lectureId, campusCode, entryId, changes)` — AIアシスタントから講習エントリを1件編集する内部ヘルパー
-- `deleteLectureEntryAI_(lectureId, campusCode, entryId)` — AIアシスタントから講習エントリを1件削除する内部ヘルパー
-- `bulkLectureOperationsAI_(lectureId, campusCode, operations)` — AIアシスタントから講習エントリを一括操作する（作成・編集・削除の混合対応）。operations配列の各要素は `{op:"create"|"edit"|"delete", ...params}`。1回のロック・1回のFirestore書き込みで処理
+- `executeAiAction(action, paramsJson)` — `@aiCallable` AIアシスタントの確認済みアクションを実行するエントリーポイント（submit_grade / submit_student / add_schedule / edit_schedule / delete_schedule）
 
 #### ⚠️【重要】Gemini API 呼び出し時の設計ルール
 
