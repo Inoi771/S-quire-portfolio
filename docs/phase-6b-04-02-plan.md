@@ -263,3 +263,28 @@ _クローズ時に追記_
 6. 原因調査・修正後に再着手
 
 ロールバック判定基準: `docs/phase-6b-04-01-plan.md` § 7.3 と同じ。
+
+---
+
+## 【中止】2026-04-26 追記
+
+### 中止理由
+
+並行作成された Phase 6-B-04-01 が 2026-04-25 深夜の Stage 2.1 試行で 3 件の問題を抱えて中断したため、本 plan（edit Stage）も着手前に中止となった。
+
+2026-04-26 に方針再検討を実施し、**案 2（AI write 系廃止）** を採用。`editLectureEntryAI_` も含めた AI write 系全体を次フェーズで削除する。
+
+### 残置物の扱い
+
+`docs/phase-6b-04-01-plan.md` の中止追記と同じ:
+- `features.js` の `editLectureEntryAI_` は次フェーズで削除
+- Workers 側の対応関数も dead endpoint として残置・次フェーズで削除
+- KV フラグ `FF_AI_LECTURE_EDIT` は unset 状態で残置
+
+### 次フェーズでの一括削除予定
+
+詳細は `docs/phase-6b-04-completion-2026-04-26.md` § 4 参照。
+
+### 学びの保持
+
+本 plan 自体は削除しない。speed mode（並行作成）の運用パターンは今後の Workers 移行で再利用できる。
