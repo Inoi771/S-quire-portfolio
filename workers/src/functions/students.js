@@ -3,6 +3,7 @@ import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert, supabaseIn
 import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_, getSchoolConfig_ } from './grades.js';
 import { calcDeviationValue_, calcPassProbability_ } from './analysis.js';
 import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
+import { fetchGeminiWithRetry, extractGeminiText, parseGeminiErrorMessage } from '../gemini.js';
 
 // GAS makeSchoolAveDocId_() と同一ロジック
 function makeSchoolAveDocId(year, testName) {
@@ -263,6 +264,88 @@ export async function saveSchoolAverages(args, env, user) {
     }, 'id');
 
     return { success: true, savedCount, updatedCount };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * ocrAndExtractAverages — GAS students.js:1686-1743 の Workers 版
+ * 学校別平均点の画像（base64）を Gemini OCR で読み取り Supabase に保存する。
+ * GAS 版との差分: なし（完全同一ロジック・プロンプト・モデル）
+ * - Gemini モデル: gemini-3.1-flash-lite-preview
+ * - 内部で saveSchoolAverages を呼出（同モジュール内・既に Workers 化済）
+ * - skipExisting=true で既存値を保持して新規行のみ追加
+ *
+ * args: [base64Image, mimeType, year, testName]
+ *
+ * 戻り値（GAS 版と完全一致）:
+ *   成功: { success: true, savedCount, updatedCount, extracted: [...] }
+ *   失敗: { success: false, error: <文言> }
+ */
+export async function ocrAndExtractAverages(args, env, user) {
+  try {
+    const [base64Image, mimeType, year, testName] = args || [];
+
+    const prompt = 'この画像は模擬試験・学力テストの学校別平均点一覧です。' +
+      '各学校（または「県平均」「全体平均」など）の教科別平均点を読み取り、' +
+      '以下のJSON配列形式のみで返してください。教科が読み取れない場合は null にしてください。\n' +
+      '「平均点」「全体平均」「合計平均」などの全体平均行は schoolName:"平均" として統一してください。\n' +
+      '[{"schoolName":"学校名","kokugo":国語平均点,"shakai":社会平均点,"sugaku":数学平均点,"rika":理科平均点,"eigo":英語平均点},' +
+      '{"schoolName":"県平均","kokugo":...}]';
+
+    const payload = {
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: mimeType, data: base64Image } },
+          { text: prompt }
+        ]
+      }],
+      generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+    };
+
+    let response;
+    try {
+      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+    } catch (e) {
+      // API キー未設定時のみ throw される（GAS 版と同じ文言）
+      return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
+    }
+
+    if (!response.ok) {
+      const msg = await parseGeminiErrorMessage(response);
+      return { success: false, error: msg };
+    }
+
+    const json = await response.json();
+    if (!json.candidates || !json.candidates[0]) {
+      return { success: false, error: 'AIからの応答がありませんでした' };
+    }
+
+    let text = extractGeminiText(json);
+    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '').trim();
+
+    let extracted;
+    try {
+      extracted = JSON.parse(text);
+    } catch (e) {
+      return { success: false, error: '平均点データが読み取れませんでした' };
+    }
+
+    if (!Array.isArray(extracted) || extracted.length === 0) {
+      return { success: false, error: '平均点データが読み取れませんでした' };
+    }
+
+    // 内部呼出: saveSchoolAverages（同モジュール内）
+    const saveResult = await saveSchoolAverages([year, testName, extracted, true], env, user);
+    if (!saveResult.success) return saveResult;
+
+    return {
+      success: true,
+      savedCount: saveResult.savedCount,
+      updatedCount: saveResult.updatedCount,
+      extracted: extracted
+    };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
