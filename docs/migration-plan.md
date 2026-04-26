@@ -2962,4 +2962,77 @@ Gemini API 系 Workers 移行の第 2 弾。Phase 6-C-03 で確立した `worker
 
 ## 関連コミット
 
-- （本コミット） Phase 6-C-04: ocrLectureSchedule を Workers 化
+- `f5d8c4d` Phase 6-C-04: ocrLectureSchedule を Workers 化
+
+---
+
+# Phase 6-C-05 完了記録（2026-04-26）
+
+## 概要
+
+**A 分類「優先度: 中」の `parseLectureScheduleFromText` を Workers 化。**
+
+Phase 6-C-04 の兄弟関数（同じ Gemini プロンプトのテキスト入力版）を同型展開で移行。features.js の連続 Gemini 移行の第 2 弾。
+
+## 移行した関数
+
+| 関数 | GAS 場所 | 役割 |
+|------|---------|------|
+| `parseLectureScheduleFromText` | `features.js:4446-4529` | 貼り付けテキスト（ワード・エクセル等からのコピー）から講習日程を Gemini で解析しエントリ配列を返す（保存はしない） |
+
+## 設計ポイント
+
+`ocrLectureSchedule`（Phase 6-C-04）と同じパターン。違いは:
+
+| 項目 | ocrLectureSchedule | parseLectureScheduleFromText |
+|------|-------------------|----------------------------|
+| 入力 | base64Image + mimeType + 4 引数（計 6 引数） | scheduleText + 4 引数（計 5 引数） |
+| Gemini parts | `[{inline_data}, {text:prompt}]` | `[{text:prompt}]`（テキストのみ） |
+| 早期エラー | なし | 「テキストが空です」（空文字列ガード） |
+| プロンプト冒頭 | 「この画像は…」「このPDFは…」 | 「以下は学習塾の講習日程テキストです。」 |
+| プロンプト末尾 | （画像/PDF を別 part で受ける） | `--- 日程テキスト ---\n` + scheduleText |
+| campusText 文言 | 「画像に校舎名がある場合は…」 | 「テキストに校舎名がある場合は…」 |
+
+その他（モデル名・generationConfig・エラーメッセージ・戻り値形状・op 判定ルール）は完全一致。
+
+## 変更ファイル（3 ファイル・1 コミット）
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `workers/src/functions/features.js` | `ocrLectureSchedule` の直後に `parseLectureScheduleFromText` を追加。+115 行 |
+| `workers/src/router.js` | features.js import + HANDLERS マップに登録 |
+| `gas-bridge.html` | `WORKERS_FUNCTIONS` Set に `'parseLectureScheduleFromText'` を追加 |
+
+## GAS 版との差分
+
+**なし（完全等価）**:
+- プロンプト・モデル・generationConfig 完全一致
+- エラーメッセージ完全一致（API キー未設定 / テキスト空 / AI 応答なし / 日程読取不能）
+- 戻り値形状 `{success, entries}` 完全一致
+- 校舎・学年処理ロジックも一致
+
+## 動作確認チェックリスト
+
+- [ ] 講習管理タブ → 日程作成サブタブ → 「テキストから読み込む」エリアにテキスト貼り付け → 「読み込む」ボタン
+- [ ] エントリ一覧（日付・時刻・科目・学年・校舎）が表示される
+- [ ] 空テキスト送信 → 「テキストが空です」エラー
+- [ ] 日付省略記法（"7/15,30"等）が正しく展開される
+- [ ] 単一/複数校舎ユーザーで campusCode が正しく設定される
+- [ ] op フィールドが create/edit/delete に分類される
+- [ ] 解析不能テキストで「日程データを読み取れませんでした」エラー
+
+## ロールバック手順
+
+`gas-bridge.html` の `WORKERS_FUNCTIONS` から `'parseLectureScheduleFromText'` を 1 行除外して Hosting 再デプロイすれば即座に GAS 経路へロールバック可能。GAS 版（`features.js:4446-4529`）はフォールバック保険として残置。
+
+## A 分類の進捗
+
+| 状態 | 件数 |
+|------|------|
+| Workers 化済 | 約 114（旧台帳掲載 98 + 旧台帳未掲載 16） |
+| 未移行 A | **10**（うち Gemini API 系 全 10 件） |
+| 残存「高」優先度 | 2（`requestAIAssistant` / `executeAiAction`） |
+
+## 関連コミット
+
+- （本コミット） Phase 6-C-05: parseLectureScheduleFromText を Workers 化
