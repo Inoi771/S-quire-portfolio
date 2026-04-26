@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 56**
+**現在のデプロイ回数: 57**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -448,6 +448,7 @@ MyProject/
 - **Phase 6-C-04（2026-04-26）**: A 分類「優先度: 中」の `ocrLectureSchedule` を Workers 化。Gemini API 系 Workers 移行**第 2 弾**で、`features.js` に Phase 6-C-03 確立パターンを流用する初の事例。GAS 版と完全等価（80 行のプロンプト・モデル・generationConfig・エラーメッセージ・戻り値形状すべて一致）。`safeJsonParse_()` は try/catch + デフォルト値 `{}` で代替（campusNamesJson / gradeSettingsJson の両方）。保存は呼出元（フロント側で別途 `saveLectureScheduleEntries` 呼出）のため OCR 単体の純粋な Gemini 呼出となり実装シンプル。残存 A 11 件は全て Gemini 系。詳細は `docs/migration-plan.md:2840-` 参照。
 - **Phase 6-C-05（2026-04-26）**: A 分類「優先度: 中」の `parseLectureScheduleFromText` を Workers 化。`ocrLectureSchedule`（Phase 6-C-04）の兄弟関数で、入力が画像/PDF ではなく貼り付けテキスト（ワード・エクセル等からのコピー）の同型展開。features.js の連続 Gemini 移行第 2 弾で、プロンプト構造・モデル・generationConfig・op 判定ルール・campus/grade 処理ロジックは完全一致。差分は (1) 5 引数（`mimeType` なし）、(2) 早期「テキストが空です」ガード、(3) Gemini parts が `[{text:prompt}]` のみ（inline_data なし）、(4) prompt 末尾に `--- 日程テキスト ---\n` + scheduleText を連結、(5) campusText 文言が「画像に」→「テキストに」のみ。残存 A 10 件は全て Gemini 系（OCR/Parse 系 3 件 + AI 主力 2 件 + 分析・音声・画像生成 5 件）。
 - **議事録 AI 機能廃止（2026-04-26）**: `transcribeAndSummarizeAudio`（音声文字起こし＋要約）と `mergeTranscriptsAndSummarize`（複数チャンク統合要約）を機能ごと削除。`minutes.js` から本体 2 関数 + 内部ヘルパー 2 関数（`transcribeAudioDirect_` / `generateMeetingSummary_`）の計 4 関数を削除（-197 行）。`js-minutes.html` から音声ファイル UI セクション・進捗表示・関連 JS 4 関数（`runMinutesTranscription_` / `processAudioChunks_` / `onTranscriptionComplete_` / `onTranscriptionError_`）と `MINUTES_MAX_CHUNK_BYTES_` 定数を削除（-135 行）。新規作成モーダルはタイトル + 要約テキスト直接入力のみに簡素化。`getMinutesContextForAI_`（AI アシスタントから議事録を参照する内部関数）は features.js から呼ばれているため温存。既存の議事録データ（過去の AI 生成要約含む）は Supabase `meeting_minutes` テーブルにそのまま残存し表示・編集可能。これにより未移行 A 分類 10 件 → 8 件に減少。
+- **Phase 6-C-06（2026-04-26）**: A 分類「優先度: 中」の `parseAndSaveAveragesFromText` を Workers 化。Phase 6-C-03 で移行した `ocrAndExtractAverages` の兄弟関数（テキスト入力版）。同型展開で連続 Gemini 移行第 4 弾。GAS 版と完全等価（プロンプト・モデル `gemini-3.1-flash-lite-preview`・generationConfig・エラーメッセージ・戻り値形状すべて一致）。差分は (1) 4 引数（`mimeType` なし・`text` 含む）、(2) Gemini parts は `[{text:prompt}]` のみ（inline_data なし）、(3) prompt 末尾に `対象テキスト:\n` + text を連結、(4) `skipExisting !== false` でフロント指定値を反映（OCR 版は内部固定 true）。内部呼出 `saveSchoolAverages` は同モジュール内 export を直接 await（Phase 6-C-03 で確立したパターン）。残存 A 7 件は AI 主力 2 件 + 成績 OCR/Parse 系 2 件 + 分析系 2 件 + Imagen 1 件。
 
 ---
 
