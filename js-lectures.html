@@ -822,7 +822,7 @@
       buildLecSubjectButtons();
       buildLecGradeButtons();
       document.getElementById('lec-subject-area').style.display = 'block';
-      document.getElementById('lec-class-area').style.display = 'block';
+      document.getElementById('lec-class-area').style.display = 'flex';
       document.getElementById('lec-grade-area').style.display = 'block';
       document.getElementById('lec-weekly-area').style.display = 'block';
       document.getElementById('lec-toolbar').style.display = 'flex';
@@ -1489,12 +1489,14 @@
     }
 
     /**
-     * 保存ボタンの状態を更新する
-     * @param {string} state 'dirty' | 'saving' | 'clean' | 'error'
+     * 保存ボタンの状態を更新する。状態自体がメッセージを兼ねる。
+     * @param {string} state 'dirty' | 'saving' | 'clean' | 'success' | 'error'
      */
     function updateLecSaveBtn(state) {
       var btn = document.getElementById('lec-save-btn');
       if (!btn) return;
+      // 既存の自動復帰タイマーを必ず解除（連続保存時の競合防止）
+      if (btn._lecRevertTimer) { clearTimeout(btn._lecRevertTimer); btn._lecRevertTimer = null; }
       if (state === 'dirty') {
         btn.disabled = false;
         btn.style.opacity = '1';
@@ -1504,9 +1506,29 @@
       } else if (state === 'saving') {
         btn.disabled = true;
         btn.style.opacity = '0.7';
-        btn.textContent = '保存中...';
+        btn.style.background = '#667eea';
+        btn.textContent = '保存中…';
         btn.style.cursor = 'not-allowed';
+      } else if (state === 'success') {
+        // 緑で「✓ 保存しました」を約2秒表示してから clean 状態へ自動復帰
+        btn.disabled = true;
+        btn.style.opacity = '1';
+        btn.style.background = '#22c55e';
+        btn.textContent = '✓ 保存しました';
+        btn.style.cursor = 'not-allowed';
+        btn._lecRevertTimer = setTimeout(function() {
+          btn._lecRevertTimer = null;
+          updateLecSaveBtn('clean');
+        }, 2000);
+      } else if (state === 'error') {
+        // 赤で「❌ 失敗 もう一度」を表示・押下で再試行可
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.background = '#e57373';
+        btn.textContent = '❌ 失敗 もう一度';
+        btn.style.cursor = 'pointer';
       } else {
+        // clean
         btn.disabled = true;
         btn.style.opacity = '0.4';
         btn.style.background = '#667eea';
@@ -1538,7 +1560,6 @@
     function scheduleAutoSave(campusCode) {
       dirtyCampuses[campusCode] = true;
       lectureSaveVersion[campusCode] = (lectureSaveVersion[campusCode] || 0) + 1;
-      showLecStatusMsg('● 変更あり', '#f97316');
       updateLecSaveBtn('dirty');
       // 自動保存タイマーは無効化。保存は「💾 保存」ボタンから手動で行う。
     }
@@ -1569,36 +1590,36 @@
             // noNewChanges が false の場合: dirtyCampuses はそのまま（次のタイマーで再保存される）
             var anyDirty = Object.keys(dirtyCampuses).some(function(cc) { return dirtyCampuses[cc]; });
             if (!anyDirty) {
-              showLecStatusMsg('✓ 保存しました', '#22c55e');
-              showToast('✓ 保存しました', 'success');
-              updateLecSaveBtn('clean');
+              // 保存ボタン自体が「✓ 保存しました」状態となり、約2秒後に自動復帰する
+              updateLecSaveBtn('success');
             } else {
               updateLecSaveBtn('dirty');
             }
           } else {
-            showLecStatusMsg('❌ 保存失敗 — もう一度お試しください', '#e57373');
-            showToast('❌ 保存失敗', 'error');
-            updateLecSaveBtn('dirty');  // エラー後もボタンを有効に保ち再試行できるようにする
+            showToast('❌ 保存失敗 — もう一度お試しください', 'error');
+            updateLecSaveBtn('error');  // ボタン自体が「❌ 失敗 もう一度」となり押下で再試行可
           }
         })
         .catch(function() {
-          showLecStatusMsg('❌ 保存失敗 — もう一度お試しください', '#e57373');
-          showToast('❌ 保存失敗', 'error');
-          updateLecSaveBtn('dirty');  // エラー後もボタンを有効に保ち再試行できるようにする
+          showToast('❌ 保存失敗 — もう一度お試しください', 'error');
+          updateLecSaveBtn('error');  // ボタン自体が「❌ 失敗 もう一度」となり押下で再試行可
         });
     }
 
     /**
-     * ステータスメッセージを一時表示する
+     * ステータスメッセージを一時表示する。
+     * 元はインライン span 表示だったが、現在は下部トースト（showToast）へ委譲する。
+     * 色文字列から severity を推定する。空文字列は no-op（旧クリア用途の互換）。
      * @param {string} msg
      * @param {string} color
      */
     function showLecStatusMsg(msg, color) {
-      var el = document.getElementById('lec-status-msg');
-      if (!el) return;
-      el.textContent = msg;
-      el.style.color = color || '#555';
-      setTimeout(function() { if (el.textContent === msg) el.textContent = ''; }, 3000);
+      if (!msg) return;
+      var sev = 'info';
+      if (color === '#22c55e') sev = 'success';
+      else if (color === '#e57373') sev = 'error';
+      else if (color === '#f97316') sev = 'warning';
+      if (typeof showToast === 'function') showToast(msg, sev);
     }
 
     /**
@@ -1997,8 +2018,6 @@
       if (!currentLectureId || !currentLectureCampus) return;
       // 呼び出し時点の校舎コードをキャプチャ（非同期コールバック内で変化しないようにする）
       var campusCode = currentLectureCampus;
-      var statusEl = document.getElementById('lec-status-msg');
-      if (statusEl) { statusEl.textContent = '読み込み中...'; statusEl.style.color = '#555'; }
 
       fbGetLectureScheduleEntries(currentLectureId, campusCode)
         .then(function(result) {
