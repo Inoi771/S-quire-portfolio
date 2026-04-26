@@ -3108,4 +3108,75 @@ Phase 6-C-03 で移行した `ocrAndExtractAverages` の兄弟関数（テキス
 
 ## 関連コミット
 
-- （本コミット） Phase 6-C-06: parseAndSaveAveragesFromText を Workers 化
+- `cc8d400` Phase 6-C-06: parseAndSaveAveragesFromText を Workers 化
+
+---
+
+# Phase 6-C クローズ記録（2026-04-26）
+
+## 決定
+
+**Phase 6-C を 6-C-06 で完了とし、残った A 分類 7 件（AI 系全件）を「C 残置確定」に再分類する。**
+
+ユーザー判断により、Workers 化フェーズは Phase 6-C をもって正式終了。今後の AI 系の挙動変更は GAS 側で対応する。
+
+## 背景
+
+Phase 6-C-06 完了時点で残った A 分類 7 件（全て Gemini API 系）について、以下の理由から GAS 残置とすることを決定：
+
+- **使用頻度が低い** — 主力 AI チャット以外は月数回〜年数回の利用
+- **複雑度が高い** — dispatcher 設計負荷・多データ依存・長時間処理
+- **「動いているものを壊さない」原則優先** — 本番稼働中の AI 機能を触るリスクが移行メリットを上回る
+- **GAS デプロイ枠は十分** — 57/200 で余裕あり
+- **既存の C カテゴリと整合** — トリガー系・GAS 専用 API 系も同様に GAS 残置確定で運用中
+
+## C 残置確定の 7 関数
+
+| 関数 | 場所 | 旧分類 | 残置理由 |
+|------|------|--------|---------|
+| `requestAIAssistant` | features.js | A 高 | 主力 AI チャット・多データ依存（KB / Pricing / Schedule 等） |
+| `executeAiAction` | features.js | A 高 | AI アクション dispatcher・複数 action 分岐の設計負荷 |
+| `generateGradeAnalysis` | analysis.js | A 中 | テスト全体 AI 分析・長時間処理（Workers CPU 上限懸念） |
+| `generateAllAnalyses` | analysis.js | A 中 | 一括 AI 分析・Admin 操作・低頻度 |
+| `ocrAndSaveGradeSheet` | students.js | A 中 | 成績シート OCR + 学生 lookup + 行毎 grades 書込・複雑度高 |
+| `parseGradeDataFromText` | students.js | A 中 | テキスト + 学生 lookup + getDataSheetData + 行毎書込 |
+| `generateImageWithImagen` | features.js | A 低 | Imagen API は `workers/src/gemini.js` helper 対象外・低頻度 |
+
+## Phase 6-C 全体サマリー
+
+| Phase | 関数 | 種別 |
+|-------|------|------|
+| 6-C-01 | `removeUserAccess` | B 分類クローズ |
+| 6-C-02 | `submitStudentInfo` | A 高（PK 衝突リトライで LockService 置換） |
+| 6-C-03 | `ocrAndExtractAverages` | A 中（Gemini 系 第 1 弾・橋頭堡） |
+| 6-C-04 | `ocrLectureSchedule` | A 中（Gemini 系 第 2 弾） |
+| 6-C-05 | `parseLectureScheduleFromText` | A 中（Gemini 系 第 3 弾・兄弟関数） |
+| 6-C-06 | `parseAndSaveAveragesFromText` | A 中（Gemini 系 第 4 弾・兄弟関数） |
+| — | 議事録 AI 廃止 | 機能削除（`transcribeAndSummarizeAudio` / `mergeTranscriptsAndSummarize`） |
+| クローズ | AI 系 7 件を C 再分類 | 残置確定 |
+
+## 全体集計（2026-04-26 最終）
+
+| 状態 | 件数 |
+|------|------|
+| ✅ Workers 化済み | 約 115 |
+| 🔵 GAS 残置確定（C 分類・トリガー / 専用 API / AI 系） | 約 80 |
+| 🗑️ 機能廃止により削除済 | 2（議事録 AI） |
+| 要相談（PATCH 化済・Workers 化済） | 2（`editAutoLearnedKnowledge` / `resolveAiFeedback`） |
+| スタブ化済（Workers 化対象外） | 2（`addAdminEmail` / `removeAdminEmail`） |
+| **未移行 A** | **0** 🎉 |
+
+## 今後の運用方針
+
+| 観点 | 方針 |
+|------|------|
+| 新機能の追加 | 原則 Workers 側に実装（GAS 専用 API・トリガー必要時のみ GAS） |
+| AI 系の挙動変更 | GAS 側で対応 |
+| トリガー系の追加変更 | GAS 側で対応 |
+| Workers 側の改善 | helpers の整理・テスト追加・パフォーマンス計測 |
+
+主力 AI（`requestAIAssistant` / `executeAiAction`）の Workers 化は将来必要が生じた場合に **Phase 6-D** として別途プラン化する余地は残す。
+
+## 関連コミット
+
+- （本コミット） Phase 6-C クローズ: AI 系 7 件を C 残置確定に再分類
