@@ -96,8 +96,8 @@
 - `getDataSheetData(year)` — 成績データ配列取得
 - `getStudentListWithGrades(year, testName)` — `@aiCallable` 生徒マスタと成績を結合して返す（一覧表タブ用）
 - `getStudentsForDropdown(campusCode, gradeCode, selectedYear)` — `@aiCallable` ドロップダウン用生徒一覧
-- `submitStudentInfo(year, campusCode, gradeCode, nameKanji, nameFurigana, schoolName)` — `@aiCallable` 生徒登録（重複チェックあり）
-- `updateStudentInfo(studentId, campusCode, name, furigana, schoolName)` — `@aiCallable` 生徒情報更新
+- `submitStudentInfo(year, campusCode, gradeCode, sei, mei, seiFurigana, meiFurigana, schoolName)` — `@aiCallable` 生徒登録（重複チェックあり）
+- `updateStudentInfo(studentId, campusCode, sei, mei, seiFurigana, meiFurigana, schoolName)` — `@aiCallable` 生徒情報更新
 - `deleteStudent(studentId)` — `@aiCallable` 生徒ソフトデリート
 - `getDeletedStudents(campusCode, gradeCode, selectedYear)` — `@aiCallable` 削除済み生徒取得
 - `restoreStudent(studentId)` — `@aiCallable` 生徒復元
@@ -347,8 +347,8 @@ var rawText = textPart ? (textPart.text || '') : '';
 - `getLectureScheduleSpreadsheet_()` — 講習スケジュール用スプレッドシートを取得/作成する内部ヘルパー
 - `saveLectureScheduleEntries(lectureId, campusCode, entriesJson)` — 指定の講習・校舎のスケジュールエントリを一括保存（全置換）。Phase 6-B-03 で Workers 化済み・`workers/src/firebase.js` の `firestoreTransaction` 経由で atomic RMW。
 - `getLectureScheduleEntries(lectureId, campusCode)` — `@aiCallable` 講習スケジュールエントリ取得
-- `ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` 画像/PDFから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
-- `parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson)` — `@aiCallable` テキストから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
+- `ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson)` — `@aiCallable` 画像/PDFから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
+- `parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson)` — `@aiCallable` テキストから講習日程を読み取り、エントリ候補を返す。操作タイプ判別対応（op: create/edit/delete）
 - `getDistributionFilesFolder_(lectureId, campusCode)` — 配布物PDF保存フォルダを取得/作成する内部ヘルパー（ルート→配布物/{lectureId}/{campusCode}/）
 - `saveDistributionFile(lectureId, campusCode, fileName, pdfBase64)` — `@aiCallable` 配布物PDFをDriveに保存する。戻り値: `{success, fileId, fileName, message}`
 - `listDistributionFiles(lectureId, campusCode)` — `@aiCallable` 指定講習・校舎の保存済み配布物PDF一覧を取得する（フォルダ未存在時は空配列。新しい順）。戻り値: `[{id, name, createdDate, size}]`
