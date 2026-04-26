@@ -2049,35 +2049,83 @@
     // ===== 重複チェック機能 =====
 
     /**
+     * 全体チェック / 自分チェックボタンのアクティブ状態を切り替える
+     * @param {string} activeId アクティブにするボタンのID
+     */
+    function setActiveCheckButton(activeId) {
+      ['lec-full-check-btn', 'lec-self-check-btn'].forEach(function(id) {
+        var b = document.getElementById(id);
+        if (!b) return;
+        if (id === activeId) {
+          b.style.background   = '#667eea';
+          b.style.color        = 'white';
+          b.style.borderColor  = '#667eea';
+        } else {
+          b.style.background   = 'white';
+          b.style.color        = '#555';
+          b.style.borderColor  = '#bbb';
+        }
+      });
+    }
+
+    /**
      * 全校舎・全講師を対象とした重複チェックを手動実行する（ボタン押下時）
      */
     function runFullDuplicateCheck() {
       if (!currentLectureId) return;
-      var btn    = document.getElementById('lec-full-check-btn');
-      var status = document.getElementById('lec-full-check-status');
+      var btn = document.getElementById('lec-full-check-btn');
       if (btn) btn.disabled = true;
-      if (status) status.textContent = 'チェック中...';
 
       fbGetAllLectureEntries(currentLectureId)
         .then(function(entries) {
           allCampusEntriesCache = entries || [];
           var countIssues = checkSessionCounts(allCampusEntriesCache);
           checkAndDisplayDuplicates(countIssues);
-          var dupPanel = document.getElementById('lec-duplicate-panel');
-          var hasIssues = dupPanel && dupPanel.style.display !== 'none';
-          if (status) {
-            var hasDup = document.getElementById('lec-duplicate-list');
-            var dupCount = hasDup ? hasDup.querySelectorAll('[data-dup-type]').length : 0;
-            var countCount = hasDup ? hasDup.querySelectorAll('[data-count-type]').length : 0;
-            if (dupCount > 0 && countCount > 0) status.textContent = '重複・回数に問題あり';
-            else if (dupCount > 0) status.textContent = '重複あり';
-            else if (countCount > 0) status.textContent = '回数過不足あり';
-            else status.textContent = '問題なし ✓';
-          }
+          setActiveCheckButton('lec-full-check-btn');
         })
         .catch(function(err) {
           console.error('runFullDuplicateCheck エラー:', err);
-          if (status) status.textContent = '取得エラー';
+          showToast('取得エラー', 'error');
+        })
+        .finally(function() {
+          if (btn) btn.disabled = false;
+        });
+    }
+
+    /**
+     * 自分が関係するエントリのみを対象とした重複・回数チェックを手動実行する
+     * - 自分の teacherId が関与する重複ペアのみ表示
+     * - 自分の入力が含まれる教科×学年×校舎の回数過不足のみ表示
+     * - Admin が「○○先生として表示」中は lecAdminTeacherId を使用
+     */
+    function runSelfDuplicateCheck() {
+      if (!currentLectureId) return;
+      var targetTeacherId = (typeof isAdminUser !== 'undefined' && isAdminUser
+                             && typeof lecAdminTeacherId !== 'undefined' && lecAdminTeacherId)
+        ? lecAdminTeacherId
+        : (typeof myTeacherId !== 'undefined' ? myTeacherId : '');
+      if (!targetTeacherId) {
+        showToast('講師IDが設定されていないため、自分チェックは利用できません', 'warning');
+        return;
+      }
+
+      var btn = document.getElementById('lec-self-check-btn');
+      if (btn) btn.disabled = true;
+
+      fbGetAllLectureEntries(currentLectureId)
+        .then(function(entries) {
+          allCampusEntriesCache = entries || [];
+          var countIssues = checkSessionCounts(allCampusEntriesCache);
+          // 自分が1件以上担当している教科×学年×校舎のみ
+          var filteredCountIssues = countIssues.filter(function(issue) {
+            return issue.teachers && issue.teachers[targetTeacherId];
+          });
+          checkAndDisplayDuplicates(filteredCountIssues, targetTeacherId);
+          setActiveCheckButton('lec-self-check-btn');
+        })
+        .catch(function(err) {
+          console.error('runSelfDuplicateCheck エラー:', err);
+          showToast('取得エラー', 'error');
         })
         .finally(function() {
           if (btn) btn.disabled = false;
@@ -2172,8 +2220,10 @@
     /**
      * 重複を検出して表示パネルを更新する
      * ローカル（未保存）のエントリを優先し、他校舎分はキャッシュを使用する
+     * @param {Array} countIssues 回数過不足のリスト
+     * @param {string} [filterTeacherId] 指定された場合、その teacherId が関与する重複ペアのみに絞る
      */
-    function checkAndDisplayDuplicates(countIssues) {
+    function checkAndDisplayDuplicates(countIssues, filterTeacherId) {
       if (!currentLectureId) {
         renderDuplicatePanel([]);
         return;
@@ -2253,6 +2303,15 @@
           }
         }
       });
+
+      // 自分チェック用フィルタ: filterTeacherId が指定されていればその講師が関与する重複のみ残す
+      if (filterTeacherId) {
+        duplicates = duplicates.filter(function(d) {
+          var aId = d.entryA && d.entryA.teacherId;
+          var bId = d.entryB && d.entryB.teacherId;
+          return aId === filterTeacherId || bId === filterTeacherId;
+        });
+      }
 
       renderDuplicatePanel(duplicates, countIssues || []);
     }
