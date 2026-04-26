@@ -142,7 +142,7 @@
 - `slotToTimeStr(slot)` — スロット番号 → HH:MM変換
 - `getEntryColors(subject, grade)` — 教科・学年から HSL カラーセットを返す（solid/bg/text の3値。5教科色相×7学年明度）
 - `getTeacherColor(email)` — 先生ごとの色を取得（未割当なら自動割当）
-- `updateLecToolbarState()` — 削除ボタンの有効/無効を更新
+- `updateLecToolbarState()` — コマ選択中の移動モードバナー表示/非表示を更新
 - `updateSaveButtonLabel()` — 保存ボタンの件数バッジを更新
 - `showLecStatusMsg(msg, color)` — ステータスメッセージを一時表示
 - `computeOverlapGroups(entries)` — 同日内の重なるエントリのグループ（幅/位置計算用）を返す
@@ -156,7 +156,7 @@
 - `createLecEntry(date, startSlot)` — 選択中の教科・学年でエントリを新規作成（学年ごとのコマ時間を自動適用）
 - `createWeeklyLecEntries(date, startSlot)` — 「毎週」チェック時の一括作成：同じ曜日・時刻で count 回分のエントリを毎週作成（休校日を自動スキップ）
 - `moveLecEntry(entryId, date, startSlot)` — 選択中エントリを指定日時に移動
-- `deleteLecEntry()` — 選択中エントリを削除
+- `deleteLecEntry(entryId)` — 指定エントリを削除（引数省略時は選択中エントリ）。各エントリ右上の🗑️ボタンから呼ばれる
 - `showLecScheduleListView()` — マイ日程一覧モーダルを表示。全校舎のエントリを取得し、自分のエントリを校舎→教科→学年ごとにグルーピングして表示
 - `closeLecListViewModal()` — マイ日程一覧モーダルを閉じる
 - `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→教科→学年→時間帯で整理）

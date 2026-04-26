@@ -1061,9 +1061,6 @@
 
             <!-- ステータス表示 -->
             <div id="lec-toolbar" style="display: none; align-items: center; gap: 10px; margin-bottom: 12px; padding: 8px 0; border-top: 1px solid #e0e0e0; flex-wrap: wrap;">
-              <button id="lec-delete-btn" onclick="deleteLecEntry()" disabled style="padding: 6px 16px; background: white; border: 1px solid #ccc; border-radius: 20px; font-size: 14px; color: #ccc; cursor: not-allowed; font-weight: 600; white-space: nowrap;">🗑️ 削除</button>
-              <span id="lec-status-msg" style="font-size: 12px; color: #666;"></span>
-              <button id="lec-save-btn" onclick="saveLecNow()" disabled style="padding: 6px 16px; background: #667eea; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap; opacity: 0.4;">💾 保存</button>
               <button onclick="showLecScheduleListView()" style="padding: 6px 16px; background: #fff3e0; border: 1px solid #ffb74d; border-radius: 20px; font-size: 14px; color: #e65100; cursor: pointer; font-weight: 600; white-space: nowrap;">📋 一覧</button>
               <button onclick="showLecCalExportModal()" style="margin-left: auto; padding: 6px 16px; background: #f0fff4; border: 1px solid #a5d6a7; border-radius: 20px; font-size: 14px; color: #2e7d32; cursor: pointer; font-weight: 600; white-space: nowrap;">📅 カレンダー追加</button>
               <button id="lec-ocr-btn" onclick="openLecOcrModal()" style="padding: 6px 16px; background: #FF6B6B; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap;">📥 日程を読み込む（AI）</button>
@@ -1084,10 +1081,16 @@
             <!-- 移動モードバナー（コマ選択中に表示） -->
             <div id="lec-move-banner" style="display:none; background:#eff6ff; border-left:3px solid #3b82f6; padding:8px 12px; font-size:13px; color:#1d4ed8; align-items:center; justify-content:space-between; gap:8px;">
               <div onclick="goToSelectedLecEntry()" style="cursor:pointer; flex:1;">
-                コマを選択中です。移動先をタップするか、削除ボタンをタップしてください。<br>
+                コマを選択中です。移動先をタップしてください。<br>
                 <span style="font-size:12px; opacity:0.75;">↩ ここをタップするとコマのある週へ戻ります</span>
               </div>
               <button onclick="event.stopPropagation(); cancelLecEntryMove();" style="padding:6px 14px; background:white; border:1px solid #93c5fd; border-radius:16px; font-size:12px; color:#1d4ed8; cursor:pointer; white-space:nowrap; font-weight:600;">✕ キャンセル</button>
+            </div>
+
+            <!-- 保存ボタン＋ステータス（タイムテーブル直上） -->
+            <div id="lec-save-bar" style="display:none; align-items:center; gap:10px; margin:8px 0 6px; flex-wrap:wrap;">
+              <button id="lec-save-btn" onclick="saveLecNow()" disabled style="padding: 6px 16px; background: #667eea; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap; opacity: 0.4;">💾 保存</button>
+              <span id="lec-status-msg" style="font-size: 12px; color: #666;"></span>
             </div>
 
             <!-- 全体重複チェックボタン -->
