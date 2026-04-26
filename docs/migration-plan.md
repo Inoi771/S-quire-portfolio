@@ -2887,4 +2887,79 @@ Gemini API 呼出系の Workers 移行第 1 弾。Phase 6-B-02 で整備した `
 
 ## 関連コミット
 
-- （本コミット） Phase 6-C-03: ocrAndExtractAverages を Workers 化
+- `1b36b95` Phase 6-C-03: ocrAndExtractAverages を Workers 化
+
+---
+
+# Phase 6-C-04 完了記録（2026-04-26）
+
+## 概要
+
+**A 分類「優先度: 中」の `ocrLectureSchedule` を Workers 化。**
+
+Gemini API 系 Workers 移行の第 2 弾。Phase 6-C-03 で確立した `workers/src/gemini.js` パターン（`fetchGeminiWithRetry` + `extractGeminiText` + `parseGeminiErrorMessage`）を `features.js` に流用する初の事例。
+
+## 移行した関数
+
+| 関数 | GAS 場所 | 役割 |
+|------|---------|------|
+| `ocrLectureSchedule` | `features.js:4343-4435` | 講習日程の画像/PDF を Gemini OCR で読み取りエントリ配列を返す（保存はしない・呼出元が別途 `saveLectureScheduleEntries` を呼ぶ） |
+
+## 設計ポイント
+
+| 項目 | GAS 版 | Workers 版 |
+|------|--------|-----------|
+| Gemini モデル | gemini-3.1-flash-lite-preview | 同じ |
+| プロンプト | 完全一致（OCR 用 prompt・約 80 行） | 同じ |
+| 入力 args | 6 個（base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson） | 同じ |
+| `safeJsonParse_()` | GAS 内部ヘルパー | try/catch + デフォルト値 `{}` で代替（同一挙動） |
+| 戻り値 | `{success, entries}` / `{success:false, error}` | 完全一致 |
+
+## 変更ファイル（3 ファイル・1 コミット）
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `workers/src/functions/features.js` | 末尾に `ocrLectureSchedule` を追加。+115 行（プロンプト含む） |
+| `workers/src/router.js` | features.js import + HANDLERS マップに登録 |
+| `gas-bridge.html` | `WORKERS_FUNCTIONS` Set に `'ocrLectureSchedule'` を追加 |
+
+## GAS 版との差分
+
+**なし（完全等価）**:
+- プロンプト文字列・モデル名・generationConfig 完全一致
+- エラーメッセージ完全一致（API キー未設定 / AI 応答なし / 日程データ読取不能）
+- 戻り値形状 `{success, entries}` 完全一致
+- 校舎コード単一/複数の分岐ロジックも一致
+- 学年別デフォルト授業時間の生成ロジックも一致
+
+## 動作確認チェックリスト
+
+- [ ] 講習管理タブ → 日程作成サブタブ → 「画像/PDFから読み込む」ボタン → ファイル選択 → 解析実行
+- [ ] 抽出されたエントリ一覧が画面に表示される（日付・時刻・科目・学年・校舎）
+- [ ] PDF 複数ページの全ページが解析される（mediaLabel 分岐の確認）
+- [ ] 単一校舎ユーザーで campusCode が自動補完される
+- [ ] 複数校舎ユーザーで画像から校舎名→コード変換が動作する
+- [ ] 日付省略記法（"7/15,30"等）が正しく展開される
+- [ ] op フィールドが create/edit/delete に分類される
+- [ ] 不鮮明画像で「日程データを読み取れませんでした」エラー表示
+
+## ロールバック手順
+
+`gas-bridge.html` の `WORKERS_FUNCTIONS` から `'ocrLectureSchedule'` を 1 行除外して Hosting 再デプロイすれば即座に GAS 経路へロールバック可能。GAS 版（`features.js:4343-4435`）はフォールバック保険として残置。
+
+## A 分類の進捗
+
+| 状態 | 件数 |
+|------|------|
+| Workers 化済 | 約 113（旧台帳掲載 97 + 旧台帳未掲載 16） |
+| 未移行 A | **11**（うち Gemini API 系 全 11 件） |
+| 残存「高」優先度 | 2（`requestAIAssistant` / `executeAiAction`） |
+
+## 次フェーズ候補
+
+- **Phase 6-C-05 候補**: `parseLectureScheduleFromText`（兄弟関数・テキストパース版）→ プロンプトはほぼ同じで base64/mimeType の代わりにテキストを受ける
+- 主力 AI（`requestAIAssistant` / `executeAiAction`）は Phase 6-D として別途プラン化
+
+## 関連コミット
+
+- （本コミット） Phase 6-C-04: ocrLectureSchedule を Workers 化

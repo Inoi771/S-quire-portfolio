@@ -74,7 +74,8 @@ import {
   getTeacherNamesMap,
   getLectureScheduleEntries,
   analyzeFlyerImageMeta,
-  saveLectureScheduleEntries
+  saveLectureScheduleEntries,
+  ocrLectureSchedule
 } from './functions/features.js';
 import { getMinutesList, saveMinutes, deleteMinutes } from './functions/minutes.js';
 import { getTeacherEmails, addEmailToTeacher, removeEmailFromTeacher, getAllowedUsers, getUserRoleInfo, activateHiddenAdminMode, removeUserAccess } from './functions/auth-emails.js';
@@ -251,6 +252,7 @@ const HANDLERS = {
   removeUserAccess,
   analyzeFlyerImageMeta,
   saveLectureScheduleEntries,
+  ocrLectureSchedule,
   previewTemplateMessage,
   resolveTemplateForSendDate,
   getScheduledLineMessages,
