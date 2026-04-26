@@ -12,7 +12,7 @@ import {
   saveStaffPlacementForWeb
 } from './functions/admin.js';
 import { getUserProfile, getAppStartupData, saveLecGrades, savePreferredCampuses, getSettings, updateSettings, updateUserProfile, getSubjectOptions, resetUserThemeColor } from './functions/settings.js';
-import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, submitStudentInfo, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages, getGradeSummary, getStudentGradeReport, saveSchoolAverages, getStudentExamData, getStudentPlacementData } from './functions/students.js';
+import { getMasterData, getGradesYearFolders, getSchoolAverages, getGradeDataByStudentAndTest, getDeletedStudents, getStudentsWithGradesByTest, getStudentListWithGrades, submitStudentInfo, updateStudentInfo, deleteStudent, restoreStudent, submitGradeData, saveExamResult, getCampusAverages, getGradeSummary, getStudentGradeReport, saveSchoolAverages, ocrAndExtractAverages, getStudentExamData, getStudentPlacementData } from './functions/students.js';
 import { getGradeAnalysis, getStudentAnalysis } from './functions/analysis.js';
 import { kv_get, kv_set, kv_delete, kv_list } from './functions/kv.js';
 import {
@@ -234,6 +234,7 @@ const HANDLERS = {
   getTeacherNamesMap,
   resetUserThemeColor,
   saveSchoolAverages,
+  ocrAndExtractAverages,
   getStudentExamData,
   getStudentPlacementData,
   getFormEmailFilterSettings,
