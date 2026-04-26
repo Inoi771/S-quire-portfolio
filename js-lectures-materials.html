@@ -851,6 +851,7 @@
       webZones.forEach(function(zone) {
         var inner = zone.querySelector('.mat-web-schedule-inner');
         applyScheduleAutoFit_(zone, inner, 8.5 * 1.70);
+        zone.style.alignItems = 'flex-start';
       });
     }
 
