@@ -856,7 +856,23 @@
       from { transform: translateX(-20px); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
-    
+
+    /* インラインスピナー（ボタン内表示用・処理中インジケーター） */
+    .btn-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      vertical-align: -2px;
+      margin-right: 6px;
+      animation: btnSpin 0.7s linear infinite;
+    }
+    @keyframes btnSpin {
+      to { transform: rotate(360deg); }
+    }
+
     .ai-chat-section {
       background: white;
       border-radius: 10px;
