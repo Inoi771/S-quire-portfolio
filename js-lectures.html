@@ -1112,7 +1112,18 @@
             if (t.clientX >= rect.left && t.clientX <= rect.right &&
                 t.clientY >= rect.top  && t.clientY <= rect.bottom) {
               var eid = entries[i].dataset.entryId;
-              if (eid) { onEntryClick(ev, eid); return; }
+              if (eid) {
+                // 右側 1/4（最小32px）が削除エリア。それ以外は従来どおり選択（移動）モード
+                // ※モバイルは touchend で preventDefault するためボタンの click が発火しないので
+                //   ここで座標判定して削除に分岐する必要がある
+                var delZoneWidth = Math.max(rect.width * 0.25, 32);
+                if (t.clientX >= rect.right - delZoneWidth) {
+                  if (confirm('このコマを削除しますか？')) deleteLecEntry(eid);
+                } else {
+                  onEntryClick(ev, eid);
+                }
+                return;
+              }
             }
           }
           handleLecGridAction(row.dataset.date, calcSlotFromX(row, t.clientX));
