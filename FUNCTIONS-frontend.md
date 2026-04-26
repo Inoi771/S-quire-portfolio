@@ -162,7 +162,7 @@
 - `buildLecListViewHTML_(entries, teacherName)` — 一覧表示用HTMLを生成（校舎→教科→学年→時間帯で整理）
 - `generateLecListPDF_(mode)` — 日程一覧をPDFダウンロード（`'download'`）または印刷（`'print'`）。校舎ごとに1キャンバス生成し、内部配布物と同じ html2canvas＋jsPDF 方式で出力
 - `buildLecListPageHTML_(campusCode, campusEntries, teacherName, lectureTitle, isFirstPage)` — 1校舎ぶんの印刷用HTMLを生成（先頭ページのみタイトル付き）
-- `finalizeLecListPdf_(mode, canvases, printWindow, docTitle)` — キャンバス配列からPDFダウンロード/印刷ウィンドウ出力を実行（内部配布物の finalizeMaterialsPdf_ と同パターン）
+- `finalizeLecListPdf_(mode, canvases, printWindow, docTitle)` — キャンバス配列からPDFダウンロード/印刷ウィンドウ出力を実行。校舎単位で動的にページにパッキング（first-fit greedy）し、収まる校舎は同一ページに同居、収まらない校舎は次ページ送り。校舎間は6mmギャップ
 - `exportLecCalendarFromAI_(lectureId)` — AIアシスタントからのカレンダーエクスポート。Firestoreから全校舎のエントリを取得し、自分のコマをICSダウンロード＋Googleカレンダーインポート画面を開く
 - `showLecCalExportModal()` — カレンダーエクスポートモーダルを表示
 - `closeLecCalExportModal()` — カレンダーエクスポートモーダルを閉じる

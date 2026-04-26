@@ -3828,13 +3828,61 @@
     function finalizeLecListPdf_(mode, canvases, printWindow, docTitle) {
       var safeTitle = docTitle || '日程一覧';
 
+      // A4縦の用紙サイズ（mm）と余白
+      var PAGE_W_MM = 210;
+      var PAGE_H_MM = 297;
+      var MARGIN_MM = 7;
+      var GAP_MM = 6; // 同一ページ内で校舎間に入れる余白
+      var MAX_W_MM = PAGE_W_MM - MARGIN_MM * 2;
+      var MAX_H_MM = PAGE_H_MM - MARGIN_MM * 2;
+
+      // 各canvasのmm寸法（PDF/印刷で共通）と動的ページ割当
+      var items = canvases.map(function(c) {
+        var ratio = c.width / c.height;
+        var drawW = MAX_W_MM;
+        var drawH = drawW / ratio;
+        // 1校舎単体でページ高を超える場合のみ縮小（収まる校舎は縮小しない）
+        if (drawH > MAX_H_MM) {
+          drawH = MAX_H_MM;
+          drawW = drawH * ratio;
+        }
+        return { canvas: c, drawW: drawW, drawH: drawH };
+      });
+
+      // 校舎単位でページにパッキング（first-fit greedy）
+      // 校舎は分割しない: 残り高に収まらなければ次ページ送り
+      var pages = [];
+      var currentPage = [];
+      var currentY = 0;
+      items.forEach(function(it) {
+        var needed = (currentPage.length === 0 ? 0 : GAP_MM) + it.drawH;
+        if (currentPage.length > 0 && currentY + needed > MAX_H_MM) {
+          pages.push(currentPage);
+          currentPage = [];
+          currentY = 0;
+          needed = it.drawH;
+        }
+        currentPage.push(it);
+        currentY += needed;
+      });
+      if (currentPage.length > 0) pages.push(currentPage);
+
       if (mode === 'print') {
-        var imgsHtml = '';
-        canvases.forEach(function(c, idx) {
-          var imgDataPng = c.toDataURL('image/png');
-          var pageBreak = idx < canvases.length - 1 ? 'page-break-after: always;' : '';
-          var onloadAttr = idx === canvases.length - 1 ? ' onload="window.print();"' : '';
-          imgsHtml += '<img src="' + imgDataPng + '" style="width:100%;height:auto;display:block;' + pageBreak + '"' + onloadAttr + '>';
+        var pagesHtml = '';
+        var totalImgs = 0;
+        pages.forEach(function(p) { totalImgs += p.length; });
+        var imgIdx = 0;
+        pages.forEach(function(page, pIdx) {
+          var pageBreak = pIdx < pages.length - 1 ? 'page-break-after: always;' : '';
+          pagesHtml += '<div style="' + pageBreak + '">';
+          page.forEach(function(item, iIdx) {
+            var imgDataPng = item.canvas.toDataURL('image/png');
+            var marginTop = iIdx > 0 ? GAP_MM + 'mm' : '0';
+            imgIdx++;
+            var onloadAttr = imgIdx === totalImgs ? ' onload="window.print();"' : '';
+            pagesHtml += '<img src="' + imgDataPng + '" style="display:block;width:' + item.drawW + 'mm;height:' + item.drawH + 'mm;margin-top:' + marginTop + ';"' + onloadAttr + '>';
+          });
+          pagesHtml += '</div>';
         });
         if (printWindow) {
           printWindow.document.open();
@@ -3842,7 +3890,7 @@
             '<!DOCTYPE html><html><head>' +
             '<title>' + safeTitle + '</title>' +
             '<style>* { margin: 0; padding: 0; box-sizing: border-box; } body { background: #fff; } @page { size: A4 portrait; margin: 7mm; }</style>' +
-            '</head><body>' + imgsHtml + '</body></html>'
+            '</head><body>' + pagesHtml + '</body></html>'
           );
           printWindow.document.close();
         } else {
@@ -3850,20 +3898,15 @@
         }
       } else {
         var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        var pageW = pdf.internal.pageSize.getWidth();
-        var pageH = pdf.internal.pageSize.getHeight();
-        var margin = 7;
-        var maxW = pageW - margin * 2;
-        var maxH = pageH - margin * 2;
-
-        canvases.forEach(function(c, idx) {
-          if (idx > 0) pdf.addPage();
-          var imgData = c.toDataURL('image/jpeg', 0.92);
-          var ratio = c.width / c.height;
-          var drawW = maxW;
-          var drawH = drawW / ratio;
-          if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
-          pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+        pages.forEach(function(page, pIdx) {
+          if (pIdx > 0) pdf.addPage();
+          var y = MARGIN_MM;
+          page.forEach(function(item, iIdx) {
+            if (iIdx > 0) y += GAP_MM;
+            var imgData = item.canvas.toDataURL('image/jpeg', 0.92);
+            pdf.addImage(imgData, 'JPEG', MARGIN_MM, y, item.drawW, item.drawH);
+            y += item.drawH;
+          });
         });
         pdf.save(safeTitle + '.pdf');
       }
