@@ -1746,15 +1746,21 @@
               div.addEventListener('click', function(ev) { onEntryClick(ev, eid); });
             })(entry.id);
 
-            // 削除ボタン（自分のエントリのみ・右上に絶対配置）
+            // 削除ボタン（自分のエントリのみ・右側 1/4 を削除専用エリアに）
+            // ・コマ移動と区別するため右辺に縦の区切り線を入れる
+            // ・🗑️ アイコンは下寄せで文字との重なりを軽減
+            // ・stopPropagation でコマ選択（移動モード）には入らない
             var delBtn = document.createElement('button');
             delBtn.type = 'button';
             delBtn.textContent = '🗑️';
             delBtn.title = 'このコマを削除';
-            delBtn.style.cssText = 'position:absolute;top:1px;right:1px;width:18px;height:18px;'
-              + 'padding:0;line-height:1;border:none;border-radius:3px;'
-              + 'background:rgba(255,255,255,0.85);color:#c62828;'
-              + 'font-size:11px;cursor:pointer;z-index:3;';
+            delBtn.style.cssText = 'position:absolute;top:0;right:0;bottom:0;'
+              + 'width:25%;min-width:32px;'
+              + 'padding:0 0 3px 0;border:none;border-left:1px solid rgba(0,0,0,0.18);'
+              + 'border-radius:0 3px 3px 0;'
+              + 'background:rgba(255,255,255,0.45);color:#c62828;'
+              + 'font-size:14px;cursor:pointer;z-index:3;'
+              + 'display:flex;align-items:flex-end;justify-content:center;';
             (function(eid) {
               delBtn.addEventListener('click', function(ev) {
                 ev.stopPropagation();
