@@ -1585,3 +1585,122 @@ export async function saveLectureScheduleEntries(args, env, user) {
   }
 }
 
+/**
+ * ocrLectureSchedule — GAS features.js:4343-4435 の Workers 版
+ * 講習日程の画像/PDF を Gemini OCR で読み取りエントリ配列を返す（保存はしない）。
+ * GAS 版との差分: なし（プロンプト・モデル・generationConfig・戻り値形状すべて完全一致）
+ * - Gemini モデル: gemini-3.1-flash-lite-preview
+ * - safeJsonParse_() は try/catch + デフォルト値で代替（同一挙動）
+ * - 保存は呼出元（フロント側で別途 saveLectureScheduleEntries 呼出）
+ *
+ * args: [base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson]
+ *
+ * 戻り値（GAS 版と完全一致）:
+ *   成功: { success: true, entries: [...] }
+ *   失敗: { success: false, error: <文言> }
+ */
+export async function ocrLectureSchedule(args, env, user) {
+  try {
+    const [base64Image, mimeType, lectureYear, campusCodesJson, campusNamesJson, gradeSettingsJson] = args || [];
+
+    let campusNames = {};
+    try { campusNames = JSON.parse(campusNamesJson || '{}') || {}; } catch (_) { campusNames = {}; }
+    let gradeSettings = {};
+    try { gradeSettings = JSON.parse(gradeSettingsJson || '{}') || {}; } catch (_) { gradeSettings = {}; }
+
+    let gradeDefaultText = '';
+    const gsParts = Object.keys(gradeSettings)
+      .filter(k => gradeSettings[k] && gradeSettings[k].duration > 0)
+      .map(k => k + '=' + (gradeSettings[k].duration * 10) + '分');
+    if (gsParts.length > 0) gradeDefaultText = '学年別デフォルト授業時間: ' + gsParts.join(', ') + '。';
+
+    const mediaLabel = mimeType === 'application/pdf'
+      ? 'このPDF（複数ページある場合は全ページを確認してください）'
+      : 'この画像';
+
+    let campusText = '';
+    const campusKeys = Object.keys(campusNames);
+    if (campusKeys.length === 1) {
+      campusText = '担当者の配属校舎は「' + campusNames[campusKeys[0]] + '」（コード: ' + campusKeys[0] + '）のみです。campusCode はすべて "' + campusKeys[0] + '" としてください。';
+    } else if (campusKeys.length > 1) {
+      const nameList = campusKeys.map(k => '"' + campusNames[k] + '": "' + k + '"').join(', ');
+      campusText = '校舎コード一覧（画像に校舎名がある場合は対応コードを使用してください）: ' + nameList + '。不明な場合は campusCode を null としてください。';
+    }
+
+    const prompt = mediaLabel + 'は学習塾の講習日程表です。\n' +
+      '授業コマを読み取り、JSON 配列のみで返してください。マークダウンなし。\n\n' +
+      '年度: ' + lectureYear + '年（月日のみ記載の場合はこの年で補完）\n' +
+      campusText + '\n\n' +
+      '【重要】日付の省略記法を正しく展開してください:\n' +
+      '- "7/15,30" → 7月15日と7月30日の2エントリ\n' +
+      '- "8/1.6" や "8/1・6" → 8月1日と8月6日の2エントリ\n' +
+      '- "7/15,30,8/1.6" → 7月15日・7月30日・8月1日・8月6日の4エントリ\n' +
+      '- "7/15〜8/5 毎週水" → 期間内の毎週水曜日を個別エントリに展開\n' +
+      '省略された日付は前の月を引き継ぐ。各日付を必ず別々のエントリとして出力すること。\n\n' +
+      '【操作タイプの判別ルール】\n' +
+      '各エントリに "op" フィールドを追加すること:\n' +
+      '- "create"（デフォルト）: 注釈なしの通常エントリ → 新規追加\n' +
+      '- "edit": 変更を示す記号・文言がある場合\n' +
+      '  例: "7/17→18"（日付変更）、"数学→英語"（科目変更）、"10:00→14:00"（時刻変更）、"変更"の文字\n' +
+      '  → "op":"edit" とし、変更前の値をメインフィールド(date,startTime等)に、変更後の値を "changes" オブジェクトに入れる\n' +
+      '- "delete": 削除を示す記号・文言がある場合\n' +
+      '  例: "7/17×"、取り消し線、"削除"の文字、"✕"マーク\n' +
+      '  → "op":"delete" とし、削除対象の情報をメインフィールドに入れる\n\n' +
+      '講師名・担当者名が記載されている場合は teacherName として抽出する。不明な場合は null とする。\n\n' +
+      'createの場合:\n' +
+      '{"op":"create","date":"YYYY-MM-DD","startTime":"HH:MM","durationMinutes":90,"subject":"科目またはnull","grade":"学年（小/中1/中2/中3/高1/高2/高3）またはnull","classLabel":"A/B/Cまたはnull","campusCode":"コードまたはnull","teacherName":"講師名またはnull"}\n' +
+      'editの場合（変更前の値 + changesに変更後の値）:\n' +
+      '{"op":"edit","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull","changes":{"date":"YYYY-MM-DD"}}\n' +
+      'deleteの場合:\n' +
+      '{"op":"delete","date":"YYYY-MM-DD","startTime":"HH:MM","subject":"科目","grade":"学年","campusCode":"コード","teacherName":"講師名またはnull"}\n\n' +
+      '読み取れない項目はnullとする。授業時間が不明な場合は' + (gradeDefaultText ? gradeDefaultText + 'この学年別時間をdurationMinutesに使用すること。学年不明の場合は90。' : 'durationMinutes:90とする。') + '"op"が省略された場合は"create"として扱われる。';
+
+    const payload = {
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: mimeType, data: base64Image } },
+          { text: prompt }
+        ]
+      }],
+      generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } }
+    };
+
+    let response;
+    try {
+      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+    } catch (e) {
+      return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
+    }
+
+    if (!response.ok) {
+      const msg = await parseGeminiErrorMessage(response);
+      return { success: false, error: msg };
+    }
+
+    const json = await response.json();
+    if (!json.candidates || !json.candidates[0]) {
+      return { success: false, error: 'AIからの応答がありませんでした' };
+    }
+
+    let text = extractGeminiText(json);
+    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '').trim();
+
+    let entries;
+    try {
+      entries = JSON.parse(text);
+    } catch (e) {
+      return { success: false, error: '日程データを読み取れませんでした' };
+    }
+
+    if (!Array.isArray(entries)) {
+      return { success: false, error: '日程データを読み取れませんでした' };
+    }
+
+    console.log('✓ ocrLectureSchedule: ' + entries.length + '件読み取り (year=' + lectureYear + ')');
+    return { success: true, entries };
+  } catch (error) {
+    console.error('❌ ocrLectureSchedule エラー:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+

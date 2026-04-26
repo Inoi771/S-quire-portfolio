@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 53**
+**現在のデプロイ回数: 54**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -445,6 +445,7 @@ MyProject/
 - **Phase 6-C-01（2026-04-26）**: `removeUserAccess` を Workers 化。Supabase staffs 削除 + Firestore allowedUsers 削除 + KV ADMIN_EMAILS RMW + 通知振り分け更新の 4 系統書込みを Workers 側で再現。`getCampusRoutingMap_` / `setCampusRoutingMap_` / `logAdminActionToFirestore_` を `auth-emails.js` 内 private helper として実装（`line.js` からの import 依存を避けるため）。`addAdminEmail` / `removeAdminEmail` はスタブ化済のため Workers 化対象外。`initializeFirstAdmin` は初回セットアップ専用（呼出 1 回限り）のため当面スキップ。B 分類の実質的な Workers 化対象はこれで完了。
 - **Phase 6-C-02（2026-04-26）**: A 分類「優先度: 高」の `submitStudentInfo` を Workers 化。LockService 不在を **PK 衝突時リトライ方式**で代替（同プレフィックス `student_id` を再 SELECT → maxSeq+1 で再採番 → INSERT、最大 3 回）。`unique_violation` (Postgres `23505`) を捕捉してリトライ。GAS 版より厳格な保証（DB レベル PK 制約による一意性）が得られる。`workers/src/supabase.js` の既存 `supabaseInsert` を使用、新規ヘルパー追加なし。姉妹関数 `updateStudentInfo` が既に Workers 化済みのため import + router 登録のみで済む同型展開。残存 A 13 件のうち高優先度は `requestAIAssistant` / `executeAiAction` の 2 件、残り 11 件は Gemini API 系（`workers/src/gemini.js` ヘルパー流用可）。詳細は `docs/migration-plan.md:2750-` 参照。
 - **Phase 6-C-03（2026-04-26）**: A 分類「優先度: 中」の `ocrAndExtractAverages` を Workers 化。Gemini API 呼出系の Workers 移行**第 1 弾**で、Phase 6-B-02 整備の `workers/src/gemini.js` の本番実績を作る橋頭堡フェーズ。GAS 版と完全等価（プロンプト・モデル `gemini-3.1-flash-lite-preview`・generationConfig・エラーメッセージ・戻り値形状すべて一致）。Gemini レスポンスは `extractGeminiText` で抽出し ` ```json ` トリム後 JSON.parse、内部呼出 `saveSchoolAverages` は同モジュール内 export を直接 await（router 経由不要）。残存 A 12 件は全て Gemini 系のため、本フェーズで確立したパターン（`fetchGeminiWithRetry` + `extractGeminiText` + `parseGeminiErrorMessage`）を Phase 6-C-04 以降で再利用可能。
+- **Phase 6-C-04（2026-04-26）**: A 分類「優先度: 中」の `ocrLectureSchedule` を Workers 化。Gemini API 系 Workers 移行**第 2 弾**で、`features.js` に Phase 6-C-03 確立パターンを流用する初の事例。GAS 版と完全等価（80 行のプロンプト・モデル・generationConfig・エラーメッセージ・戻り値形状すべて一致）。`safeJsonParse_()` は try/catch + デフォルト値 `{}` で代替（campusNamesJson / gradeSettingsJson の両方）。保存は呼出元（フロント側で別途 `saveLectureScheduleEntries` 呼出）のため OCR 単体の純粋な Gemini 呼出となり実装シンプル。残存 A 11 件は全て Gemini 系。詳細は `docs/migration-plan.md:2840-` 参照。
 
 ---
 
