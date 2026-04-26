@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 54**
+**現在のデプロイ回数: 55**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -446,6 +446,7 @@ MyProject/
 - **Phase 6-C-02（2026-04-26）**: A 分類「優先度: 高」の `submitStudentInfo` を Workers 化。LockService 不在を **PK 衝突時リトライ方式**で代替（同プレフィックス `student_id` を再 SELECT → maxSeq+1 で再採番 → INSERT、最大 3 回）。`unique_violation` (Postgres `23505`) を捕捉してリトライ。GAS 版より厳格な保証（DB レベル PK 制約による一意性）が得られる。`workers/src/supabase.js` の既存 `supabaseInsert` を使用、新規ヘルパー追加なし。姉妹関数 `updateStudentInfo` が既に Workers 化済みのため import + router 登録のみで済む同型展開。残存 A 13 件のうち高優先度は `requestAIAssistant` / `executeAiAction` の 2 件、残り 11 件は Gemini API 系（`workers/src/gemini.js` ヘルパー流用可）。詳細は `docs/migration-plan.md:2750-` 参照。
 - **Phase 6-C-03（2026-04-26）**: A 分類「優先度: 中」の `ocrAndExtractAverages` を Workers 化。Gemini API 呼出系の Workers 移行**第 1 弾**で、Phase 6-B-02 整備の `workers/src/gemini.js` の本番実績を作る橋頭堡フェーズ。GAS 版と完全等価（プロンプト・モデル `gemini-3.1-flash-lite-preview`・generationConfig・エラーメッセージ・戻り値形状すべて一致）。Gemini レスポンスは `extractGeminiText` で抽出し ` ```json ` トリム後 JSON.parse、内部呼出 `saveSchoolAverages` は同モジュール内 export を直接 await（router 経由不要）。残存 A 12 件は全て Gemini 系のため、本フェーズで確立したパターン（`fetchGeminiWithRetry` + `extractGeminiText` + `parseGeminiErrorMessage`）を Phase 6-C-04 以降で再利用可能。
 - **Phase 6-C-04（2026-04-26）**: A 分類「優先度: 中」の `ocrLectureSchedule` を Workers 化。Gemini API 系 Workers 移行**第 2 弾**で、`features.js` に Phase 6-C-03 確立パターンを流用する初の事例。GAS 版と完全等価（80 行のプロンプト・モデル・generationConfig・エラーメッセージ・戻り値形状すべて一致）。`safeJsonParse_()` は try/catch + デフォルト値 `{}` で代替（campusNamesJson / gradeSettingsJson の両方）。保存は呼出元（フロント側で別途 `saveLectureScheduleEntries` 呼出）のため OCR 単体の純粋な Gemini 呼出となり実装シンプル。残存 A 11 件は全て Gemini 系。詳細は `docs/migration-plan.md:2840-` 参照。
+- **Phase 6-C-05（2026-04-26）**: A 分類「優先度: 中」の `parseLectureScheduleFromText` を Workers 化。`ocrLectureSchedule`（Phase 6-C-04）の兄弟関数で、入力が画像/PDF ではなく貼り付けテキスト（ワード・エクセル等からのコピー）の同型展開。features.js の連続 Gemini 移行第 2 弾で、プロンプト構造・モデル・generationConfig・op 判定ルール・campus/grade 処理ロジックは完全一致。差分は (1) 5 引数（`mimeType` なし）、(2) 早期「テキストが空です」ガード、(3) Gemini parts が `[{text:prompt}]` のみ（inline_data なし）、(4) prompt 末尾に `--- 日程テキスト ---\n` + scheduleText を連結、(5) campusText 文言が「画像に」→「テキストに」のみ。残存 A 10 件は全て Gemini 系（OCR/Parse 系 3 件 + AI 主力 2 件 + 分析・音声・画像生成 5 件）。
 
 ---
 
