@@ -1771,17 +1771,21 @@
       var year = currentFiscalYear;
       if (!testName || !year) {
         showMessage('avgOcrMessage', '❌ テスト名を先に選択してください', 'error');
+        if (typeof showToast === 'function') showToast('テスト名を先に選択してください', 'error');
         return;
       }
       var file = document.getElementById('avgOcrFile').files[0];
       if (!file) {
         showMessage('avgOcrMessage', '❌ ファイルを選択してください', 'error');
+        if (typeof showToast === 'function') showToast('ファイルを選択してください', 'error');
         return;
       }
 
       var btn = document.getElementById('avgOcrRunBtn');
+      var originalLabel = btn.textContent;
       btn.disabled = true;
-      btn.textContent = '読み込み中...';
+      btn.innerHTML = '<span class="btn-spinner"></span>解析中…';
+      showMessage('avgOcrMessage', '🔄 AI が画像を解析しています…', 'info');
 
       var reader = new FileReader();
       reader.onload = function(ev) {
@@ -1791,19 +1795,22 @@
         google.script.run
           .withSuccessHandler(function(result) {
             btn.disabled = false;
-            btn.textContent = '🤖 AI で読み込む';
+            btn.textContent = originalLabel;
             if (result.success) {
-              showMessage('avgOcrMessage',
-                '✅ ' + result.extracted.length + '校分を読み取りました（新規 ' + result.savedCount + '件・補完 ' + result.updatedCount + '件）', 'success');
+              var msg = '✅ ' + result.extracted.length + '校分を読み取りました（新規 ' + result.savedCount + '件・補完 ' + result.updatedCount + '件）';
+              showMessage('avgOcrMessage', msg, 'success');
+              if (typeof showToast === 'function') showToast('平均点の読み取りが完了しました', 'success');
               loadGradesAverage(); // テーブルを更新
             } else {
               showMessage('avgOcrMessage', '❌ ' + result.error, 'error');
+              if (typeof showToast === 'function') showToast('読み取りに失敗しました', 'error');
             }
           })
           .withFailureHandler(function(err) {
             btn.disabled = false;
-            btn.textContent = '🤖 AI で読み込む';
+            btn.textContent = originalLabel;
             showMessage('avgOcrMessage', '❌ エラー: ' + err, 'error');
+            if (typeof showToast === 'function') showToast('通信エラーが発生しました', 'error');
           })
           .ocrAndExtractAverages(base64, mimeType, year, testName);
       };
