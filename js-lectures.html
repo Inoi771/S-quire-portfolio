@@ -826,6 +826,8 @@
       document.getElementById('lec-grade-area').style.display = 'block';
       document.getElementById('lec-weekly-area').style.display = 'block';
       document.getElementById('lec-toolbar').style.display = 'flex';
+      var saveBar = document.getElementById('lec-save-bar');
+      if (saveBar) saveBar.style.display = 'flex';
       // クラス選択をリセット
       selectedLecClass = null;
       ['A', 'B', 'C'].forEach(function(c) {
@@ -1425,17 +1427,10 @@
     }
 
     /**
-     * ツールバーの削除ボタン有効/無効を更新する
+     * 移動モードバナーの表示/非表示を更新する
      */
     function updateLecToolbarState() {
-      var deleteBtn = document.getElementById('lec-delete-btn');
-      if (!deleteBtn) return;
       if (selectedEntryId) {
-        deleteBtn.disabled       = false;
-        deleteBtn.style.cursor   = 'pointer';
-        deleteBtn.style.color    = '#e57373';
-        deleteBtn.style.borderColor = '#e57373';
-        // 移動モードバナーを表示
         var banner = document.getElementById('lec-move-banner');
         if (banner) banner.style.display = 'flex';
         // 初回のみ下部トーストも表示
@@ -1444,10 +1439,6 @@
         }
         lecMoveModeActive = true;
       } else {
-        deleteBtn.disabled       = true;
-        deleteBtn.style.cursor   = 'not-allowed';
-        deleteBtn.style.color    = '#ccc';
-        deleteBtn.style.borderColor = '#ccc';
         // フラグで確実にバナーを消去
         if (lecMoveModeActive) {
           var banner = document.getElementById('lec-move-banner');
@@ -1754,6 +1745,23 @@
             (function(eid) {
               div.addEventListener('click', function(ev) { onEntryClick(ev, eid); });
             })(entry.id);
+
+            // 削除ボタン（自分のエントリのみ・右上に絶対配置）
+            var delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.textContent = '🗑️';
+            delBtn.title = 'このコマを削除';
+            delBtn.style.cssText = 'position:absolute;top:1px;right:1px;width:18px;height:18px;'
+              + 'padding:0;line-height:1;border:none;border-radius:3px;'
+              + 'background:rgba(255,255,255,0.85);color:#c62828;'
+              + 'font-size:11px;cursor:pointer;z-index:3;';
+            (function(eid) {
+              delBtn.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                if (confirm('このコマを削除しますか？')) deleteLecEntry(eid);
+              });
+            })(entry.id);
+            div.appendChild(delBtn);
           }
 
           row.appendChild(div);
@@ -1946,16 +1954,19 @@
     }
 
     /**
-     * 選択中のエントリを削除する（内部ヘルパー）
+     * エントリを削除する。引数省略時は選択中のエントリを削除する。
+     * @param {string} [entryId] 削除対象のエントリID（省略時は selectedEntryId）
      */
-    function deleteLecEntry() {
-      if (!selectedEntryId || !currentLectureCampus) return;
+    function deleteLecEntry(entryId) {
+      if (!currentLectureCampus) return;
+      var targetId = entryId || selectedEntryId;
+      if (!targetId) return;
       // 所有者チェック（防御的ガード）
       var entries = lectureEntries[currentLectureCampus] || [];
-      var target = entries.find(function(e) { return e.id === selectedEntryId; });
+      var target = entries.find(function(e) { return e.id === targetId; });
       if (target && !isAdminUser && target.teacherId && target.teacherId !== myTeacherId) return;
-      lectureEntries[currentLectureCampus] = entries.filter(function(e) { return e.id !== selectedEntryId; });
-      selectedEntryId = null;
+      lectureEntries[currentLectureCampus] = entries.filter(function(e) { return e.id !== targetId; });
+      if (selectedEntryId === targetId) selectedEntryId = null;
       pendingChanges  = true;
       updateLecToolbarState();
       renderLecEntries(currentLectureCampus);
