@@ -321,24 +321,9 @@ function openMinutesUploadModal_() {
   html += '<label style="font-size:13px;font-weight:600;color:#555;">タイトル</label>';
   html += '<input type="text" id="minutes-new-title" value="' + currentMonth + '月分" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:15px;margin:6px 0 12px;box-sizing:border-box;">';
 
-  // 音声ファイル
-  html += '<div style="background:#f8f9fa;border-radius:10px;padding:16px;margin-bottom:16px;">';
-  html += '<label style="font-size:13px;font-weight:600;color:#555;">🎵 音声ファイル（任意）</label>';
-  html += '<input type="file" id="minutes-audio-file" accept="audio/mp4,audio/mpeg,.m4a,.mp3" style="width:100%;margin:8px 0;font-size:14px;box-sizing:border-box;">';
-  html += '<div id="minutes-audio-info" style="font-size:12px;color:#888;margin-top:4px;"></div>';
-  html += '<button id="minutes-transcribe-btn" onclick="runMinutesTranscription_()" style="width:100%;background:#4CAF50;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;">🤖 AIで文字起こし＋要約</button>';
-  html += '<div id="minutes-progress" style="display:none;text-align:center;padding:12px;color:#666;font-size:13px;"></div>';
-  html += '</div>';
-
-  // 区切り線
-  html += '<div style="text-align:center;color:#aaa;font-size:13px;margin:8px 0 16px;position:relative;">';
-  html += '<span style="background:#fff;padding:0 12px;position:relative;z-index:1;">または 要約を直接入力</span>';
-  html += '<div style="position:absolute;top:50%;left:0;right:0;height:1px;background:#e0e0e0;"></div>';
-  html += '</div>';
-
   // 要約テキスト直接入力
   html += '<label style="font-size:13px;font-weight:600;color:#555;">要約</label>';
-  html += '<textarea id="minutes-new-summary" placeholder="要約を入力..." style="width:100%;min-height:150px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:14px;line-height:1.6;margin:6px 0;box-sizing:border-box;resize:vertical;"></textarea>';
+  html += '<textarea id="minutes-new-summary" placeholder="要約を入力..." style="width:100%;min-height:200px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:14px;line-height:1.6;margin:6px 0;box-sizing:border-box;resize:vertical;"></textarea>';
 
   html += '</div>';
 
@@ -377,7 +362,7 @@ function saveNewMinutes_() {
   var summary = document.getElementById('minutes-new-summary').value.trim();
 
   if (!title) { showToast('タイトルを入力してください', 'error'); return; }
-  if (!summary) { showToast('要約を入力するか、音声ファイルからAI要約を生成してください', 'error'); return; }
+  if (!summary) { showToast('要約を入力してください', 'error'); return; }
 
   var data = { fiscal_year: fy, month: month, title: title, summary: summary };
   var btn = document.getElementById('minutes-save-new-btn');
@@ -403,124 +388,4 @@ function saveNewMinutes_() {
     .saveMinutes(JSON.stringify(data));
 }
 
-// ========================================
-// AI文字起こし＋要約
-// ========================================
-
-var MINUTES_MAX_CHUNK_BYTES_ = 9 * 1024 * 1024; // 9MB
-
-function runMinutesTranscription_() {
-  var fileInput = document.getElementById('minutes-audio-file');
-  if (!fileInput || !fileInput.files || !fileInput.files.length) {
-    showToast('音声ファイルを選択してください', 'error');
-    return;
-  }
-
-  var file = fileInput.files[0];
-  var mimeType = file.type || 'audio/mpeg';
-  var progress = document.getElementById('minutes-progress');
-  var btn = document.getElementById('minutes-transcribe-btn');
-
-  btn.disabled = true;
-  btn.textContent = '処理中...';
-  progress.style.display = 'block';
-  progress.textContent = '音声ファイルを読み込んでいます...';
-
-  var reader = new FileReader();
-  reader.onload = function(ev) {
-    var base64 = ev.target.result.split(',')[1];
-    var byteSize = Math.floor(base64.length * 3 / 4);
-
-    if (byteSize <= MINUTES_MAX_CHUNK_BYTES_) {
-      // 小ファイル: 直接処理
-      progress.textContent = '🤖 AIが文字起こし＋要約中...（1〜2分かかります）';
-      google.script.run
-        .withSuccessHandler(function(result) {
-          onTranscriptionComplete_(result, btn, progress);
-        })
-        .withFailureHandler(function(err) {
-          onTranscriptionError_(err, btn, progress);
-        })
-        .transcribeAndSummarizeAudio(base64, mimeType);
-    } else {
-      // 大ファイル: チャンク分割
-      processAudioChunks_(base64, mimeType, btn, progress);
-    }
-  };
-  reader.onerror = function() {
-    showToast('ファイルの読み込みに失敗しました', 'error');
-    btn.disabled = false;
-    btn.textContent = '🤖 AIで文字起こし＋要約';
-    progress.style.display = 'none';
-  };
-  reader.readAsDataURL(file);
-}
-
-function processAudioChunks_(base64, mimeType, btn, progress) {
-  // base64文字列をチャンクに分割（各チャンクが9MBバイト相当）
-  var chunkCharSize = Math.floor(MINUTES_MAX_CHUNK_BYTES_ * 4 / 3);
-  var chunks = [];
-  for (var i = 0; i < base64.length; i += chunkCharSize) {
-    chunks.push(base64.substring(i, i + chunkCharSize));
-  }
-
-  var transcripts = [];
-  var currentChunk = 0;
-
-  function processNext() {
-    if (currentChunk >= chunks.length) {
-      // 全チャンク完了 → 統合要約
-      progress.textContent = '🤖 要約を生成中...';
-      google.script.run
-        .withSuccessHandler(function(result) {
-          onTranscriptionComplete_(result, btn, progress);
-        })
-        .withFailureHandler(function(err) {
-          onTranscriptionError_(err, btn, progress);
-        })
-        .mergeTranscriptsAndSummarize(JSON.stringify(transcripts));
-      return;
-    }
-
-    progress.textContent = '🤖 文字起こし中... (' + (currentChunk + 1) + '/' + chunks.length + ')';
-
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result && result.success) {
-          transcripts.push(result.transcript || result.summary || '');
-          currentChunk++;
-          processNext();
-        } else {
-          onTranscriptionError_((result && result.error) || '文字起こしに失敗しました', btn, progress);
-        }
-      })
-      .withFailureHandler(function(err) {
-        onTranscriptionError_(err, btn, progress);
-      })
-      .transcribeAndSummarizeAudio(chunks[currentChunk], mimeType);
-  }
-
-  processNext();
-}
-
-function onTranscriptionComplete_(result, btn, progress) {
-  btn.disabled = false;
-  btn.textContent = '🤖 AIで文字起こし＋要約';
-  progress.style.display = 'none';
-
-  if (result && result.success && result.summary) {
-    document.getElementById('minutes-new-summary').value = result.summary;
-    showToast('要約を生成しました', 'success');
-  } else {
-    showToast((result && result.error) || '要約の生成に失敗しました', 'error');
-  }
-}
-
-function onTranscriptionError_(err, btn, progress) {
-  btn.disabled = false;
-  btn.textContent = '🤖 AIで文字起こし＋要約';
-  progress.style.display = 'none';
-  showToast('処理に失敗しました', 'error');
-  console.error('文字起こしエラー:', err);
-}
 </script>
