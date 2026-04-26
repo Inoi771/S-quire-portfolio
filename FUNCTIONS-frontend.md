@@ -144,7 +144,7 @@
 - `getTeacherColor(email)` — 先生ごとの色を取得（未割当なら自動割当）
 - `updateLecToolbarState()` — コマ選択中の移動モードバナー表示/非表示を更新
 - `updateSaveButtonLabel()` — 保存ボタンの件数バッジを更新
-- `showLecStatusMsg(msg, color)` — ステータスメッセージを一時表示
+- `showLecStatusMsg(msg, color)` — ステータス通知（旧インライン span は廃止し、現在は色文字列から severity を推定して `showToast` に委譲）
 - `computeOverlapGroups(entries)` — 同日内の重なるエントリのグループ（幅/位置計算用）を返す
 - `renderLecEntries(campusCode)` — エントリを絶対配置で描画
 - `onLecColClick(event, date)` — グリッド列クリック時：新規作成 or 移動
