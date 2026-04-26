@@ -824,7 +824,7 @@
       document.getElementById('lec-subject-area').style.display = 'block';
       document.getElementById('lec-class-area').style.display = 'flex';
       document.getElementById('lec-grade-area').style.display = 'block';
-      document.getElementById('lec-weekly-area').style.display = 'block';
+      document.getElementById('lec-weekly-area').style.display = 'flex';
       document.getElementById('lec-toolbar').style.display = 'flex';
       var saveBar = document.getElementById('lec-save-bar');
       if (saveBar) saveBar.style.display = 'flex';
@@ -1921,12 +1921,12 @@
       scheduleAutoSave(currentLectureCampus);
     }
 
-    /** 毎週チェックボックス変更時 — 週数ボタンの表示/非表示 */
+    /** 毎週チェックボックス変更時 — 週数ボタンの表示/非表示（チェック時は親 flex の右側にインライン表示） */
     function onLecWeeklyCbChange() {
       var cb   = document.getElementById('lec-weekly-cb');
       var area = document.getElementById('lec-weekly-count-area');
       if (!area) return;
-      area.style.display = cb && cb.checked ? 'block' : 'none';
+      area.style.display = cb && cb.checked ? 'flex' : 'none';
     }
 
     /** 週数ボタン押下時 — 選択状態を更新 */
