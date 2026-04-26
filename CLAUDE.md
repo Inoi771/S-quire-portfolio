@@ -198,7 +198,7 @@ PR は作成されない。チェックリストは PR description ではなく 
 
 ## GASデプロイカウンター
 
-**現在のデプロイ回数: 55**
+**現在のデプロイ回数: 56**
 
 > GASプロジェクト履歴の上限は200件。180回で警告。
 
@@ -265,7 +265,7 @@ MyProject/
 ├── js-admin-chatbot.html JS: チャットボット管理・AI自動学習管理（約490行）
 ├── js-easter-egg.html   JS: イースターエッグ（隠し機能・Clockwork Wonderland）（約310行）
 ├── js-placement.html    JS: 講師配置表・曜日別配置・PDF出力（約380行）
-├── js-minutes.html      JS: 議事録管理・音声文字起こし・要約（約350行）
+├── js-minutes.html      JS: 議事録管理（テキスト直接入力）（約390行）
 ├── gas-bridge.html      JS: google.script.run → fetch() 変換シム
 ├── firebase.js          Firestore REST APIクライアント
 ├── supabase.js          Supabase REST APIクライアント（成績データ用）
@@ -273,7 +273,7 @@ MyProject/
 ├── firebase-auth.html   Firebase Auth管理（<head>内ロード）
 ├── firebase-schedule.html Firebase スケジュール・講習クライアント関数
 ├── firebase-students.html Firebase 生徒データクライアント関数（成績関連はGAS API経由）
-├── minutes.js           議事録管理・AI文字起こし＋要約（約250行）
+├── minutes.js           議事録管理（CRUD + AI コンテキスト連携）（約140行）
 ├── kv-props.js          Phase 5-E-4/5: ScriptProperties ラッパー（getProperty_/setProperty_/deleteProperty_ + 5-E-5 で getAllProperties_ 追加）— Workers KV 経由に切替え・SP フォールバック付き（約330行）
 ├── migrate.js           移行スクリプト（完了済み・削除不要）
 ├── migrate-to-supabase.js Firestore→Supabase移行スクリプト（一度だけ実行）
@@ -355,7 +355,7 @@ MyProject/
 | `admin.js` | S10+S11+S12 | Admin API・初期化・ユーティリティ |
 | `line.js` | S15+S17 | LINE通知・LINEスケジューラー |
 | `features.js` | S9+S18+S19 | AIアシスタント・料金表・講習管理 |
-| `minutes.js` | S20 | 議事録管理・AI文字起こし＋要約 |
+| `minutes.js` | S20 | 議事録管理（CRUD + AI コンテキスト連携） |
 
 ---
 
@@ -447,6 +447,7 @@ MyProject/
 - **Phase 6-C-03（2026-04-26）**: A 分類「優先度: 中」の `ocrAndExtractAverages` を Workers 化。Gemini API 呼出系の Workers 移行**第 1 弾**で、Phase 6-B-02 整備の `workers/src/gemini.js` の本番実績を作る橋頭堡フェーズ。GAS 版と完全等価（プロンプト・モデル `gemini-3.1-flash-lite-preview`・generationConfig・エラーメッセージ・戻り値形状すべて一致）。Gemini レスポンスは `extractGeminiText` で抽出し ` ```json ` トリム後 JSON.parse、内部呼出 `saveSchoolAverages` は同モジュール内 export を直接 await（router 経由不要）。残存 A 12 件は全て Gemini 系のため、本フェーズで確立したパターン（`fetchGeminiWithRetry` + `extractGeminiText` + `parseGeminiErrorMessage`）を Phase 6-C-04 以降で再利用可能。
 - **Phase 6-C-04（2026-04-26）**: A 分類「優先度: 中」の `ocrLectureSchedule` を Workers 化。Gemini API 系 Workers 移行**第 2 弾**で、`features.js` に Phase 6-C-03 確立パターンを流用する初の事例。GAS 版と完全等価（80 行のプロンプト・モデル・generationConfig・エラーメッセージ・戻り値形状すべて一致）。`safeJsonParse_()` は try/catch + デフォルト値 `{}` で代替（campusNamesJson / gradeSettingsJson の両方）。保存は呼出元（フロント側で別途 `saveLectureScheduleEntries` 呼出）のため OCR 単体の純粋な Gemini 呼出となり実装シンプル。残存 A 11 件は全て Gemini 系。詳細は `docs/migration-plan.md:2840-` 参照。
 - **Phase 6-C-05（2026-04-26）**: A 分類「優先度: 中」の `parseLectureScheduleFromText` を Workers 化。`ocrLectureSchedule`（Phase 6-C-04）の兄弟関数で、入力が画像/PDF ではなく貼り付けテキスト（ワード・エクセル等からのコピー）の同型展開。features.js の連続 Gemini 移行第 2 弾で、プロンプト構造・モデル・generationConfig・op 判定ルール・campus/grade 処理ロジックは完全一致。差分は (1) 5 引数（`mimeType` なし）、(2) 早期「テキストが空です」ガード、(3) Gemini parts が `[{text:prompt}]` のみ（inline_data なし）、(4) prompt 末尾に `--- 日程テキスト ---\n` + scheduleText を連結、(5) campusText 文言が「画像に」→「テキストに」のみ。残存 A 10 件は全て Gemini 系（OCR/Parse 系 3 件 + AI 主力 2 件 + 分析・音声・画像生成 5 件）。
+- **議事録 AI 機能廃止（2026-04-26）**: `transcribeAndSummarizeAudio`（音声文字起こし＋要約）と `mergeTranscriptsAndSummarize`（複数チャンク統合要約）を機能ごと削除。`minutes.js` から本体 2 関数 + 内部ヘルパー 2 関数（`transcribeAudioDirect_` / `generateMeetingSummary_`）の計 4 関数を削除（-197 行）。`js-minutes.html` から音声ファイル UI セクション・進捗表示・関連 JS 4 関数（`runMinutesTranscription_` / `processAudioChunks_` / `onTranscriptionComplete_` / `onTranscriptionError_`）と `MINUTES_MAX_CHUNK_BYTES_` 定数を削除（-135 行）。新規作成モーダルはタイトル + 要約テキスト直接入力のみに簡素化。`getMinutesContextForAI_`（AI アシスタントから議事録を参照する内部関数）は features.js から呼ばれているため温存。既存の議事録データ（過去の AI 生成要約含む）は Supabase `meeting_minutes` テーブルにそのまま残存し表示・編集可能。これにより未移行 A 分類 10 件 → 8 件に減少。
 
 ---
 
