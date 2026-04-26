@@ -840,8 +840,8 @@
         ? currentLectureCampus : checked[0];
       switchLectureCampusTab(campusToShow);
 
-      // 全校舎エントリを取得（重複チェック用）
-      fetchAllCampusEntries();
+      // 表示中の全校舎タブを最新化＋重複チェック
+      refreshAllPreferredCampuses();
 
       // 自動更新なし（保存後のみ再取得）
     }
@@ -1592,6 +1592,8 @@
             if (!anyDirty) {
               // 保存ボタン自体が「✓ 保存しました」状態となり、約2秒後に自動復帰する
               updateLecSaveBtn('success');
+              // 全保存完了 → 表示中の全校舎タブを最新化＋全校舎横断の重複チェック実行
+              refreshAllPreferredCampuses();
             } else {
               updateLecSaveBtn('dirty');
             }
@@ -2117,6 +2119,54 @@
           checkAndDisplayDuplicates(countIssues);
         })
         .catch(function(err) { console.error('fetchAllCampusEntries エラー:', err); });
+    }
+
+    /**
+     * 表示中の校舎タブ全てをサーバーから最新エントリで再取得し、
+     * 全校舎横断の重複・回数チェックも更新する。
+     * - dirty な校舎（未保存変更あり）は上書きしない（既存安全弁を踏襲）
+     * - 各校舎の lectureEntries[cc] を最新化
+     * - allCampusEntriesCache を再構築 → 重複チェック自動実行
+     * - 現在表示中の校舎は再描画
+     */
+    function refreshAllPreferredCampuses() {
+      if (!currentLectureId) return;
+
+      var displayedCampuses = [];
+      document.querySelectorAll('.lec-campus-cb:checked').forEach(function(cb) {
+        displayedCampuses.push(cb.value);
+      });
+      if (displayedCampuses.length === 0) {
+        displayedCampuses = (typeof preferredCampuses !== 'undefined' && preferredCampuses.length > 0)
+          ? preferredCampuses.slice() : [];
+      }
+      if (displayedCampuses.length === 0) return;
+
+      Promise.all(displayedCampuses.map(function(cc) {
+        return fbGetLectureScheduleEntries(currentLectureId, cc)
+          .then(function(result) {
+            if (dirtyCampuses[cc]) return;
+            lectureEntries[cc] = Array.isArray(result) ? result : [];
+          })
+          .catch(function(err) {
+            console.error('refreshAllPreferredCampuses ' + cc + ' エラー:', err);
+          });
+      }))
+        .then(function() {
+          var all = [];
+          displayedCampuses.forEach(function(cc) {
+            var arr = lectureEntries[cc] || [];
+            arr.forEach(function(e) { all.push(e); });
+          });
+          allCampusEntriesCache = all;
+
+          if (currentLectureCampus && displayedCampuses.indexOf(currentLectureCampus) !== -1) {
+            renderLecEntries(currentLectureCampus);
+          } else {
+            var countIssues = checkSessionCounts(allCampusEntriesCache);
+            checkAndDisplayDuplicates(countIssues);
+          }
+        });
     }
 
     /**
