@@ -3466,10 +3466,45 @@
       // 全教科リスト（出現順を統一）
       var ALL_SUBJECTS = ['英語', '数学', '算数', '国語', '理科', '社会', '物理', '化学'];
 
+      // 全テーブル横幅を最長の日付文字列に揃えるため DOM 測定で最大幅を事前計算（font-size:13px・テーブルと同じフォント）
+      var allDateStrsLV_ = [];
+      var groupKeyMapLV_ = {};
+      entries.forEach(function(e) {
+        var k = (e.campusCode || '') + '|' + (e.subject || '') + '|' + (e.grade || '') + '|' + (e.classLabel || '') + '|' + (e.startTime || '') + '|' + (e.durationSlots || 0);
+        if (!groupKeyMapLV_[k]) groupKeyMapLV_[k] = [];
+        if (groupKeyMapLV_[k].indexOf(e.date) === -1) groupKeyMapLV_[k].push(e.date);
+      });
+      Object.keys(groupKeyMapLV_).forEach(function(k) {
+        allDateStrsLV_.push(fmtDatesLV_(groupKeyMapLV_[k].slice().sort()));
+      });
+      var dateColWidthLV_ = 0;
+      if (allDateStrsLV_.length > 0) {
+        var measureSpanLV_ = document.createElement('span');
+        measureSpanLV_.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-size:13px;font-family:inherit;';
+        document.body.appendChild(measureSpanLV_);
+        allDateStrsLV_.forEach(function(s) {
+          measureSpanLV_.textContent = s;
+          if (measureSpanLV_.offsetWidth > dateColWidthLV_) dateColWidthLV_ = measureSpanLV_.offsetWidth;
+        });
+        document.body.removeChild(measureSpanLV_);
+        dateColWidthLV_ += 18; // padding 8px*2 + border 1px*2
+      }
+      var tableTotalWidthLV_ = (dateColWidthLV_ > 0) ? (60 + dateColWidthLV_ + 110) : 0;
+
+      // テーブル style と colgroup（複数テーブル間で共通）— margin:0 auto で水平方向中央寄せ
+      var tableStyleLV_ = 'border-collapse:collapse;border:1px solid #999;margin:0 auto 10px auto;';
+      if (tableTotalWidthLV_ > 0) {
+        tableStyleLV_ = 'table-layout:fixed;width:' + tableTotalWidthLV_ + 'px;' + tableStyleLV_;
+      }
+      var colgroupHtmlLV_ = '';
+      if (tableTotalWidthLV_ > 0) {
+        colgroupHtmlLV_ = '<colgroup><col style="width:60px"><col style="width:' + dateColWidthLV_ + 'px"><col style="width:110px"></colgroup>';
+      }
+
       // スタイル定義
       var cellBase = 'border:1px solid #999;padding:5px 8px;font-size:13px;vertical-align:middle;';
       var cellSubject = cellBase + 'width:60px;text-align:center;font-weight:bold;white-space:nowrap;';
-      var cellDate = cellBase + 'word-break:break-word;';
+      var cellDate = cellBase + 'white-space:nowrap;' + (dateColWidthLV_ > 0 ? 'width:' + dateColWidthLV_ + 'px;' : '');
       var cellTime = cellBase + 'width:110px;text-align:center;white-space:nowrap;';
 
       var html = '';
@@ -3495,7 +3530,8 @@
           });
           if (subjectEntries.length === 0) return;
 
-          html += '<table style="width:100%;border-collapse:collapse;border:1px solid #999;margin-bottom:10px;">';
+          html += '<table style="' + tableStyleLV_ + '">';
+          html += colgroupHtmlLV_;
 
           // 教科ヘッダー
           html += '<thead>';
@@ -3622,7 +3658,8 @@
           });
           ugSubjects.forEach(function(subject) {
             var ses = ugSubMap[subject];
-            html += '<table style="width:100%;border-collapse:collapse;border:1px solid #999;margin-bottom:10px;">';
+            html += '<table style="' + tableStyleLV_ + '">';
+            html += colgroupHtmlLV_;
             html += '<thead><tr><th colspan="3" style="border:1px solid #999;padding:5px 10px;font-size:14px;font-weight:bold;text-align:left;background:#fafafa;">' + escLV_(subject) + '</th></tr>';
             html += '<tr style="border-bottom:1px solid #999;">';
             html += '<th style="' + cellSubject + '">学年</th><th style="' + cellDate + 'text-align:center;font-weight:bold;">日付</th><th style="' + cellTime + 'font-weight:bold;">時間</th>';
@@ -3742,9 +3779,44 @@
         return d.innerHTML;
       }
 
+      // 全テーブル横幅を最長の日付文字列に揃えるため DOM 測定で最大幅を事前計算（font-size:12px・PDF と同じフォント）
+      var allDateStrsLP_ = [];
+      var groupKeyMapLP_ = {};
+      campusEntries.forEach(function(e) {
+        var k = (e.subject || '') + '|' + (e.grade || '') + '|' + (e.classLabel || '') + '|' + (e.startTime || '') + '|' + (e.durationSlots || 0);
+        if (!groupKeyMapLP_[k]) groupKeyMapLP_[k] = [];
+        if (groupKeyMapLP_[k].indexOf(e.date) === -1) groupKeyMapLP_[k].push(e.date);
+      });
+      Object.keys(groupKeyMapLP_).forEach(function(k) {
+        allDateStrsLP_.push(fmtDatesLP_(groupKeyMapLP_[k].slice().sort()));
+      });
+      var dateColWidthLP_ = 0;
+      if (allDateStrsLP_.length > 0) {
+        var measureSpanLP_ = document.createElement('span');
+        measureSpanLP_.style.cssText = "position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-size:12px;font-family:'Meiryo','ヒラギノ角ゴ ProN W3',sans-serif;";
+        document.body.appendChild(measureSpanLP_);
+        allDateStrsLP_.forEach(function(s) {
+          measureSpanLP_.textContent = s;
+          if (measureSpanLP_.offsetWidth > dateColWidthLP_) dateColWidthLP_ = measureSpanLP_.offsetWidth;
+        });
+        document.body.removeChild(measureSpanLP_);
+        dateColWidthLP_ += 18; // padding 8px*2 + border 1px*2
+      }
+      var tableTotalWidthLP_ = (dateColWidthLP_ > 0) ? (70 + dateColWidthLP_ + 120) : 0;
+
+      // テーブル style と colgroup（複数テーブル間で共通）— margin:0 auto でA4ページ内中央寄せ
+      var tableStyleLP_ = 'border-collapse:collapse;border:1px solid #333;margin:0 auto 8px auto;';
+      if (tableTotalWidthLP_ > 0) {
+        tableStyleLP_ = 'table-layout:fixed;width:' + tableTotalWidthLP_ + 'px;' + tableStyleLP_;
+      }
+      var colgroupHtmlLP_ = '';
+      if (tableTotalWidthLP_ > 0) {
+        colgroupHtmlLP_ = '<colgroup><col style="width:70px"><col style="width:' + dateColWidthLP_ + 'px"><col style="width:120px"></colgroup>';
+      }
+
       var cellBase = 'border:1px solid #333;padding:5px 8px;font-size:12px;vertical-align:middle;color:#000;';
       var cellSubject = cellBase + 'width:70px;text-align:center;font-weight:bold;white-space:nowrap;background:#fafafa;';
-      var cellDate = cellBase + 'word-break:break-word;';
+      var cellDate = cellBase + 'white-space:nowrap;' + (dateColWidthLP_ > 0 ? 'width:' + dateColWidthLP_ + 'px;' : '');
       var cellTime = cellBase + 'width:120px;text-align:center;white-space:nowrap;';
 
       var html = '';
@@ -3764,7 +3836,8 @@
         var subjectEntries = campusEntries.filter(function(e) { return (e.subject || '') === subject; });
         if (subjectEntries.length === 0) return;
 
-        html += '<table style="width:100%;border-collapse:collapse;border:1px solid #333;margin-bottom:8px;">';
+        html += '<table style="' + tableStyleLP_ + '">';
+        html += colgroupHtmlLP_;
         html += '<thead>';
         html += '<tr><th colspan="3" style="border:1px solid #333;padding:5px 10px;font-size:13px;font-weight:bold;text-align:left;background:#f0f0f0;">' + escLP_(subject) + '</th></tr>';
         html += '<tr>';
@@ -3865,7 +3938,8 @@
         });
         ugSubjects.forEach(function(subject) {
           var ses = ugSubMap[subject];
-          html += '<table style="width:100%;border-collapse:collapse;border:1px solid #333;margin-bottom:8px;">';
+          html += '<table style="' + tableStyleLP_ + '">';
+          html += colgroupHtmlLP_;
           html += '<thead><tr><th colspan="3" style="border:1px solid #333;padding:5px 10px;font-size:13px;font-weight:bold;text-align:left;background:#f0f0f0;">' + escLP_(subject) + '</th></tr>';
           html += '<tr><th style="' + cellSubject + 'font-weight:bold;">学年</th><th style="' + cellDate + 'text-align:center;font-weight:bold;">日付</th><th style="' + cellTime + 'font-weight:bold;">時間</th></tr></thead><tbody>';
           var allGN2 = [];
