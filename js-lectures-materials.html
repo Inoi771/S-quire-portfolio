@@ -1413,6 +1413,9 @@
       var cellDate = cellBase + 'white-space:nowrap;' + (dateColWidth_ > 0 ? 'width:' + dateColWidth_ + 'px;' : '');
       var cellTime = cellBase + 'width:104px;text-align:center;white-space:nowrap;';
 
+      // 全学年テーブルで横幅を統一するため、最長の日付列幅に基づく合計幅を算出（table-layout:fixed と組み合わせ）
+      var tableTotalWidth_ = (dateColWidth_ > 0) ? (56 + dateColWidth_ + 104) : 0;
+
       var html = '';
       html += '<div style="width:794px;height:1123px;padding:32px 36px;box-sizing:border-box;background:white;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;overflow:hidden;">';
 
@@ -1434,8 +1437,19 @@
         });
         if (gradeEntries.length === 0) return; // エントリなし → スキップ
 
-        // width:auto（既定）で、日付列幅（事前計算済み）+ 教科列56px + 時間列104px に自動調整
-        html += '<table style="border-collapse:collapse;border:2px solid black;margin-bottom:5px;">';
+        // table-layout:fixed + colgroup で全学年テーブルの列幅・総幅を統一（最長の日付に揃える）
+        var tableStyle_ = 'border-collapse:collapse;border:2px solid black;margin-bottom:5px;';
+        if (tableTotalWidth_ > 0) {
+          tableStyle_ = 'table-layout:fixed;width:' + tableTotalWidth_ + 'px;' + tableStyle_;
+        }
+        html += '<table style="' + tableStyle_ + '">';
+        if (tableTotalWidth_ > 0) {
+          html += '<colgroup>';
+          html += '<col style="width:56px">';
+          html += '<col style="width:' + dateColWidth_ + 'px">';
+          html += '<col style="width:104px">';
+          html += '</colgroup>';
+        }
 
         // 学年ヘッダー行
         html += '<thead>';
