@@ -20,6 +20,22 @@
     margin: 0 0 4px 0;
     color: #333;
   }
+  .pcal-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: #555;
+  }
+  .pcal-legend-box {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    background: #c0c0c0;
+    border: 1px solid #999;
+    border-radius: 2px;
+  }
   /* グリッド：レスポンシブ */
   #pcalOutput {
     display: grid;
@@ -93,6 +109,10 @@
 
 <div class="pcal-header">
   <h1 class="pcal-title" id="pcalTitle">年間カレンダー</h1>
+  <div class="pcal-legend">
+    <span class="pcal-legend-box"></span>
+    <span>休校日</span>
+  </div>
 </div>
 
 <div id="pcalOutput"></div>
