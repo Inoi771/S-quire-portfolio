@@ -329,16 +329,13 @@
       if (!campusCode) { appAlert('校舎を選択してください。'); return; }
 
       var btn = document.getElementById('matPdfBtn');
-      var arrowBtn = document.getElementById('matPdfArrowBtn');
       var origText = btn.textContent;
       btn.textContent = '⏳ 生成中...';
       btn.disabled = true;
-      arrowBtn.disabled = true;
 
       function restoreBtn() {
         btn.textContent = origText;
         btn.disabled = false;
-        arrowBtn.disabled = false;
       }
 
       // 印刷モードは同期的にウィンドウを開いておく（ポップアップブロック回避）
@@ -1517,15 +1514,12 @@
       if (!campusCode) { appAlert('校舎を選択してください。'); return; }
 
       var btn = document.getElementById('matWebPdfBtn');
-      var arrowBtn = document.getElementById('matWebPdfArrowBtn');
       btn.textContent = '⏳ 生成中...';
       btn.disabled = true;
-      arrowBtn.disabled = true;
 
       function restoreBtn() {
-        btn.textContent = '📥 PDF';
+        btn.textContent = '📥 PDFダウンロード';
         btn.disabled = false;
-        arrowBtn.disabled = false;
       }
 
       var printWindow = null;
@@ -1607,7 +1601,7 @@
      * @param {boolean} enabled
      */
     function setMatWebBtnsEnabled(enabled) {
-      var ids = ['matWebPdfBtn', 'matWebPdfArrowBtn'];
+      var ids = ['matWebPdfBtn'];
       ids.forEach(function(id) {
         var el = document.getElementById(id);
         if (!el) return;
