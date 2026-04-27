@@ -267,9 +267,9 @@
       }
       // 重複チェックキャッシュをリセット
       allCampusEntriesCache = [];
-      // チェックモードを全体にリセット＋ボタン強調も解除
-      currentCheckMode = 'full';
-      setActiveCheckButton(null);
+      // チェックモードを自分にリセット＋自分チェックボタンを強調
+      currentCheckMode = 'self';
+      setActiveCheckButton('lec-self-check-btn');
       renderDuplicatePanel([]);
       // クラス選択をリセット
       selectedLecClass = null;
@@ -2052,8 +2052,10 @@
     // ===== 重複チェック機能 =====
 
     // 現在の重複チェックモード: 'full'（全体）または 'self'（自分）
-    // 自動更新時（保存後・講習を開いた時・エントリ追加削除等）に維持される
-    var currentCheckMode = 'full';
+    // デフォルトは 'self'（ユーザー要望）。自動更新時（保存後・講習を開いた時・
+    // エントリ追加削除等）にも維持される。teacherId が無いユーザーは
+    // checkAndDisplayDuplicates 内のフォールバックで自動的に全体表示となる。
+    var currentCheckMode = 'self';
 
     /**
      * 全体チェック / 自分チェックボタンのアクティブ状態を切り替える
