@@ -2217,12 +2217,14 @@
           });
           allCampusEntriesCache = all;
 
+          // 回数過不足も自動更新するため count issues を計算してから描画する
+          // renderLecEntries 内部の checkAndDisplayDuplicates() 呼び出しは countIssues 引数なしのため、
+          // 後段で countIssues 込みで再呼び出しして上書きする
+          var countIssues = checkSessionCounts(allCampusEntriesCache);
           if (currentLectureCampus && displayedCampuses.indexOf(currentLectureCampus) !== -1) {
             renderLecEntries(currentLectureCampus);
-          } else {
-            var countIssues = checkSessionCounts(allCampusEntriesCache);
-            checkAndDisplayDuplicates(countIssues);
           }
+          checkAndDisplayDuplicates(countIssues);
         });
     }
 
