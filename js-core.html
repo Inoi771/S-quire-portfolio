@@ -1107,7 +1107,18 @@
         loadGradesYears();
         setTimeout(function() { initSubTabLoop('gradesSubTabs'); }, 50);
       } else if (tabName === 'universities') {
-        generateFiscalCalendar();
+        // 今年度（4月起算）を自動セット。同じ年度が既に描画済みなら再生成スキップ
+        var _now = new Date();
+        var _fy = (_now.getMonth() >= 3) ? _now.getFullYear() : _now.getFullYear() - 1;
+        var _yearInput = document.getElementById('univCalYearInput');
+        var _calOutput = document.getElementById('univCalOutput');
+        if (_yearInput) {
+          var _alreadyRendered = _calOutput && _calOutput.innerHTML.trim() !== '' && parseInt(_yearInput.value) === _fy;
+          _yearInput.value = _fy;
+          if (!_alreadyRendered) generateFiscalCalendar();
+        } else {
+          generateFiscalCalendar();
+        }
         setTimeout(function() { initSubTabLoop('univSubTabs'); }, 50);
       } else if (tabName === 'lectures') {
         initLecturesTab();
