@@ -103,7 +103,7 @@
 
 <div class="pcal-header">
   <h1 class="pcal-title" id="pcalTitle">年間カレンダー</h1>
-  <p class="pcal-hint" id="pcalHint">タップするとPDFをダウンロードできます</p>
+  <p class="pcal-hint" id="pcalHint">タップするとPDFを新しいタブで開きます（保存・印刷可能）</p>
 </div>
 
 <div id="pcalOutput" onclick="downloadCalendarPDF()"></div>
@@ -353,13 +353,14 @@
     calOutput.style.gap = '8px';
     calOutput.style.minWidth = '860px';
 
-    function restore() {
-      calOutput.style.gridTemplateColumns = prevColumns;
-      calOutput.style.gap = prevGap;
-      calOutput.style.minWidth = prevMinWidth;
-      hint.textContent = prevText;
+    function showError(msg) {
+      hint.textContent = '⚠ ' + msg;
       hint.classList.remove('busy');
-      isGenerating = false;
+      hint.style.color = '#d32f2f';
+      setTimeout(function() {
+        hint.textContent = prevText;
+        hint.style.color = '';
+      }, 5000);
     }
 
     html2canvas(calOutput, {
@@ -382,14 +383,45 @@
         var drawH = drawW / ratio;
         if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
         pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
-        pdf.save(fy + '年度_年間カレンダー.pdf');
+
+        var filename = fy + '年度_年間カレンダー.pdf';
+        var blob = pdf.output('blob');
+        var blobUrl = URL.createObjectURL(blob);
+
+        // iframe内では pdf.save() が動かないことがあるため、_blank で新タブに開く方式に変更
+        // download 属性も併設し、対応ブラウザではダウンロードに、それ以外では新タブ表示にフォールバック
+        var link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // 新タブ表示の場合のヒント
+        hint.textContent = '✓ PDFを開きました（新しいタブで表示・保存できます）';
+        hint.classList.remove('busy');
+        hint.style.color = '#2e7d32';
+        setTimeout(function() {
+          hint.textContent = prevText;
+          hint.style.color = '';
+        }, 4000);
+
+        setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 60000);
       } catch (err) {
-        alert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+        showError('PDF生成エラー: ' + (err && err.message ? err.message : err));
       }
-      restore();
-    }).catch(function() {
-      alert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
-      restore();
+      isGenerating = false;
+      calOutput.style.gridTemplateColumns = prevColumns;
+      calOutput.style.gap = prevGap;
+      calOutput.style.minWidth = prevMinWidth;
+    }).catch(function(err) {
+      showError('カレンダー画像化エラー: ' + (err && err.message ? err.message : err));
+      isGenerating = false;
+      calOutput.style.gridTemplateColumns = prevColumns;
+      calOutput.style.gap = prevGap;
+      calOutput.style.minWidth = prevMinWidth;
     });
   };
 
