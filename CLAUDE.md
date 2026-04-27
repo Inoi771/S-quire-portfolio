@@ -130,7 +130,7 @@ markdown# S-quire — プロジェクト設計書
 | `FUNCTIONS-backend.md` | *.js GAS の関数を呼び出す・修正する・新関数を追加する前 |
 | `BUGS.md` | 新機能を実装する前（Sheets書き込み・JSON処理・非同期処理・UI追加を含む場合は必ず） |
 | `DEPLOY.md` | デプロイ設定・appsscript.json・認証情報を確認する必要があるとき |
-| `CODING.md` | 新関数追加・PDF出力・校舎ドロップダウン実装時 |
+| `CODING.md` | 新関数追加・PDF出力・校舎ドロップダウン実装時・新規HTMLページ実装時（フロントエンド実装の基本原則） |
 | `DATA.md` | スクリプトプロパティ・シート列構成・Firestoreコレクションを確認するとき |
 | `DESIGN.md` | ID管理・fitToScreen・padStart問題・Drive作成ポリシーを確認するとき |
 
