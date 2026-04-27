@@ -1460,4 +1460,67 @@
       });
     }
 
+    /**
+     * ホームページ用埋め込みコードセクションの開閉
+     */
+    function toggleEmbedSection() {
+      var content = document.getElementById('embedSectionContent');
+      var arrow = document.getElementById('embedSectionArrow');
+      if (!content || !arrow) return;
+      var isOpen = content.style.display === 'block';
+      content.style.display = isOpen ? 'none' : 'block';
+      arrow.textContent = isOpen ? '▼' : '▲';
+    }
+
+    /**
+     * 埋め込みコードをクリップボードへコピー
+     */
+    function copyEmbedCode() {
+      var textarea = document.getElementById('embedCodeText');
+      var status = document.getElementById('embedCopyStatus');
+      if (!textarea) return;
+
+      function showSuccess() {
+        if (status) {
+          status.textContent = '✓ コピーしました';
+          setTimeout(function() { status.textContent = ''; }, 2500);
+        }
+      }
+      function showFailure() {
+        if (status) {
+          status.textContent = '⚠ コピー失敗（手動で選択してコピーしてください）';
+          status.style.color = '#d32f2f';
+          setTimeout(function() {
+            status.textContent = '';
+            status.style.color = '#2e7d32';
+          }, 4000);
+        }
+      }
+
+      // モダンブラウザ：Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textarea.value).then(showSuccess).catch(function() {
+          // フォールバック：選択 + execCommand
+          try {
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+            document.execCommand('copy');
+            showSuccess();
+          } catch (err) {
+            showFailure();
+          }
+        });
+      } else {
+        // 古いブラウザ用フォールバック
+        try {
+          textarea.select();
+          textarea.setSelectionRange(0, 99999);
+          document.execCommand('copy');
+          showSuccess();
+        } catch (err) {
+          showFailure();
+        }
+      }
+    }
+
 </script>
