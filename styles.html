@@ -1351,6 +1351,8 @@
       background: transparent;
     }
     /* ★ 星形 / △ 三角形 → SVGで描画（CSSでstroke色を管理） */
+    /* 星と三角はセルいっぱいに表示（円・四角より見た目を大きくする） */
+    .univ-sym-star, .univ-sym-triangle { inset: 0; }
     .univ-sym-star   .sym-poly { stroke: #e65100; }
     .univ-sym-triangle .sym-poly { stroke: #7b1fa2; }
 
