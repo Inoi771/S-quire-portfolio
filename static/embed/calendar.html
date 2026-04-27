@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>年間カレンダー</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; font-family: 'Hiragino Sans','Yu Gothic',sans-serif; color: #333; }
+  body { padding: 12px; }
+
+  .pcal-header {
+    text-align: center;
+    margin-bottom: 12px;
+    padding: 8px;
+  }
+  .pcal-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    color: #333;
+  }
+  .pcal-hint {
+    font-size: 12px;
+    color: #888;
+    margin: 0;
+  }
+  .pcal-hint.busy { color: #e65100; font-weight: 700; }
+
+  /* グリッド：レスポンシブ */
+  #pcalOutput {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    cursor: pointer;
+  }
+  @media (max-width: 900px) { #pcalOutput { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { #pcalOutput { grid-template-columns: 1fr; } }
+
+  .univ-month-card {
+    background: white;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .univ-month-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 4px;
+    color: #333;
+  }
+  .univ-month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+  }
+  .univ-day-header {
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 1px;
+    background: #f0f0f0;
+  }
+  .univ-day-header.sun { color: #d32f2f; }
+  .univ-day-header.sat { color: #1565c0; }
+
+  .univ-day-cell {
+    position: relative;
+    aspect-ratio: 1;
+    border: 1px solid #e0e0e0;
+    background: white;
+    overflow: hidden;
+  }
+  .univ-day-cell.other-month { background: #f5f5f5; }
+  .univ-day-cell.closed-day  { background: #c0c0c0; }
+  .univ-day-cell.vac-lt {
+    border-top:  2px solid #444 !important;
+    border-left: 2px solid #444 !important;
+  }
+  .univ-day-cell.vac-rb {
+    border-bottom: 2px solid #444 !important;
+    border-right:  2px solid #444 !important;
+  }
+
+  .univ-day-num {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    font-weight: 700;
+    color: #333;
+  }
+  .univ-day-num.dn-sat { color: #1565c0; }
+  .univ-day-num.dn-hol { color: #d32f2f; }
+</style>
+</head>
+<body>
+
+<div class="pcal-header">
+  <h1 class="pcal-title" id="pcalTitle">年間カレンダー</h1>
+  <p class="pcal-hint" id="pcalHint">タップするとPDFをダウンロードできます</p>
+</div>
+
+<div id="pcalOutput" onclick="downloadCalendarPDF()"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  // 今年度（4月起算）を判定
+  function getCurrentFiscalYear() {
+    var now = new Date();
+    return (now.getMonth() >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+  }
+
+  // 固定休校日（GW・お盆・秋季・年末年始・春季）
+  function getClosedDays(fiscalYear) {
+    var y = fiscalYear;
+    var n = fiscalYear + 1;
+    var c = {};
+    function add(yr, mo, da) {
+      var mm = mo < 10 ? '0' + mo : '' + mo;
+      var dd = da < 10 ? '0' + da : '' + da;
+      c[yr + '-' + mm + '-' + dd] = true;
+    }
+
+    // ゴールデンウィーク: 4/30〜5/5 固定
+    add(y, 4, 30);
+    add(y, 5, 1); add(y, 5, 2); add(y, 5, 3); add(y, 5, 4); add(y, 5, 5);
+    if (new Date(y, 4, 7).getDay() === 0) { add(y, 5, 6); } else { add(y, 4, 29); }
+
+    // お盆: 8/10〜8/15 固定
+    add(y, 8, 10); add(y, 8, 11); add(y, 8, 12); add(y, 8, 13); add(y, 8, 14); add(y, 8, 15);
+    if (new Date(y, 7, 17).getDay() === 0) { add(y, 8, 16); } else { add(y, 8, 9); }
+
+    // 秋季休校: 10/28〜11/2 固定
+    add(y, 10, 28); add(y, 10, 29); add(y, 10, 30); add(y, 10, 31);
+    add(y, 11, 1); add(y, 11, 2);
+
+    // 年末年始: 12/29〜翌1/3 固定
+    add(y, 12, 29); add(y, 12, 30); add(y, 12, 31);
+    add(n, 1, 1); add(n, 1, 2); add(n, 1, 3);
+
+    // 春季休校: 翌3/15〜17 固定。翌年がうるう年なら3/14も追加
+    add(n, 3, 15); add(n, 3, 16); add(n, 3, 17);
+    var isLeapN = (n % 4 === 0 && (n % 100 !== 0 || n % 400 === 0));
+    if (isLeapN) add(n, 3, 14);
+
+    return c;
+  }
+
+  // 日本の祝日（振替・国民の休日含む）アルゴリズム計算
+  function getJapaneseHolidays(year) {
+    var h = {};
+    function fmt(y, m, d) {
+      return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+    }
+    function addH(y, m, d) { h[fmt(y, m, d)] = true; }
+    function dowOf(y, m, d) { return new Date(y, m - 1, d).getDay(); }
+    function nthMonday(y, m, n) {
+      var first = dowOf(y, m, 1);
+      var diff = (1 - first + 7) % 7;
+      return 1 + diff + (n - 1) * 7;
+    }
+    function shunbun(y) { return Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+    function shubun(y)  { return Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+
+    addH(year, 1, 1);  addH(year, 2, 11);
+    if (year >= 2020) addH(year, 2, 23);
+    addH(year, 4, 29); addH(year, 5, 3);  addH(year, 5, 4);  addH(year, 5, 5);
+    if (year >= 2016) addH(year, 8, 11);
+    addH(year, 11, 3); addH(year, 11, 23);
+
+    addH(year, 1,  nthMonday(year, 1, 2));
+    addH(year, 3,  shunbun(year));
+    addH(year, 7,  nthMonday(year, 7, 3));
+    addH(year, 9,  nthMonday(year, 9, 3));
+    addH(year, 9,  shubun(year));
+    addH(year, 10, nthMonday(year, 10, 2));
+
+    for (var m = 1; m <= 12; m++) {
+      var dInM = new Date(year, m, 0).getDate();
+      for (var d = 2; d < dInM; d++) {
+        if (h[fmt(year, m, d)]) continue;
+        if (dowOf(year, m, d) === 0) continue;
+        if (h[fmt(year, m, d - 1)] && h[fmt(year, m, d + 1)]) addH(year, m, d);
+      }
+    }
+
+    var snap = Object.keys(h).sort();
+    snap.forEach(function(key) {
+      var p = key.split('-');
+      var ky = +p[0], km = +p[1], kd = +p[2];
+      if (dowOf(ky, km, kd) === 0) {
+        var next = new Date(ky, km - 1, kd + 1);
+        while (h[fmt(next.getFullYear(), next.getMonth() + 1, next.getDate())]) {
+          next = new Date(next.getFullYear(), next.getMonth(), next.getDate() + 1);
+        }
+        addH(next.getFullYear(), next.getMonth() + 1, next.getDate());
+      }
+    });
+
+    return h;
+  }
+
+  // 24授業日ごとの期間枠線
+  function computePeriodBorders(fiscalYear, closedDays) {
+    var allDates = [];
+    var y = fiscalYear, n = fiscalYear + 1;
+
+    function addMonth(yr, mo) {
+      var days = new Date(yr, mo, 0).getDate();
+      for (var da = 1; da <= days; da++) {
+        var mm = mo < 10 ? '0' + mo : '' + mo;
+        var dd = da < 10 ? '0' + da : '' + da;
+        allDates.push(yr + '-' + mm + '-' + dd);
+      }
+    }
+    for (var mo = 4; mo <= 12; mo++) addMonth(y, mo);
+    for (var mo2 = 1; mo2 <= 3; mo2++) addMonth(n, mo2);
+
+    var workDates = allDates.filter(function(d) {
+      if (closedDays[d]) return false;
+      var parts = d.split('-');
+      var dow = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])).getDay();
+      if (dow === 0) return false;
+      return true;
+    });
+
+    var borders = {};
+    var PERIOD = 24;
+
+    for (var i = 0; i < workDates.length; i += PERIOD) {
+      var startKey = workDates[i];
+      borders[startKey] = borders[startKey] || {};
+      borders[startKey].lt = true;
+
+      var endIdx = i + PERIOD - 1;
+      if (endIdx < workDates.length) {
+        var endKey = workDates[endIdx];
+        borders[endKey] = borders[endKey] || {};
+        borders[endKey].rb = true;
+      }
+    }
+    return borders;
+  }
+
+  // 1ヶ月分のHTML生成（公開版：内部記号なし）
+  function renderFiscalMonth(year, month, closedDays, periodBorders, holidays) {
+    var monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    var rawDow = new Date(year, month - 1, 1).getDay();
+    var firstDow = (rawDow + 6) % 7;
+    var daysInMonth = new Date(year, month, 0).getDate();
+
+    var html = '<div class="univ-month-card">';
+    html += '<div class="univ-month-title">' + year + '年 ' + monthNames[month - 1] + '</div>';
+    html += '<div class="univ-month-grid">';
+
+    var headers = ['月','火','水','木','金','土','日'];
+    var hdCls   = ['','','','','','sat','sun'];
+    headers.forEach(function(h, i) {
+      html += '<div class="univ-day-header ' + hdCls[i] + '">' + h + '</div>';
+    });
+
+    for (var b = 0; b < firstDow; b++) {
+      html += '<div class="univ-day-cell other-month"></div>';
+    }
+
+    for (var day = 1; day <= daysInMonth; day++) {
+      var dow = (firstDow + day - 1) % 7;
+      var mm = month < 10 ? '0' + month : '' + month;
+      var dd = day   < 10 ? '0' + day   : '' + day;
+      var dateKey = year + '-' + mm + '-' + dd;
+      var isSunday   = (dow === 6);
+      var isSaturday = (dow === 5);
+      var isClosedExtra = !!(closedDays && closedDays[dateKey]);
+      var isClosed = isSunday || isClosedExtra;
+
+      var cellCls = 'univ-day-cell';
+      if (isClosed) cellCls += ' closed-day';
+      var pb = periodBorders && periodBorders[dateKey];
+      if (pb) {
+        if (pb.lt) cellCls += ' vac-lt';
+        if (pb.rb) cellCls += ' vac-rb';
+      }
+
+      var isHoliday = !!(holidays && holidays[dateKey]);
+      var numCls = 'univ-day-num';
+      if (isSunday || isHoliday)        numCls += ' dn-hol';
+      else if (isSaturday)              numCls += ' dn-sat';
+
+      html += '<div class="' + cellCls + '">';
+      html += '<div class="' + numCls + '">' + day + '</div>';
+      html += '</div>';
+    }
+
+    var totalCells = firstDow + daysInMonth;
+    var remainder = totalCells % 7;
+    if (remainder !== 0) {
+      for (var a = 0; a < 7 - remainder; a++) {
+        html += '<div class="univ-day-cell other-month"></div>';
+      }
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function generateCalendar() {
+    var fy = getCurrentFiscalYear();
+    document.getElementById('pcalTitle').textContent = fy + '年度 年間カレンダー';
+
+    var closedDays = getClosedDays(fy);
+    var periodBorders = computePeriodBorders(fy, closedDays);
+    var h1 = getJapaneseHolidays(fy);
+    var h2 = getJapaneseHolidays(fy + 1);
+    var holidays = Object.assign({}, h1, h2);
+
+    var html = '';
+    for (var m = 4; m <= 12; m++) {
+      html += renderFiscalMonth(fy, m, closedDays, periodBorders, holidays);
+    }
+    for (var m2 = 1; m2 <= 3; m2++) {
+      html += renderFiscalMonth(fy + 1, m2, closedDays, periodBorders, holidays);
+    }
+    document.getElementById('pcalOutput').innerHTML = html;
+  }
+
+  // PDFダウンロード（タップで実行）
+  var isGenerating = false;
+  window.downloadCalendarPDF = function() {
+    if (isGenerating) return;
+    isGenerating = true;
+
+    var hint = document.getElementById('pcalHint');
+    var prevText = hint.textContent;
+    hint.textContent = '⏳ PDFを生成中です...';
+    hint.classList.add('busy');
+
+    var fy = getCurrentFiscalYear();
+    var calOutput = document.getElementById('pcalOutput');
+
+    // PDF用に3列固定 + 一時的に最小幅を確保
+    var prevColumns = calOutput.style.gridTemplateColumns;
+    var prevGap = calOutput.style.gap;
+    var prevMinWidth = calOutput.style.minWidth;
+    calOutput.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    calOutput.style.gap = '8px';
+    calOutput.style.minWidth = '860px';
+
+    function restore() {
+      calOutput.style.gridTemplateColumns = prevColumns;
+      calOutput.style.gap = prevGap;
+      calOutput.style.minWidth = prevMinWidth;
+      hint.textContent = prevText;
+      hint.classList.remove('busy');
+      isGenerating = false;
+    }
+
+    html2canvas(calOutput, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      windowWidth: 1100
+    }).then(function(canvas) {
+      try {
+        var imgData = canvas.toDataURL('image/jpeg', 0.92);
+        var pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var pageW = pdf.internal.pageSize.getWidth();
+        var pageH = pdf.internal.pageSize.getHeight();
+        var margin = 7;
+        var maxW = pageW - margin * 2;
+        var maxH = pageH - margin * 2;
+        var ratio = canvas.width / canvas.height;
+        var drawW = maxW;
+        var drawH = drawW / ratio;
+        if (drawH > maxH) { drawH = maxH; drawW = drawH * ratio; }
+        pdf.addImage(imgData, 'JPEG', margin, margin, drawW, drawH);
+        pdf.save(fy + '年度_年間カレンダー.pdf');
+      } catch (err) {
+        alert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+      }
+      restore();
+    }).catch(function() {
+      alert('PDF生成に失敗しました。\nブラウザを更新して再度お試しください。');
+      restore();
+    });
+  };
+
+  generateCalendar();
+})();
+</script>
+
+</body>
+</html>
