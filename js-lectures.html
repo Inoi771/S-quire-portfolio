@@ -267,6 +267,9 @@
       }
       // 重複チェックキャッシュをリセット
       allCampusEntriesCache = [];
+      // チェックモードを全体にリセット＋ボタン強調も解除
+      currentCheckMode = 'full';
+      setActiveCheckButton(null);
       renderDuplicatePanel([]);
       // クラス選択をリセット
       selectedLecClass = null;
@@ -2048,6 +2051,10 @@
 
     // ===== 重複チェック機能 =====
 
+    // 現在の重複チェックモード: 'full'（全体）または 'self'（自分）
+    // 自動更新時（保存後・講習を開いた時・エントリ追加削除等）に維持される
+    var currentCheckMode = 'full';
+
     /**
      * 全体チェック / 自分チェックボタンのアクティブ状態を切り替える
      * @param {string} activeId アクティブにするボタンのID
@@ -2079,6 +2086,7 @@
       fbGetAllLectureEntries(currentLectureId)
         .then(function(entries) {
           allCampusEntriesCache = entries || [];
+          currentCheckMode = 'full';
           var countIssues = checkSessionCounts(allCampusEntriesCache);
           checkAndDisplayDuplicates(countIssues);
           setActiveCheckButton('lec-full-check-btn');
@@ -2115,6 +2123,7 @@
       fbGetAllLectureEntries(currentLectureId)
         .then(function(entries) {
           allCampusEntriesCache = entries || [];
+          currentCheckMode = 'self';
           var countIssues = checkSessionCounts(allCampusEntriesCache);
           // 自分が1件以上担当している教科×学年×校舎のみ
           var filteredCountIssues = countIssues.filter(function(issue) {
@@ -2227,6 +2236,25 @@
       if (!currentLectureId) {
         renderDuplicatePanel([]);
         return;
+      }
+
+      // 自動更新時のモード継承: filterTeacherId が明示指定されていない場合、
+      // currentCheckMode === 'self' なら自動的に自分フィルタを適用する。
+      // 保存後・講習を開いた時・エントリ追加削除時など、自動再描画でも
+      // 「自分チェック」表示を維持するための仕組み。
+      if (!filterTeacherId && currentCheckMode === 'self') {
+        var derivedTeacherId = (typeof isAdminUser !== 'undefined' && isAdminUser
+                                && typeof lecAdminTeacherId !== 'undefined' && lecAdminTeacherId)
+          ? lecAdminTeacherId
+          : (typeof myTeacherId !== 'undefined' ? myTeacherId : '');
+        if (derivedTeacherId) {
+          filterTeacherId = derivedTeacherId;
+          if (Array.isArray(countIssues)) {
+            countIssues = countIssues.filter(function(issue) {
+              return issue.teachers && issue.teachers[derivedTeacherId];
+            });
+          }
+        }
       }
 
       // ローカルエントリを優先した統合リストを構築
