@@ -858,11 +858,11 @@
           scheduleLecturePeriods = Array.isArray(bundle.lecturePeriods) ? bundle.lecturePeriods : [];
           lectureDeadlineOverrides = bundle.lectureDeadlines || {};
           overridesLoadedCount = 7;
-          if (allSchedules.length > 0) renderCalendar();
+          renderCalendar();
         })
         .withFailureHandler(function() {
           overridesLoadedCount = 7;
-          if (allSchedules.length > 0) renderCalendar();
+          renderCalendar();
         })
         .getScheduleOverridesBundle();
 
