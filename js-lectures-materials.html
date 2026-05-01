@@ -1393,11 +1393,14 @@
         });
       });
 
-      // DOM測定で最長日程文字列のピクセル幅を取得（font-size:8.5px・テーブルと同じフォントで測定）
+      // DOM測定で最長日程文字列のピクセル幅を取得
+      // applyScheduleAutoFit_ が base = 8.5 * 1.70 = 14.45px・scale=1.0 で初期描画するため、
+      // その値で計測しないと列幅が不足してテキストがセル枠外へはみ出る
+      var renderedFontPx_ = 8.5 * 1.70;
       var dateColWidth_ = 0;
       if (allDateStrsForMeasure_.length > 0) {
         var measureSpan_ = document.createElement('span');
-        measureSpan_.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-size:8.5px;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;';
+        measureSpan_.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-size:' + renderedFontPx_ + 'px;font-family:\'Hiragino Kaku Gothic ProN\',\'Meiryo\',sans-serif;';
         document.body.appendChild(measureSpan_);
         allDateStrsForMeasure_.forEach(function(s) {
           measureSpan_.textContent = s;
@@ -1405,6 +1408,10 @@
         });
         document.body.removeChild(measureSpan_);
         dateColWidth_ += 14; // padding 6px*2 + border 1px*2 の分を加算
+        // A4 幅 794 - padding 36*2 = 722px から教科列(56)+時間列(104) を除いた 562px を上限とする
+        // これを超える場合は applyScheduleAutoFit_ が自動でフォント縮小して吸収する
+        var maxDateColWidth_ = 562;
+        if (dateColWidth_ > maxDateColWidth_) dateColWidth_ = maxDateColWidth_;
       }
 
       // 共通CSSスタイル
