@@ -49,13 +49,16 @@
       if (pendingAutoRestoreCampuses) {
         var campuses = pendingAutoRestoreCampuses;
         pendingAutoRestoreCampuses = null;
-        var allChecked = true;
         document.querySelectorAll('.lec-campus-cb').forEach(function(cb) {
           cb.checked = campuses.indexOf(cb.value) !== -1;
-          if (!cb.checked) allChecked = false;
         });
+        // 復元された選択に配属外校舎が含まれていれば「全校舎」を ON にして表示する
+        var anyExtraChecked = document.querySelectorAll('.lec-campus-extra-cb:checked').length > 0;
         var allCb = document.getElementById('lec-campus-all');
-        if (allCb) allCb.checked = allChecked;
+        if (allCb) allCb.checked = anyExtraChecked;
+        document.querySelectorAll('.lec-campus-extra-label').forEach(function(label) {
+          label.style.display = anyExtraChecked ? 'flex' : 'none';
+        });
       }
       showLectureCampusTabs(); // 常にグリッドを表示（初回・復元ともに）
     }
@@ -557,69 +560,84 @@
     /**
      * 校舎チェックボックスを構築する
      * - preferredCampuses（設定タブで指定した配属校舎）が設定されている場合：
-     *   その校舎だけを表示し、デフォルトで全てチェック済みにする
+     *   配属校舎のチェックボックスを表示し、デフォルトで全てチェック済みにする
+     *   配属外の校舎は非表示で用意し、「全校舎」トグルONで表示する
      * - 未設定（管理者など）の場合：
-     *   従来どおり全校舎を表示し、全てチェック済みにする
+     *   全校舎を表示（全てチェック済み、配属外は0件のため「全校舎」トグルは非表示）
      */
     function buildLectureCampusCheckboxes() {
       var container = document.getElementById('lec-campus-checkboxes');
       if (!container) return;
 
-      // 表示対象の校舎コードを決定（preferredCampuses 優先、未設定なら全校舎）
       var pref = preferredCampuses || [];
-      var displayCodes;
-      if (pref.length > 0) {
-        // preferredCampuses の順序を尊重し、campusData に存在するコードのみ採用
-        displayCodes = pref.filter(function(code) { return campusData[code]; });
+      var hasPref = pref.length > 0;
+      var allCodes = Object.keys(campusData);
+      var prefCodes;
+      var nonPrefCodes;
+      if (hasPref) {
+        prefCodes = pref.filter(function(code) { return campusData[code]; });
+        nonPrefCodes = allCodes.filter(function(code) { return pref.indexOf(code) === -1; });
       } else {
-        displayCodes = Object.keys(campusData);
+        prefCodes = allCodes;
+        nonPrefCodes = [];
       }
 
-      var arr = displayCodes.map(function(code) {
-        return { code: code, name: campusData[code] };
-      });
-      if (arr.length === 0) {
+      if (prefCodes.length === 0 && nonPrefCodes.length === 0) {
         container.innerHTML = '<div style="color:#999;font-size:13px;">校舎データがありません</div>';
         return;
       }
 
-      var html = '';
-      // 全校舎チェックボックス（表示中の校舎を一括ON/OFFするトグル）
-      html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
-            + '<input type="checkbox" id="lec-campus-all" onchange="onLecCampusAllChange()" checked style="width:16px;height:16px;cursor:pointer;"> 全校舎</label>';
+      var labelStyle = 'display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;';
+      var inputStyle = 'width:16px;height:16px;cursor:pointer;';
 
-      arr.forEach(function(c) {
-        html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
-              + '<input type="checkbox" class="lec-campus-cb" value="' + c.code + '" onchange="onLecCampusChange()" checked style="width:16px;height:16px;cursor:pointer;"> '
-              + c.name + '</label>';
+      var html = '';
+      // 全校舎トグル：チェックすると配属外校舎の選択肢を表示する（デフォルトOFF）
+      // 配属外校舎が存在する場合のみ表示する
+      if (nonPrefCodes.length > 0) {
+        html += '<label style="' + labelStyle + '">'
+              + '<input type="checkbox" id="lec-campus-all" onchange="onLecCampusAllChange()" style="' + inputStyle + '"> 全校舎</label>';
+      }
+
+      // 配属校舎チェックボックス（常に表示、デフォルト checked）
+      prefCodes.forEach(function(code) {
+        html += '<label class="lec-campus-pref-label" style="' + labelStyle + '">'
+              + '<input type="checkbox" class="lec-campus-cb" value="' + code + '" onchange="onLecCampusChange()" checked style="' + inputStyle + '"> '
+              + campusData[code] + '</label>';
+      });
+
+      // 配属外校舎チェックボックス（デフォルトは display:none で隠す・未チェック）
+      nonPrefCodes.forEach(function(code) {
+        html += '<label class="lec-campus-extra-label" style="display:none;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
+              + '<input type="checkbox" class="lec-campus-cb lec-campus-extra-cb" value="' + code + '" onchange="onLecCampusChange()" style="' + inputStyle + '"> '
+              + campusData[code] + '</label>';
       });
       container.innerHTML = html;
-
-      // 全校舎チェックの整合性確認
-      onLecCampusChange();
 
       // 自動復元処理：チェックボックスが準備できたことを記録して tryAutoRestoreLectures を呼ぶ
       campusCheckboxesBuilt = true;
       tryAutoRestoreLectures();
     }
 
-    /** 全校舎チェックボックス変更 */
+    /**
+     * 全校舎チェックボックス変更：配属外校舎の表示/非表示を切替える
+     * - ON：配属外校舎の選択肢を表示し、すべてチェック状態にする
+     * - OFF：配属外校舎の選択肢を隠し、すべてチェックを外す
+     */
     function onLecCampusAllChange() {
       var allCb = document.getElementById('lec-campus-all');
-      var checked = allCb ? allCb.checked : true;
-      document.querySelectorAll('.lec-campus-cb').forEach(function(cb) {
-        cb.checked = checked;
+      var on = allCb ? allCb.checked : false;
+      document.querySelectorAll('.lec-campus-extra-label').forEach(function(label) {
+        label.style.display = on ? 'flex' : 'none';
+      });
+      document.querySelectorAll('.lec-campus-extra-cb').forEach(function(cb) {
+        cb.checked = on;
       });
       showLectureCampusTabs();
     }
 
     /** 個別校舎チェックボックス変更 */
     function onLecCampusChange() {
-      var cbs = document.querySelectorAll('.lec-campus-cb');
-      var allCb = document.getElementById('lec-campus-all');
-      var allChecked = true;
-      cbs.forEach(function(cb) { if (!cb.checked) allChecked = false; });
-      if (allCb) allCb.checked = allChecked;
+      // 「全校舎」トグルは配属外校舎の表示制御のみを担うため、個別チェック状態とは同期しない
       showLectureCampusTabs();
     }
 
