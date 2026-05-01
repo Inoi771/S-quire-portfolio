@@ -555,13 +555,27 @@
     }
 
     /**
-     * 校舎チェックボックスを構築する（preferredCampuses を先頭にチェック済みで表示）
+     * 校舎チェックボックスを構築する
+     * - preferredCampuses（設定タブで指定した配属校舎）が設定されている場合：
+     *   その校舎だけを表示し、デフォルトで全てチェック済みにする
+     * - 未設定（管理者など）の場合：
+     *   従来どおり全校舎を表示し、全てチェック済みにする
      */
     function buildLectureCampusCheckboxes() {
       var container = document.getElementById('lec-campus-checkboxes');
       if (!container) return;
 
-      var arr = Object.keys(campusData).map(function(code) {
+      // 表示対象の校舎コードを決定（preferredCampuses 優先、未設定なら全校舎）
+      var pref = preferredCampuses || [];
+      var displayCodes;
+      if (pref.length > 0) {
+        // preferredCampuses の順序を尊重し、campusData に存在するコードのみ採用
+        displayCodes = pref.filter(function(code) { return campusData[code]; });
+      } else {
+        displayCodes = Object.keys(campusData);
+      }
+
+      var arr = displayCodes.map(function(code) {
         return { code: code, name: campusData[code] };
       });
       if (arr.length === 0) {
@@ -569,19 +583,14 @@
         return;
       }
 
-      // 配属校舎はチェック済みにする（並び順はデフォルトのまま）
-      var pref = preferredCampuses || [];
-
       var html = '';
-      // 全校舎チェックボックス
+      // 全校舎チェックボックス（表示中の校舎を一括ON/OFFするトグル）
       html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
             + '<input type="checkbox" id="lec-campus-all" onchange="onLecCampusAllChange()" checked style="width:16px;height:16px;cursor:pointer;"> 全校舎</label>';
 
       arr.forEach(function(c) {
-        var isChecked = pref.indexOf(c.code) !== -1 || pref.length === 0;
         html += '<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 12px;background:#f5f5f5;border-radius:20px;border:1px solid #ddd;">'
-              + '<input type="checkbox" class="lec-campus-cb" value="' + c.code + '" onchange="onLecCampusChange()" '
-              + (isChecked ? 'checked' : '') + ' style="width:16px;height:16px;cursor:pointer;"> '
+              + '<input type="checkbox" class="lec-campus-cb" value="' + c.code + '" onchange="onLecCampusChange()" checked style="width:16px;height:16px;cursor:pointer;"> '
               + c.name + '</label>';
       });
       container.innerHTML = html;
