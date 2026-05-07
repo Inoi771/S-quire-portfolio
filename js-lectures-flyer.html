@@ -130,7 +130,8 @@
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success && result.html) {
-            flyerAiCurrentHtml = sanitizeFlyerHtml_(result.html);
+            // sanitize後に正規化（保存済みHTMLにURLが埋め込まれていた場合もプレースホルダーに戻す）
+            flyerAiCurrentHtml = normalizeFlyerHtml_(sanitizeFlyerHtml_(result.html));
             flyerAiChatHistory = result.chatHistory || [];
             // プレビュー表示
             flyerDebug_('loadFlyerAiData', 'injectFlyerImage_呼び出し前 html長さ=' + (flyerAiCurrentHtml ? flyerAiCurrentHtml.length : 0));
@@ -208,7 +209,7 @@
             systemContext: systemContext,
             hasImage: hasImage,
             imageTags: hasImage ? (flyerImageTags[selFileId] || '') : '',
-            currentHtml: flyerAiCurrentHtml || '',
+            currentHtml: normalizeFlyerHtml_(flyerAiCurrentHtml || ''),
             seasonKey: seasonKey
           };
 
@@ -469,6 +470,21 @@
         console.error('sanitizeFlyerHtml_ エラー:', e);
         return html;  // パース失敗時は元のHTMLを返す
       }
+    }
+
+    /**
+     * AIに渡す前にHTMLを正規化する（Supabase署名付きURLやbase64をプレースホルダーに戻す）
+     * 埋め込まれたURLが残っていると、AIが修正モードでURLをコピーしてプレースホルダーが失われるため
+     * @param {string} html チラシHTML
+     * @return {string} 正規化済みHTML
+     */
+    function normalizeFlyerHtml_(html) {
+      if (!html || /\{\{IMAGE_PLACEHOLDER\}\}/.test(html)) return html;
+      // Supabase署名付きURL または base64データURLを持つimgのsrcをプレースホルダーに置換
+      return html.replace(
+        /(<img\b[^>]*?\bsrc=["'])(?:https?:\/\/[^"']*supabase[^"']*|data:image\/[^;'"]+(?:;base64,)?[^"']*)(['"][^>]*>)/gi,
+        '$1{{IMAGE_PLACEHOLDER}}$2'
+      );
     }
 
     /**
