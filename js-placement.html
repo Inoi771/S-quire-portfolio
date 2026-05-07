@@ -188,7 +188,8 @@ function buildCampusViewHtml(data) {
 
     var dayTeachers = {};
     PLACEMENT_DAYS.forEach(function(day) {
-      dayTeachers[day] = teachers.filter(function(t) { return t[day] === code; }).map(function(t) { return t.name; });
+      var supName = sup[day] || '';
+      dayTeachers[day] = teachers.filter(function(t) { return t[day] === code && t.name !== supName; }).map(function(t) { return t.name; });
     });
 
     html += '<div class="placement-campus-card">';
