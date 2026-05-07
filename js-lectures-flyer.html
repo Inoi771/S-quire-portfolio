@@ -178,8 +178,8 @@
       var campusCode = document.getElementById('flyerAiCampusSelect').value;
       if (!campusCode) { appAlert('校舎を選択してください。'); return; }
 
-      // 編集モード中なら手動変更を同期
-      if (flyerEditModeActive) { syncFlyerEdits_(); }
+      // 編集モード中なら自動でOFFにしてから実行（手動変更も同期される）
+      if (flyerEditModeActive) { disableFlyerEditMode_(); }
 
       // 送信中UI
       flyerAiSending = true;
@@ -533,8 +533,8 @@
       if (!campusCode) { appAlert('校舎を選択してください。'); return; }
       if (!flyerAiCurrentHtml) { appAlert('まだチラシが生成されていません。'); return; }
 
-      // 編集モード中なら手動変更を同期
-      if (flyerEditModeActive) { syncFlyerEdits_(); }
+      // 編集モード中なら自動でOFFにしてから実行（手動変更も同期される）
+      if (flyerEditModeActive) { disableFlyerEditMode_(); }
 
       var btn = document.getElementById('flyerAiSaveBtn');
       btn.textContent = '⏳';
@@ -1310,8 +1310,8 @@
     function generateFlyerAiPDF() {
       if (!flyerAiCurrentHtml) { appAlert('まだチラシが生成されていません。\nAIに指示を送ってチラシを作成してください。'); return; }
 
-      // 編集モード中なら手動変更を同期
-      if (flyerEditModeActive) { syncFlyerEdits_(); }
+      // 編集モード中なら自動でOFFにしてから実行（手動変更も同期される）
+      if (flyerEditModeActive) { disableFlyerEditMode_(); }
 
       var btn = document.getElementById('flyerAiPdfBtn');
       var origText = btn.textContent;
