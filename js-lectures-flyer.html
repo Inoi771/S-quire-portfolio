@@ -198,7 +198,9 @@
       collectFlyerAiContext_(campusCode, function(systemContext) {
         // 画像未選択なら季節に合った画像を自動選択してから続行
         autoSelectFlyerImage_(seasonKey, function() {
-          var hasImage = !!flyerImageBase64;
+          // 画像がメモリ未ロードでも、現在のHTMLにプレースホルダーがあればhasImage=trueにする
+          // （既存チラシを修正する際にAIが{{IMAGE_PLACEHOLDER}}を消さないようにするため）
+          var hasImage = !!flyerImageBase64 || /\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml || '');
           var selFileId = document.getElementById('flyer-image-select').value;
           var params = {
             userMessage: message,
@@ -766,6 +768,10 @@
         if (flyerAiCurrentHtml) {
           var previewInner = document.getElementById('flyerAiPreviewInner');
           if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+          // プレースホルダーが無い場合（画像なしで生成されたチラシ）はトースト案内
+          if (!/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
+            showToast('AIに「この画像を使って」と指示すると画像がチラシに反映されます', 'info');
+          }
         }
         return;
       }
@@ -780,6 +786,10 @@
             if (flyerAiCurrentHtml) {
               var previewInner = document.getElementById('flyerAiPreviewInner');
               if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+              // プレースホルダーが無い場合（画像なしで生成されたチラシ）はトースト案内
+              if (!/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
+                showToast('AIに「この画像を使って」と指示すると画像がチラシに反映されます', 'info');
+              }
             }
           }
         })
