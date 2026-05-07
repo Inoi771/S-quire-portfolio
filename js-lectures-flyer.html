@@ -1496,6 +1496,157 @@
       pdf.line(xc, y1 + gap, xc, y1 + gap + len);
     }
 
+    // ========== 他の校舎へコピー ==========
+
+    /**
+     * 他の校舎へコピー モーダルを開く
+     */
+    function showFlyerCopyModal() {
+      if (!flyerAiCurrentHtml) {
+        appAlert('先にチラシを作成・保存してください。');
+        return;
+      }
+      var campusCode = document.getElementById('flyerAiCampusSelect').value;
+      if (!campusCode) {
+        appAlert('コピー元の校舎を選択してください。');
+        return;
+      }
+
+      // チェックボックスリスト構築
+      var listEl = document.getElementById('flyerCopyModalCampusList');
+      if (listEl && campusData) {
+        var html = '';
+        Object.keys(campusData).forEach(function(code) {
+          if (code === campusCode) return; // コピー元は除外
+          html += '<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer;min-height:44px;">'
+            + '<input type="checkbox" class="flyer-copy-campus-cb" value="' + code + '" style="width:18px;height:18px;flex-shrink:0;">'
+            + '<span style="font-size:14px;">' + campusData[code] + '</span>'
+            + '</label>';
+        });
+        listEl.innerHTML = html || '<p style="color:#999;font-size:13px;text-align:center;padding:12px;">他の校舎がありません</p>';
+      }
+
+      // 進捗表示リセット
+      var prog = document.getElementById('flyerCopyProgress');
+      if (prog) prog.style.display = 'none';
+      var btn = document.getElementById('flyerCopyStartBtn');
+      if (btn) { btn.disabled = false; btn.textContent = 'コピー開始'; }
+
+      document.getElementById('flyerCopyOverlay').style.display = 'block';
+      document.getElementById('flyerCopyModal').style.display = 'flex';
+    }
+
+    /**
+     * 他の校舎へコピー モーダルを閉じる
+     */
+    function closeFlyerCopyModal() {
+      var overlay = document.getElementById('flyerCopyOverlay');
+      var modal   = document.getElementById('flyerCopyModal');
+      if (overlay) overlay.style.display = 'none';
+      if (modal)   modal.style.display   = 'none';
+    }
+
+    /**
+     * 選択した校舎にチラシをコピーする（AI が各校舎データに書き換え）
+     */
+    function executeFlyerCopy_() {
+      var checked = document.querySelectorAll('.flyer-copy-campus-cb:checked');
+      if (!checked || !checked.length) {
+        appAlert('コピー先の校舎を選択してください。');
+        return;
+      }
+
+      var sourceCampusCode = document.getElementById('flyerAiCampusSelect').value;
+      var targetCodes = [];
+      for (var ci = 0; ci < checked.length; ci++) { targetCodes.push(checked[ci].value); }
+
+      var startBtn = document.getElementById('flyerCopyStartBtn');
+      if (startBtn) { startBtn.disabled = true; startBtn.textContent = '処理中...'; }
+
+      var prog = document.getElementById('flyerCopyProgress');
+      if (prog) {
+        prog.style.display = 'block';
+        prog.textContent = '準備中...';
+      }
+
+      var sourceHtml = normalizeFlyerHtml_(flyerAiCurrentHtml || '');
+      var hasImage   = !!flyerImageBase64 || /\{\{IMAGE_PLACEHOLDER\}\}/.test(sourceHtml);
+      var typeId     = currentLectureId ? currentLectureId.split('-').slice(1).join('-') : '';
+      var seasonKey  = TYPE_TEMPLATE_MAP[typeId] || 'general';
+      var selFileId  = document.getElementById('flyer-image-select').value;
+
+      var completed = 0;
+      var failed    = 0;
+
+      function processNext(index) {
+        if (index >= targetCodes.length) {
+          // 全完了
+          if (prog) prog.style.display = 'none';
+          closeFlyerCopyModal();
+          var msg = completed + '校舎のコピーが完了しました。校舎を切り替えて確認してください。';
+          if (failed > 0) msg += '\n（' + failed + '校舎は処理に失敗しました）';
+          showToast(msg, completed > 0 ? 'success' : 'error');
+          return;
+        }
+
+        var targetCode = targetCodes[index];
+        var targetName = (campusData && campusData[targetCode]) ? campusData[targetCode] : targetCode;
+
+        if (prog) {
+          prog.textContent = (index + 1) + ' / ' + targetCodes.length + '  「' + targetName + '」を処理中...';
+        }
+
+        collectFlyerAiContext_(targetCode, function(systemContext) {
+          var copyMessage = 'このデザインを完全に維持したまま、「' + targetName + '」校舎用に更新してください。'
+            + 'デザイン・レイアウト・配色・フォントは一切変更しないでください。'
+            + '変更するのは校舎名・日程・料金のみです。'
+            + '日程や料金のデータが提供されていない場合は、元のデータのプレースホルダー（「○○」等）に置き換えてください。';
+
+          var params = {
+            userMessage:   copyMessage,
+            chatHistory:   [],
+            systemContext: systemContext,
+            hasImage:      hasImage,
+            imageTags:     hasImage ? (flyerImageTags[selFileId] || '') : '',
+            currentHtml:   sourceHtml,
+            seasonKey:     seasonKey
+          };
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result && result.success && result.html) {
+                var savedHtml = sanitizeFlyerHtml_(result.html);
+                google.script.run
+                  .withSuccessHandler(function(saveResult) {
+                    if (saveResult && saveResult.success) {
+                      completed++;
+                    } else {
+                      failed++;
+                    }
+                    processNext(index + 1);
+                  })
+                  .withFailureHandler(function() {
+                    failed++;
+                    processNext(index + 1);
+                  })
+                  .saveFlyerAiData(currentLectureId, targetCode, savedHtml, '[]');
+              } else {
+                failed++;
+                processNext(index + 1);
+              }
+            })
+            .withFailureHandler(function(err) {
+              console.error('チラシコピー失敗 (' + targetName + '):', err);
+              failed++;
+              processNext(index + 1);
+            })
+            .generateFlyerWithAI(params);
+        });
+      }
+
+      processNext(0);
+    }
+
     // ========== Enterキーで送信 ==========
     document.addEventListener('DOMContentLoaded', function() {
       var chatInput = document.getElementById('flyerAiChatInput');
