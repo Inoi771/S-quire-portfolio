@@ -733,7 +733,18 @@
         var file = files[idx];
         var reader = new FileReader();
         reader.onload = function(e) {
-          var base64 = e.target.result.split(',')[1];
+          var dataUrl = e.target.result;
+          var base64 = dataUrl.split(',')[1];
+          // アップロード完了を待たずに即座にプレビューと flyerImageBase64 を更新する。
+          // これにより、GAS 処理中（15〜30秒）にチャット送信しても
+          // autoSelectFlyerImage_ が別の画像に上書きするのを防ぐ。
+          flyerImageBase64 = dataUrl;
+          var localPreview = document.getElementById('flyer-image-preview');
+          if (localPreview) { localPreview.src = dataUrl; localPreview.style.display = 'block'; }
+          if (flyerAiCurrentHtml) {
+            var previewInner = document.getElementById('flyerAiPreviewInner');
+            if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+          }
           google.script.run
             .withSuccessHandler(function(result) {
               if (result.success) {
