@@ -198,13 +198,13 @@ function buildCampusViewHtml(data) {
     if (campus.principal) html += '<span style="font-size:12px;margin-left:8px;opacity:.9;">責任者: ' + escHtml(campus.principal) + '</span>';
     if (campus.tel) {
       if (campus.tel === campus.fax) {
-        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL&amp;FAX: ' + escHtml(campus.tel) + '</span>';
+        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL&amp;FAX: <a href="tel:' + escHtml(campus.tel) + '" style="color:inherit;">' + escHtml(campus.tel) + '</a></span>';
       } else {
-        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL: ' + escHtml(campus.tel) + '</span>';
-        if (campus.fax) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">FAX: ' + escHtml(campus.fax) + '</span>';
+        html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL: <a href="tel:' + escHtml(campus.tel) + '" style="color:inherit;">' + escHtml(campus.tel) + '</a></span>';
+        if (campus.fax) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">FAX: <a href="tel:' + escHtml(campus.fax) + '" style="color:inherit;">' + escHtml(campus.fax) + '</a></span>';
       }
     }
-    if (campus.mobile) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">携帯: ' + escHtml(campus.mobile) + '</span>';
+    if (campus.mobile) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">携帯: <a href="tel:' + escHtml(campus.mobile) + '" style="color:inherit;">' + escHtml(campus.mobile) + '</a></span>';
     html += '</div>';
 
     html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
