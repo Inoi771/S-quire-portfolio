@@ -762,6 +762,11 @@
       if (flyerImageCache[fileId]) {
         flyerImageBase64 = flyerImageCache[fileId];
         if (preview) { preview.src = flyerImageBase64; preview.style.display = 'block'; }
+        // 生成済みチラシがある場合はメインプレビューも更新
+        if (flyerAiCurrentHtml) {
+          var previewInner = document.getElementById('flyerAiPreviewInner');
+          if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+        }
         return;
       }
       if (preview) { preview.style.display = 'none'; }
@@ -771,6 +776,11 @@
             flyerImageCache[fileId] = result.url;
             flyerImageBase64 = result.url;
             if (preview) { preview.src = result.url; preview.style.display = 'block'; }
+            // 生成済みチラシがある場合はメインプレビューも更新
+            if (flyerAiCurrentHtml) {
+              var previewInner = document.getElementById('flyerAiPreviewInner');
+              if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+            }
           }
         })
         .withFailureHandler(function(err) { console.error('画像取得失敗:', err); })
