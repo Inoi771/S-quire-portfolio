@@ -35,6 +35,7 @@ import {
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
   deleteCustomScheduleEntry,
+  updateCustomScheduleEntry,
   getAdminScheduleEntries,
   getScheduleOverridesBundle
 } from './functions/schedule-overrides.js';
@@ -179,6 +180,7 @@ const HANDLERS = {
   deleteLectureDeadlineOverride,
   addCustomScheduleEntry,
   deleteCustomScheduleEntry,
+  updateCustomScheduleEntry,
   getAdminScheduleEntries,
   getScheduleOverridesBundle,
   getCampusConfigForWeb,

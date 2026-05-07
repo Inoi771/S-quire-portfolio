@@ -1411,8 +1411,15 @@
         container.innerHTML = '<p style="color:#999; font-size:13px;">追加済みのカスタムイベントはありません</p>';
         return;
       }
-      // 日付順（古い順）にソート
-      entries.sort(function(a, b) { return a.schedule < b.schedule ? -1 : 1; });
+      // 日付順（古い順）にソート — "2026年4月1日" を数値に変換して比較
+      entries.sort(function(a, b) {
+        var parseDate = function(s) {
+          var m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+          if (!m) return 0;
+          return parseInt(m[1]) * 10000 + parseInt(m[2]) * 100 + parseInt(m[3]);
+        };
+        return parseDate(a.schedule) - parseDate(b.schedule);
+      });
       var typeLabel = function(school) {
         if (school === '塾' || school.includes('塾')) return '🏠 塾';
         if (school.includes('中学')) return '🏫 中学';
@@ -1434,7 +1441,13 @@
           '<td style="padding:8px; white-space:nowrap;">' + escapeHtml_(e.schedule) + '</td>' +
           '<td style="padding:8px;">' + escapeHtml_(e.eventType) + '</td>' +
           '<td style="padding:8px; color:#666;">' + escapeHtml_(e.details || '—') + '</td>' +
-          '<td style="padding:8px; white-space:nowrap;">' +
+          '<td style="padding:8px; white-space:nowrap; display:flex; gap:6px;">' +
+            '<button onclick="openEditCustomEntry(\'' + escapeHtml_(e.docId.replace(/'/g, '')) + '\',' +
+              '\'' + escapeHtml_(e.school.replace(/'/g, '&#39;')) + '\',' +
+              '\'' + escapeHtml_(e.eventType.replace(/'/g, '&#39;')) + '\',' +
+              '\'' + escapeHtml_(e.schedule.replace(/'/g, '')) + '\',' +
+              '\'' + escapeHtml_((e.details || '').replace(/'/g, '&#39;')) + '\')" ' +
+            'style="padding:4px 10px; background:#3498db; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; min-height:30px;">編集</button>' +
             '<button onclick="deleteCustomEntry(' + e.fiscalYear + ',\'' + escapeHtml_(e.timestamp.replace(/'/g, '')) + '\')" ' +
             'style="padding:4px 10px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; min-height:30px;">削除</button>' +
           '</td>' +
@@ -1470,6 +1483,110 @@
           })
           .deleteCustomScheduleEntry(fiscalYear, timestamp);
       });
+    }
+
+    /**
+     * 管理タブ：カスタムイベント編集モーダルを開く
+     * @param {string} docId Firestore ドキュメントID
+     * @param {string} school 学校名
+     * @param {string} eventType イベント名
+     * @param {string} schedule 日付文字列（例: "2026年4月1日"）
+     * @param {string} details 詳細
+     */
+    function openEditCustomEntry(docId, school, eventType, schedule, details) {
+      document.getElementById('customEventEditDocId').value = docId;
+      document.getElementById('customEventEditName').value = eventType;
+      document.getElementById('customEventEditDetails').value = details || '';
+      document.getElementById('customEventEditMessage').textContent = '';
+
+      // 種別を判定してラジオを設定
+      var type = 'juku';
+      if (school !== '塾') {
+        type = school.includes('中学') ? 'junior' : 'high';
+      }
+      var radios = document.querySelectorAll('input[name="customEventEditType"]');
+      radios.forEach(function(r) { r.checked = (r.value === type); });
+      document.getElementById('customEventEditSchoolName').value = (school === '塾') ? '' : school;
+      document.getElementById('customEventEditSchoolRow').style.display = (type === 'juku') ? 'none' : 'block';
+
+      // 日付を YYYY-MM-DD 形式に変換
+      var m = schedule.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+      if (m) {
+        var yy = m[1], mm = ('0' + m[2]).slice(-2), dd = ('0' + m[3]).slice(-2);
+        document.getElementById('customEventEditDate').value = yy + '-' + mm + '-' + dd;
+      } else {
+        document.getElementById('customEventEditDate').value = '';
+      }
+
+      document.getElementById('customEventEditOverlay').style.display = 'block';
+      document.getElementById('customEventEditModal').style.display = 'block';
+    }
+
+    /**
+     * 管理タブ：カスタムイベント編集モーダルを閉じる
+     */
+    function closeCustomEventEditModal() {
+      document.getElementById('customEventEditOverlay').style.display = 'none';
+      document.getElementById('customEventEditModal').style.display = 'none';
+    }
+
+    /**
+     * 管理タブ：カスタムイベント編集モーダルの種別ラジオ変更ハンドラ
+     */
+    function onCustomEventEditTypeChange() {
+      var type = document.querySelector('input[name="customEventEditType"]:checked').value;
+      document.getElementById('customEventEditSchoolRow').style.display = (type === 'juku') ? 'none' : 'block';
+    }
+
+    /**
+     * 管理タブ：カスタムイベントの編集内容を保存する
+     */
+    function saveCustomEventEdit() {
+      var docId = document.getElementById('customEventEditDocId').value;
+      var type = document.querySelector('input[name="customEventEditType"]:checked').value;
+      var schoolName;
+      if (type === 'juku') {
+        schoolName = '塾';
+      } else {
+        schoolName = document.getElementById('customEventEditSchoolName').value.trim();
+        if (!schoolName) { appAlert('学校名を入力してください'); return; }
+      }
+      var eventName = document.getElementById('customEventEditName').value.trim();
+      var dateVal = document.getElementById('customEventEditDate').value;
+      var details = document.getElementById('customEventEditDetails').value.trim();
+      if (!eventName) { appAlert('イベント名を入力してください'); return; }
+      if (!dateVal)   { appAlert('日付を選択してください'); return; }
+
+      var parts = dateVal.split('-');
+      var dateYear = parseInt(parts[0]);
+      var dateMonth = parseInt(parts[1]);
+      var dateDay = parseInt(parts[2]);
+
+      var btn = document.getElementById('customEventEditSaveBtn');
+      btn.disabled = true;
+      btn.textContent = '保存中...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false;
+          btn.textContent = '💾 保存';
+          if (result.success) {
+            closeCustomEventEditModal();
+            loadCustomScheduleEntries();
+            renderCalendar();
+            showMessage('adminMessage', '✅ 更新しました', 'success');
+          } else {
+            document.getElementById('customEventEditMessage').textContent = '❌ ' + result.error;
+            document.getElementById('customEventEditMessage').style.color = 'red';
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = '💾 保存';
+          document.getElementById('customEventEditMessage').textContent = '❌ 通信エラー: ' + (err.message || err);
+          document.getElementById('customEventEditMessage').style.color = 'red';
+        })
+        .updateCustomScheduleEntry(docId, schoolName, eventName, dateYear, dateMonth, dateDay, details);
     }
 
   // ===== 【9】スケジュール更新（Admin） =====
