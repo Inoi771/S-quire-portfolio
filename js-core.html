@@ -43,6 +43,7 @@
   var adminSubTabLoaded_ = {};      // 管理サブタブの初回読み込みフラグ
   var tabDataPreloaded_ = false;    // preloadTabData() の二重呼び出し防止
   var scheduleLoadStarted_ = false; // getScheduleData() の二重呼び出し防止
+  var bundleLoadStarted_ = false;   // getScheduleOverridesBundle() の二重呼び出し防止
 
   // 高速起動: 2条件（GASデータ＋アニメーション）が揃ったらスプラッシュを閉じる
   // スケジュールは起動をブロックしない（バックグラウンドで読み込み継続）
@@ -643,6 +644,34 @@
   });
 
   /**
+   * オーバーライド系データ7種（基礎学力テスト・休校日・講習期間・締切等）を一括取得する。
+   * 起動の早い段階で発火させ、最初の renderCalendar() 時点で講習日程締切・理科社会日程締切が
+   * 出るようにするため、startAppAfterAuth_ と initializeApp の両方から呼ばれる。
+   * bundleLoadStarted_ フラグで二重呼び出しを防止。
+   */
+  function loadScheduleOverridesBundle_() {
+    if (bundleLoadStarted_) return;
+    bundleLoadStarted_ = true;
+    google.script.run
+      .withSuccessHandler(function(bundle) {
+        basicTestDateOverrides = bundle.basicTestDates || {};
+        basicTestDetailsOverrides = bundle.basicTestDetails || {};
+        jukuEventOverrides = bundle.jukuEvents || {};
+        closedDayOverrides = bundle.closedDays || { add: [], del: [] };
+        pubHighExamDateOverrides = bundle.pubHighExamDates || {};
+        scheduleLecturePeriods = Array.isArray(bundle.lecturePeriods) ? bundle.lecturePeriods : [];
+        lectureDeadlineOverrides = bundle.lectureDeadlines || {};
+        overridesLoadedCount = 7;
+        renderCalendar();
+      })
+      .withFailureHandler(function() {
+        overridesLoadedCount = 7;
+        renderCalendar();
+      })
+      .getScheduleOverridesBundle();
+  }
+
+  /**
    * Firebase Auth でログイン確認後に実行するアプリ起動処理
    */
   function startAppAfterAuth_() {
@@ -675,6 +704,11 @@
         // スケジュール取得失敗 — カレンダーは空表示のまま
       });
     scheduleLoadStarted_ = true;
+
+    // オーバーライド系データ（講習期間・休校日・基礎学力テスト等）を早期に並列取得
+    // initializeApp() は applyStartupData_ 後に呼ばれ ~4.8 秒待つため、ここで先行発火させて
+    // 最初の renderCalendar() 時点で講習日程締切・理科社会日程締切が表示されるようにする
+    loadScheduleOverridesBundle_();
 
     // 起動データを取得
     google.script.run
@@ -847,24 +881,8 @@
         }
       }
 
-      // オーバーライド系データ7種を一括取得（HTTP リクエスト 7→1 に削減）
-      google.script.run
-        .withSuccessHandler(function(bundle) {
-          basicTestDateOverrides = bundle.basicTestDates || {};
-          basicTestDetailsOverrides = bundle.basicTestDetails || {};
-          jukuEventOverrides = bundle.jukuEvents || {};
-          closedDayOverrides = bundle.closedDays || { add: [], del: [] };
-          pubHighExamDateOverrides = bundle.pubHighExamDates || {};
-          scheduleLecturePeriods = Array.isArray(bundle.lecturePeriods) ? bundle.lecturePeriods : [];
-          lectureDeadlineOverrides = bundle.lectureDeadlines || {};
-          overridesLoadedCount = 7;
-          renderCalendar();
-        })
-        .withFailureHandler(function() {
-          overridesLoadedCount = 7;
-          renderCalendar();
-        })
-        .getScheduleOverridesBundle();
+      // オーバーライド系データ7種を一括取得（startAppAfterAuth_ で先行発火していなければここで取得）
+      loadScheduleOverridesBundle_();
 
       // 祝日データをスクリプトプロパティのキャッシュから取得（時間トリガーで毎日更新済み）
       google.script.run
