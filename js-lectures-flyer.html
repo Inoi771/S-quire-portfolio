@@ -400,6 +400,10 @@
       if (previewInner) {
         previewInner.innerHTML = html;
         flyerDebug_('onFlyerAiResponse_', 'innerHTML設定完了 長さ=' + html.length);
+        // AIがプレースホルダーを返さなかった場合のフォールバック：DOMを直接更新
+        if (flyerImageBase64 && !/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
+          applyImageToPreviewDom_();
+        }
       } else {
         flyerDebug_('onFlyerAiResponse_', '⚠ flyerAiPreviewInner が見つかりません');
       }
@@ -473,18 +477,48 @@
     }
 
     /**
-     * AIに渡す前にHTMLを正規化する（Supabase署名付きURLやbase64をプレースホルダーに戻す）
+     * AIに渡す前にHTMLを正規化する（画像URLをプレースホルダーに戻す）
      * 埋め込まれたURLが残っていると、AIが修正モードでURLをコピーしてプレースホルダーが失われるため
      * @param {string} html チラシHTML
      * @return {string} 正規化済みHTML
      */
     function normalizeFlyerHtml_(html) {
       if (!html || /\{\{IMAGE_PLACEHOLDER\}\}/.test(html)) return html;
-      // Supabase署名付きURL または base64データURLを持つimgのsrcをプレースホルダーに置換
+      // 透明GIF以外のすべてのimgのsrcをプレースホルダーに置換
+      // （Supabase署名付きURL・base64・相対パス・AIが生成した仮のsrc等を含む）
+      var TRANSPARENT_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
       return html.replace(
-        /(<img\b[^>]*?\bsrc=["'])(?:https?:\/\/[^"']*supabase[^"']*|data:image\/[^;'"]+(?:;base64,)?[^"']*)(['"][^>]*>)/gi,
-        '$1{{IMAGE_PLACEHOLDER}}$2'
+        /(<img\b[^>]*?\bsrc=["'])(?!data:image\/gif;base64,R0lGODlhAQABAIAAAP)([^"']*)(['"][^>]*>)/gi,
+        '$1{{IMAGE_PLACEHOLDER}}$3'
       );
+    }
+
+    /**
+     * プレビューのimgタグを選択中の画像で直接更新する（AIなしで画像差し替え）
+     * flyerAiCurrentHtmlのプレースホルダーも同期する
+     */
+    function applyImageToPreviewDom_() {
+      if (!flyerImageBase64) return;
+      var previewInner = document.getElementById('flyerAiPreviewInner');
+      if (!previewInner) return;
+      var imgs = previewInner.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        var src = imgs[i].getAttribute('src') || '';
+        // 透明GIF・無効src・相対パスなど（有効な外部URLやdata:でない）を置換
+        var isTransparent = src === 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+        var isInvalid = isTransparent || (!src.startsWith('http') && !src.startsWith('data:'));
+        if (isInvalid) {
+          imgs[i].src = flyerImageBase64;
+          // flyerAiCurrentHtmlも更新してプレースホルダーを維持
+          if (flyerAiCurrentHtml) {
+            flyerAiCurrentHtml = flyerAiCurrentHtml.replace(
+              /(<img\b[^>]*?\bsrc=["'])(?!data:image\/gif;base64,R0lGODlhAQABAIAAAP)[^"']*(['"][^>]*>)/gi,
+              '$1{{IMAGE_PLACEHOLDER}}$2'
+            );
+          }
+          break;
+        }
+      }
     }
 
     /**
@@ -780,13 +814,15 @@
       if (flyerImageCache[fileId]) {
         flyerImageBase64 = flyerImageCache[fileId];
         if (preview) { preview.src = flyerImageBase64; preview.style.display = 'block'; }
-        // 生成済みチラシがある場合はメインプレビューも更新
         if (flyerAiCurrentHtml) {
           var previewInner = document.getElementById('flyerAiPreviewInner');
-          if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
-          // プレースホルダーが無い場合（画像なしで生成されたチラシ）はトースト案内
-          if (!/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
-            showToast('AIに「この画像を使って」と指示すると画像がチラシに反映されます', 'info');
+          if (/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
+            // プレースホルダーあり → 通常の置換
+            if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+          } else {
+            // プレースホルダーなし → DOMを直接更新（AIなしで画像差し替え）
+            if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+            applyImageToPreviewDom_();
           }
         }
         return;
@@ -798,13 +834,13 @@
             flyerImageCache[fileId] = result.url;
             flyerImageBase64 = result.url;
             if (preview) { preview.src = result.url; preview.style.display = 'block'; }
-            // 生成済みチラシがある場合はメインプレビューも更新
             if (flyerAiCurrentHtml) {
               var previewInner = document.getElementById('flyerAiPreviewInner');
-              if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
-              // プレースホルダーが無い場合（画像なしで生成されたチラシ）はトースト案内
-              if (!/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
-                showToast('AIに「この画像を使って」と指示すると画像がチラシに反映されます', 'info');
+              if (/\{\{IMAGE_PLACEHOLDER\}\}/.test(flyerAiCurrentHtml)) {
+                if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+              } else {
+                if (previewInner) previewInner.innerHTML = injectFlyerImage_(flyerAiCurrentHtml);
+                applyImageToPreviewDom_();
               }
             }
           }
