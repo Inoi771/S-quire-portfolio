@@ -195,6 +195,7 @@ function buildCampusViewHtml(data) {
     html += '<div class="placement-campus-card">';
     html += '<div class="placement-campus-header">';
     html += '<span style="font-size:15px;font-weight:bold;">' + escHtml(campus.name || code) + '</span>';
+    if (campus.principal) html += '<span style="font-size:12px;margin-left:8px;opacity:.9;">責任者: ' + escHtml(campus.principal) + '</span>';
     if (campus.tel) {
       if (campus.tel === campus.fax) {
         html += '<span style="font-size:12px;margin-left:10px;opacity:.9;">TEL&amp;FAX: ' + escHtml(campus.tel) + '</span>';
@@ -203,6 +204,7 @@ function buildCampusViewHtml(data) {
         if (campus.fax) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">FAX: ' + escHtml(campus.fax) + '</span>';
       }
     }
+    if (campus.mobile) html += '<span style="font-size:12px;margin-left:6px;opacity:.9;">携帯: ' + escHtml(campus.mobile) + '</span>';
     html += '</div>';
 
     html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
