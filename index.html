@@ -1338,11 +1338,35 @@
                 <span id="flyerEditHint" style="font-size: 11px; color: #999; display: none;">テキストをクリックして直接編集できます</span>
               </div>
               <!-- フローティングツールバー -->
-              <div id="flyerEditToolbar" style="display:none; position:absolute; z-index:100; background:white; border:1px solid #ddd; border-radius:8px; padding:4px 8px; box-shadow:0 2px 12px rgba(0,0,0,0.15); gap:4px; align-items:center;">
-                <button onclick="flyerEditFontSize_(-2)" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:12px;font-weight:bold;">A-</button>
-                <button onclick="flyerEditFontSize_(2)" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:14px;font-weight:bold;">A+</button>
-                <button onclick="flyerEditBold_()" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-weight:bold;">B</button>
-                <input type="color" id="flyerEditColorPicker" onchange="flyerEditColor_(this.value)" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;" value="#333333">
+              <div id="flyerEditToolbar" style="display:none; position:absolute; z-index:100; background:white; border:1px solid #ddd; border-radius:8px; padding:5px 8px; box-shadow:0 2px 12px rgba(0,0,0,0.18); gap:4px; align-items:center; flex-wrap:wrap; max-width:380px;">
+                <!-- 文字サイズ・太字 -->
+                <button onclick="flyerEditFontSize_(-2)" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:12px;font-weight:bold;" title="文字を小さく">A-</button>
+                <button onclick="flyerEditFontSize_(2)" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:14px;font-weight:bold;" title="文字を大きく">A+</button>
+                <button onclick="flyerEditBold_()" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-weight:bold;" title="太字">B</button>
+                <div style="width:1px;height:22px;background:#e0e0e0;"></div>
+                <!-- 文字色 -->
+                <label title="文字色" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1;">
+                  <span style="font-size:9px;color:#888;">文字色</span>
+                  <input type="color" id="flyerEditColorPicker" onchange="flyerEditColor_(this.value)" style="width:28px;height:20px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:1px;" value="#333333">
+                </label>
+                <!-- 背景色 -->
+                <label title="クリックしたセクションの背景色" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1;">
+                  <span style="font-size:9px;color:#888;">背景色</span>
+                  <input type="color" id="flyerEditBgColorPicker" onchange="flyerEditBgColor_(this.value)" style="width:28px;height:20px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:1px;" value="#ffffff">
+                </label>
+                <div style="width:1px;height:22px;background:#e0e0e0;"></div>
+                <!-- フォント -->
+                <select id="flyerEditFontSelect" onchange="flyerEditFont_(this.value)" title="フォントを変更"
+                  style="height:28px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:0 4px;cursor:pointer;">
+                  <option value="">フォント</option>
+                  <option value="'Noto Serif JP',serif">明朝体</option>
+                  <option value="'Noto Sans JP',sans-serif">ゴシック体</option>
+                </select>
+                <div style="width:1px;height:22px;background:#e0e0e0;"></div>
+                <!-- テキスト揃え -->
+                <button onclick="flyerEditAlign_('left')" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:11px;font-weight:bold;" title="左揃え">左</button>
+                <button onclick="flyerEditAlign_('center')" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:11px;font-weight:bold;" title="中央揃え">中</button>
+                <button onclick="flyerEditAlign_('right')" style="width:28px;height:28px;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;font-size:11px;font-weight:bold;" title="右揃え">右</button>
               </div>
               <div id="flyerAiPreviewContainer"
                 style="width: 100%; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: white; position: relative;">

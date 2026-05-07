@@ -916,6 +916,9 @@
         }
       });
 
+      // セクションドラッグを初期化
+      setupFlyerSectionDrag_(inner);
+
       // UIを更新
       var btn = document.getElementById('flyerEditToggleBtn');
       if (btn) btn.classList.add('active');
@@ -943,6 +946,9 @@
       // ツールバー非表示
       hideFlyerEditToolbar_();
       flyerEditTarget_ = null;
+
+      // セクションドラッグを解除
+      teardownFlyerSectionDrag_(inner);
 
       // 変更をHTMLに同期
       syncFlyerEdits_();
@@ -1050,17 +1056,64 @@
     }
 
     /**
-     * 編集内容をflyerAiCurrentHtmlに同期する（contenteditable属性をstrip）
+     * クリック中のテキストが属するセクション（mainDivの直下子要素）の背景色を変更する
+     * @param {string} color 16進数カラー
+     */
+    function flyerEditBgColor_(color) {
+      if (!flyerEditTarget_) return;
+      var inner = document.getElementById('flyerAiPreviewInner');
+      var mainDiv = inner && inner.children[0];
+      // テキスト要素からmainDivの直下まで遡る
+      var section = flyerEditTarget_;
+      while (section && section.parentElement !== mainDiv) {
+        section = section.parentElement;
+      }
+      if (section && section.parentElement === mainDiv) {
+        section.style.backgroundColor = color;
+      } else {
+        flyerEditTarget_.style.backgroundColor = color;
+      }
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * フォントファミリーを変更する
+     * @param {string} fontValue フォント文字列（CSSのfont-family値）
+     */
+    function flyerEditFont_(fontValue) {
+      if (!flyerEditTarget_ || !fontValue) return;
+      flyerEditTarget_.style.fontFamily = fontValue;
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * テキスト揃えを変更する
+     * @param {string} align 'left' | 'center' | 'right'
+     */
+    function flyerEditAlign_(align) {
+      if (!flyerEditTarget_) return;
+      flyerEditTarget_.style.textAlign = align;
+      flyerEditTarget_.focus();
+    }
+
+    /**
+     * 編集内容をflyerAiCurrentHtmlに同期する
+     * ドラッグハンドルなど編集UI要素をクローンから除去してから保存する
      */
     function syncFlyerEdits_() {
       var inner = document.getElementById('flyerAiPreviewInner');
       if (!inner) return;
 
-      // DOM → HTML文字列を取得してcontenteditable関連属性を除去
-      var html = inner.innerHTML;
+      // クローンを使って編集UI要素を除去（ライブDOMは変更しない）
+      var clone = inner.cloneNode(true);
+      var handles = clone.querySelectorAll('.flyer-drag-handle-btn');
+      for (var i = handles.length - 1; i >= 0; i--) {
+        handles[i].parentNode.removeChild(handles[i]);
+      }
+
+      var html = clone.innerHTML;
       html = html.replace(/\s*contenteditable="true"/g, '');
       html = html.replace(/\s*class="flyer-editable"/g, '');
-      // 空のclass属性を削除
       html = html.replace(/\s*class=""/g, '');
 
       // 画像を元のプレースホルダーに戻す
@@ -1078,6 +1131,163 @@
      */
     function escapeRegExp_(str) {
       return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ========== セクション ドラッグ&ドロップ ==========
+
+    /** ドラッグ状態 */
+    var flyerDragState_ = {
+      active: false,
+      dragEl: null,
+      placeholder: null,
+      mainDiv: null
+    };
+
+    /**
+     * 編集モード中、チラシの各セクション（mainDivの直下子要素）にドラッグハンドルを追加する
+     * @param {Element} inner flyerAiPreviewInner要素
+     */
+    function setupFlyerSectionDrag_(inner) {
+      var mainDiv = inner && inner.children[0];
+      if (!mainDiv) return;
+      flyerDragState_.mainDiv = mainDiv;
+
+      Array.from(mainDiv.children).forEach(function(sec) {
+        if (sec.tagName !== 'DIV' && sec.tagName !== 'SECTION') return;
+        // ハンドルを absolute 配置するため position:relative が必要
+        if (!sec.style.position || sec.style.position === 'static') {
+          sec.style.position = 'relative';
+        }
+        var handle = document.createElement('div');
+        handle.className = 'flyer-drag-handle-btn';
+        handle.textContent = '⠿ 移動';
+        handle.style.cssText = [
+          'position:absolute', 'top:4px', 'right:4px', 'z-index:500',
+          'background:rgba(79,172,254,0.88)', 'color:white',
+          'font-size:11px', 'font-weight:600', 'padding:3px 8px',
+          'border-radius:5px', 'cursor:grab', 'user-select:none',
+          'opacity:0', 'transition:opacity 0.15s', 'line-height:1.4'
+        ].join(';');
+        sec.appendChild(handle);
+
+        sec.addEventListener('mouseenter', flyerSecEnter_);
+        sec.addEventListener('mouseleave', flyerSecLeave_);
+        handle.addEventListener('mousedown', flyerDragStart_);
+      });
+    }
+
+    /**
+     * 編集モード解除時にドラッグハンドルと関連イベントを削除する
+     * @param {Element} inner flyerAiPreviewInner要素
+     */
+    function teardownFlyerSectionDrag_(inner) {
+      var mainDiv = flyerDragState_.mainDiv;
+      if (!mainDiv) return;
+      Array.from(mainDiv.querySelectorAll('.flyer-drag-handle-btn')).forEach(function(h) {
+        var sec = h.parentElement;
+        if (sec) {
+          sec.removeEventListener('mouseenter', flyerSecEnter_);
+          sec.removeEventListener('mouseleave', flyerSecLeave_);
+        }
+        h.removeEventListener('mousedown', flyerDragStart_);
+        h.parentNode.removeChild(h);
+      });
+      flyerDragState_.mainDiv = null;
+    }
+
+    function flyerSecEnter_(e) {
+      var handle = e.currentTarget.querySelector('.flyer-drag-handle-btn');
+      if (handle) handle.style.opacity = '1';
+    }
+
+    function flyerSecLeave_(e) {
+      if (flyerDragState_.active) return;
+      var handle = e.currentTarget.querySelector('.flyer-drag-handle-btn');
+      if (handle) handle.style.opacity = '0';
+    }
+
+    function flyerDragStart_(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var handle = e.currentTarget;
+      var section = handle.parentElement;
+      if (!section) return;
+
+      flyerDragState_.active = true;
+      flyerDragState_.dragEl = section;
+
+      // ドロップ位置インジケーター
+      var ph = document.createElement('div');
+      ph.style.cssText = 'height:3px;background:#4facfe;border-radius:2px;margin:2px 4px;pointer-events:none;';
+      flyerDragState_.placeholder = ph;
+
+      // ドラッグ中の視覚フィードバック
+      section.style.opacity = '0.45';
+      section.style.outline = '2px dashed #4facfe';
+      section.style.pointerEvents = 'none';
+      handle.style.cursor = 'grabbing';
+
+      document.addEventListener('mousemove', flyerDragMove_);
+      document.addEventListener('mouseup', flyerDragEnd_);
+    }
+
+    function flyerDragMove_(e) {
+      if (!flyerDragState_.active) return;
+      var mainDiv = flyerDragState_.mainDiv;
+      var dragEl = flyerDragState_.dragEl;
+      var ph = flyerDragState_.placeholder;
+      if (!mainDiv || !dragEl || !ph) return;
+
+      // ドラッグ中の要素とプレースホルダー以外の兄弟を取得
+      var siblings = Array.from(mainDiv.children).filter(function(c) {
+        return c !== dragEl && c !== ph;
+      });
+
+      // マウスのY座標でどこに挿入するか決める
+      var insertBefore = null;
+      for (var i = 0; i < siblings.length; i++) {
+        var rect = siblings[i].getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          insertBefore = siblings[i];
+          break;
+        }
+      }
+
+      if (insertBefore) {
+        mainDiv.insertBefore(ph, insertBefore);
+      } else {
+        mainDiv.appendChild(ph);
+      }
+    }
+
+    function flyerDragEnd_() {
+      document.removeEventListener('mousemove', flyerDragMove_);
+      document.removeEventListener('mouseup', flyerDragEnd_);
+      if (!flyerDragState_.active) return;
+
+      var mainDiv = flyerDragState_.mainDiv;
+      var dragEl = flyerDragState_.dragEl;
+      var ph = flyerDragState_.placeholder;
+
+      // プレースホルダーの位置に要素を移動
+      if (ph && ph.parentNode === mainDiv) {
+        mainDiv.insertBefore(dragEl, ph);
+        mainDiv.removeChild(ph);
+      }
+
+      // 視覚フィードバックをリセット
+      dragEl.style.opacity = '';
+      dragEl.style.outline = '';
+      dragEl.style.pointerEvents = '';
+      var handle = dragEl.querySelector('.flyer-drag-handle-btn');
+      if (handle) { handle.style.cursor = 'grab'; handle.style.opacity = '0'; }
+
+      flyerDragState_.active = false;
+      flyerDragState_.dragEl = null;
+      flyerDragState_.placeholder = null;
+
+      // DOM変更をHTMLに同期（AIが次回修正時にこの順序を引き継ぐ）
+      syncFlyerEdits_();
     }
 
     // ========== PDF生成 ==========
