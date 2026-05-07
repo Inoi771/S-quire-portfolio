@@ -501,6 +501,48 @@ function deleteCustomScheduleEntry(fiscalYear, timestampStr) {
 }
 
 /**
+ * Admin が手動で追加したカスタムイベントを更新する（Admin のみ）
+ * @param {string} docId Firestore ドキュメントID
+ * @param {string} schoolName 学校名
+ * @param {string} eventName イベント名
+ * @param {number} dateYear 年
+ * @param {number} dateMonth 月
+ * @param {number} dateDay 日
+ * @param {string} details 詳細
+ * @return {Object} 処理結果
+ */
+function updateCustomScheduleEntry(docId, schoolName, eventName, dateYear, dateMonth, dateDay, details) {
+  if (!isAdmin()) return { success: false, error: 'Admin のみアクセス可能' };
+  try {
+    if (!docId || !schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
+      return { success: false, error: '必要な項目が不足しています' };
+    }
+    var newFiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
+    var dateStr = dateMonth + '月' + dateDay + '日';
+    var actualYear = (dateMonth >= 1 && dateMonth <= 3) ? newFiscalYear + 1 : newFiscalYear;
+    var scheduleDisplay = actualYear + '年' + dateStr;
+    var existing = firestoreGet_('schedules', docId);
+    var timestamp = existing ? (existing.timestamp || new Date().toISOString()) : new Date().toISOString();
+    var updatedData = {
+      fiscalYear:      parseInt(newFiscalYear, 10),
+      schoolName:      schoolName,
+      eventType:       eventName,
+      dateStr:         dateStr,
+      details:         details || '',
+      source:          'Admin 直接入力',
+      timestamp:       timestamp,
+      scheduleDisplay: scheduleDisplay
+    };
+    firestoreSet_('schedules', docId, updatedData);
+    Logger.log('✓ updateCustomScheduleEntry: ' + docId);
+    return { success: true, message: '更新しました' };
+  } catch (error) {
+    Logger.log('❌ updateCustomScheduleEntryエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * スケジュール管理情報（ログ出力のみ）
  * 実際の予定入力は Admin フォームから実施
  *

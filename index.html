@@ -44,7 +44,7 @@
 
         // position:fixed の要素は app-container の zoom が届かないため個別に適用
         // 【全画面オーバーレイ】背景黒幕・全画面UI（zoom + 幅高さを ratio で割って補正）
-        ['aiWidgetOverlay', 'schedulerEditOverlay', 'lecHelpOverlay',
+        ['aiWidgetOverlay', 'schedulerEditOverlay', 'customEventEditOverlay', 'lecHelpOverlay',
          'lecCalExportOverlay', 'lecOcrOverlay', 'flyerHelpOverlay', 'matGreetingOverlay',
          'ocrOverlay', 'drawerOverlay', 'setupWizard', 'splashScreen',
          'appDialogOverlay', 'hiddenAdminOverlay', 'idInputOverlay',
@@ -59,8 +59,9 @@
         // 【センタリングモーダル】top:50%;left:50%;transform:translate(-50%,-50%) 系
         // zoom をかけた分だけ width を ratio で割り、maxWidth を解除して画面に収める
         [
-          { id: 'ocrModal',           widthVw: 90 },
-          { id: 'schedulerEditModal', widthVw: 92 },
+          { id: 'ocrModal',              widthVw: 90 },
+          { id: 'schedulerEditModal',    widthVw: 92 },
+          { id: 'customEventEditModal',  widthVw: 92 },
           { id: 'lecHelpModal',       widthVw: 90 },
           { id: 'lecCalExportModal',  widthVw: 90 },
           { id: 'lecOcrModal',        widthVw: 92 },
@@ -2576,6 +2577,45 @@
               <p style="text-align:center;color:#999;font-size:13px;padding:20px;">年月を選択してください</p>
             </div>
           </div>
+        </div>
+
+        <!-- 編集モーダル（カスタムイベント） -->
+        <div id="customEventEditOverlay" onclick="closeCustomEventEditModal()" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:999;"></div>
+        <div id="customEventEditModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;border-radius:16px;padding:24px;width:92%;max-width:520px;max-height:90vh;overflow-y:auto;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;font-size:18px;">✏️ イベントを編集</h3>
+            <button onclick="closeCustomEventEditModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;line-height:1;">✕</button>
+          </div>
+          <input type="hidden" id="customEventEditDocId">
+          <div style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:6px;">種別</label>
+            <div style="display:flex;gap:16px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;"><input type="radio" name="customEventEditType" value="juku" onchange="onCustomEventEditTypeChange()"> 🏠 塾</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;"><input type="radio" name="customEventEditType" value="junior" onchange="onCustomEventEditTypeChange()"> 🏫 中学</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;"><input type="radio" name="customEventEditType" value="high" onchange="onCustomEventEditTypeChange()"> 🎓 高校</label>
+            </div>
+          </div>
+          <div id="customEventEditSchoolRow" style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px;">学校名</label>
+            <input type="text" id="customEventEditSchoolName" placeholder="例: ○○中学校" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px;">日付</label>
+            <input type="date" id="customEventEditDate" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px;">イベント名</label>
+            <input type="text" id="customEventEditName" placeholder="例: 期末テスト" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          </div>
+          <div style="margin-bottom:16px;">
+            <label style="font-size:12px;font-weight:600;color:#666;display:block;margin-bottom:4px;">詳細（任意）</label>
+            <input type="text" id="customEventEditDetails" placeholder="例: 3年生のみ" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="customEventEditSaveBtn" onclick="saveCustomEventEdit()" style="flex:1;padding:12px;background:var(--theme-color);color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">💾 保存</button>
+            <button onclick="closeCustomEventEditModal()" style="padding:12px 20px;background:#f0f0f0;color:#333;border:none;border-radius:8px;cursor:pointer;font-size:14px;">キャンセル</button>
+          </div>
+          <div id="customEventEditMessage" style="margin-top:10px;font-size:13px;"></div>
         </div>
 
         <!-- 編集モーダル（LINE通知） -->

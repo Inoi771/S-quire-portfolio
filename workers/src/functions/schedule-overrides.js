@@ -27,7 +27,7 @@
 // 戻り値・エラーメッセージは GAS 側 `schedule.js` と完全一致させる。
 
 import { isAdminUser } from './auth.js';
-import { firestoreSet, firestoreDelete, firestoreQuery } from '../firebase.js';
+import { firestoreGet, firestoreSet, firestoreDelete, firestoreQuery } from '../firebase.js';
 import { getLecturePeriods } from './features.js';
 
 const PROP_PREFIX = 'prop:';
@@ -568,6 +568,41 @@ export async function deleteCustomScheduleEntry(args, env, user) {
     const docId = makeScheduleSafeId_(fiscalYear) + '_admin_' + timestampMs;
     await firestoreDelete(env, 'schedules', docId);
     return { success: true, message: '削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 管理者が追加したカスタムイベントを更新する（Admin のみ）
+ * GAS schedule.js の updateCustomScheduleEntry の Workers 版。
+ * @param {Array} args [docId, schoolName, eventName, dateYear, dateMonth, dateDay, details]
+ */
+export async function updateCustomScheduleEntry(args, env, user) {
+  try {
+    const denied = await denyIfNotAdmin_(env, user);
+    if (denied) return denied;
+    const [docId, schoolName, eventName, dateYear, dateMonth, dateDay, details] = args || [];
+    if (!docId || !schoolName || !eventName || !dateYear || !dateMonth || !dateDay) {
+      return { success: false, error: '必要な項目が不足しています' };
+    }
+    const newFiscalYear = (dateMonth >= 4) ? dateYear : dateYear - 1;
+    const dateStr = dateMonth + '月' + dateDay + '日';
+    const actualYear = (dateMonth >= 1 && dateMonth <= 3) ? newFiscalYear + 1 : newFiscalYear;
+    const scheduleDisplay = actualYear + '年' + dateStr;
+    const existing = await firestoreGet(env, 'schedules', docId);
+    const timestamp = existing ? (existing.timestamp || new Date().toISOString()) : new Date().toISOString();
+    await firestoreSet(env, 'schedules', docId, {
+      fiscalYear: parseInt(newFiscalYear, 10),
+      schoolName: schoolName,
+      eventType: eventName,
+      dateStr: dateStr,
+      details: details || '',
+      source: 'Admin 直接入力',
+      timestamp: timestamp,
+      scheduleDisplay: scheduleDisplay
+    });
+    return { success: true, message: '更新しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
