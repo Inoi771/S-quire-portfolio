@@ -45,7 +45,7 @@
         // position:fixed の要素は app-container の zoom が届かないため個別に適用
         // 【全画面オーバーレイ】背景黒幕・全画面UI（zoom + 幅高さを ratio で割って補正）
         ['aiWidgetOverlay', 'schedulerEditOverlay', 'customEventEditOverlay', 'lecHelpOverlay',
-         'lecCalExportOverlay', 'lecOcrOverlay', 'flyerHelpOverlay', 'flyerCopyOverlay', 'matGreetingOverlay',
+         'lecCalExportOverlay', 'lecOcrOverlay', 'flyerHelpOverlay', 'flyerCopyOverlay', 'flyerTemplateOverlay', 'matGreetingOverlay',
          'ocrOverlay', 'drawerOverlay', 'setupWizard', 'splashScreen',
          'appDialogOverlay', 'hiddenAdminOverlay', 'idInputOverlay',
          'fbLoginScreen'].forEach(function(id) {
@@ -67,6 +67,7 @@
           { id: 'lecOcrModal',        widthVw: 92 },
           { id: 'flyerHelpModal',     widthVw: 90 },
           { id: 'flyerCopyModal',     widthVw: 90 },
+          { id: 'flyerTemplateModal', widthVw: 90 },
           { id: 'matGreetingModal',   widthVw: 90 },
           { id: 'appDialogModal',     widthVw: 85 },
           { id: 'hiddenAdminModal',   widthVw: 85 },
@@ -1374,9 +1375,17 @@
                 style="width: 100%; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: white; position: relative;">
                 <div id="flyerAiPreviewInner"
                   style="width: 794px; min-height: 1123px; background: white; transform-origin: top left; font-family: 'Meiryo','ヒラギノ角ゴ ProN W3','MS Gothic',sans-serif;">
-                  <div style="display: flex; align-items: center; justify-content: center; height: 300px; color: #bbb; font-size: 14px; text-align: center; padding: 20px;">
-                    AIに指示を送るとチラシが表示されます<br>
-                    <span style="font-size: 12px; color: #ccc; margin-top: 8px; display: block;">例：「夏期講習のチラシを作って」</span>
+                  <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 400px; color: #bbb; font-size: 14px; text-align: center; padding: 20px; gap: 16px;">
+                    <div>
+                      AIに指示を送るとチラシが表示されます<br>
+                      <span style="font-size: 12px; color: #ccc; margin-top: 8px; display: block;">例：「夏期講習のチラシを作って」</span>
+                    </div>
+                    <div style="color: #aaa; font-size: 13px;">または</div>
+                    <button onclick="showFlyerTemplateModal()"
+                      style="padding: 12px 24px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 700; box-shadow: 0 3px 10px rgba(102,126,234,0.4);">
+                      📋 テンプレートから作成
+                    </button>
+                    <div style="font-size: 11px; color: #ccc;">AIなしで始められます</div>
                   </div>
                 </div>
               </div>
@@ -3363,9 +3372,20 @@
         <div style="font-weight:700; color:#c2185b; font-size:16px; margin-bottom:4px;">📋 基本の流れ</div>
         <div style="font-size:16px; color:#444; line-height:1.8;">
           ① 上部で<b>校舎</b>を選ぶ<br>
-          ② チャットでAIに指示を送る（例：「チラシを作って」）<br>
-          ③ プレビューを確認しながら修正<br>
+          ② 「📋 テンプレートから作成」<b>または</b>AIチャットでチラシを作る<br>
+          ③ 「✏️ 編集モード」で直接編集して仕上げる<br>
           ④ 完成したら「💾 保存」→「📥 PDF」
+        </div>
+      </div>
+
+      <div style="background:#e8f5e9; border-radius:8px; padding:12px;">
+        <div style="font-weight:700; color:#2e7d32; font-size:16px; margin-bottom:4px;">📋 テンプレートから作成（AIなし）</div>
+        <div style="font-size:16px; color:#444; line-height:1.8;">
+          プレビューエリアの「📋 テンプレートから作成」ボタンから、3種類の既製デザインを選んでそのまま使えます。<br>
+          ・<b>スタンダード</b>：バランス型（おすすめ）<br>
+          ・<b>キャッチコピー大</b>：インパクト重視<br>
+          ・<b>日程表重視</b>：情報量が多い場合<br>
+          選んだ後は「✏️ 編集モード」で自由に編集できます。
         </div>
       </div>
 
@@ -3377,7 +3397,7 @@
           ・「キャッチコピーを変えて」<br>
           ・「料金表を目立たせて」<br>
           ・「全体的にもっとポップな感じにして」<br>
-          何度でも修正指示を送れます。
+          何度でも修正指示を送れます。テンプレートからAIに引き継ぐこともできます。
         </div>
       </div>
 
@@ -3393,19 +3413,20 @@
         <div style="font-weight:700; color:#667eea; font-size:16px; margin-bottom:4px;">🖼️ 画像を入れる</div>
         <div style="font-size:16px; color:#444; line-height:1.8;">
           「メイン画像」エリアで画像を選択するか、新しい画像を「📤 UP」でアップロードします。<br>
-          画像を選んだ状態でAIに「画像を入れて」と指示すると、チラシに挿入されます。
+          選択した画像はプレビューに即座に反映されます。AIに指示しなくても切り替えられます。
         </div>
       </div>
 
       <div style="background:#e8f5e9; border-radius:8px; padding:12px;">
-        <div style="font-weight:700; color:#2e7d32; font-size:16px; margin-bottom:4px;">✏️ 編集モード（PC向け）</div>
+        <div style="font-weight:700; color:#2e7d32; font-size:16px; margin-bottom:4px;">✏️ 編集モード（AIなしで直接編集）</div>
         <div style="font-size:16px; color:#444; line-height:1.8;">
           「✏️ 編集モード」ボタンをONにすると、プレビュー上のテキストを直接クリックして書き換えられます。<br>
-          ・クリックした文字の上にツールバーが出ます<br>
           ・<b>A-</b> / <b>A+</b>：文字サイズの変更<br>
           ・<b>B</b>：太字にする<br>
-          ・<b>🎨</b>：文字の色を変える<br>
-          ※AIに指示を送ると、手動編集した内容が一部変わる場合があります。
+          ・文字色 / 背景色 / フォント / テキスト揃え<br>
+          ・<b>⠿ 移動</b>：セクションをドラッグして並び替え<br>
+          ・<b>✕ 削除</b>：不要なセクションを削除<br>
+          ※AIに指示を送ると、手動編集した内容が引き継がれます。
         </div>
       </div>
 
@@ -3443,13 +3464,58 @@
       <h3 style="margin:0; font-size:18px; color:#333;">📋 他の校舎へコピー</h3>
       <button onclick="closeFlyerCopyModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#999; line-height:1;">✕</button>
     </div>
-    <p style="margin:0; font-size:14px; color:#666; line-height:1.7;">コピー先の校舎を選択してください。<br>AIが各校舎の日程・料金・校舎名に合わせてチラシを自動更新します。</p>
-    <div id="flyerCopyModalCampusList" style="border:1px solid #e0e0e0; border-radius:8px; padding:4px 12px; max-height:220px; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
+    <p style="margin:0; font-size:14px; color:#666; line-height:1.7;">コピー先の校舎を選択してください。</p>
+    <!-- コピーモード選択 -->
+    <div style="background:#f9f9f9; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; min-height:44px;">
+        <input type="radio" name="flyerCopyMode" value="simple" checked style="width:18px; height:18px; margin-top:2px; flex-shrink:0;">
+        <div>
+          <div style="font-size:14px; font-weight:700; color:#333;">そのままコピー</div>
+          <div style="font-size:12px; color:#888; margin-top:2px;">デザインをそのままコピーします。テキストは手動で編集してください。</div>
+        </div>
+      </label>
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; min-height:44px;">
+        <input type="radio" name="flyerCopyMode" value="ai" style="width:18px; height:18px; margin-top:2px; flex-shrink:0;">
+        <div>
+          <div style="font-size:14px; font-weight:700; color:#333;">AIで自動調整してコピー</div>
+          <div style="font-size:12px; color:#888; margin-top:2px;">AIが各校舎の日程・料金・校舎名に合わせて自動更新します（時間がかかります）。</div>
+        </div>
+      </label>
+    </div>
+    <div id="flyerCopyModalCampusList" style="border:1px solid #e0e0e0; border-radius:8px; padding:4px 12px; max-height:200px; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div id="flyerCopyProgress" style="display:none; font-size:13px; color:#667eea; padding:10px; background:#f0f4ff; border-radius:8px; text-align:center;"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end;">
       <button onclick="closeFlyerCopyModal()" style="padding:10px 18px; background:#f5f5f5; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:14px; min-height:44px;">キャンセル</button>
       <button id="flyerCopyStartBtn" onclick="executeFlyerCopy_()" style="padding:10px 18px; background:linear-gradient(135deg,#4CAF50,#2e7d32); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700; min-height:44px;">コピー開始</button>
     </div>
+  </div>
+
+  <!-- ===== チラシ テンプレート選択モーダル ===== -->
+  <div id="flyerTemplateOverlay" onclick="closeFlyerTemplateModal()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
+  <div id="flyerTemplateModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:16px; padding:24px; width:90%; max-width:480px; max-height:90vh; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.2); flex-direction:column; gap:14px; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+      <h3 style="margin:0; font-size:18px; color:#333;">📋 テンプレートから作成</h3>
+      <button onclick="closeFlyerTemplateModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#999; line-height:1;">✕</button>
+    </div>
+    <p style="margin:0; font-size:13px; color:#666; line-height:1.6;">テンプレートを選んで始めてください。<br>選んだ後は「✏️ 編集モード」で自由に文章・色・レイアウトを編集できます。</p>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button onclick="applyFlyerTemplate_('standard')"
+        style="text-align:left; padding:14px 16px; background:#f0f4ff; border:2px solid #c5cae9; border-radius:10px; cursor:pointer; min-height:60px;">
+        <div style="font-size:15px; font-weight:700; color:#3949ab; margin-bottom:4px;">スタンダード</div>
+        <div style="font-size:12px; color:#666;">上部タイトル・画像・情報・料金のバランス型。汎用的に使えます。</div>
+      </button>
+      <button onclick="applyFlyerTemplate_('catchcopy')"
+        style="text-align:left; padding:14px 16px; background:#fce4ec; border:2px solid #f48fb1; border-radius:10px; cursor:pointer; min-height:60px;">
+        <div style="font-size:15px; font-weight:700; color:#c2185b; margin-bottom:4px;">キャッチコピー大</div>
+        <div style="font-size:12px; color:#666;">大きなキャッチコピーでインパクト重視。目を引くデザインです。</div>
+      </button>
+      <button onclick="applyFlyerTemplate_('table')"
+        style="text-align:left; padding:14px 16px; background:#e3f2fd; border:2px solid #90caf9; border-radius:10px; cursor:pointer; min-height:60px;">
+        <div style="font-size:15px; font-weight:700; color:#1565C0; margin-bottom:4px;">日程表重視</div>
+        <div style="font-size:12px; color:#666;">日程・時間割を大きく見やすく掲載。情報量が多い場合に最適。</div>
+      </button>
+    </div>
+    <p style="margin:0; font-size:12px; color:#aaa; text-align:center;">テンプレートを適用後、AIに修正を依頼することもできます</p>
   </div>
 
   <!-- ===== OCR モーダル ===== -->
