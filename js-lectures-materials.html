@@ -872,7 +872,13 @@
         var em = totalMin % 60;
         return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
       }
-      function fmtDates_(sortedDates) {
+      function circledNum_(n) {
+        if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
+        if (n >= 21 && n <= 35) return String.fromCharCode(0x3251 + n - 21);
+        if (n >= 36 && n <= 50) return String.fromCharCode(0x32B1 + n - 36);
+        return '(' + n + ')';
+      }
+      function fmtDates_(sortedDates, numberMap) {
         var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
         var prevMonth = -1;
         return sortedDates.map(function(d) {
@@ -880,7 +886,8 @@
           var mo = dt.getMonth() + 1;
           var day = dt.getDate();
           var dow = DOW_[dt.getDay()];
-          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          var num = (numberMap && numberMap[d]) ? numberMap[d] : '';
+          var str = num + (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
           prevMonth = mo;
           return str;
         }).join('・');
@@ -932,11 +939,21 @@
           if (da !== db) return da < db ? -1 : 1;
           return (a.startTime || '').localeCompare(b.startTime || '');
         });
+        // 同教科スコープで日付に通し番号①②③...を振る
+        var subjectDates = [];
+        groups.forEach(function(grp) {
+          grp.dates.forEach(function(d) {
+            if (subjectDates.indexOf(d) === -1) subjectDates.push(d);
+          });
+        });
+        subjectDates.sort();
+        var numMap = {};
+        subjectDates.forEach(function(d, i) { numMap[d] = circledNum_(i + 1); });
         var rowCount = groups.length;
         groups.forEach(function(grp, idx) {
           var et = endTime_(grp.startTime, grp.durationSlots);
           var timeStr = et ? (grp.startTime + '～' + et) : (grp.startTime || '');
-          var dateStr = fmtDates_(grp.dates);
+          var dateStr = fmtDates_(grp.dates, numMap);
           html += '<tr>';
           if (idx === 0) {
             html += '<td rowspan="' + rowCount + '" style="' + cellSubj + '">' + escapeHtmlMat_(subject) + '</td>';
@@ -1353,9 +1370,16 @@
         return ('0' + eh).slice(-2) + ':' + ('0' + em).slice(-2);
       }
 
-      // 日付配列（昇順ソート済み）を "7/28(金)・29(土)・8/1(火)" 形式に変換
+      // 1〜50 を ①〜㊿ に変換（範囲外は (n) で安全フォールバック）
+      function circledNum_(n) {
+        if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
+        if (n >= 21 && n <= 35) return String.fromCharCode(0x3251 + n - 21);
+        if (n >= 36 && n <= 50) return String.fromCharCode(0x32B1 + n - 36);
+        return '(' + n + ')';
+      }
+      // 日付配列（昇順ソート済み）を "①7/28(金)・②29(土)・③8/1(火)" 形式に変換
       // prevMonth は関数スコープ内で初期化し、呼び出しごとに必ずリセット（バグ防止）
-      function fmtDates_(sortedDates) {
+      function fmtDates_(sortedDates, numberMap) {
         var DOW_ = ['日', '月', '火', '水', '木', '金', '土'];
         var prevMonth = -1;
         return sortedDates.map(function(d) {
@@ -1363,7 +1387,8 @@
           var mo = dt.getMonth() + 1;
           var day = dt.getDate();
           var dow = DOW_[dt.getDay()];
-          var str = (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
+          var num = (numberMap && numberMap[d]) ? numberMap[d] : '';
+          var str = num + (mo !== prevMonth ? mo + '/' : '') + day + '(' + dow + ')';
           prevMonth = mo;
           return str;
         }).join('・');
@@ -1393,7 +1418,10 @@
             if (tgMap[key].indexOf(e.date) === -1) tgMap[key].push(e.date);
           });
           Object.keys(tgMap).forEach(function(k) {
-            allDateStrsForMeasure_.push(fmtDates_(tgMap[k].slice().sort()));
+            var sortedDs = tgMap[k].slice().sort();
+            var fakeMap = {};
+            sortedDs.forEach(function(d, i) { fakeMap[d] = circledNum_(i + 1); });
+            allDateStrsForMeasure_.push(fmtDates_(sortedDs, fakeMap));
           });
         });
       });
@@ -1482,6 +1510,15 @@
           var subEntries = gradeEntries.filter(function(e) { return (e.subject || '') === subject; });
           if (subEntries.length === 0) return; // この教科のエントリなし → スキップ
 
+          // 同学年・同教科スコープで日付に通し番号①②③...を振る
+          var subjectDates_ = [];
+          subEntries.forEach(function(e) {
+            if (e.date && subjectDates_.indexOf(e.date) === -1) subjectDates_.push(e.date);
+          });
+          subjectDates_.sort();
+          var numMap = {};
+          subjectDates_.forEach(function(d, i) { numMap[d] = circledNum_(i + 1); });
+
           // (startTime, durationSlots) でグループ化し、各グループに日付を集約
           var timeGroupMap = {};
           var timeGroupOrder = [];
@@ -1513,7 +1550,7 @@
 
           groups.forEach(function(grp, idx) {
             var timeStr = (grp.startTime || '') + '～' + endTime_(grp.startTime, grp.durationSlots);
-            var dateStr = fmtDates_(grp.dates);
+            var dateStr = fmtDates_(grp.dates, numMap);
             html += '<tr>';
             if (idx === 0) {
               // 教科名セル（rowspan で複数時刻グループを結合）
