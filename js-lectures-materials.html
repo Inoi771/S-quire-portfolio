@@ -925,8 +925,13 @@
 
       subjects.forEach(function(subject) {
         var groups = Object.keys(subjectMap[subject]).map(function(k) { return subjectMap[subject][k]; });
-        groups.sort(function(a, b) { return a.startTime < b.startTime ? -1 : 1; });
         groups.forEach(function(grp) { grp.dates.sort(); });
+        groups.sort(function(a, b) {
+          var da = a.dates[0] || '';
+          var db = b.dates[0] || '';
+          if (da !== db) return da < db ? -1 : 1;
+          return (a.startTime || '').localeCompare(b.startTime || '');
+        });
         var rowCount = groups.length;
         groups.forEach(function(grp, idx) {
           var et = endTime_(grp.startTime, grp.durationSlots);
@@ -1494,6 +1499,13 @@
           // 各グループの日付を昇順ソート
           timeGroupOrder.forEach(function(key) {
             timeGroupMap[key].dates.sort();
+          });
+          // 日付の早いグループが上に来るよう並び替え（同日付の場合は開始時刻が早い方を上に）
+          timeGroupOrder.sort(function(a, b) {
+            var da = timeGroupMap[a].dates[0] || '';
+            var db = timeGroupMap[b].dates[0] || '';
+            if (da !== db) return da < db ? -1 : 1;
+            return (timeGroupMap[a].startTime || '').localeCompare(timeGroupMap[b].startTime || '');
           });
 
           var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
