@@ -3608,6 +3608,12 @@
               timeGroupOrder.forEach(function(key) {
                 timeGroupMap[key].dates.sort();
               });
+              timeGroupOrder.sort(function(a, b) {
+                var da = timeGroupMap[a].dates[0] || '';
+                var db = timeGroupMap[b].dates[0] || '';
+                if (da !== db) return da < db ? -1 : 1;
+                return (timeGroupMap[a].startTime || '').localeCompare(timeGroupMap[b].startTime || '');
+              });
 
               var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
               var rowCount = groups.length;
@@ -3653,6 +3659,12 @@
                 if (timeGroupMap[key].dates.indexOf(e.date) === -1) timeGroupMap[key].dates.push(e.date);
               });
               timeGroupOrder.forEach(function(k) { timeGroupMap[k].dates.sort(); });
+              timeGroupOrder.sort(function(a, b) {
+                var da = timeGroupMap[a].dates[0] || '';
+                var db = timeGroupMap[b].dates[0] || '';
+                if (da !== db) return da < db ? -1 : 1;
+                return (timeGroupMap[a].startTime || '').localeCompare(timeGroupMap[b].startTime || '');
+              });
               var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
               var rowCount = groups.length;
               groups.forEach(function(grp, idx) {
@@ -3704,6 +3716,12 @@
                 if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
               });
               tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+              tgOrder.sort(function(a, b) {
+                var da = tgMap[a].dates[0] || '';
+                var db = tgMap[b].dates[0] || '';
+                if (da !== db) return da < db ? -1 : 1;
+                return (tgMap[a].startTime || '').localeCompare(tgMap[b].startTime || '');
+              });
               var groups = tgOrder.map(function(k) { return tgMap[k]; });
               groups.forEach(function(grp, idx) {
                 html += '<tr>';
@@ -3736,6 +3754,12 @@
                   if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
                 });
                 tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+                tgOrder.sort(function(a, b) {
+                  var da = tgMap[a].dates[0] || '';
+                  var db = tgMap[b].dates[0] || '';
+                  if (da !== db) return da < db ? -1 : 1;
+                  return (tgMap[a].startTime || '').localeCompare(tgMap[b].startTime || '');
+                });
                 var groups = tgOrder.map(function(k) { return tgMap[k]; });
                 groups.forEach(function(grp, idx) {
                   html += '<tr>';
@@ -3900,6 +3924,12 @@
               if (timeGroupMap[key].dates.indexOf(e.date) === -1) timeGroupMap[key].dates.push(e.date);
             });
             timeGroupOrder.forEach(function(k) { timeGroupMap[k].dates.sort(); });
+            timeGroupOrder.sort(function(a, b) {
+              var da = timeGroupMap[a].dates[0] || '';
+              var db = timeGroupMap[b].dates[0] || '';
+              if (da !== db) return da < db ? -1 : 1;
+              return (timeGroupMap[a].startTime || '').localeCompare(timeGroupMap[b].startTime || '');
+            });
             var groups = timeGroupOrder.map(function(k) { return timeGroupMap[k]; });
             var rowCount = groups.length;
 
@@ -3936,6 +3966,12 @@
               if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
             });
             tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+            tgOrder.sort(function(a, b) {
+              var da = tgMap[a].dates[0] || '';
+              var db = tgMap[b].dates[0] || '';
+              if (da !== db) return da < db ? -1 : 1;
+              return (tgMap[a].startTime || '').localeCompare(tgMap[b].startTime || '');
+            });
             var groups = tgOrder.map(function(k) { return tgMap[k]; });
             var rowCount = groups.length;
             groups.forEach(function(grp, idx) {
@@ -3981,6 +4017,12 @@
               if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
             });
             tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+            tgOrder.sort(function(a, b) {
+              var da = tgMap[a].dates[0] || '';
+              var db = tgMap[b].dates[0] || '';
+              if (da !== db) return da < db ? -1 : 1;
+              return (tgMap[a].startTime || '').localeCompare(tgMap[b].startTime || '');
+            });
             var groups = tgOrder.map(function(k) { return tgMap[k]; });
             groups.forEach(function(grp, idx) {
               html += '<tr>';
@@ -4007,6 +4049,12 @@
                 if (tgMap[key].dates.indexOf(e.date) === -1) tgMap[key].dates.push(e.date);
               });
               tgOrder.forEach(function(k) { tgMap[k].dates.sort(); });
+              tgOrder.sort(function(a, b) {
+                var da = tgMap[a].dates[0] || '';
+                var db = tgMap[b].dates[0] || '';
+                if (da !== db) return da < db ? -1 : 1;
+                return (tgMap[a].startTime || '').localeCompare(tgMap[b].startTime || '');
+              });
               var groups = tgOrder.map(function(k) { return tgMap[k]; });
               groups.forEach(function(grp, idx) {
                 html += '<tr>';
