@@ -57,10 +57,11 @@ var CONFIG_PROP_KEYS = {
 };
 
 /**
- * Gemini API で使用するメインモデル名
+ * Gemini API で使用するモデル名
  * モデルを変更する場合はここだけ書き換えればよい
  */
 var GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
+var GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'; // メインが失敗したときに自動で切り替わるサブモデル
 
 /**
  * デフォルトのテスト名（初期化時のみ使用）

@@ -76,7 +76,7 @@ function fetchGeminiWithRetry_(url, options) {
   // 全リトライ失敗時: gemini-2.5-flash へモデルフォールバック
   // gemini-3.1-flash-lite-preview が不安定な場合に自動切替
   if (code !== 200) {
-    var fallbackModel = 'gemini-2.5-flash';
+    var fallbackModel = GEMINI_FALLBACK_MODEL;
     var fallbackUrl = url.replace(/\/models\/[^/:]+:generateContent/, '/models/' + fallbackModel + ':generateContent');
     if (fallbackUrl !== url) {
       Logger.log('🔄 最終フォールバック: ' + fallbackModel + ' に切り替え（元エラー: HTTP ' + code + '）');
