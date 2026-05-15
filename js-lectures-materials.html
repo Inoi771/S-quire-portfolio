@@ -706,7 +706,7 @@
       // 1. ヘッダー
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;font-size:10.5pt;">';
       html += '<div>保護者各位</div>';
-      html += '<div>スクエア　' + escapeHtmlMat_(campusName) + '校</div>';
+      html += '<div>スクエア　' + escapeHtmlMat_(campusName) + (/校$/.test(campusName) ? '' : '校') + '</div>';
       html += '</div>';
 
       // 2. タイトル
