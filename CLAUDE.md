@@ -500,6 +500,35 @@ MyProject/
 
 ---
 
+## 15. 設定値の一元管理ルール
+
+**新機能追加時・既存機能修正時のルール：複数箇所で使う値は必ず定数として1か所にまとめる。**
+
+同じ文字列・数値を2か所以上に書かない。将来変更が必要になったとき、1行の修正で全体に反映されるように設計すること。
+
+### よく変わる設定の場所一覧
+
+| 変えたいもの | ファイル | 変数名 |
+|-------------|---------|--------|
+| GeminiメインモデルGAS | `code.js` | `GEMINI_MODEL` |
+| GeminiサブモデルGAS | `code.js` | `GEMINI_FALLBACK_MODEL` |
+| WorkersメインモデルWorkers | `workers/src/gemini.js` | `PRIMARY_MODEL` |
+| WorkersサブモデルWorkers | `workers/src/gemini.js` | `FALLBACK_MODEL` |
+| テスト名の種類 | `code.js` | `TEST_NAMES` |
+| 校舎一覧 | `code.js` | `CAMPUSES` |
+| 学年一覧 | `code.js` | `GRADES` |
+| イベントの種類 | `code.js` | `EVENT_TYPES` |
+
+### 新機能追加時のルール
+
+| 場面 | やること |
+|------|---------|
+| GAS側に新しい定数が必要 | `code.js` の先頭付近に `var` で定義する |
+| Workers側に新しい定数が必要 | 関連する `workers/src/` ファイルの先頭に `const` で定義する。複数ファイルで共有する場合は `workers/src/gemini.js` または専用ファイルに `export const` で定義する |
+| 同じ値を3か所以上に書きそうなとき | 必ず定数化してから使う。ハードコードしない |
+
+---
+
 ## 英単語アプリとの連携
 
 英単語アプリのパス：`/home/user/englishtest`
