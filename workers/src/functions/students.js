@@ -3,7 +3,7 @@ import { supabaseSelect, supabaseRpc, supabaseUpdate, supabaseUpsert, supabaseIn
 import { getCampusConfig_, getTestNamesConfig_, fetchSigmaConfig_, getSchoolConfig_ } from './grades.js';
 import { calcDeviationValue_, calcPassProbability_ } from './analysis.js';
 import { getCurrentFiscalYear } from '../helpers/datetime-helpers.js';
-import { fetchGeminiWithRetry, extractGeminiText, parseGeminiErrorMessage } from '../gemini.js';
+import { fetchGeminiWithRetry, extractGeminiText, parseGeminiErrorMessage, PRIMARY_MODEL } from '../gemini.js';
 
 // GAS makeSchoolAveDocId_() と同一ロジック
 function makeSchoolAveDocId(year, testName) {
@@ -306,7 +306,7 @@ export async function ocrAndExtractAverages(args, env, user) {
 
     let response;
     try {
-      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+      response = await fetchGeminiWithRetry(env, PRIMARY_MODEL, payload);
     } catch (e) {
       // API キー未設定時のみ throw される（GAS 版と同じ文言）
       return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
@@ -383,7 +383,7 @@ export async function parseAndSaveAveragesFromText(args, env, user) {
 
     let response;
     try {
-      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+      response = await fetchGeminiWithRetry(env, PRIMARY_MODEL, payload);
     } catch (e) {
       return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
     }

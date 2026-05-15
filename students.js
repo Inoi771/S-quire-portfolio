@@ -653,7 +653,7 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
     var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
     if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     // 設定済み志望校リストを取得してプロンプトに含める
     var schoolConfig = getSchoolConfig();
@@ -879,7 +879,7 @@ function parseGradeDataFromText(text, testName, year) {
     if (!text || !text.trim()) return { success: false, error: 'テキストが空です' };
     if (!testName || !testName.trim()) return { success: false, error: 'テスト名が選択されていません' };
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     // 志望校リストを取得
     var schoolConfig = getSchoolConfig();
@@ -1524,7 +1524,7 @@ function parseAndSaveAveragesFromText(text, year, testName, skipExisting) {
     var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
     if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     var prompt = '以下のテキストは模擬試験・学力テストの学校別平均点一覧をウェブページからコピーしたものです。\n' +
       '各学校の教科別平均点（国語・社会・数学・理科・英語）を読み取り、以下のJSON配列形式のみで返してください。\n' +
@@ -1688,7 +1688,7 @@ function ocrAndExtractAverages(base64Image, mimeType, year, testName) {
     var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
     if (!apiKey) return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     var prompt = 'この画像は模擬試験・学力テストの学校別平均点一覧です。' +
       '各学校（または「県平均」「全体平均」など）の教科別平均点を読み取り、' +

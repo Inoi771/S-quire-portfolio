@@ -576,7 +576,7 @@ function callGeminiForScheduleExtraction(prompt) {
       return [];
     }
     
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
     
     var payload = {
       contents: [{ parts: [{ text: prompt }] }],

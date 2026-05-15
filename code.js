@@ -57,6 +57,12 @@ var CONFIG_PROP_KEYS = {
 };
 
 /**
+ * Gemini API で使用するメインモデル名
+ * モデルを変更する場合はここだけ書き換えればよい
+ */
+var GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
+
+/**
  * デフォルトのテスト名（初期化時のみ使用）
  */
 var TEST_NAMES = ['4月実力', '5月実力', '6月実力', '期末テスト', '実力テスト'];
