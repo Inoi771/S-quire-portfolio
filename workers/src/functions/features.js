@@ -63,7 +63,7 @@ import { isAdminUser } from './auth.js';
 import { getCampusConfig_ } from './grades.js';
 import { supabaseSelect, supabaseRpc } from '../supabase.js';
 import { firestoreGet, firestoreUpdateFields, firestoreTransaction } from '../firebase.js';
-import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText } from '../gemini.js';
+import { fetchGeminiWithRetry, parseGeminiErrorMessage, extractGeminiText, PRIMARY_MODEL } from '../gemini.js';
 import {
   getCurrentFiscalYear,
   toJstDate, getJstYear, getJstMonth, getJstDay, getJstDayOfWeek,
@@ -1421,7 +1421,7 @@ async function analyzeUploadedImageMetadata_(env, base64, mimeType) {
     }
   };
 
-  const response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+  const response = await fetchGeminiWithRetry(env, PRIMARY_MODEL, payload);
   if (response.status !== 200) {
     throw new Error(await parseGeminiErrorMessage(response));
   }
@@ -1667,7 +1667,7 @@ export async function ocrLectureSchedule(args, env, user) {
 
     let response;
     try {
-      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+      response = await fetchGeminiWithRetry(env, PRIMARY_MODEL, payload);
     } catch (e) {
       return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
     }
@@ -1783,7 +1783,7 @@ export async function parseLectureScheduleFromText(args, env, user) {
 
     let response;
     try {
-      response = await fetchGeminiWithRetry(env, 'gemini-3.1-flash-lite-preview', payload);
+      response = await fetchGeminiWithRetry(env, PRIMARY_MODEL, payload);
     } catch (e) {
       return { success: false, error: 'Gemini APIキーが設定されていません（管理者設定で登録してください）' };
     }

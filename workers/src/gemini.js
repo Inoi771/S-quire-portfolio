@@ -14,6 +14,7 @@
 // Imagen（:predict endpoint）は payload 構造が異なるため本ヘルパーの対象外。
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+export const PRIMARY_MODEL = 'gemini-3.1-flash-lite-preview'; // モデル変更時はここだけ書き換える
 const FALLBACK_MODEL = 'gemini-2.5-flash';
 const PROP_PREFIX = 'prop:';
 

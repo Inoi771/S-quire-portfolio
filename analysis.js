@@ -608,7 +608,7 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
       + '- diffフィールドも小数第1位に四捨五入して入れること（例: 0.8000000000000007→0.8）\n'
       + '- 文体は丁寧語で簡潔にまとめること。\n';
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
     var payload = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -1025,7 +1025,7 @@ function generateStudentAnalyses(year, testName) {
       + '- 文体は丁寧語で簡潔にまとめること\n';
 
     var dynamicMaxTokens = Math.min(65536, Math.max(8000, studentsData.length * 1000 + 4000));
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
     var payload = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -1182,7 +1182,7 @@ function buildStudentBatchRequest_(batchStudents, testNameTrimmed, displayTestNa
 
   // 1人あたり約900トークンの出力 + 固定分4000トークンで計算
   var maxTokens = Math.min(65536, Math.max(8000, batchStudents.length * 900 + 4000));
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {

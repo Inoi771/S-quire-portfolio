@@ -887,7 +887,7 @@ function requestAIAssistant(userMessage, chatHistory) {
       return { success: false, error: 'Gemini APIキーが設定されていません', type: 'error' };
     }
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + GEMINI_API_KEY;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_API_KEY;
 
     // ユーザープロフィールを1回だけ取得（旧: 3回呼んでいた）
     var profile = null;
@@ -3101,7 +3101,7 @@ function analyzeUploadedImageMetadata_(base64, mimeType, originalFileName) {
     'JSON形式のみで返してください（説明文・マークダウン不要）:\n' +
     '{"fileName":"...","tags":"..."}';
 
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{
       parts: [
@@ -3521,7 +3521,7 @@ function generateFlyerWithAI(params) {
       currentHtmlContext +
       '\n\n【ユーザーの指示】\n' + userMessage;
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
     var payload = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -4284,7 +4284,7 @@ function translateToImagePrompt_(japanesePrompt) {
   var apiKey = getProperty(PROP_KEYS.GEMINI_API_KEY);
   if (!apiKey) throw new Error('Gemini APIキーが設定されていません');
 
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var prompt = 'You are a professional image generation prompt engineer.\n' +
     'Translate the following Japanese description into an optimized English prompt for an image generation AI.\n' +
     'The generated image will be used for a Japanese tutoring school (juku) flyer/advertisement.\n' +
@@ -4353,7 +4353,7 @@ function ocrLectureSchedule(base64Image, mimeType, lectureYear, campusCodesJson,
       .map(function(k) { return k + '=' + (gradeSettings[k].duration * 10) + '分'; });
     if (gsParts.length > 0) gradeDefaultText = '学年別デフォルト授業時間: ' + gsParts.join(', ') + '。';
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
     var mediaLabel = mimeType === 'application/pdf'
       ? 'このPDF（複数ページある場合は全ページを確認してください）'
       : 'この画像';
@@ -4455,7 +4455,7 @@ function parseLectureScheduleFromText(scheduleText, lectureYear, campusCodesJson
     var gsParts = Object.keys(gradeSettings).filter(function(k) { return gradeSettings[k].duration > 0; })
       .map(function(k) { return k + '=' + (gradeSettings[k].duration * 10) + '分'; });
     if (gsParts.length > 0) gradeDefaultText = '学年別デフォルト授業時間: ' + gsParts.join(', ') + '。';
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     var campusText = '';
     var campusKeys = Object.keys(campusNames);
@@ -4559,7 +4559,7 @@ function refineImagePromptWithHistory_(originalPromptJa, history, newComment) {
     '- Emphasize educational/academic atmosphere when appropriate\n' +
     '- Keep it under 200 words';
 
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -4619,7 +4619,7 @@ function generateImageMetadata_(originalPromptJa, history) {
     'JSON形式のみで返してください（説明文・マークダウン不要）:\n' +
     '{"fileName":"...","tags":"..."}';
 
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
