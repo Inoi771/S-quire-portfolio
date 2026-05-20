@@ -737,7 +737,12 @@
         var dtStart = dateStr + 'T' + pad2ICS(startH) + pad2ICS(startM) + '00';
         var dtEnd   = dateStr + 'T' + pad2ICS(endH) + pad2ICS(endM) + '00';
 
-        var summary = '【' + lectureName + '】' + entry.grade + ' ' + entry.subject;
+        var campusLabel = (entry.campusCode && typeof campusData !== 'undefined' && campusData[entry.campusCode])
+          ? campusData[entry.campusCode]
+          : (entry.campusCode || '');
+        var summary = '【' + lectureName + '】';
+        if (campusLabel) summary += campusLabel + ' ';
+        summary += entry.grade + ' ' + entry.subject;
         if (entry.classLabel) summary += entry.classLabel;
 
         var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
