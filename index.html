@@ -1794,6 +1794,32 @@
             </div>
           </div>
 
+          <!-- ===== 📅 カレンダーエクスポート設定 ===== -->
+          <div class="settings-section" style="grid-column: 1 / -1;">
+            <h2>📅 カレンダーエクスポート</h2>
+            <p style="color:#666;font-size:13px;margin:0 0 12px;">
+              講習管理からカレンダーに追加したときの<strong>タイトル</strong>の内容と並び順を設定できます。<br>
+              項目をタップしてチェック／チェック解除し、↑↓ボタンで順番を変えられます。チェック順に並びます。
+            </p>
+
+            <div id="lecExportTitleConfig" style="margin-bottom: 12px;">
+              <!-- 動的に項目が描画される -->
+            </div>
+
+            <div style="background:#f8f9fa;border-radius:8px;padding:12px;margin-bottom:12px;border:1px dashed #ccc;">
+              <div style="font-size:12px;color:#666;margin-bottom:6px;">プレビュー</div>
+              <div id="lecExportTitlePreview" style="font-size:15px;font-weight:600;color:#222;word-break:break-all;">読み込み中...</div>
+              <div style="font-size:11px;color:#999;margin-top:6px;">※ 講習名・校舎名・学年・教科などはサンプル値です</div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;">
+              <button type="button" onclick="resetLecExportTitleFormat_()" style="padding:8px 14px;background:white;color:#666;border:1px solid #ccc;border-radius:6px;font-size:13px;cursor:pointer;">
+                並びを初期状態に戻す
+              </button>
+            </div>
+            <small style="color:#888;display:block;text-align:center;margin-top:10px;">変更は自動で保存されます（このデバイスのみ）</small>
+          </div>
+
           <!-- ===== 📬 通知設定セクション（統合） ===== -->
           <div class="settings-section" id="notificationSettingsSection" style="grid-column: 1 / -1; display: none;">
             <h2>📬 通知設定</h2>
