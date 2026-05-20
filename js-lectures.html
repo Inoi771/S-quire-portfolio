@@ -740,26 +740,213 @@
         var campusLabel = (entry.campusCode && typeof campusData !== 'undefined' && campusData[entry.campusCode])
           ? campusData[entry.campusCode]
           : (entry.campusCode || '');
-        var summary = '【' + lectureName + '】';
-        if (campusLabel) summary += campusLabel + ' ';
-        summary += entry.grade + ' ' + entry.subject;
-        if (entry.classLabel) summary += entry.classLabel;
 
         var resolvedName = (entry.teacherId && lecTeacherNameMap[entry.teacherId])
           ? lecTeacherNameMap[entry.teacherId].name
           : (entry.teacherName || teacherName);
 
+        var summary = buildLecExportTitle_(loadLecExportTitleFormat_(), {
+          lectureName: lectureName,
+          campusName:  campusLabel,
+          grade:       entry.grade,
+          subject:     entry.subject,
+          classLabel:  entry.classLabel,
+          teacherName: resolvedName
+        });
+
         lines.push('BEGIN:VEVENT');
         lines.push('UID:' + entry.id + '@squire.app');
         lines.push('DTSTART;TZID=Asia/Tokyo:' + dtStart);
         lines.push('DTEND;TZID=Asia/Tokyo:' + dtEnd);
-        lines.push('SUMMARY:' + escapeICS(summary));
+        lines.push('SUMMARY:' + escapeICS(summary || lectureName));
         lines.push('DESCRIPTION:' + escapeICS('講師: ' + resolvedName));
         lines.push('END:VEVENT');
       });
 
       lines.push('END:VCALENDAR');
       return lines.join('\r\n');
+    }
+
+    // ============================================================
+    // カレンダーエクスポート タイトル形式のカスタマイズ
+    // ============================================================
+    var LEC_EXPORT_ITEMS_ = [
+      { key: 'lectureName', label: '講習名（【...】で囲む）' },
+      { key: 'campusName',  label: '校舎名' },
+      { key: 'grade',       label: '学年' },
+      { key: 'subject',     label: '教科' },
+      { key: 'classLabel',  label: 'クラスラベル' },
+      { key: 'teacherName', label: '講師名' }
+    ];
+    var DEFAULT_LEC_EXPORT_FORMAT_ = ['lectureName', 'campusName', 'grade', 'subject', 'classLabel'];
+    var LEC_EXPORT_STORAGE_KEY_ = 'lec_export_title_format';
+
+    /**
+     * 保存されているタイトル形式を読み込む（未設定ならデフォルト）
+     * @return {Array<string>} 項目キーの配列
+     */
+    function loadLecExportTitleFormat_() {
+      try {
+        var stored = localStorage.getItem(LEC_EXPORT_STORAGE_KEY_);
+        if (!stored) return DEFAULT_LEC_EXPORT_FORMAT_.slice();
+        var parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) return DEFAULT_LEC_EXPORT_FORMAT_.slice();
+        var validKeys = LEC_EXPORT_ITEMS_.map(function(it){ return it.key; });
+        var filtered = parsed.filter(function(k){ return validKeys.indexOf(k) !== -1; });
+        return filtered;
+      } catch (e) {
+        return DEFAULT_LEC_EXPORT_FORMAT_.slice();
+      }
+    }
+
+    /**
+     * タイトル形式を保存
+     * @param {Array<string>} format 項目キーの配列
+     */
+    function saveLecExportTitleFormat_(format) {
+      try {
+        localStorage.setItem(LEC_EXPORT_STORAGE_KEY_, JSON.stringify(format));
+      } catch (e) {
+        console.error('カレンダーエクスポート設定の保存に失敗:', e);
+      }
+    }
+
+    /**
+     * 形式と値からタイトル文字列を組み立てる
+     * @param {Array<string>} format 項目キーの順序
+     * @param {Object} fields 各項目の値
+     * @return {string}
+     */
+    function buildLecExportTitle_(format, fields) {
+      if (!Array.isArray(format)) return '';
+      var result = '';
+      for (var i = 0; i < format.length; i++) {
+        var key = format[i];
+        var val = fields[key];
+        if (val === undefined || val === null || val === '') continue;
+
+        if (key === 'lectureName') {
+          if (result.length > 0 && !/】$/.test(result)) result += ' ';
+          result += '【' + val + '】';
+        } else if (key === 'classLabel') {
+          // クラスラベルは前の項目に直接連結（例: 数学A）
+          result += val;
+        } else {
+          if (result.length === 0 || /】$/.test(result)) {
+            result += val;
+          } else {
+            result += ' ' + val;
+          }
+        }
+      }
+      return result;
+    }
+
+    /**
+     * 設定UIを描画する
+     */
+    function renderLecExportTitleConfig_() {
+      var container = document.getElementById('lecExportTitleConfig');
+      if (!container) return;
+      var format = loadLecExportTitleFormat_();
+      var checkedSet = {};
+      format.forEach(function(k){ checkedSet[k] = true; });
+
+      // 表示順: チェック済みを設定順に → 未チェックを定義順に
+      var ordered = format.slice();
+      LEC_EXPORT_ITEMS_.forEach(function(it){
+        if (!checkedSet[it.key]) ordered.push(it.key);
+      });
+
+      var html = '';
+      ordered.forEach(function(key) {
+        var item = LEC_EXPORT_ITEMS_.find(function(it){ return it.key === key; });
+        if (!item) return;
+        var isChecked = !!checkedSet[key];
+        var checkedIdx = format.indexOf(key);
+        var numText = isChecked ? String(checkedIdx + 1) : '−';
+        var canUp = isChecked && checkedIdx > 0;
+        var canDown = isChecked && checkedIdx < format.length - 1;
+
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px;background:' + (isChecked ? '#f0f9ff' : '#fafafa') + ';">';
+        html += '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;margin:0;min-width:0;">';
+        html += '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' onchange="toggleLecExportItem_(\'' + key + '\')" style="width:18px;height:18px;cursor:pointer;flex-shrink:0;">';
+        html += '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:14px;background:' + (isChecked ? '#4facfe' : '#ddd') + ';color:white;font-weight:bold;font-size:13px;flex-shrink:0;">' + numText + '</span>';
+        html += '<span style="font-size:14px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + item.label + '</span>';
+        html += '</label>';
+        if (isChecked) {
+          html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
+          html += '<button type="button" onclick="moveLecExportItem_(\'' + key + '\', -1)" ' + (canUp ? '' : 'disabled') + ' style="width:36px;height:36px;border:1px solid #ccc;border-radius:6px;background:white;cursor:' + (canUp ? 'pointer' : 'not-allowed') + ';font-size:16px;opacity:' + (canUp ? '1' : '0.3') + ';">↑</button>';
+          html += '<button type="button" onclick="moveLecExportItem_(\'' + key + '\', 1)" ' + (canDown ? '' : 'disabled') + ' style="width:36px;height:36px;border:1px solid #ccc;border-radius:6px;background:white;cursor:' + (canDown ? 'pointer' : 'not-allowed') + ';font-size:16px;opacity:' + (canDown ? '1' : '0.3') + ';">↓</button>';
+          html += '</div>';
+        } else {
+          html += '<div style="width:76px;flex-shrink:0;"></div>';
+        }
+        html += '</div>';
+      });
+
+      container.innerHTML = html;
+      updateLecExportTitlePreview_();
+    }
+
+    /**
+     * 項目のチェック切り替え
+     * @param {string} key
+     */
+    function toggleLecExportItem_(key) {
+      var format = loadLecExportTitleFormat_();
+      var idx = format.indexOf(key);
+      if (idx === -1) {
+        format.push(key);
+      } else {
+        format.splice(idx, 1);
+      }
+      saveLecExportTitleFormat_(format);
+      renderLecExportTitleConfig_();
+    }
+
+    /**
+     * 項目の上下移動
+     * @param {string} key
+     * @param {number} delta -1 で上、+1 で下
+     */
+    function moveLecExportItem_(key, delta) {
+      var format = loadLecExportTitleFormat_();
+      var idx = format.indexOf(key);
+      if (idx === -1) return;
+      var newIdx = idx + delta;
+      if (newIdx < 0 || newIdx >= format.length) return;
+      format.splice(idx, 1);
+      format.splice(newIdx, 0, key);
+      saveLecExportTitleFormat_(format);
+      renderLecExportTitleConfig_();
+    }
+
+    /**
+     * 並びを初期状態に戻す
+     */
+    function resetLecExportTitleFormat_() {
+      if (!confirm('カレンダーエクスポートの並びを初期状態に戻しますか？')) return;
+      saveLecExportTitleFormat_(DEFAULT_LEC_EXPORT_FORMAT_.slice());
+      renderLecExportTitleConfig_();
+    }
+
+    /**
+     * プレビュー更新
+     */
+    function updateLecExportTitlePreview_() {
+      var format = loadLecExportTitleFormat_();
+      var sample = {
+        lectureName: '春期講習',
+        campusName:  '本校',
+        grade:       '中3',
+        subject:     '数学',
+        classLabel:  'A',
+        teacherName: '田中先生'
+      };
+      var preview = buildLecExportTitle_(format, sample);
+      var el = document.getElementById('lecExportTitlePreview');
+      if (el) el.textContent = preview || '（項目が選ばれていません）';
     }
 
     /**

@@ -2492,6 +2492,10 @@
     switchTab = function(tabName) {
       originalSwitchTab(tabName);
       if (tabName === 'settings') {
+        // カレンダーエクスポート設定UIは毎回再描画（localStorageが軽量なので安全）
+        if (typeof renderLecExportTitleConfig_ === 'function') {
+          try { renderLecExportTitleConfig_(); } catch(e) { console.error(e); }
+        }
         // 事前読み込み済みの場合は再読み込みしない
         if (!settingsTabPreloaded) {
           if (Object.keys(campusData).length === 0) {
