@@ -625,6 +625,44 @@ function saveLecGrades(grades) {
 
 
 /**
+ * カレンダーエクスポートのタイトル形式を取得（ユーザーごと）
+ * @return {Object} { success, format } format は JSON 文字列。未設定なら空文字
+ */
+function getLecExportTitleFormat() {
+  try {
+    var format = getUserProperty('LECTURE_EXPORT_TITLE_FORMAT') || '';
+    return { success: true, format: format };
+  } catch (error) {
+    Logger.log('❌ getLecExportTitleFormatエラー: ' + error);
+    return { success: false, error: error.toString(), format: '' };
+  }
+}
+
+/**
+ * カレンダーエクスポートのタイトル形式を保存（ユーザーごと）
+ * @param {string} formatJson 項目キー配列のJSON文字列
+ * @return {Object} { success, error }
+ */
+function setLecExportTitleFormat(formatJson) {
+  try {
+    if (typeof formatJson !== 'string') {
+      return { success: false, error: 'パラメータが文字列ではありません' };
+    }
+    // 妥当性チェック: JSON配列であること
+    var arr = JSON.parse(formatJson);
+    if (!Array.isArray(arr)) {
+      return { success: false, error: '配列ではありません' };
+    }
+    setUserProperty('LECTURE_EXPORT_TITLE_FORMAT', formatJson);
+    return { success: true };
+  } catch (error) {
+    Logger.log('❌ setLecExportTitleFormatエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+
+/**
  * 教科リスト（選択肢）を取得
  * プロフィール設定で使用
  * @aiCallable

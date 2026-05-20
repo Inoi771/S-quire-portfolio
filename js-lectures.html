@@ -800,14 +800,80 @@
     }
 
     /**
-     * タイトル形式を保存
+     * タイトル形式を保存（localStorage + サーバー）
      * @param {Array<string>} format 項目キーの配列
      */
     function saveLecExportTitleFormat_(format) {
+      var json = JSON.stringify(format);
       try {
-        localStorage.setItem(LEC_EXPORT_STORAGE_KEY_, JSON.stringify(format));
+        localStorage.setItem(LEC_EXPORT_STORAGE_KEY_, json);
       } catch (e) {
-        console.error('カレンダーエクスポート設定の保存に失敗:', e);
+        console.error('カレンダーエクスポート設定のローカル保存に失敗:', e);
+      }
+      // サーバーへ非同期で保存（失敗してもUIは止めない）
+      try {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withFailureHandler(function(err) {
+              console.error('カレンダーエクスポート設定のサーバー保存に失敗:', err);
+            })
+            .setLecExportTitleFormat(json);
+        }
+      } catch (e) {
+        console.error('カレンダーエクスポート設定のサーバー保存呼び出しに失敗:', e);
+      }
+    }
+
+    /**
+     * サーバーから設定を取得し localStorage を最新化する
+     * 取得成功時のみ localStorage を上書き。サーバーに無く localStorage にある場合は
+     * localStorage の値をサーバーへアップロード（初回マイグレーション）。
+     * @param {Function} [onDone] 完了時コールバック（任意）
+     */
+    function syncLecExportTitleFormatFromServer_(onDone) {
+      var done = function(updated) {
+        if (typeof onDone === 'function') {
+          try { onDone(updated); } catch(e) { console.error(e); }
+        }
+      };
+      try {
+        if (typeof google === 'undefined' || !google.script || !google.script.run) {
+          done(false);
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.success && result.format) {
+              try {
+                var parsed = JSON.parse(result.format);
+                if (Array.isArray(parsed)) {
+                  localStorage.setItem(LEC_EXPORT_STORAGE_KEY_, result.format);
+                  done(true);
+                  return;
+                }
+              } catch (e) {}
+            }
+            // サーバーに値がなく、localStorageにある場合 → サーバーへアップロード
+            var local = localStorage.getItem(LEC_EXPORT_STORAGE_KEY_);
+            if (local) {
+              try {
+                google.script.run
+                  .withFailureHandler(function(err) {
+                    console.error('カレンダー設定の初回サーバー保存に失敗:', err);
+                  })
+                  .setLecExportTitleFormat(local);
+              } catch (e) {}
+            }
+            done(false);
+          })
+          .withFailureHandler(function(err) {
+            console.error('カレンダー設定のサーバー取得に失敗:', err);
+            done(false);
+          })
+          .getLecExportTitleFormat();
+      } catch (e) {
+        console.error('カレンダー設定のサーバー取得呼び出しに失敗:', e);
+        done(false);
       }
     }
 
