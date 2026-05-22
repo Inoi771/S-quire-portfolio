@@ -1018,39 +1018,48 @@
       var input  = document.getElementById('hiddenAdminPwInput');
       var errMsg = document.getElementById('hiddenAdminError');
       var pw = input.value;
-      if (pw === 'inoiman') {
-        sessionStorage.setItem('hiddenAdminMode', 'true');
-        closeHiddenAdminModal();
-        isAdminUser = true;
-        var adminTabBtn = document.getElementById('adminTabButton');
-        if (adminTabBtn) adminTabBtn.style.display = 'block';
-        if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
-        if (typeof showToast === 'function') showToast('管理者モードが有効になりました', 'success');
-        // バックエンドにも隠し管理者フラグを設定（API呼び出しで管理者権限を有効にする）
-        google.script.run
-          .withFailureHandler(function(err) {
-            console.warn('[hiddenAdmin] バックエンド有効化失敗:', err);
-          })
-          .activateHiddenAdminMode(pw);
-      } else {
+      if (!pw) {
         errMsg.style.display = 'block';
-        input.value = '';
         input.focus();
+        return;
       }
+      // バックエンドで照合する（フロント側の比較は廃止し、パスワード値をコードから除去）
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            sessionStorage.setItem('hiddenAdminMode', 'true');
+            closeHiddenAdminModal();
+            isAdminUser = true;
+            var adminTabBtn = document.getElementById('adminTabButton');
+            if (adminTabBtn) adminTabBtn.style.display = 'block';
+            if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
+            if (typeof showToast === 'function') showToast('管理者モードが有効になりました', 'success');
+          } else {
+            errMsg.style.display = 'block';
+            input.value = '';
+            input.focus();
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.warn('[hiddenAdmin] バックエンド有効化失敗:', err);
+          errMsg.style.display = 'block';
+          input.value = '';
+          input.focus();
+        })
+        .activateHiddenAdminMode(pw);
     }
 
     /**
      * Admin タブの表示/非表示を制御
      */
     function checkAdminTabVisibility() {
-      // 隠し管理者モードが有効な場合はバックエンドのキャッシュも再設定
+      // 隠し管理者モードが有効な場合は UI を即時復元する
+      // バックエンドのキャッシュ（6時間有効）が切れていれば、API 呼び出し時に通常権限へフォールバック
       if (sessionStorage.getItem('hiddenAdminMode') === 'true') {
         var adminTabBtn = document.getElementById('adminTabButton');
         if (adminTabBtn) adminTabBtn.style.display = 'block';
         isAdminUser = true;
         if (!adminTabPreloaded) { loadUsersList(); adminTabPreloaded = true; }
-        // バックエンドのキャッシュが切れている可能性があるため再設定
-        google.script.run.activateHiddenAdminMode('inoiman');
         return;
       }
       google.script.run

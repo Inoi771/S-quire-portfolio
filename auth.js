@@ -133,7 +133,11 @@ function isAdmin() {
  */
 function activateHiddenAdminMode(password) {
   try {
-    if (password !== 'inoiman') {
+    var expectedPw = getProperty_('HIDDEN_ADMIN_PW');
+    if (!expectedPw) {
+      return { success: false, error: 'サーバー設定エラー（HIDDEN_ADMIN_PW 未設定）' };
+    }
+    if (password !== expectedPw) {
       return { success: false, error: 'パスワードが違います' };
     }
     var userEmail = getCurrentUserEmail().toLowerCase();
