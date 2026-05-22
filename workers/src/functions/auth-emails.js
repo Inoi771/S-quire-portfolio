@@ -357,7 +357,11 @@ export async function getUserRoleInfo(args, env, user) {
 export async function activateHiddenAdminMode(args, env, user) {
   try {
     const password = (args && args[0]) || '';
-    if (password !== 'inoiman') {
+    const expectedPw = await env.KV.get('prop:HIDDEN_ADMIN_PW');
+    if (!expectedPw) {
+      return { success: false, error: 'サーバー設定エラー（HIDDEN_ADMIN_PW 未設定）' };
+    }
+    if (password !== expectedPw) {
       return { success: false, error: 'パスワードが違います' };
     }
     const email = ((user && user.email) || '').toLowerCase();
