@@ -2238,29 +2238,7 @@
                   </div>
                 </div>
 
-                <!-- 校舎管理 -->
-                <div style="background: #f8f9fa; border-radius: 8px; padding: 15px;">
-                  <h4 style="margin-top: 0;">🏢 校舎</h4>
-                  
-                  <div id="campusList" style="border: 1px solid #ddd; border-radius: 6px; max-height: 200px; overflow-y: auto; margin-bottom: 10px; padding: 8px; background: white;">
-                    <p style="text-align: center; color: #999; font-size: 12px;">読み込み中...</p>
-                  </div>
-
-                  <div style="display: grid; gap: 6px;">
-                    <input type="text" id="newCampusCode" placeholder="コード" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusName" placeholder="校舎名" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusTel" placeholder="TEL（例: 088-693-0225）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusFax" placeholder="FAX（省略時はTELと同じ）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusMobile" placeholder="携帯番号（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusAddress" placeholder="住所（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <input type="text" id="newCampusUrl" placeholder="公式サイトURL（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                    <select id="newCampusPrincipal" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"><option value="">— 校舎責任者を選択 —</option></select>
-                    <button id="btnAddCampus" onclick="addNewCampus()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
-                  </div>
-                  <div style="margin-top: 8px; text-align: right;">
-                    <button onclick="runSeedCampusAddressUrl()" style="padding: 6px 12px; background: #f0f4ff; color: #3949ab; border: 1px solid #c5cae9; border-radius: 4px; cursor: pointer; font-size: 11px;">🏠 既存校舎に住所・URLを一括設定</button>
-                  </div>
-                </div>
+                <!-- 校舎管理は独立カードに移動済み -->
 
                 <!-- 学年管理（表示切替） -->
                 <div style="background: #f8f9fa; border-radius: 8px; padding: 15px;">
@@ -2366,6 +2344,35 @@
                 <textarea id="newPropValue" placeholder="値" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; resize: vertical; min-height: 40px;"></textarea>
                 <button id="btnAddProperty" onclick="addProperty()" style="padding: 12px; background: var(--theme-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; min-height: 44px;">追加</button>
               </div>
+            </div>
+          </div>
+
+          <!-- ===== 🏢 校舎設定 ===== -->
+          <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
+            <h3 style="margin-top: 0;">🏢 校舎設定</h3>
+            <p style="font-size: 13px; color: #666; margin: 0 0 16px;">各校舎の名前・電話番号・住所・URLなどの基本情報を管理します。</p>
+
+            <div id="campusList" style="border: 1px solid #ddd; border-radius: 6px; max-height: 240px; overflow-y: auto; margin-bottom: 12px; padding: 8px; background: white;">
+              <p style="text-align: center; color: #999; font-size: 12px;">読み込み中...</p>
+            </div>
+
+            <details style="margin-bottom: 8px;">
+              <summary style="cursor: pointer; font-size: 13px; font-weight: 600; color: #555; padding: 8px 0;">➕ 新規校舎を追加</summary>
+              <div style="display: grid; gap: 6px; margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                <input type="text" id="newCampusCode" placeholder="コード（例: 09）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusName" placeholder="校舎名（例: ○○校）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusTel" placeholder="TEL（例: 088-693-0225）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusFax" placeholder="FAX（省略時はTELと同じ）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusMobile" placeholder="携帯番号（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusAddress" placeholder="住所（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="newCampusUrl" placeholder="公式サイトURL（任意）" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <select id="newCampusPrincipal" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"><option value="">— 校舎責任者を選択 —</option></select>
+                <button id="btnAddCampus" onclick="addNewCampus()" style="padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">➕ 追加</button>
+              </div>
+            </details>
+
+            <div style="text-align: right;">
+              <button onclick="runSeedCampusAddressUrl()" style="padding: 6px 12px; background: #f0f4ff; color: #3949ab; border: 1px solid #c5cae9; border-radius: 4px; cursor: pointer; font-size: 11px;">🏠 既存校舎に住所・URLを一括設定</button>
             </div>
           </div>
 
