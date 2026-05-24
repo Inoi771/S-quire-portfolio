@@ -120,7 +120,9 @@
 - `buildLectureNameSelect(fy)` — 指定年度の講習セレクトを構築
 - `updateLecturePeriodLabel()` — 期間ラベル（YYYY/MM/DD 〜 YYYY/MM/DD）を更新
 - `switchLectureSubTab(event, name)` — `.lecture-sub-content` / `.lecture-sub-tab` にスコープしたサブタブ切り替え
-- `initLecturesSchedule()` — 日程作成サブタブ初期化（校舎チェックボックス構築）
+- `initLecturesSchedule()` — 日程作成サブタブ初期化（校舎チェックボックス構築・管理者専用ボタン表示）
+- `copyLectureFlyerData_()` — 【管理者専用】選択中の講習の全校舎日程・料金（外部生）・校舎情報をJSON化し、AI指示文と合わせてクリップボードにコピー（gas-bridge経由でCampusDetails/Pricing/Entriesを並行取得）
+- `flyerFallbackCopy_(text)` — navigator.clipboard が使えない環境でのフォールバックコピー（execCommand）
 - `buildLectureCampusCheckboxes()` — preferredCampuses が先にチェック済みで校舎チェックボックスを生成
 - `onLecCampusAllChange()` — 全校舎チェックボックス変更ハンドラー
 - `onLecCampusChange()` — 個別校舎チェックボックス変更ハンドラー

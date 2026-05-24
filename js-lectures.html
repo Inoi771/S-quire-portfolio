@@ -396,6 +396,11 @@
      */
     function initLecturesSchedule() {
       buildLectureCampusCheckboxes();
+      // 管理者専用ボタンを即座に表示（lec-toolbarが表示されたときに見える）
+      if (isAdminUser) {
+        var flyerBtn = document.getElementById('lec-flyer-copy-btn');
+        if (flyerBtn) flyerBtn.style.display = '';
+      }
       // GAS呼び出しを遅延して同時リクエスト数を減らす
       // getLecturePeriods（initLecturesTabから発火）が先に処理されるようにする
       setTimeout(function() {
@@ -4619,6 +4624,262 @@
           console.error('AIカレンダーエクスポートエラー:', err);
           showToast('カレンダーエクスポートに失敗しました', 'error');
         });
+    }
+
+    // ===== 【チラシ用データコピー機能】管理者専用 =====
+
+    /**
+     * AI 指示文テンプレート（将来の編集が容易なよう定数として保持）
+     * {{JSON_DATA}} の部分に JSON データが埋め込まれる
+     */
+    var FLYER_INSTRUCTION_TEMPLATE_ = [
+      '以下は講習データです。これを使って外部配布用のチラシを作成してください。',
+      '',
+      '【作成手順】',
+      '1. まず私（担当者）にチラシ作成に必要な事項を質問してください',
+      '2. 一度に大量に質問せず、3問程度に絞ってください',
+      '3. 各質問には選択肢を提示し、「おすすめ」を1つ明示してください',
+      '4. 私が迷っている素振りを見せたら「おすすめ」を提案してください',
+      '5. 全て決まったらHTMLでチラシを作成し、Artifactで表示してください',
+      '',
+      '【質問してほしい項目】',
+      '1. 雰囲気の方向性',
+      '   - 親しみやすくカジュアル',
+      '   - かっちりした信頼感重視',
+      '   - 季節感重視 ← おすすめ',
+      '',
+      '2. キャッチコピー',
+      '   - AIに任せる ← おすすめ',
+      '   - 自分で指定する',
+      '',
+      '3. 特に強調したい点があるか',
+      '   - 特になし(バランス重視) ← おすすめ',
+      '   - 料金の手頃さ',
+      '   - 講師の質・実績',
+      '   - 通いやすさ・少人数制',
+      '   - その他(自由記入)',
+      '',
+      '【作成方針(共通)】',
+      '- A4縦サイズ(210mm × 297mm)、外部配布用',
+      '- 校舎は1校舎ずつ作成(全校舎分が必要なら順次対応)',
+      '- 対象学年と日程が一目で分かるレイアウト',
+      '- 料金は外部生向けと明記',
+      '- 各校舎の住所・電話番号を明記',
+      '- S-quireのロゴが入る想定でスペース確保',
+      '- 出力はHTML Artifact',
+      '',
+      '【PDF出力対応】',
+      '担当者がチラシをPDFとして保存できるようにしてください。優先順位は以下:',
+      '',
+      '第1優先: Artifact内に「PDFダウンロード」ボタンを設置',
+      '- html2canvas + jsPDF などのライブラリが使える場合、ボタン1つでPDFが保存される実装にする',
+      '- ライブラリが読み込めない場合は第2優先へ',
+      '',
+      '第2優先: ブラウザの印刷機能でPDF保存できるよう最適化',
+      '- @media print のCSSを必ず含める',
+      '- -webkit-print-color-adjust: exact; print-color-adjust: exact; を指定(背景色・色を印刷時に保持)',
+      '- page-break-inside: avoid; を適切に配置(要素が途中で切れないように)',
+      '- A4縦サイズに収まるよう調整',
+      '- Artifact内に「印刷方法: 右クリック→印刷、または Ctrl+P で『PDFとして保存』を選択」のような案内テキストを小さく表示',
+      '',
+      'どちらの方式を採用したかをチラシ生成時に教えてください。',
+      '',
+      '【修正対応】',
+      'チラシ生成後、私から修正依頼があった場合は柔軟に対応してください。',
+      '「もう少し明るく」「料金をもっと目立たせて」などの曖昧な指示にも対応してください。',
+      '',
+      '【データ】',
+      '{{JSON_DATA}}'
+    ].join('\n');
+
+    /**
+     * チラシ用データを AI 指示文つきでクリップボードにコピーする（管理者専用）
+     * 選択中の講習について、全校舎の日程・料金（外部生）・校舎情報をまとめた JSON を生成し、
+     * 指示文テンプレートと合わせてコピーする
+     */
+    function copyLectureFlyerData_() {
+      if (!currentLectureId) {
+        showToast('年度と講習を選択してください', 'error');
+        return;
+      }
+
+      var btn = document.getElementById('lec-flyer-copy-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 取得中...'; }
+
+      // 講習情報を取得（lecturePeriods は js-core.html のグローバル変数）
+      var lp = lecturePeriods.find(function(p) { return p.id === currentLectureId; });
+      var lectureName = lp ? lp.name : currentLectureId;
+      var year = currentLectureYear ? String(currentLectureYear) : currentLectureId.split('-')[0];
+
+      // lectureTypeId を抽出（例: "2025-summer" → "summer"、年度部分4桁+ハイフンを除去）
+      var lectureTypeId = currentLectureId.substring(5);
+
+      // 全校舎コードを取得（campusData は js-core.html のグローバル変数: {code: name}）
+      var campusCodes = Object.keys(campusData);
+
+      // gradeKey → 学年表示名（features.js の LECTURE_GRADE_LABELS_ と同等）
+      var GRADE_KEY_LABELS = {
+        sho: '小学生', chu1: '中1', chu2: '中2', chu3: '中3',
+        ko1: '高1', ko2: '高2', ko3: '高3'
+      };
+
+      // 並行 API 呼び出しのカウンタ管理
+      var pending = 2 + campusCodes.length; // getCampusDetails + getLecturePricing + 各校舎エントリ
+      var campusDetails  = [];   // getCampusDetailsConfig の結果
+      var pricingResult  = null; // getLecturePricingConfig の結果
+      var entriesByCampus = {};  // { campusCode: entry[] }
+
+      function tryDone_() {
+        pending--;
+        if (pending <= 0) assembleFlyerData_();
+      }
+
+      function assembleFlyerData_() {
+        try {
+          // ---- 料金（外部生のみ）整形 ----
+          var pricingRows = [];
+          if (pricingResult && pricingResult.success && pricingResult.data && pricingResult.data[lectureTypeId]) {
+            var rawRows = pricingResult.data[lectureTypeId].rows || [];
+            rawRows.forEach(function(r) {
+              if (r.externalNa) return; // 外部生不可の行は除外
+              var label = r.label || GRADE_KEY_LABELS[r.gradeKey] || r.gradeKey;
+              if (typeof r.external === 'number') {
+                pricingRows.push({ '学年': label, '金額': r.external });
+              }
+            });
+          }
+
+          // ---- 校舎詳細マップ（code → detail）----
+          var campusDetailMap = {};
+          campusDetails.forEach(function(c) {
+            if (c && c.code) campusDetailMap[c.code] = c;
+          });
+
+          // ---- 校舎別日程の組み立て ----
+          var campusBySchedule = [];
+          campusCodes.forEach(function(code) {
+            var entries = entriesByCampus[code] || [];
+            if (!entries.length) return; // エントリが1件もない校舎は除外
+
+            var detail = campusDetailMap[code] || {};
+            var campusName = detail.name || campusData[code] || code;
+
+            // エントリを日付・開始時刻順にソートし、チラシ不要なフィールドを除外
+            var sortedEntries = entries
+              .slice()
+              .sort(function(a, b) {
+                if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+                return (a.startTime || '') < (b.startTime || '') ? -1 : 1;
+              })
+              .map(function(e) {
+                return {
+                  '日付':     e.date      || '',
+                  '開始時刻': e.startTime || '',
+                  '科目':     e.subject   || '',
+                  '学年':     e.grade     || ''
+                };
+              });
+
+            campusBySchedule.push({
+              '校舎名':   campusName,
+              '住所':     detail.address || '', // 現在のシステムに住所フィールドはないため空欄（AIが確認する）
+              '電話番号': detail.tel     || '',
+              '日程':     sortedEntries
+            });
+          });
+
+          var result = {
+            '講習名':       lectureName,
+            '年度':         year,
+            '料金(外部生)': pricingRows,
+            '校舎別日程':   campusBySchedule
+          };
+
+          var jsonStr = JSON.stringify(result, null, 2);
+          var finalText = FLYER_INSTRUCTION_TEMPLATE_.replace('{{JSON_DATA}}', jsonStr);
+
+          // クリップボードへコピー
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(finalText)
+              .then(function() {
+                showToast('✓ チラシ作成用データ(AI指示込み)をコピーしました', 'success');
+              })
+              .catch(function() {
+                flyerFallbackCopy_(finalText);
+              });
+          } else {
+            flyerFallbackCopy_(finalText);
+          }
+        } catch (e) {
+          console.error('copyLectureFlyerData_ 組み立てエラー:', e);
+          showToast('データの整形に失敗しました', 'error');
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '📋 チラシ用データをコピー'; }
+        }
+      }
+
+      // ① 校舎詳細（住所・電話番号）を取得
+      google.script.run
+        .withSuccessHandler(function(result) {
+          campusDetails = Array.isArray(result) ? result : [];
+          tryDone_();
+        })
+        .withFailureHandler(function(err) {
+          console.warn('getCampusDetailsConfig 失敗:', err);
+          campusDetails = [];
+          tryDone_();
+        })
+        .getCampusDetailsConfig();
+
+      // ② 料金設定を取得
+      google.script.run
+        .withSuccessHandler(function(result) {
+          pricingResult = result || null;
+          tryDone_();
+        })
+        .withFailureHandler(function(err) {
+          console.warn('getLecturePricingConfig 失敗:', err);
+          pricingResult = null;
+          tryDone_();
+        })
+        .getLecturePricingConfig();
+
+      // ③ 全校舎の日程エントリを並行取得
+      campusCodes.forEach(function(code) {
+        (function(campusCode) {
+          google.script.run
+            .withSuccessHandler(function(entries) {
+              entriesByCampus[campusCode] = Array.isArray(entries) ? entries : [];
+              tryDone_();
+            })
+            .withFailureHandler(function(err) {
+              console.warn('getLectureScheduleEntries 失敗 campus=' + campusCode + ':', err);
+              entriesByCampus[campusCode] = [];
+              tryDone_();
+            })
+            .getLectureScheduleEntries(currentLectureId, campusCode);
+        })(code);
+      });
+    }
+
+    /**
+     * navigator.clipboard が使えない環境向けのフォールバックコピー
+     */
+    function flyerFallbackCopy_(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('✓ チラシ作成用データ(AI指示込み)をコピーしました', 'success');
+      } catch (e) {
+        showToast('コピーに失敗しました。手動でコピーしてください', 'error');
+      }
+      document.body.removeChild(ta);
     }
 
 </script>
