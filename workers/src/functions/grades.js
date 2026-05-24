@@ -494,7 +494,9 @@ async function getCampusDetailsConfig_(env) {
       tel:       item.tel       || '',
       fax:       item.fax       || '',
       principal: item.principal || '',
-      mobile:    item.mobile    || ''
+      mobile:    item.mobile    || '',
+      address:   item.address   || '',
+      url:       item.url       || ''
     }));
   } catch (e) {
     return [];
@@ -522,13 +524,13 @@ async function countStudentsByCampus_(env, campusCode) {
 /**
  * 校舎を追加（G10 の Workers 版）
  * GAS grades.js:281 と同じ。コード正規化（upper）・長さ制限・重複チェック付き。
- * @param {Array} args [campusCode, campusName, tel, fax, principal, mobile]
+ * @param {Array} args [campusCode, campusName, tel, fax, principal, mobile, address, url]
  */
 export async function addCampus(args, env, user) {
   try {
     const denied = await denyIfNotAdminGradesCrud_(env, user);
     if (denied) return denied;
-    let [campusCode, campusName, tel, fax, principal, mobile] = args || [];
+    let [campusCode, campusName, tel, fax, principal, mobile, address, url] = args || [];
     if (!campusCode || !campusName) {
       return { success: false, error: 'コードと名前を入力してください' };
     }
@@ -547,7 +549,9 @@ export async function addCampus(args, env, user) {
       tel:       (tel       || '').trim(),
       fax:       (fax       || '').trim(),
       principal: (principal || '').trim(),
-      mobile:    (mobile    || '').trim()
+      mobile:    (mobile    || '').trim(),
+      address:   (address   || '').trim(),
+      url:       (url       || '').trim()
     };
     campusConfig.push(newCampus);
     await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
@@ -588,16 +592,57 @@ export async function deleteCampus(args, env, user) {
 }
 
 /**
+ * 校舎の住所・URLを校舎名で一括初期設定（GAS grades.js:seedCampusAddressUrl の Workers 版）
+ * 既存の address/url が空の場合のみ上書きし、設定済みの値は変更しない
+ * @param {Array} args []（引数なし）
+ */
+export async function seedCampusAddressUrl(args, env, user) {
+  try {
+    const denied = await denyIfNotAdminGradesCrud_(env, user);
+    if (denied) return denied;
+
+    const SEED_DATA = [
+      { name: '川内校', address: '徳島市川内町竹須賀158－3',                url: 'http://www.square1995.com/' },
+      { name: '鳴門校', address: '鳴門市撫養町小桑島前浜221永和ビル',        url: 'http://www.square1995.com/' },
+      { name: '藍住校', address: '板野郡藍住町矢上原263－30第2かね栄ビル',   url: 'http://www.square1995.com/' },
+      { name: '松茂校', address: '板野郡松茂町中喜来稲本233－4',             url: 'http://www.square1995.com/' },
+      { name: '石井校', address: '名西郡石井町石井石井587－10',              url: 'http://www.square1995.com/' },
+      { name: '北島校', address: '板野郡北島町中村樫切13－1',                url: 'http://www.square1995.com/' },
+      { name: '南部校', address: '小松島市江田町敷地前101－24',              url: 'http://www.square1995.com/' },
+      { name: '勝瑞校', address: '板野郡北島町高房勝瑞境45－30',             url: 'http://www.square1995.com/' }
+    ];
+
+    const campusConfig = await readCampusConfigArray_(env);
+    let updated = 0;
+    let skipped = 0;
+
+    for (const campus of campusConfig) {
+      const seed = SEED_DATA.find((s) => s.name === campus.name);
+      if (!seed) { skipped++; continue; }
+      if (campus.address && campus.url) { skipped++; continue; }
+      if (!campus.address) campus.address = seed.address;
+      if (!campus.url)     campus.url     = seed.url;
+      updated++;
+    }
+
+    await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
+    return { success: true, message: updated + '校舎の住所・URLを設定しました（スキップ: ' + skipped + '）', updated, skipped };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 校舎詳細を変更（G12 の Workers 版）
- * GAS grades.js:368 と同じ。`tel/fax/principal/mobile` は `null` 指定で変更スキップ
+ * GAS grades.js:368 と同じ。`tel/fax/principal/mobile/address/url` は `null` 指定で変更スキップ
  * （部分更新）。コードは変更不可。
- * @param {Array} args [campusCode, name, tel, fax, principal, mobile]
+ * @param {Array} args [campusCode, name, tel, fax, principal, mobile, address, url]
  */
 export async function updateCampusDetails(args, env, user) {
   try {
     const denied = await denyIfNotAdminGradesCrud_(env, user);
     if (denied) return denied;
-    let [campusCode, name, tel, fax, principal, mobile] = args || [];
+    let [campusCode, name, tel, fax, principal, mobile, address, url] = args || [];
     name = (name || '').trim();
     if (!name) {
       return { success: false, error: '校舎名を入力してください' };
@@ -612,6 +657,8 @@ export async function updateCampusDetails(args, env, user) {
     if (fax       !== null) campusConfig[idx].fax       = (fax       || '').trim();
     if (principal !== null) campusConfig[idx].principal = (principal || '').trim();
     if (mobile    !== null) campusConfig[idx].mobile    = (mobile    || '').trim();
+    if (address   !== null) campusConfig[idx].address   = (address   || '').trim();
+    if (url       !== null) campusConfig[idx].url       = (url       || '').trim();
     await writeJson_(env, KEY_CAMPUS_CODES, campusConfig);
     return { success: true, message: '校舎情報を更新しました' };
   } catch (error) {

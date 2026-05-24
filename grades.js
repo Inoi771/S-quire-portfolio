@@ -276,9 +276,11 @@ function updateSchool(oldName, newName, departmentsStr) {
  * @param {string} fax FAX（省略可）
  * @param {string} principal 校舎責任者名（省略可）
  * @param {string} mobile 携帯番号（省略可）
+ * @param {string} address 住所（省略可）
+ * @param {string} url 公式サイトURL（省略可）
  * @return {Object} { success, message, campus, error }
  */
-function addCampus(campusCode, campusName, tel, fax, principal, mobile) {
+function addCampus(campusCode, campusName, tel, fax, principal, mobile, address, url) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
     if (!campusCode || !campusName) {
@@ -303,7 +305,16 @@ function addCampus(campusCode, campusName, tel, fax, principal, mobile) {
       return { success: false, error: 'コードは10文字、名前は30文字以下にしてください' };
     }
 
-    var newCampus = { code: campusCode, name: campusName, tel: (tel || '').trim(), fax: (fax || '').trim(), principal: (principal || '').trim(), mobile: (mobile || '').trim() };
+    var newCampus = {
+      code:      campusCode,
+      name:      campusName,
+      tel:       (tel       || '').trim(),
+      fax:       (fax       || '').trim(),
+      principal: (principal || '').trim(),
+      mobile:    (mobile    || '').trim(),
+      address:   (address   || '').trim(),
+      url:       (url       || '').trim()
+    };
     campusConfig.push(newCampus);
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
 
@@ -355,6 +366,53 @@ function deleteCampus(campusCode) {
 }
 
 /**
+ * 校舎の住所・URLを校舎名で一括初期設定（管理者専用・一回限り実行）
+ * 既存の address/url が空の場合のみ上書きし、設定済みの値は変更しない
+ * @return {Object} { success, message, updated, skipped, error }
+ */
+function seedCampusAddressUrl() {
+  try {
+    if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
+
+    var SEED_DATA = [
+      { name: '川内校', address: '徳島市川内町竹須賀158－3',                url: 'http://www.square1995.com/' },
+      { name: '鳴門校', address: '鳴門市撫養町小桑島前浜221永和ビル',        url: 'http://www.square1995.com/' },
+      { name: '藍住校', address: '板野郡藍住町矢上原263－30第2かね栄ビル',   url: 'http://www.square1995.com/' },
+      { name: '松茂校', address: '板野郡松茂町中喜来稲本233－4',             url: 'http://www.square1995.com/' },
+      { name: '石井校', address: '名西郡石井町石井石井587－10',              url: 'http://www.square1995.com/' },
+      { name: '北島校', address: '板野郡北島町中村樫切13－1',                url: 'http://www.square1995.com/' },
+      { name: '南部校', address: '小松島市江田町敷地前101－24',              url: 'http://www.square1995.com/' },
+      { name: '勝瑞校', address: '板野郡北島町高房勝瑞境45－30',             url: 'http://www.square1995.com/' }
+    ];
+
+    var configJson = getScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG);
+    var campusConfig = configJson ? JSON.parse(configJson) : [];
+    var updated = 0;
+    var skipped = 0;
+
+    campusConfig = campusConfig.map(function(campus) {
+      var seed = null;
+      for (var i = 0; i < SEED_DATA.length; i++) {
+        if (SEED_DATA[i].name === campus.name) { seed = SEED_DATA[i]; break; }
+      }
+      if (!seed) { skipped++; return campus; }
+      // 既に両方設定済みならスキップ
+      if (campus.address && campus.url) { skipped++; return campus; }
+      if (!campus.address) campus.address = seed.address;
+      if (!campus.url)     campus.url     = seed.url;
+      updated++;
+      return campus;
+    });
+
+    setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
+    return { success: true, message: updated + '校舎の住所・URLを設定しました（スキップ: ' + skipped + '）', updated: updated, skipped: skipped };
+  } catch (error) {
+    Logger.log('❌ seedCampusAddressUrlエラー: ' + error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 校舎詳細を変更（管理者専用）
  * ※コードは変更不可
  * @param {string} campusCode 校舎コード（変更不可）
@@ -363,9 +421,11 @@ function deleteCampus(campusCode) {
  * @param {string} fax FAX（null で変更なし）
  * @param {string} principal 校舎責任者名（null で変更なし）
  * @param {string} mobile 携帯番号（null で変更なし）
+ * @param {string} address 住所（null で変更なし）
+ * @param {string} url 公式サイトURL（null で変更なし）
  * @return {Object} { success, message, error }
  */
-function updateCampusDetails(campusCode, name, tel, fax, principal, mobile) {
+function updateCampusDetails(campusCode, name, tel, fax, principal, mobile, address, url) {
   try {
     if (!isAdmin()) return { success: false, error: '管理者権限が必要です' };
     name = (name || '').trim();
@@ -375,10 +435,12 @@ function updateCampusDetails(campusCode, name, tel, fax, principal, mobile) {
     var idx = campusConfig.findIndex(function(c) { return c.code === campusCode; });
     if (idx === -1) return { success: false, error: '校舎が見つかりません' };
     campusConfig[idx].name = name;
-    if (tel !== null) campusConfig[idx].tel = (tel || '').trim();
-    if (fax !== null) campusConfig[idx].fax = (fax || '').trim();
+    if (tel       !== null) campusConfig[idx].tel       = (tel       || '').trim();
+    if (fax       !== null) campusConfig[idx].fax       = (fax       || '').trim();
     if (principal !== null) campusConfig[idx].principal = (principal || '').trim();
-    if (mobile !== null) campusConfig[idx].mobile = (mobile || '').trim();
+    if (mobile    !== null) campusConfig[idx].mobile    = (mobile    || '').trim();
+    if (address   !== null) campusConfig[idx].address   = (address   || '').trim();
+    if (url       !== null) campusConfig[idx].url       = (url       || '').trim();
     setScriptProperty(CONFIG_PROP_KEYS.CAMPUS_CODES_CONFIG, JSON.stringify(campusConfig));
     return { success: true, message: '校舎情報を更新しました' };
   } catch (error) {
@@ -539,8 +601,8 @@ function getCampusConfig() {
 }
 
 /**
- * 校舎詳細設定を配列形式で取得（TEL/FAX/責任者/携帯番号含む）
- * @return {Array} [{code, name, tel, fax, principal, mobile}]
+ * 校舎詳細設定を配列形式で取得（TEL/FAX/責任者/携帯番号/住所/URL含む）
+ * @return {Array} [{code, name, tel, fax, principal, mobile, address, url}]
  */
 function getCampusDetailsConfig() {
   try {
@@ -549,12 +611,14 @@ function getCampusDetailsConfig() {
     var config = JSON.parse(configJson || '[]');
     return config.map(function(item) {
       return {
-        code: item.code,
-        name: item.name || '',
-        tel: item.tel || '',
-        fax: item.fax || '',
+        code:      item.code,
+        name:      item.name      || '',
+        tel:       item.tel       || '',
+        fax:       item.fax       || '',
         principal: item.principal || '',
-        mobile: item.mobile || ''
+        mobile:    item.mobile    || '',
+        address:   item.address   || '',
+        url:       item.url       || ''
       };
     });
   } catch (error) {

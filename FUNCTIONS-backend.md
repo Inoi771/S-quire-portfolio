@@ -77,7 +77,9 @@
 - `initializeGradesConfig()` — 初回のデフォルト値設定
 - `addTestName(newTestName)` / `deleteTestName(testNameToDelete)` — テスト名 CRUD（Admin のみ。削除時は成績データの参照チェックあり）
 - `addSchool(schoolName, departmentsStr)` / `deleteSchool(schoolName)` — 志望校 CRUD（Admin のみ。削除時は成績データの参照チェックあり）
-- `addCampus(campusCode, campusName)` / `deleteCampus(campusCode)` — 校舎 CRUD（Admin のみ。削除時は生徒データの参照チェックあり）
+- `addCampus(campusCode, campusName, tel, fax, principal, mobile, address, url)` / `deleteCampus(campusCode)` — 校舎 CRUD（Admin のみ。削除時は生徒データの参照チェックあり）
+- `updateCampusDetails(campusCode, name, tel, fax, principal, mobile, address, url)` — 校舎詳細更新（住所・URL含む。コード変更不可）
+- `seedCampusAddressUrl()` — 既存8校舎に住所・URLを名前一致で一括初期設定（空フィールドのみ。Admin のみ）
 - `updateVisibleGrades(visibleCodes)` — 表示する学年コードの配列を保存（Admin のみ。学年コードは GRADES 定数で固定）
 - `countStudentsByCampus_(campusCode)` — 校舎コードを使用中のアクティブ生徒数を返す内部ヘルパー
 - `countGradesByTestName_(testName)` — テスト名を使用中の成績データ件数を全年度から返す内部ヘルパー
