@@ -53,6 +53,7 @@ import {
   addCampus,
   deleteCampus,
   updateCampusDetails,
+  seedCampusAddressUrl,
   updateVisibleGrades,
   getGradesConfigForWeb
 } from './functions/grades.js';
@@ -196,6 +197,7 @@ const HANDLERS = {
   addCampus,
   deleteCampus,
   updateCampusDetails,
+  seedCampusAddressUrl,
   updateVisibleGrades,
   getGradesConfigForWeb,
   getAiKnowledgeBase,
