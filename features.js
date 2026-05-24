@@ -3383,43 +3383,20 @@ function buildFlyerDesignPrompt_(seasonKey, hasImage, imageTags, isEditMode) {
   var palette = FLYER_DESIGN_PALETTE_[seasonKey] || FLYER_DESIGN_PALETTE_.general;
   var seasonTheme = palette.label + '（' + palette.mood + '）';
 
-  // 画像ルールセクション
-  var imageSection = '';
-  if (hasImage) {
-    imageSection = '## 6. 画像配置ルール（最重要）\n' +
-      '【必須】画像ゾーンはチラシの最上部・最初の要素として配置してください。\n' +
-      '画像ゾーンがヘッダーを兼ねるため、画像の上に別途ヘッダーを作らないでください。\n' +
-      '以下のHTML構造を厳密に使用してください:\n' +
-      '```html\n' +
-      '<div style="position:relative;width:100%;height:280px;overflow:hidden;">\n' +
-      '  <img src="{{IMAGE_PLACEHOLDER}}" style="width:100%;height:100%;object-fit:cover;object-position:center;" />\n' +
-      '  <div style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;box-sizing:border-box;">\n' +
-      '    <p style="color:white;font-family:\'Noto Serif JP\',serif;font-size:15px;margin:0;letter-spacing:0.1em;">個別指導スクエア</p>\n' +
-      '    <p style="color:white;font-family:\'Noto Serif JP\',serif;font-size:38px;font-weight:bold;margin:0;">{講習名}</p>\n' +
-      '    <p style="color:white;font-family:\'Noto Sans JP\',sans-serif;font-size:17px;margin:0;text-align:center;">{キャッチコピー}</p>\n' +
-      '  </div>\n' +
-      '</div>\n' +
-      '```\n' +
-      '- 配置位置: チラシの最上部（第1要素）。ヘッダーを兼ねる\n' +
-      '- {{IMAGE_PLACEHOLDER}} は必ず1箇所のみ使用すること\n' +
-      '- オーバーレイ上の文字: 1行目=塾名（白・明朝体・小）、2行目=講習名（白・明朝体・大・bold）、3行目=キャッチコピー（白・ゴシック体）\n' +
-      '- 画像ゾーンの外（上下）に塾名・講習名・キャッチコピーを繰り返さないこと\n' +
-      (imageTags ? '- 選択中の画像の説明: ' + imageTags + '\n' : '') +
-      '\n';
-  }
-
   // モード指示
   var modeSection = '';
   if (isEditMode) {
     modeSection = '# MODE: 修正\n' +
       '現在のチラシHTMLをベースに修正してください。\n' +
-      '- レイアウト構造（ゾーン配置・要素の並び順）はできるだけ維持すること\n' +
+      '- 最外殻の<div>と背景<img>（{{IMAGE_PLACEHOLDER}}）は変更しないこと\n' +
       '- ユーザーが指示した箇所のみを変更し、全体を作り直さないこと\n' +
-      '- 色やフォントの変更は指示された範囲に限定すること\n';
+      '- position:absoluteの座標・サイズは指示された範囲に限定して調整すること\n' +
+      '- 背景画像の見える割合を維持すること（全面を塞がないこと）\n';
   } else {
     modeSection = '# MODE: 新規生成\n' +
-      'チラシの設計方針に沿ってゼロからデザインしてください。\n' +
-      '各ゾーンの高さは目安です。コンテンツ量に応じて柔軟に調整してください。\n';
+      '以下の設計方針に沿って、テキスト・情報ブロックをposition:absoluteで配置してください。\n' +
+      '各ゾーンの座標・高さはコンテンツ量に応じて柔軟に調整してください。\n' +
+      '背景画像が適度に見えるよう、オーバーレイ要素で全面を塞がないようにしてください。\n';
   }
 
   return '# ROLE\n' +
@@ -3432,39 +3409,53 @@ function buildFlyerDesignPrompt_(seasonKey, hasImage, imageTags, isEditMode) {
     'HTMLで表現したものです。ウェブページではありません。\n\n' +
     '---\n\n' +
     '# チラシの設計方針\n\n' +
-    '## 1. サイズと構造\n' +
-    '- A4縦（210mm × 297mm）を想定。HTMLでは width:794px; height:1123px で表現\n' +
-    '- overflow:hidden; box-sizing:border-box を最外殻divに必ず設定\n' +
-    '- すべてインラインCSS。フォントは "Noto Serif JP"（見出し）と "Noto Sans JP"（本文）を使用\n\n' +
-    '## 2. ゾーン構成（高さは目安。コンテンツ量に応じて調整可）\n' +
-    (hasImage
-      ? '- 画像ヘッダー（〜280px）: 【最上部・第1要素】背景画像全面＋塾名・講習名・キャッチコピーをオーバーレイ（ヘッダーを兼ねる。この上に別途ヘッダー不要）\n'
-      : '- ヘッダー（〜180px）: 塾名・講習名・キャッチコピー・季節の装飾\n') +
-    (hasImage ? '- メイン（〜840px）: 日程表・料金表・塾の特徴\n' : '- メイン（〜940px）: 日程表・料金表・塾の特徴\n') +
-    '- フッター（〜1123px）: 校舎情報・連絡先・問い合わせ\n\n' +
-    '## 3. デザイン方針（紙チラシとして）\n\n' +
+    '## 1. 必須の基本構造（変更不可）\n' +
+    '以下の構造を厳密に守ってください：\n' +
+    '```html\n' +
+    '<div style="position:relative;width:794px;height:1123px;font-family:\'Noto Sans JP\',\'Meiryo\',sans-serif;overflow:hidden;box-sizing:border-box;">\n' +
+    '  <img src="{{IMAGE_PLACEHOLDER}}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;">\n' +
+    '  <!-- テキスト・情報ブロックはすべてposition:absoluteでここに配置 -->\n' +
+    '</div>\n' +
+    '```\n' +
+    '- 最外殻divは必ず position:relative; width:794px; height:1123px\n' +
+    '- <img>は必ず最初の子要素（z-index:0）として全面背景に表示\n' +
+    '- {{IMAGE_PLACEHOLDER}} は必ず1箇所のみ\n' +
+    '- コンテンツ要素はすべて position:absolute で配置し z-index:1 以上を設定\n\n' +
+    '## 2. レイアウト設計（背景画像を活かす3ゾーン構成）\n' +
+    '背景画像の上に以下のゾーンをposition:absoluteで重ねてください：\n\n' +
+    '### ヘッダーゾーン（top:0〜）\n' +
+    '塾名・講習名・キャッチコピーを配置。\n' +
+    'グラデーションオーバーレイで文字を読みやすくする。\n' +
+    '例: background:linear-gradient(to bottom, rgba(0,0,0,0.70), rgba(0,0,0,0))\n\n' +
+    '### メインゾーン（ヘッダーとフッターの間）\n' +
+    '日程・特徴・料金など。半透明白パネルを使い背景画像を適度に活かす。\n' +
+    '例: background:rgba(255,255,255,0.93)\n' +
+    '背景画像が少し見える隙間（30〜60px程度）を意図的に作るとよい。\n\n' +
+    '### フッターゾーン（bottom:0〜）\n' +
+    '校舎名・電話番号・受付時間を配置。\n' +
+    'メインカラーのベタ塗りまたはグラデーションで締める。\n\n' +
+    '## 3. デザイン方針\n\n' +
     '### 季節テーマ\n' +
     '現在の講習テーマ: ' + seasonTheme + '\n' +
-    'テーマの雰囲気に合った3色（メインカラー・アクセントカラー・背景色）を\n' +
-    'あなたが選んでください。紙に印刷しても見やすい配色にしてください。\n\n' +
-    '### 紙チラシとして意識すること\n' +
-    '- 「塾選びをしている保護者が一目で内容を把握できる」レイアウトを優先する\n' +
-    '- 最も目立たせる要素: 講習名・料金・申込締切\n' +
-    '- ウェブUIに見える要素（カード・影・ドロップシャドウ等）は控えめにする\n' +
-    '- 余白と文字サイズのバランスで読みやすさを確保する\n' +
-    '- 表（日程・料金）は罫線をしっかり引き、印刷時にも視認できる濃さにする\n\n' +
+    (imageTags ? '背景画像の内容: ' + imageTags + '\n' : '') +
+    'テーマに合ったメインカラー・アクセントカラーを選んでください。\n' +
+    '背景画像の色調と調和しつつ、文字が際立つ配色にしてください。\n\n' +
+    '### テキストの可読性（最重要）\n' +
+    '画像上に文字を置く場合、必ず以下のいずれかで可読性を確保すること：\n' +
+    '- text-shadow: 0 2px 8px rgba(0,0,0,0.6) 以上の強さ\n' +
+    '- 半透明オーバーレイ: rgba背景色を設定したdivで囲む\n' +
+    '- グラデーション: linear-gradient で暗くする\n\n' +
     '## 4. タイポグラフィ\n' +
-    '- 大見出し: Noto Serif JP / 28〜36px / bold\n' +
-    '- 小見出し: Noto Serif JP / 20〜24px / 600\n' +
-    '- 本文・表内: Noto Sans JP / 14〜16px / line-height:1.6\n' +
-    '- 強調文字: bold + メインカラー\n\n' +
+    '- 大見出し（講習名）: Noto Serif JP / 36〜52px / bold\n' +
+    '- 小見出し: Noto Serif JP / 18〜24px / 600\n' +
+    '- 本文・表内: Noto Sans JP / 13〜15px / line-height:1.6\n' +
+    '- 強調: bold + メインカラー\n\n' +
     '## 5. 表のスタイル\n' +
     '- border-collapse:collapse; width:100%\n' +
     '- セル内padding: 6px 10px\n' +
     '- ヘッダー行: 背景=メインカラー、文字=白\n' +
     '- 罫線: 1px solid（メインカラーか濃いグレー）\n\n' +
-    imageSection +
-    '## 7. キャッチコピーの作成指針\n' +
+    '## 6. キャッチコピーの作成指針\n' +
     '- ターゲット: 子どもの成績・進学に不安を感じている保護者\n' +
     '- 訴求軸: 個別指導ならではの「一人ひとりに合わせた指導」「確実な成果」\n' +
     '- 文字数: 20〜30文字程度\n' +
@@ -3474,7 +3465,7 @@ function buildFlyerDesignPrompt_(seasonKey, hasImage, imageTags, isEditMode) {
     '\n---\n\n' +
     '# 出力ルール\n' +
     '必ず以下のJSON形式のみで返してください：\n' +
-    '{"html":"<div style=\'width:794px;height:1123px;overflow:hidden;...\'>...</div>","explanation":"変更内容の説明（日本語）"}\n' +
+    '{"html":"<div style=\'position:relative;width:794px;height:1123px;...\'>...</div>","explanation":"変更内容の説明（日本語）"}\n' +
     '注意: htmlの値は1行の文字列で返してください。改行は\\nで表現してください。\n';
 }
 
