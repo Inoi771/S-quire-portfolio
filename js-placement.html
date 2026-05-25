@@ -475,8 +475,8 @@ function buildEditCampusSection(d, campusCodes) {
     html += '<tr>';
     html += '<td style="padding:6px 8px;font-weight:bold;">' + escHtml(c.name || code) + '</td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.abbr || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'abbr\',this.value)" style="width:40px;padding:4px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px;" placeholder="藍"></td>';
-    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
-    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-693-0225"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.tel || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'tel\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-XXX-XXXX"></td>';
+    html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.fax || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'fax\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="088-XXX-XXXX"></td>';
     html += '<td style="padding:4px;"><input type="text" value="' + escHtml(c.mobile || '') + '" onchange="updatePlacementCampus(\'' + code + '\',\'mobile\',this.value)" style="width:110px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" placeholder="080-XXXX-XXXX"></td>';
     var principalOpts = '<option value="">—</option>';
     var curPrincipal = c.principal || '';
