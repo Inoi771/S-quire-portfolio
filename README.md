@@ -94,28 +94,28 @@ Claude CodeでGitHub上のコードを直接読みながら作業できるよう
 ## 技術構成
 
 ```
-[フロントエンド]               [バックエンド]                 [データ]
-                          ┌──────────────────┐
- HTML/CSS/JavaScript ───►│  GAS Web App     │──► Google Spreadsheet
- (Google Apps Script     │  （初期実装）     │
-  HTML Service上で       │                  │
-   ホスティング)          │  ↓ 段階移行中     │
-                          │                  │
-                          │  Cloudflare      │──► Firestore（イベント等）
-                          │  Workers         │──► Supabase（生徒データ）
-                          │  + KV Storage    │──► KV（設定・トークン）
-                          └──────────────────┘
-                                  │
-                                  ├──► Gemini API（AI機能全般）
-                                  ├──► LINE Messaging API（スタッフ通知）
-                                  └──► Firebase Auth（認証）
+[フロントエンド]                [バックエンド]                 [データ]
+                           ┌──────────────────┐
+ HTML/CSS/JavaScript       │  GAS Web App     │──► Google Spreadsheet
+ (Firebase Hosting で      │  （API・Webhook） │
+  配信／PWA対応)      ───►│                  │
+        ▲                  │  ↓ 段階移行中     │
+        │ gasApi POST      │                  │
+        └──────────────────│  Cloudflare      │──► Firestore（イベント等）
+                           │  Workers         │──► Supabase（生徒データ）
+                           │  + KV Storage    │──► KV（設定・トークン）
+                           └──────────────────┘
+                                   │
+                                   ├──► Gemini API（AI機能全般）
+                                   ├──► LINE Messaging API（スタッフ通知）
+                                   └──► Firebase Auth（認証）
 ```
 
 **スタック：**
 
 - **言語：** JavaScript（フロントエンド・GAS・Workers すべて）
-- **フロントエンド：** Google Apps Script HTML Service（SPA構成・PWA対応）
-- **バックエンド：** Google Apps Script → Cloudflare Workers（段階移行中・約6割完了）
+- **フロントエンド：** Firebase Hosting で配信（SPA構成・PWA対応・ビルド時にHTMLパーシャルを結合）
+- **バックエンド：** Google Apps Script（API・LINE Webhook担当）→ Cloudflare Workers（段階移行中・約6割完了）
 - **データベース：** Google Spreadsheet（既存）・Firestore（イベント・SNS投稿予定）・Supabase PostgreSQL（生徒データ・RLS適用）
 - **設定ストア：** Cloudflare KV
 - **認証：** Firebase Auth（Googleアカウント・ホワイトリスト型）
