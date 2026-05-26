@@ -267,3 +267,88 @@ font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif;
 - [ ] iPhone Safari と Android Chrome で実機確認した
 - [ ] スマホ・タブレット・PC のレイアウトが崩れない
 - [ ] タップ操作が44px以上のターゲットになっている
+
+---
+
+## コード品質の最低ライン（実験ルール）
+
+「動けばよい」ではなく、後から読める・直せるコードを書く。
+ユーザーはコードを読めないため、これらは Claude Code が能動的に守る必要がある。
+
+### 関数の長さ
+
+| 言語 | 目安 | 上限の警告ライン |
+|---|---|---|
+| JavaScript | 50行以内 | 150行を超えたら分割を提案 |
+| Google Apps Script | 50行以内 | 150行を超えたら分割を提案 |
+
+1つの関数は1つのことだけをする。長くなったら、内部処理を別関数に切り出す。既存の「ファイルサイズ制限（2,000行ルール）」と組み合わせ、ファイルだけでなく関数単位でも肥大化を防ぐ。
+
+### エラーの握りつぶし禁止
+
+既存の「エラーハンドリング」セクションのテンプレートに加えて、内部で呼び出す処理（LockService・JSON.parse・Drive操作など）の try-catch では必ず以下のいずれかを行う:
+
+1. ログに出力する（`Logger.log('❌ ...: ' + error)` など）
+2. 上位の戻り値に反映する（`return { success: false, error: ... }`）
+3. 上位に再スローする（`throw error`）
+
+**禁止例:**
+
+```javascript
+try { something(); } catch (e) {}                    // ❌ 完全に無視
+try { something(); } catch (e) { /* 非致命的 */ }    // ❌ コメントだけで無視
+```
+
+**最低限の許容例:**
+
+```javascript
+try {
+  something();
+} catch (e) {
+  Logger.log('⚠ something failed (非致命的): ' + e);
+}
+```
+
+「ここは握りつぶしてよい」と判断する場合は、その理由をコメントに具体的に書く（例: `// ユーザーがログアウト済みの場合は無視してよい`）。
+
+参考: BUGS.md パターン2 で `safeJsonParse_()` の使用が必須化されているのも同じ思想（握りつぶさず、デフォルト値で復旧する）。
+
+### グローバル変数を増やさない
+
+**原則: グローバル変数（どのファイルからでも書き換えられる変数）は最小限に留める。**
+
+GAS環境では全 `.js` ファイルが同じグローバル名前空間を共有するため（CLAUDE.md セクション2「バックエンド設計」参照）、変数を無造作に増やすと「どの関数がどの変数を変えているか」追跡不能になる。
+
+#### ルール
+
+| ルール | 内容 |
+|---|---|
+| 用途別に集約 | グローバル状態は用途別にオブジェクトでまとめる（認証関連は1つ、UI状態は1つ、など） |
+| 新規追加時は必ず確認 | グローバル変数を新たに追加する場合、Claude Code は実装前にユーザーに確認する |
+| 目安は20個まで | グローバル変数（またはオブジェクトのトップレベルキー）が20個を超えたら、設計を見直すサインとして報告する |
+
+#### 良い例（フロント `js-core.html` の場合）
+
+```javascript
+// 用途別に集約
+var AppState = {
+  user: { id: null, email: null, role: null },
+  ui:   { currentTab: 'schedule', isLoading: false },
+  data: { students: [], schedule: [] },
+};
+```
+
+#### 悪い例
+
+```javascript
+// バラバラに散在
+var currentUserId = null;
+var currentUserEmail = null;
+var currentUserRole = null;
+var currentTab = 'schedule';
+var isLoading = false;
+var students = [];
+// ... 30個続く
+```
+
+「とりあえずグローバルに置く」は禁止。スコープを限定できるならローカル変数・関数引数で済ませる。
