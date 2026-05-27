@@ -19,13 +19,29 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: シークレット存在確認
+        id: check
+        env:
+          API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TEST }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_TEST }}
+        run: |
+          if [ -z "$API_TOKEN" ] || [ -z "$ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN_TEST / CLOUDFLARE_ACCOUNT_ID_TEST が未設定のためスキップします（ポートフォリオ用ミラーリポジトリでは正常な挙動）"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: コードを取得
+        if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       - name: 実行理由を表示
+        if: steps.check.outputs.skip != 'true'
         run: echo "=== 実行理由: ${{ github.event.inputs.reason }} ==="
 
       - name: Cloudflare Workers へデプロイ（テスト環境）
+        if: steps.check.outputs.skip != 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_TEST }}
