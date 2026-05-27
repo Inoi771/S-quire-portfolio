@@ -807,7 +807,7 @@ function ocrAndSaveGradeSheet(base64Image, mimeType, year) {
           }
 
         } else {
-          // ── 新規: OCR 値をそのまま使用（null は submitGradeData 内で 0 に変換）──
+          // ── 新規: OCR 値をそのまま使用（null は submitGradeData 内で NULL として保存）──
           // ※ 一部フィールドが読み取れなくても生徒レコード自体はスキップしない
           scores = {
             kokugo:         student.kokugo,
@@ -1102,6 +1102,19 @@ function getGradeDataByStudentAndTest(year, studentId, testName) {
 }
 
 /**
+ * スコア値を整数または null に変換するヘルパー
+ * 空欄・null・undefined → null（未入力として保存）
+ * 数値文字列・0 → 整数（0点も有効値として保存）
+ * @param {*} val 入力値
+ * @return {number|null}
+ */
+function toScoreOrNull_(val) {
+  if (val === '' || val === null || val === undefined) return null;
+  var n = parseInt(val, 10);
+  return isNaN(n) ? null : n;
+}
+
+/**
  * 成績データを登録（Firestore upsert）
  * @aiCallable
  * @param {number} year 学年年度
@@ -1120,16 +1133,22 @@ function submitGradeData(year, studentId, testName, scores, skipCacheUpdate) {
     var sid = String(studentId).trim();
     if (/^\d+$/.test(sid) && sid.length < 10) sid = sid.padStart(10, '0');
 
-    // スコア値を数値に変換（0 が有効値なので isNaN チェックを使う）
-    var kokugo = parseInt(scores.kokugo, 10); if (isNaN(kokugo)) kokugo = 0;
-    var shakai = parseInt(scores.shakai, 10); if (isNaN(shakai)) shakai = 0;
-    var sugaku = parseInt(scores.sugaku, 10); if (isNaN(sugaku)) sugaku = 0;
-    var rika   = parseInt(scores.rika,   10); if (isNaN(rika))   rika   = 0;
-    var eigo   = parseInt(scores.eigo,   10); if (isNaN(eigo))   eigo   = 0;
-    var calcTotal = kokugo + shakai + sugaku + rika + eigo;
+    // スコア値を数値に変換（空欄は NULL として保存し、0点と区別する）
+    var kokugo = toScoreOrNull_(scores.kokugo);
+    var shakai = toScoreOrNull_(scores.shakai);
+    var sugaku = toScoreOrNull_(scores.sugaku);
+    var rika   = toScoreOrNull_(scores.rika);
+    var eigo   = toScoreOrNull_(scores.eigo);
+    // NULL を除外して合計・平均を計算
+    var nonNullScores = [kokugo, shakai, sugaku, rika, eigo].filter(function(v) { return v !== null; });
+    var calcTotal = nonNullScores.length > 0
+      ? nonNullScores.reduce(function(a, b) { return a + b; }, 0)
+      : null;
     var gokei = parseInt(scores.gokei, 10);
     var total   = (!isNaN(gokei) && gokei > 0) ? gokei : calcTotal;
-    var average = total > 0 ? parseFloat((total / 5).toFixed(1)) : 0;
+    var average = (total !== null && nonNullScores.length > 0)
+      ? parseFloat((total / nonNullScores.length).toFixed(1))
+      : null;
 
     var studentName = scores.studentName || getStudentNameById(sid);
 
