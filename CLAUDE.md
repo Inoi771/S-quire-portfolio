@@ -11,7 +11,7 @@ markdown# S-quire — プロジェクト設計書
 - コード改善・新ルール検証の実験環境
 
 ### 本番との関係
-- 本番の S-quire は別アカウント（square1995）で運用中
+- 本番の S-quire は別アカウント（`YOUR_PRODUCTION_GITHUB_ACCOUNT` <!-- 要設定 -->）で運用中
 - **実験開始: 2026-05-26 / 基準タグ: `baseline-20260526`**
   - このタグの時点までは本番と同一内容
   - これ以降のコミットは実験的変更を含む可能性あり
@@ -26,7 +26,7 @@ markdown# S-quire — プロジェクト設計書
 
 - 大きな変更・リファクタリング・関数の大幅書き換えも、ユーザー確認を経た上で自由に試してよい
 - 失敗しても本番に影響しないので、CODING.md「コード品質の最低ライン」に書かれた実験的ルール（関数の長さ・グローバル変数の整理・エラー握りつぶし禁止）を積極的に試すこと
-- ただし、別アカウントの本番リポジトリ（square1995/S-quire）には絶対に触らない
+- ただし、別アカウントの本番リポジトリ（`YOUR_PRODUCTION_GITHUB_ACCOUNT/S-quire` <!-- 要設定 -->）には絶対に触らない
 
 ---
 
@@ -124,9 +124,9 @@ markdown# S-quire — プロジェクト設計書
 
 | 状態 | 詳細 |
 |------|------|
-| リポジトリ | `square1995/S-quire` |
+| リポジトリ | `YOUR_GITHUB_ACCOUNT/S-quire` <!-- 要設定 --> |
 | デプロイ | `claude/` で始まるブランチへのプッシュで自動デプロイ |
-| アプリURL | `https://fir-quire.web.app` |
+| アプリURL | `https://YOUR_FIREBASE_PROJECT_ID.web.app` <!-- 要設定 --> |
 | 反映時間 | GAS: 約1〜2分 / Firebase Hosting: 約2〜3分 |
 
 **絶対禁止：** clasp インストール案内・clasp login 実行・GASエディタでの手動デプロイ案内・scriptId の確認・認証操作。詳細は `DEPLOY.md` 参照。
