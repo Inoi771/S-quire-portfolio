@@ -38,7 +38,8 @@ jobs:
 
       - name: 実行理由を表示
         if: steps.check.outputs.skip != 'true'
-        run: echo "=== 実行理由: ${{ github.event.inputs.reason }} ==="
+        run: |
+          echo "=== 実行理由: ${{ github.event.inputs.reason }} ==="
 
       - name: Cloudflare Workers へデプロイ（テスト環境）
         if: steps.check.outputs.skip != 'true'
