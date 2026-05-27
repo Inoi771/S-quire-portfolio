@@ -1,0 +1,98 @@
+name: GASへデプロイ（テスト環境）
+
+# ======================================================================
+# テスト環境専用ワークフロー
+# - scriptId は .clasp.test.json（テスト GAS プロジェクト）を使用
+# - 認証は CLASPRC_JSON_TEST シークレットを使用
+# - ANYONE_ANONYMOUS デプロイ更新は行わない（テスト環境不要）
+# - 古いデプロイの自動削除は行わない
+# - 手動実行（workflow_dispatch）のみ起動
+# ======================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '実行理由（ログ用）'
+        required: false
+        default: '手動デプロイ'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: テストを実行
+        run: |
+          npm install
+          npm test
+
+      - name: .claspignore 漏れチェック（GAS 非互換ファイル検出）
+        run: |
+          if [ ! -f .claspignore ]; then
+            echo "::error::.claspignore が存在しません"
+            exit 1
+          fi
+          FAIL=0
+          for f in *.js; do
+            [ -e "$f" ] || continue
+            ignored=0
+            while IFS= read -r pat; do
+              [ -z "$pat" ] && continue
+              case "$pat" in \#*) continue;; esac
+              case "$f" in $pat) ignored=1; break;; esac
+            done < .claspignore
+            [ "$ignored" = "1" ] && continue
+            if grep -qE '^(module\.exports|(const|let|var)[[:space:]]+[^=]*=[[:space:]]*require\()' "$f"; then
+              echo "::error file=$f::GAS 非互換ファイルが .claspignore 未登録"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" = "1" ] && exit 1
+          echo "✓ .claspignore チェック OK"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: clasp をインストール
+        run: npm install -g @google/clasp
+
+      - name: 認証情報を作成（テスト環境用シークレット）
+        run: echo '${{ secrets.CLASPRC_JSON_TEST }}' > ~/.clasprc.json
+
+      - name: テスト用 .clasp.json をセット
+        run: |
+          echo "=== テスト環境の scriptId を使用 ==="
+          cp .clasp.test.json .clasp.json
+          cat .clasp.json
+
+      - name: GASへプッシュ（テスト環境）
+        run: |
+          echo "=== 実行理由: ${{ github.event.inputs.reason }} ==="
+          clasp push --force
+          echo "✓ テスト GAS へのプッシュ完了"
+
+      - name: デプロイ一覧を表示
+        run: |
+          echo "=== 現在のデプロイ一覧 ==="
+          clasp deployments

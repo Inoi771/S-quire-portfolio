@@ -78,23 +78,99 @@
 
 ---
 
-## GitHubシークレット（設定済み）
+## GitHubシークレット
 
 | シークレット名 | 内容 |
 |--------------|------|
-| `CLASP_REFRESH_TOKEN` | Google OAuth リフレッシュトークン（GitHub Actions が使用） |
+| `CLASPRC_JSON` | 本番 GAS 用の `~/.clasprc.json` の中身（JSON 文字列） |
+| `CLASPRC_JSON_TEST` | テスト GAS 用の `~/.clasprc.json` の中身（個人Googleアカウント） |
+
+> ⚠️ DEPLOY.md に旧記載の `CLASP_REFRESH_TOKEN` は使用されていない。
+> 実際のワークフローは `CLASPRC_JSON` / `CLASPRC_JSON_TEST` を使う。
 
 ---
 
-## 関連ファイル（設定済み・編集不要）
+## 関連ファイル
 
 | ファイル | 役割 |
 |---------|------|
-| `.github/workflows/deploy-to-gas.yml` | GASデプロイワークフロー |
-| `.github/workflows/deploy-firebase.yml` | Firebase Hostingデプロイワークフロー |
+| `.github/workflows/deploy-to-gas.yml` | 本番 GAS デプロイワークフロー（main/claude/* への push で発火） |
+| `.github/workflows/deploy-to-gas-test.yml` | テスト GAS デプロイワークフロー（手動実行のみ） |
+| `.github/workflows/deploy-firebase.yml` | Firebase Hosting デプロイワークフロー |
 | `.github/workflows/merge-to-main.yml` | mainブランチへの自動マージ |
-| `.clasp.json` | GASプロジェクトとの紐付け |
+| `.clasp.json` | 本番 GAS プロジェクトとの紐付け（変更禁止） |
+| `.clasp.test.json` | テスト GAS プロジェクトとの紐付け（scriptId 要更新） |
 | `appsscript.json` | GASマニフェスト |
+
+## テスト環境 GAS セットアップ
+
+### 設定ファイル
+- `.clasp.test.json` — テスト GAS の scriptId を管理（本番 `.clasp.json` と分離）
+- テスト scriptId: `1fzSZqichmZbsj8KSPAjkbbWtHaB_dcymgk0SoCtdme1ViBDgTvb298WX`
+
+### CLASPRC_JSON_TEST の取得手順（個人 Google アカウント用）
+
+> **前提**: ローカル PC に clasp がインストールされていること（`npm install -g @google/clasp`）
+
+1. ターミナルで個人アカウントとしてログイン
+   ```bash
+   clasp login
+   ```
+   → ブラウザが開くので、テスト環境で使う個人 Google アカウントで認証する
+
+2. 認証後に生成されるファイルを確認
+   ```bash
+   cat ~/.clasprc.json
+   ```
+   以下のような JSON が出力される:
+   ```json
+   {
+     "token": {
+       "access_token": "ya29.xxx",
+       "refresh_token": "1//0gxxx",
+       "scope": "https://www.googleapis.com/auth/...",
+       "token_type": "Bearer",
+       "expiry_date": 1716700000000
+     },
+     "oauth2ClientSettings": {
+       "clientId": "xxx.apps.googleusercontent.com",
+       "clientSecret": "GOCSPX-xxx",
+       "redirectUri": "http://localhost"
+     },
+     "isLocalCreds": false
+   }
+   ```
+
+3. この JSON をまるごとコピーして GitHub Secrets に登録
+   ```
+   GitHubリポジトリ → Settings → Secrets and variables → Actions
+   → New repository secret
+   Name: CLASPRC_JSON_TEST
+   Secret: （上記 JSON を貼り付け）
+   ```
+
+### テスト環境へのデプロイ手順
+
+```
+GitHubリポジトリ → Actions → 「GASへデプロイ（テスト環境）」
+→ Run workflow → Run workflow
+```
+
+または GitHub CLI:
+```bash
+gh workflow run deploy-to-gas-test.yml --field reason="テスト確認"
+```
+
+### 本番との違い
+
+| 項目 | 本番 | テスト |
+|------|------|--------|
+| ワークフロー | `deploy-to-gas.yml` | `deploy-to-gas-test.yml` |
+| scriptId ファイル | `.clasp.json` | `.clasp.test.json` |
+| 認証シークレット | `CLASPRC_JSON` | `CLASPRC_JSON_TEST` |
+| 起動条件 | push 自動 | 手動のみ |
+| ANYONE_ANONYMOUS 更新 | あり | なし |
+| 古いデプロイ削除 | あり | なし |
 
 ---
 
