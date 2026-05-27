@@ -74,11 +74,31 @@ jobs:
         with:
           node-version: '20'
 
-      - name: clasp をインストール
-        run: npm install -g @google/clasp
+      - name: clasp をインストール（バージョン固定: 2.4.2）
+        run: npm install -g @google/clasp@2.4.2
 
       - name: 認証情報を作成（テスト環境用シークレット）
-        run: echo '${{ secrets.CLASPRC_JSON_TEST }}' > ~/.clasprc.json
+        env:
+          CLASPRC_JSON_TEST: ${{ secrets.CLASPRC_JSON_TEST }}
+        run: |
+          if [ -z "$CLASPRC_JSON_TEST" ]; then
+            echo "::error::CLASPRC_JSON_TEST シークレットが未設定です。GitHubリポジトリの Settings > Secrets and variables > Actions で登録してください"
+            exit 1
+          fi
+          # シェル展開を避けるため printf + env 変数経由で書き込む
+          printf '%s' "$CLASPRC_JSON_TEST" > ~/.clasprc.json
+          BYTES=$(wc -c < ~/.clasprc.json)
+          echo "✓ ~/.clasprc.json を書き込みました（$BYTES バイト）"
+          if [ "$BYTES" -lt 100 ]; then
+            echo "::error::認証情報のサイズが小さすぎます。シークレットの内容を確認してください"
+            exit 1
+          fi
+          # JSON 妥当性チェック
+          if ! node -e "JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.clasprc.json','utf8'))" 2>/dev/null; then
+            echo "::error::~/.clasprc.json が不正な JSON です。clasp login で生成した ~/.clasprc.json の中身そのものを CLASPRC_JSON_TEST に貼り付けてください"
+            exit 1
+          fi
+          echo "✓ JSON 妥当性チェック OK"
 
       - name: テスト用 .clasp.json をセット
         run: |
