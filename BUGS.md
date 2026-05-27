@@ -355,7 +355,7 @@ CI/CD のサービスアカウントには `firebaserules.googleapis.com` の権
 **やってはいけないこと:**
 ```yaml
 # ❌ firestore:rules を含めると 403 エラーでデプロイ失敗
-firebase deploy --only hosting,firestore:rules --project fir-quire
+firebase deploy --only hosting,firestore:rules --project YOUR_FIREBASE_PROJECT_ID  # 要設定
 ```
 
 ```yaml
@@ -380,7 +380,7 @@ Object.getPrototypeOf(fbDb.collection('_').doc('_')).get = wrappedGet;
 **正しい対応:**
 ```yaml
 # ✅ deploy-firebase.yml は必ず --only hosting のみ
-firebase deploy --only hosting --project fir-quire
+firebase deploy --only hosting --project YOUR_FIREBASE_PROJECT_ID  # 要設定
 ```
 
 ```javascript

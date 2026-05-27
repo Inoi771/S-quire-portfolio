@@ -22,10 +22,10 @@
 
 | 項目 | 値 |
 |------|-----|
-| GASデプロイID | `AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw` |
+| GASデプロイID | `YOUR_GAS_DEPLOYMENT_ID` <!-- 要設定 --> |
 | アクセス設定 | ANYONE_ANONYMOUS |
 | 用途 | LINE Webhook受信 ＋ Firebase HostingからのAPIコール |
-| LINE Webhook URL | `https://script.google.com/macros/s/AKfycbzrzZkyS42v_-kNNrmR4NumrVxfjdwNeJ0uCk3k5mha88Dm7ZarVzjVAkDY8WIqpKybWw/exec` |
+| LINE Webhook URL | `https://script.google.com/macros/s/YOUR_GAS_DEPLOYMENT_ID/exec` <!-- 要設定 --> |
 
 **禁止事項：**
 - IDなしで `clasp deploy` を実行して新規デプロイを作ること
@@ -39,9 +39,10 @@
 ## `.clasp.json`（設定済み・変更不要）
 ```json
 {
-  "scriptId": "1INhrY1K41tbSel-KrCCpPbZvJ12A-nCP6WuU5jNLOFee-OXNngwdnNjC",
+  "scriptId": "YOUR_GAS_SCRIPT_ID",
   "rootDir": "./"
 }
+// 要設定: scriptId は GAS プロジェクトの「設定」画面から取得して書き換えてください
 ```
 
 ---

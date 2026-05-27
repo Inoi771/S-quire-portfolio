@@ -82,7 +82,7 @@ function shouldUseWorkersForAiAction_(flagKey) {
 
 ```bash
 # Cloudflare wrangler CLI 経由（ユーザーの環境で実行）
-wrangler kv key put --namespace-id=8dcb25efee404474a9e1f948d59bb477 "prop:FF_AI_LECTURE_CREATE" "workers"
+wrangler kv key put --namespace-id=YOUR_KV_NAMESPACE_ID  # 要設定 "prop:FF_AI_LECTURE_CREATE" "workers"
 ```
 
 または GAS エディタから:
@@ -97,7 +97,7 @@ function _flagOn_create() {
 ### 3.2 フラグ OFF（GAS 経路に戻す・ロールバック）
 
 ```bash
-wrangler kv key delete --namespace-id=8dcb25efee404474a9e1f948d59bb477 "prop:FF_AI_LECTURE_CREATE"
+wrangler kv key delete --namespace-id=YOUR_KV_NAMESPACE_ID  # 要設定 "prop:FF_AI_LECTURE_CREATE"
 ```
 
 または GAS エディタから:

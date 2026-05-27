@@ -31,7 +31,7 @@ markdown# DATA.md — データ構造・プロパティ一覧
 | `LINE_SCHEDULER_SETTINGS` | LINEスケジューラー設定（JSON） |
 | `AI_KNOWLEDGE_BASE` | AIナレッジベース（JSON配列: `[{id, category, content, updatedAt}]`） |
 | `LECTURE_DEADLINE_OVERRIDES` | 講習日程締切手動上書き（JSON: `{"2025-summer": "2025-06-15"}`） |
-| `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `fir-quire`） |
+| `FIREBASE_PROJECT_ID` | Firebase プロジェクトID（例: `YOUR_FIREBASE_PROJECT_ID`）<!-- 要設定 --> |
 | `FIREBASE_CLIENT_EMAIL` | Firebase サービスアカウントメール |
 | `FIREBASE_PRIVATE_KEY` | Firebase サービスアカウント秘密鍵（PEM形式） |
 | `SUPABASE_URL` | Supabase プロジェクトURL（例: `https://xxxxx.supabase.co`）— 成績データ用 |
