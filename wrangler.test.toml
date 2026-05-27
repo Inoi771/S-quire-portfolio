@@ -1,0 +1,37 @@
+# ======================================================================
+# テスト環境専用 wrangler 設定
+# - 個人アカウント（Account ID: 593994cd5fb8f3604f6002981ab40d78）にデプロイ
+# - Worker 名は本番と分離（s-quire-api-test）
+# - KV namespace は個人アカウントに別途作成したものを使用
+# - Cron は無効化（テスト環境で LINE 自動送信が走らないようにする）
+# - Secrets は個人アカウント側で wrangler secret put で個別に登録する
+# ======================================================================
+
+name = "s-quire-api-test"
+main = "workers/src/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "593994cd5fb8f3604f6002981ab40d78"
+
+[[kv_namespaces]]
+binding = "KV"
+# 個人アカウントで作成した KV namespace の ID に差し替えること
+# 作成コマンド: npx wrangler kv namespace create KV --config wrangler.test.toml
+id = "REPLACE_WITH_TEST_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_TEST_KV_NAMESPACE_ID"
+
+# 公開値（Firebase Web API Key はフロントエンド HTML にも記載済みの非秘密情報）
+# テスト環境用の Firebase プロジェクトを別途使う場合はここを差し替える
+[vars]
+FIREBASE_WEB_API_KEY = "AIzaSyDGxhgsCbpgJuXm6PzY1WcR8a4QOtfJBiU"
+
+# Secrets は個人アカウントの Cloudflare に登録する（wrangler.test.toml には値を書かない）
+# 登録が必要: FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY
+#             SUPABASE_URL / SUPABASE_SERVICE_KEY
+# 登録コマンド例: npx wrangler secret put FIREBASE_PROJECT_ID --config wrangler.test.toml
+
+# Cron トリガーはテスト環境では無効化
+# 本番では "0 * * * *" で LINE スケジュール配信が走るが、
+# テスト環境で稼働すると実ユーザーに重複通知される恐れがあるためコメントアウト
+# [triggers]
+# crons = ["0 * * * *"]

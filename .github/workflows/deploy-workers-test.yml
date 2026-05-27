@@ -1,0 +1,33 @@
+name: Cloudflare Workers デプロイ（テスト環境）
+
+# ======================================================================
+# テスト環境専用ワークフロー
+# - wrangler.test.toml（個人アカウント）を使用
+# - 認証は CLOUDFLARE_API_TOKEN_TEST / CLOUDFLARE_ACCOUNT_ID_TEST を使用
+# - 手動実行（workflow_dispatch）のみ起動
+# ======================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '実行理由（ログ用）'
+        required: false
+        default: '手動デプロイ'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: 実行理由を表示
+        run: echo "=== 実行理由: ${{ github.event.inputs.reason }} ==="
+
+      - name: Cloudflare Workers へデプロイ（テスト環境）
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_TEST }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_TEST }}
+          command: deploy --config wrangler.test.toml
