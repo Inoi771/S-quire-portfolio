@@ -92,6 +92,25 @@ Claude CodeでGitHub上のコードを直接読みながら作業できるよう
 
 ---
 
+## 並行プロジェクト：Squmath（S-quireの反省を活かして）
+
+S-quire本体と並行して、数学プリント作成 Web アプリ **Squmath** を開発中です。S-quire スタッフ向けの組織内ツールで、Next.js (App Router) + Cloudflare Workers + Supabase (PostgreSQL + RLS) という構成です。
+
+このプロジェクトは、S-quire 開発で得た反省点を最初から設計に組み込むために立ち上げました。
+
+| S-quire での反省 | Squmath での判断 |
+|---|---|
+| GAS を「初心者向け」で選んだ結果、テスト段階で限界に達し本番直前に Cloudflare へ大移行 | 最初から長期運用に耐える構成（Next.js + Cloudflare Workers）で着手 |
+| DB に直接触る構造から、後で Workers 経由に変えるのが大変だった | 最初から Route Handler 経由で DB に触れない構造で書く |
+| 古いブログ記事に従って `@cloudflare/next-on-pages` を選んだら deprecated で、Phase 1 完了後に OpenNext への移行で 2 日ロス | 「公式が今でも勧めているか」を新規セットアップ前に必ず確認するルールを `CLAUDE.md` に明文化 |
+| ローカル開発環境を中途半端に持っていて運用が複雑化 | ローカル環境を一切持たない完全クラウド開発（GitHub → Cloudflare 直行）を前提化し、`CLAUDE.md` の冒頭でルール化 |
+
+「コードを書ける人」であれば技術選定の失敗は実装力でカバーできるかもしれませんが、私の場合はカバーできません。だからこそ「同じ失敗を繰り返さないためにルール化する」工程に時間をかけています。`CLAUDE.md` の冒頭に「教訓」として過去の事故を残しているのは、未来の自分（と Claude Code）に同じ罠を踏ませないためです。
+
+Squmath は、S-quire で確立した「claude.ai で設計 → Claude Code で実装」のワークフローを、別スタック・別ドメインに適用した実例でもあります。
+
+---
+
 ## 技術構成
 
 ```
