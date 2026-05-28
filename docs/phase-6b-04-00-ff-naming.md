@@ -81,7 +81,7 @@ function shouldUseWorkersForAiAction_(flagKey) {
 **前提**: Workers 側に該当関数の実装がデプロイ済（KV フラグ OFF のまま 3 日以上稼働）。
 
 ```bash
-# Cloudflare wrangler CLI 経由（ユーザーの環境で実行）
+# Cloudflare wrangler CLI 経由（オーナーの環境で実行）
 wrangler kv key put --namespace-id=YOUR_KV_NAMESPACE_ID  # 要設定 "prop:FF_AI_LECTURE_CREATE" "workers"
 ```
 
@@ -179,7 +179,7 @@ function _checkAllFlags() {
 2. 2 分待機（伝播完了）
 3. AI ウィジェットから該当操作を実行 → GAS Apps Script ダッシュボードで GAS 関数の呼出を確認
 4. ロールバックコミット作成（`git revert` ではなく KV 操作のみ・コードは変更しない）
-5. Slack/対面でユーザーに報告
+5. Slack/対面でオーナーに報告
 
 ---
 
