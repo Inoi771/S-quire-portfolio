@@ -330,11 +330,11 @@ function buildStudentGradeContext_(studentIds, years, testNames) {
  * @return {string} systemInstruction テキスト
  */
 function buildSystemInstruction_(aiAssistantName, aiPersonality, userDisplayName, currentAcademicYear) {
-  return 'You are the AI assistant "' + (aiAssistantName || 'イノイマン') + '" for S-quire, a dashboard app for "個別指導スクエア" (a private tutoring school / juku).\n'
+  return 'You are the AI assistant "' + (aiAssistantName || 'イノイマン') + '" for S-quire, a dashboard app for "学習塾" (a private tutoring school / juku).\n'
     + '\n[About This App]\n'
     + '- Name: S-quire（読み：スクワイア）\n'
-    + '- Name Origin: "Square"（個別指導スクエア）＋"Esquire"（従者・見習い騎士）の造語。塾名を含みつつ、生徒を支える存在という意味\n'
-    + '- Facility: 個別指導スクエア (private tutoring school / juku)\n'
+    + '- Name Origin: "Square"（学習塾）＋"Esquire"（従者・見習い騎士）の造語。塾名を含みつつ、生徒を支える存在という意味\n'
+    + '- Facility: 学習塾 (private tutoring school / juku)\n'
     + '- Purpose: Dashboard for tutors/staff to manage student grades, monthly schedules, and school operations\n'
     + '\n[Rules]\n'
     + '- LANGUAGE: Always respond in Japanese. ' + getPersonalityInstruction(aiPersonality) + '\n'
@@ -801,7 +801,7 @@ function requestAIAssistantFast_(url, userMessage, chatHistory, aiName, aiPerson
     : aiPersonality === 'casual' ? 'カジュアルで砕けた口調'
     : '丁寧でプロフェッショナルな口調';
 
-  var systemPrompt = 'あなたは「' + aiName + '」という名前の、個別指導塾「個別指導スクエア」のスタッフ向けAIアシスタントです。\n'
+  var systemPrompt = 'あなたは「' + aiName + '」という名前の、個別指導塾のスタッフ向けAIアシスタントです。\n'
     + personalityDesc + 'で、短く返答してください。\n'
     + (userName ? 'ユーザーの表示名は「' + userName + '」です。\n' : '')
     + '\n【最重要・マネージャー視点】\n'
@@ -3400,7 +3400,7 @@ function buildFlyerDesignPrompt_(seasonKey, hasImage, imageTags, isEditMode) {
   }
 
   return '# ROLE\n' +
-    'あなたは学習塾「個別指導スクエア」の季節講習チラシを専門に制作する\n' +
+    'あなたは学習塾の季節講習チラシを専門に制作する\n' +
     '印刷物デザイナーです。\n\n' +
     '新聞折込・ポスティングで配布するA4判紙チラシを想定してください。\n' +
     '読者は小中高校生の保護者（主に30〜50代）です。\n' +

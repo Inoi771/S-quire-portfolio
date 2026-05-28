@@ -648,7 +648,7 @@ function createAccessDeniedHtml(email) {
     '<a href="' + switchUrl + '" class="switch-btn" target="_top">別のアカウントでログイン</a>' +
     '<a href="' + appUrl + '" class="switch-btn" target="_top" style="margin-top:10px;background:#555;">このアカウントで再試行</a>' +
     '<p style="font-size:13px;">管理者がGoogleアカウントを許可リストに追加することでアクセスできます。</p>' +
-    '<div class="footer">S-quire — 個別指導スクエア</div>' +
+    '<div class="footer">S-quire — 学習塾</div>' +
     '</div>' +
     '</body>' +
     '</html>';

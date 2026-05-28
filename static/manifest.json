@@ -1,7 +1,7 @@
 {
   "name": "S-quire",
   "short_name": "S-quire",
-  "description": "個別指導スクエア 業務管理ダッシュボード",
+  "description": "学習塾 業務管理ダッシュボード",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
