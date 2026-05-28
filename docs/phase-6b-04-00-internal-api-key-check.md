@@ -225,6 +225,6 @@ Phase 6-B-04-00 ステップ4 で `callWorkersInternal_` を追加した後（KV
 
 | 項目 | 確認日 | 確認者 | 結果 |
 |-----|-------|-------|------|
-| GAS ScriptProperties 設定 | _Phase 6-B-04-00 ステップ4 着手前にユーザーに確認_ | - | - |
+| GAS ScriptProperties 設定 | _Phase 6-B-04-00 ステップ4 着手前にオーナーに確認_ | - | - |
 | Cloudflare Secret 設定 | _同上_ | - | - |
 | kv_get 動作確認 | _継続稼働中につき OK と推定_ | - | - |
