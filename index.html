@@ -167,7 +167,7 @@
 
         <div style="background:rgba(255,255,255,0.08); border-radius:10px; padding:16px; margin-bottom:16px;">
           <div style="color:#43e97b; font-weight:700; margin-bottom:8px;">① スタッフに共有するフォルダ（親フォルダ）</div>
-          <p style="color:#adb5bd; font-size:13px; margin:0 0 10px; line-height:1.6;">例：「個別指導スクエア」という名前で作成。このフォルダをスタッフのGoogleアカウントに「<strong style="color:#fff;">編集者</strong>」として共有すると、そのスタッフがアプリを使えるようになります。</p>
+          <p style="color:#adb5bd; font-size:13px; margin:0 0 10px; line-height:1.6;">例：「学習塾」という名前で作成。このフォルダをスタッフのGoogleアカウントに「<strong style="color:#fff;">編集者</strong>」として共有すると、そのスタッフがアプリを使えるようになります。</p>
           <p style="color:#adb5bd; font-size:13px; margin:0 0 8px;">フォルダのURLを開き、<code style="background:rgba(255,255,255,0.15); padding:2px 6px; border-radius:4px;">https://drive.google.com/drive/folders/<strong style="color:#43e97b;">ここ</strong></code> の部分をコピーしてください。</p>
           <input type="text" id="setupAccessFolderId" placeholder="親フォルダのID（/folders/の後の文字列）" style="width:100%; padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.1); color:#fff; font-size:14px; box-sizing:border-box;">
         </div>
@@ -229,7 +229,7 @@
     <div style="background:white; border-radius:20px; padding:40px 32px; max-width:360px; width:90%; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
       <div style="font-size:48px; margin-bottom:12px;">🏫</div>
       <h2 style="margin:0 0 8px; font-size:24px; color:#1a1a2e; font-weight:700;">S-quire</h2>
-      <p style="margin:0 0 28px; color:#666; font-size:14px; line-height:1.6;">個別指導スクエア 業務管理システム<br>Googleアカウントでログインしてください</p>
+      <p style="margin:0 0 28px; color:#666; font-size:14px; line-height:1.6;">学習塾 業務管理システム<br>Googleアカウントでログインしてください</p>
       <button id="fbSignInBtn" onclick="signInWithGoogle()" style="width:100%; padding:14px 20px; background:white; color:#3c4043; border:2px solid #dadce0; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; transition:all 0.2s;">
         <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
         Googleでログイン
@@ -2930,7 +2930,7 @@
             <div style="background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:20px;">
               <h3 style="margin:0 0 12px;">📁 Google Drive フォルダ構成</h3>
               <div style="background:#f8f9fa; border-radius:8px; padding:16px; font-family:monospace; font-size:13px; line-height:2;">
-                <div>📂 共有フォルダ（例：個別指導スクエア） ← <strong>ACCESS_FOLDER_ID</strong></div>
+                <div>📂 共有フォルダ（例：学習塾） ← <strong>ACCESS_FOLDER_ID</strong></div>
                 <div style="padding-left:24px;">└── 📂 S-quire ← <strong>APP_FOLDER_ID</strong></div>
                 <div style="padding-left:48px;">├── 📂 月間スケジュール/（年度フォルダ → 予定データ）</div>
                 <div style="padding-left:48px;">├── 📂 成績管理/（年度フォルダ → 成績データ）</div>

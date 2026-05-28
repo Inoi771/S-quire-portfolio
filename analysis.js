@@ -516,7 +516,7 @@ function generateGradeAnalysis(year, testName, skipIfExists) {
       nextRoundHistorical: nextRoundHistorical
     });
 
-    var prompt = 'あなたは個別指導塾「個別指導スクエア」の成績分析の専門家です。\n'
+    var prompt = 'あなたは個別指導塾の成績分析の専門家です。\n'
       + '以下の集計データを分析して、塾の講師・スタッフに向けた実用的な日本語コメントを生成してください。\n\n'
       + '【前提知識】\n'
       + '- 教科ごとの満点: 100点（5教科合計 500点満点）\n'
@@ -980,7 +980,7 @@ function generateStudentAnalyses(year, testName) {
       students: studentsData
     });
 
-    var prompt = 'あなたは個別指導塾「個別指導スクエア」の成績分析の専門家です。\n'
+    var prompt = 'あなたは個別指導塾の成績分析の専門家です。\n'
       + '以下の生徒データを分析して、各生徒の個別コメントをJSON形式で返してください。\n\n'
       + '【前提知識】\n'
       + '- 教科ごとの満点: 100点（5教科合計 500点満点）\n'
@@ -1137,7 +1137,7 @@ function buildStudentBatchRequest_(batchStudents, testNameTrimmed, displayTestNa
     students: batchStudents
   });
 
-  var prompt = 'あなたは個別指導塾「個別指導スクエア」の成績分析の専門家です。\n'
+  var prompt = 'あなたは個別指導塾の成績分析の専門家です。\n'
     + '以下の生徒データを分析して、各生徒の個別コメントをJSON形式で返してください。\n\n'
     + '【前提知識】\n'
     + '- 教科ごとの満点: 100点（5教科合計 500点満点）\n'

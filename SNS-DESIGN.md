@@ -57,7 +57,7 @@
 オーナーが Phase 1 着手前に以下を完了させてください：
 
 1. **Facebook 個人アカウント作成**（個人メール使用・本名登録）
-2. **Facebook ページ作成**（S-quire / 個別指導スクエア 用）
+2. **Facebook ページ作成**（S-quire / 学習塾 用）
 3. **Instagram アカウントのプロアカウント（ビジネス）化** + Facebook ページとの連携
 4. **Meta Business Suite でビジネスアカウント「S-quire」作成**
 
