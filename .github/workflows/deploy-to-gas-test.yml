@@ -20,6 +20,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -30,7 +33,7 @@ jobs:
       - name: Node.js をセットアップ
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: テストを実行
         run: |
@@ -72,7 +75,7 @@ jobs:
       - name: Node.js をセットアップ
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: "clasp をインストール（バージョン固定: 2.4.2）"
         run: npm install -g @google/clasp@2.4.2
